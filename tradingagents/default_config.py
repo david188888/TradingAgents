@@ -2,7 +2,46 @@ import os
 
 _TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
 
-DEFAULT_CONFIG = {
+# Single source of truth for env-var → config-key overrides. To expose
+# a new config key for environment-based override, add a row here — no
+# entry-point script changes required. Coercion is driven by the type
+# of the existing default, so users can keep writing plain strings in
+# their .env file.
+_ENV_OVERRIDES = {
+    "TRADINGAGENTS_LLM_PROVIDER":         "llm_provider",
+    "TRADINGAGENTS_DEEP_THINK_LLM":       "deep_think_llm",
+    "TRADINGAGENTS_QUICK_THINK_LLM":      "quick_think_llm",
+    "TRADINGAGENTS_LLM_BACKEND_URL":      "backend_url",
+    "TRADINGAGENTS_OUTPUT_LANGUAGE":      "output_language",
+    "TRADINGAGENTS_MAX_DEBATE_ROUNDS":    "max_debate_rounds",
+    "TRADINGAGENTS_MAX_RISK_ROUNDS":      "max_risk_discuss_rounds",
+    "TRADINGAGENTS_CHECKPOINT_ENABLED":   "checkpoint_enabled",
+    "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
+}
+
+
+def _coerce(value: str, reference):
+    """Coerce env-var string to the type of the existing default value."""
+    if isinstance(reference, bool):
+        return value.strip().lower() in ("true", "1", "yes", "on")
+    if isinstance(reference, int) and not isinstance(reference, bool):
+        return int(value)
+    if isinstance(reference, float):
+        return float(value)
+    return value
+
+
+def _apply_env_overrides(config: dict) -> dict:
+    """Apply TRADINGAGENTS_* env vars to the config dict in-place."""
+    for env_var, key in _ENV_OVERRIDES.items():
+        raw = os.environ.get(env_var)
+        if raw is None or raw == "":
+            continue
+        config[key] = _coerce(raw, config.get(key))
+    return config
+
+
+DEFAULT_CONFIG = _apply_env_overrides({
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
     "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", os.path.join(_TRADINGAGENTS_HOME, "logs")),
     "data_cache_dir": os.getenv("TRADINGAGENTS_CACHE_DIR", os.path.join(_TRADINGAGENTS_HOME, "cache")),
@@ -61,4 +100,28 @@ DEFAULT_CONFIG = {
     "tavily_include_images": False,
     "tavily_auto_parameters": False,
     "news_curator_max_items": 10,
-}
+    # Benchmark for alpha calculation in the reflection layer.
+    # ``benchmark_ticker`` (when set) overrides the suffix map for all
+    # tickers; leave it None to use ``benchmark_map`` for auto-detection
+    # based on the ticker's exchange suffix. SPY remains the US default
+    # so the reflection label keeps reading "Alpha vs SPY" for US tickers
+    # while non-US tickers get their regional index automatically.
+    "benchmark_ticker": None,
+    "benchmark_map": {
+        ".NS":  "^NSEI",    # NSE India (Nifty 50)
+        ".BO":  "^BSESN",   # BSE India (Sensex)
+        ".T":   "^N225",    # Tokyo (Nikkei 225)
+        ".HK":  "^HSI",     # Hong Kong (Hang Seng)
+        ".L":   "^FTSE",    # London (FTSE 100)
+        ".TO":  "^GSPTSE",  # Toronto (TSX Composite)
+        ".AX":  "^AXJO",    # Australia (ASX 200)
+        "":     "SPY",      # default for US-listed tickers (no suffix)
+    },
+    # Evidence gate configuration
+    "evidence_gate_enabled": True,
+    "evidence_max_enrichment_rounds": 3,
+    "evidence_max_enrichment_seconds": 90,
+    "news_min_company_items": 3,
+    "news_min_mixed_items": 5,
+    "evidence_stop_on_fail": True,
+})
