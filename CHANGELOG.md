@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [Unreleased]
+
+### Added
+
+- **Tavily news-search controls** for company and macro news. Company and
+  global Tavily searches now use `topic="news"` first and can fall back to
+  `topic="finance"` when results are empty or the primary topic is rejected.
+  Query templates, include/exclude domain filters, and optional score
+  filtering are configurable through `DEFAULT_CONFIG`.
+- **A-share Tavily query template** with ticker plus bare six-digit code and
+  China-market terms such as 公告, 业绩, 财报, 经营, 舆情, and 市场新闻, improving
+  retrieval for symbols like `002396.SZ`.
+- **Regression coverage for yfinance and Tavily news paths**, including
+  default yfinance news limits, global yfinance query defaults, Tavily topic
+  fallback, domain filtering, A-share query construction, and score filtering.
+
+### Fixed
+
+- **yfinance news source no longer fails under the default config.** Restored
+  the upstream `news_article_limit`, `global_news_article_limit`,
+  `global_news_lookback_days`, and `global_news_queries` defaults required by
+  `tradingagents.dataflows.yfinance_news`.
+- **Tavily global news handles omitted optional arguments.** `get_global_news`
+  can now omit `look_back_days` and `limit`; Tavily uses the configured global
+  defaults instead of receiving `None`.
+
 ## [0.2.5] — 2026-05-11
 
 ### Added

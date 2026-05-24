@@ -74,6 +74,19 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
+    # News / data fetching parameters
+    # Increase for longer lookback strategies or to broaden macro coverage;
+    # decrease to reduce token usage in agent prompts.
+    "news_article_limit": 20,
+    "global_news_article_limit": 10,
+    "global_news_lookback_days": 7,
+    "global_news_queries": [
+        "Federal Reserve interest rates inflation",
+        "S&P 500 earnings GDP economic outlook",
+        "geopolitical risk trade war sanctions",
+        "ECB Bank of England BOJ central bank policy",
+        "oil commodities supply chain energy",
+    ],
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
@@ -94,11 +107,32 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "akshare_adjust": "",
     "tavily_search_depth": "basic",
     "tavily_max_results": 5,
-    "tavily_topic": "finance",
+    "tavily_topic": "news",
+    "tavily_company_news_topic": "news",
+    "tavily_company_fallback_topic": "finance",
+    "tavily_global_news_topic": "news",
+    "tavily_global_fallback_topic": "finance",
+    "tavily_min_score": None,
     "tavily_include_raw_content": False,
     "tavily_include_answer": False,
     "tavily_include_images": False,
     "tavily_auto_parameters": False,
+    "tavily_company_news_query_template": (
+        '"{ticker}" stock market news earnings revenue guidance analyst rating'
+    ),
+    "tavily_a_share_news_query_template": (
+        '"{ticker}" "{plain_ticker}" 股票 公告 业绩 财报 经营 舆情 市场 新闻'
+    ),
+    "tavily_global_news_query": (
+        "global financial markets macro economy central bank inflation monetary policy "
+        "earnings commodities geopolitical risk"
+    ),
+    "tavily_include_domains": [],
+    "tavily_exclude_domains": [],
+    "tavily_company_include_domains": [],
+    "tavily_company_exclude_domains": [],
+    "tavily_global_include_domains": [],
+    "tavily_global_exclude_domains": [],
     "news_curator_max_items": 10,
     # Benchmark for alpha calculation in the reflection layer.
     # ``benchmark_ticker`` (when set) overrides the suffix map for all

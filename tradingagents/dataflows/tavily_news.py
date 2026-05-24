@@ -8,10 +8,12 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
 from .config import get_config
+from .ticker_utils import is_a_share_ticker, to_akshare_symbol
 
 
 API_URL = "https://api.tavily.com/search"
@@ -23,7 +25,8 @@ class TavilyUnavailableError(Exception):
 
 def get_news_tavily(ticker: str, start_date: str, end_date: str) -> dict[str, Any]:
     """Retrieve company-specific market news through Tavily Search."""
-    query = f'"{ticker}" stock company market news earnings'
+    cfg = get_config()
+    query = _build_company_news_query(ticker, cfg)
     return _search_tavily(
         query=query,
         start_date=start_date,
@@ -31,18 +34,29 @@ def get_news_tavily(ticker: str, start_date: str, end_date: str) -> dict[str, An
         log_key=ticker,
         log_date=end_date,
         method="get_news",
+        cfg=cfg,
     )
 
 
 def get_global_news_tavily(
     curr_date: str,
-    look_back_days: int = 7,
-    limit: int = 5,
+    look_back_days: int | None = None,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     """Retrieve broad macro and market news through Tavily Search."""
+    cfg = get_config()
+    if look_back_days is None:
+        look_back_days = int(cfg.get("global_news_lookback_days", 7))
+    if limit is None:
+        limit = int(cfg.get("global_news_article_limit", 5))
     curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
     start_date = (curr_dt - timedelta(days=look_back_days)).strftime("%Y-%m-%d")
-    query = "global financial markets macro economy central bank inflation news"
+    query = str(
+        cfg.get(
+            "tavily_global_news_query",
+            "global financial markets macro economy central bank inflation news",
+        )
+    )
     return _search_tavily(
         query=query,
         start_date=start_date,
@@ -51,6 +65,7 @@ def get_global_news_tavily(
         log_date=curr_date,
         method="get_global_news",
         limit=limit,
+        cfg=cfg,
     )
 
 
@@ -63,19 +78,20 @@ def _search_tavily(
     log_date: str,
     method: str,
     limit: int | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
         raise TavilyUnavailableError("TAVILY_API_KEY environment variable is not set.")
 
-    cfg = get_config()
+    cfg = cfg or get_config()
     configured_max = int(cfg.get("tavily_max_results", 5))
     max_results = min(int(limit), configured_max) if limit else configured_max
     payload = {
         "query": query,
         "search_depth": cfg.get("tavily_search_depth", "basic"),
         "max_results": max_results,
-        "topic": cfg.get("tavily_topic", "finance"),
+        "topic": _topic_for_method(cfg, method),
         "start_date": start_date,
         "end_date": end_date,
         "include_raw_content": _config_bool(cfg.get("tavily_include_raw_content", False)),
@@ -84,10 +100,12 @@ def _search_tavily(
         "auto_parameters": _config_bool(cfg.get("tavily_auto_parameters", False)),
         "include_favicon": True,
     }
+    _apply_domain_filters(payload, cfg, method)
 
     response_data = _post_search(payload, api_key)
-    if _looks_like_invalid_topic(response_data) and payload["topic"] == "finance":
-        payload["topic"] = "news"
+    fallback_topic = _fallback_topic(payload["topic"], response_data, method, cfg)
+    if fallback_topic:
+        payload["topic"] = fallback_topic
         response_data = _post_search(payload, api_key)
 
     _save_raw_response(log_key, log_date, method, payload, response_data)
@@ -96,8 +114,105 @@ def _search_tavily(
         "query": query,
         "payload": payload,
         "response": response_data,
-        "items": _items_from_response(response_data),
+        "items": _items_from_response(response_data, cfg),
     }
+
+
+def _topic_for_method(cfg: dict[str, Any], method: str) -> str:
+    if method == "get_news":
+        return str(cfg.get("tavily_company_news_topic") or cfg.get("tavily_topic") or "news")
+    if method == "get_global_news":
+        return str(cfg.get("tavily_global_news_topic") or cfg.get("tavily_topic") or "news")
+    return str(cfg.get("tavily_topic") or "news")
+
+
+def _fallback_topic(
+    current_topic: str,
+    response_data: dict[str, Any],
+    method: str,
+    cfg: dict[str, Any],
+) -> str | None:
+    if _looks_like_invalid_topic(response_data):
+        if method in {"get_news", "get_global_news"}:
+            fallback_key = (
+                "tavily_company_fallback_topic"
+                if method == "get_news"
+                else "tavily_global_fallback_topic"
+            )
+            fallback = str(cfg.get(fallback_key) or "").strip()
+            if current_topic == "news" and fallback:
+                return fallback
+        if current_topic != "news":
+            return "news"
+        return "general"
+
+    if method in {"get_news", "get_global_news"} and not response_data.get("results"):
+        fallback_key = (
+            "tavily_company_fallback_topic"
+            if method == "get_news"
+            else "tavily_global_fallback_topic"
+        )
+        fallback = str(cfg.get(fallback_key) or "").strip()
+        if fallback and fallback != current_topic:
+            return fallback
+    return None
+
+
+def _build_company_news_query(ticker: str, cfg: dict[str, Any]) -> str:
+    plain_ticker = to_akshare_symbol(ticker) if is_a_share_ticker(ticker) else ticker
+    template_key = (
+        "tavily_a_share_news_query_template"
+        if is_a_share_ticker(ticker)
+        else "tavily_company_news_query_template"
+    )
+    template = str(
+        cfg.get(template_key)
+        or cfg.get("tavily_company_news_query_template")
+        or '"{ticker}" stock company market news earnings'
+    )
+    return template.format(ticker=ticker, plain_ticker=plain_ticker)
+
+
+def _apply_domain_filters(
+    payload: dict[str, Any],
+    cfg: dict[str, Any],
+    method: str,
+) -> None:
+    include_domains = _list_config(cfg.get("tavily_include_domains"))
+    exclude_domains = _list_config(cfg.get("tavily_exclude_domains"))
+    if method == "get_news":
+        include_domains.extend(_list_config(cfg.get("tavily_company_include_domains")))
+        exclude_domains.extend(_list_config(cfg.get("tavily_company_exclude_domains")))
+    elif method == "get_global_news":
+        include_domains.extend(_list_config(cfg.get("tavily_global_include_domains")))
+        exclude_domains.extend(_list_config(cfg.get("tavily_global_exclude_domains")))
+
+    if include_domains:
+        payload["include_domains"] = _dedupe_domains(include_domains)
+    if exclude_domains:
+        payload["exclude_domains"] = _dedupe_domains(exclude_domains)
+
+
+def _list_config(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return []
+
+
+def _dedupe_domains(domains: list[str]) -> list[str]:
+    deduped = []
+    seen = set()
+    for domain in domains:
+        normalized = domain.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(domain)
+    return deduped
 
 
 def _post_search(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
@@ -135,22 +250,45 @@ def _looks_like_invalid_topic(data: dict[str, Any]) -> bool:
     return "topic" in text and ("invalid" in text or "unsupported" in text)
 
 
-def _items_from_response(response_data: dict[str, Any]) -> list[dict[str, Any]]:
+def _items_from_response(response_data: dict[str, Any], cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     items = []
     for result in response_data.get("results") or []:
         if not isinstance(result, dict):
             continue
+        url = result.get("url") or ""
         items.append(
             {
                 "title": result.get("title") or "Untitled",
-                "url": result.get("url") or "",
+                "url": url,
                 "content": result.get("content") or "",
                 "published": result.get("published_date") or result.get("published_time") or "",
                 "score": result.get("score"),
+                "publisher": _publisher_from_url(url),
                 "source": "tavily",
             }
         )
-    return items
+    return _filter_items_by_score(items, cfg or {})
+
+
+def _filter_items_by_score(items: list[dict[str, Any]], cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    threshold = cfg.get("tavily_min_score")
+    if threshold is None or threshold == "":
+        return items
+    try:
+        min_score = float(threshold)
+    except (TypeError, ValueError):
+        return items
+    filtered = [
+        item
+        for item in items
+        if not isinstance(item.get("score"), (int, float)) or float(item["score"]) >= min_score
+    ]
+    return filtered or items
+
+
+def _publisher_from_url(url: str) -> str:
+    domain = urlparse(str(url or "")).netloc.lower()
+    return domain.removeprefix("www.") or "unknown"
 
 
 def _save_raw_response(
