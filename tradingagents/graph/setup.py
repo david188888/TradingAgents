@@ -82,11 +82,13 @@ class GraphSetup:
         workflow = StateGraph(AgentState)
 
         # Add analyst nodes to the graph
+        # Display-name map: "social" key → "Sentiment" label (v0.2.5 rename).
+        _analyst_label = {"social": "Sentiment"}
+
         for analyst_type, node in analyst_nodes.items():
-            workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
-            workflow.add_node(
-                f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type]
-            )
+            label = _analyst_label.get(analyst_type, analyst_type.capitalize())
+            workflow.add_node(f"{label} Analyst", node)
+            workflow.add_node(f"Msg Clear {label}", delete_nodes[analyst_type])
             workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
 
         # Create researcher, trader, risk, and manager nodes
@@ -113,14 +115,15 @@ class GraphSetup:
 
         # Define edges
         # Start with the first analyst
-        first_analyst = selected_analysts[0]
-        workflow.add_edge(START, f"{first_analyst.capitalize()} Analyst")
+        first_label = _analyst_label.get(selected_analysts[0], selected_analysts[0].capitalize())
+        workflow.add_edge(START, f"{first_label} Analyst")
 
         # Connect analysts in sequence
         for i, analyst_type in enumerate(selected_analysts):
-            current_analyst = f"{analyst_type.capitalize()} Analyst"
+            label = _analyst_label.get(analyst_type, analyst_type.capitalize())
+            current_analyst = f"{label} Analyst"
             current_tools = f"tools_{analyst_type}"
-            current_clear = f"Msg Clear {analyst_type.capitalize()}"
+            current_clear = f"Msg Clear {label}"
 
             # Add conditional edges for current analyst
             workflow.add_conditional_edges(
@@ -132,8 +135,9 @@ class GraphSetup:
 
             # Connect to next analyst or to Evidence Steward if this is the last analyst
             if i < len(selected_analysts) - 1:
-                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
-                workflow.add_edge(current_clear, next_analyst)
+                next_key = selected_analysts[i + 1]
+                next_label = _analyst_label.get(next_key, next_key.capitalize())
+                workflow.add_edge(current_clear, f"{next_label} Analyst")
             else:
                 workflow.add_edge(current_clear, "Evidence Steward")
 
