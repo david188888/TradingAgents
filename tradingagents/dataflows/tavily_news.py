@@ -114,7 +114,7 @@ def _search_tavily(
         "query": query,
         "payload": payload,
         "response": response_data,
-        "items": _items_from_response(response_data, cfg),
+        "items": _items_from_response(response_data, cfg, start_date, end_date),
     }
 
 
@@ -250,24 +250,78 @@ def _looks_like_invalid_topic(data: dict[str, Any]) -> bool:
     return "topic" in text and ("invalid" in text or "unsupported" in text)
 
 
-def _items_from_response(response_data: dict[str, Any], cfg: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def _items_from_response(
+    response_data: dict[str, Any],
+    cfg: dict[str, Any] | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[dict[str, Any]]:
     items = []
     for result in response_data.get("results") or []:
         if not isinstance(result, dict):
             continue
         url = result.get("url") or ""
-        items.append(
-            {
-                "title": result.get("title") or "Untitled",
-                "url": url,
-                "content": result.get("content") or "",
-                "published": result.get("published_date") or result.get("published_time") or "",
-                "score": result.get("score"),
-                "publisher": _publisher_from_url(url),
-                "source": "tavily",
-            }
-        )
+        published = result.get("published_date") or result.get("published_time") or ""
+        item = {
+            "title": result.get("title") or "Untitled",
+            "url": url,
+            "content": result.get("content") or "",
+            "published": published,
+            "score": result.get("score"),
+            "publisher": _publisher_from_url(url),
+            "source": "tavily",
+        }
+        if start_date and end_date and published:
+            item["stale"] = _is_published_outside_window(published, start_date, end_date)
+        items.append(item)
     return _filter_items_by_score(items, cfg or {})
+
+
+_KNOWN_DATE_FORMATS = (
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%Y-%m-%d",
+    "%Y%m%dT%H%M%S",
+    "%Y%m%d",
+    "%b %d, %Y",
+    "%B %d, %Y",
+    "%d %b %Y",
+    "%d %B %Y",
+)
+
+
+def _parse_published_date(raw: str) -> datetime | None:
+    """Best-effort parse of a published date string into a naive datetime."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    # Strip trailing timezone abbreviations like "EST", "UTC" for strptime
+    cleaned = re.sub(r"\s+[A-Z]{2,4}$", "", text)
+    for fmt in _KNOWN_DATE_FORMATS:
+        try:
+            dt = datetime.strptime(cleaned, fmt)
+            return dt.replace(tzinfo=None)  # make naive for comparison
+        except ValueError:
+            continue
+    # Try ISO format as last resort
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _is_published_outside_window(published: str, start_date: str, end_date: str) -> bool:
+    """Return True if the published date is clearly outside the [start, end] window."""
+    dt = _parse_published_date(published)
+    if dt is None:
+        return False  # can't determine → don't flag as stale
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+    except ValueError:
+        return False
+    return dt < start or dt >= end
 
 
 def _filter_items_by_score(items: list[dict[str, Any]], cfg: dict[str, Any]) -> list[dict[str, Any]]:

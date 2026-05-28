@@ -293,6 +293,10 @@ class TradingAgentsGraph:
         so a crashed run can resume from the last successful node on a
         subsequent invocation with the same ticker+date.
         """
+        # Clear news result cache so each graph run fetches fresh data
+        from tradingagents.dataflows.interface import _news_result_cache
+        _news_result_cache.clear()
+
         self.ticker = company_name
 
         # Resolve any pending memory-log entries for this ticker before the pipeline runs.

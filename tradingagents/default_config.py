@@ -158,4 +158,13 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "news_min_company_items": 3,
     "news_min_mixed_items": 5,
     "evidence_stop_on_fail": True,
+    # Credibility scoring for news sources
+    "credibility_enabled": True,
+    "credibility_domain_overrides": {},
+    # Cross-source consistency detection
+    "consistency_enabled": True,
+    # Identity verification: additional known confusing company names
+    "wrong_identity_hints": [],
+    # News advisor (LLM-based coverage gap analysis + targeted search)
+    "news_advisor_enabled": True,
 })

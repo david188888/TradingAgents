@@ -15,6 +15,9 @@ import pandas as pd
 import requests
 
 from .config import get_config
+from .consistency import attach_cross_source_info, create_llm_from_config
+from .credibility import attach_credibility
+from .news_advisor import analyze_news_coverage
 from .ticker_utils import (
     is_a_share_ticker,
     normalize_ticker_symbol,
@@ -35,7 +38,16 @@ class EvidenceGateError(RuntimeError):
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 OFFICIAL_A_SHARE_DOMAINS = ("cninfo.com.cn", "szse.cn", "sse.com.cn", "bse.cn")
-WRONG_IDENTITY_HINTS = ("恒瑞医药", "安洁科技")
+WRONG_IDENTITY_HINTS: tuple[str, ...] = ("恒瑞医药", "安洁科技")
+
+
+def _get_wrong_identity_hints() -> tuple[str, ...]:
+    """Return wrong-identity hints: built-in + user-configured additions."""
+    cfg = get_config()
+    extra = cfg.get("wrong_identity_hints") or []
+    if isinstance(extra, str):
+        extra = [s.strip() for s in extra.split(",") if s.strip()]
+    return WRONG_IDENTITY_HINTS + tuple(extra)
 
 
 def evaluate_and_enrich_evidence(state: dict[str, Any]) -> dict[str, Any]:
@@ -75,7 +87,16 @@ def evaluate_and_enrich_evidence(state: dict[str, Any]) -> dict[str, Any]:
 
     max_rounds = int(cfg.get("evidence_max_enrichment_rounds", 3))
     deadline = time.monotonic() + float(cfg.get("evidence_max_enrichment_seconds", 90))
-    enriched_items = _run_tavily_enrichment(profile, str(state.get("trade_date") or ""), max_rounds, deadline)
+
+    # Use LLM-based advisor to get targeted enrichment queries
+    llm = create_llm_from_config()
+    advisor = analyze_news_coverage(original_items, profile, llm)
+    if advisor.should_enrich and advisor.queries:
+        enriched_items = _run_tavily_enrichment_with_queries(
+            advisor.queries, str(state.get("trade_date") or ""), deadline,
+        )
+    else:
+        enriched_items = _run_tavily_enrichment(profile, str(state.get("trade_date") or ""), max_rounds, deadline)
     all_items = _dedupe_news_items([*original_items, *enriched_items])
     enriched_assessment = _assess_news_items(all_items, profile)
 
@@ -318,8 +339,27 @@ def _extract_news_items_from_reports(*reports: Any) -> list[dict[str, Any]]:
     return items
 
 
+_CREDIBILITY_WEIGHTS = {"high": 1.5, "medium": 1.0, "low": 0.5}
+_CROSS_SOURCE_BONUS = 1.5  # confirmed items get 50% extra weight
+
+
+def _credibility_weighted_count(items: list[dict[str, Any]]) -> float:
+    """Sum credibility weights for *items*, with cross-source confirmation bonus."""
+    total = 0.0
+    for item in items:
+        weight = _CREDIBILITY_WEIGHTS.get(item.get("credibility", "low"), 0.5)
+        if item.get("cross_source_tag") == "confirmed":
+            weight *= _CROSS_SOURCE_BONUS
+        total += weight
+    return total
+
+
 def _assess_news_items(items: list[dict[str, Any]], profile: dict[str, Any]) -> dict[str, Any]:
     cfg = get_config()
+    llm = create_llm_from_config()
+    attach_cross_source_info(items, llm)
+    attach_credibility(items)
+
     wrong_hits = _find_wrong_identity_hits(items, profile)
     if wrong_hits:
         return {
@@ -338,9 +378,13 @@ def _assess_news_items(items: list[dict[str, Any]], profile: dict[str, Any]) -> 
 
     min_company = int(cfg.get("news_min_company_items", 3))
     min_mixed = int(cfg.get("news_min_mixed_items", 5))
-    if len(company_items) >= min_company:
+
+    weighted_company = _credibility_weighted_count(company_items)
+    weighted_mixed = _credibility_weighted_count(mixed)
+
+    if weighted_company >= min_company:
         return _assessment_pass(items, company_items, mixed, low_coverage=False)
-    if len(mixed) >= min_mixed and (company_items or official_items):
+    if weighted_mixed >= min_mixed and (company_items or official_items):
         return _assessment_pass(items, company_items, mixed, low_coverage=True)
 
     reasons = []
@@ -415,25 +459,82 @@ def _run_tavily_enrichment(
     return _dedupe_news_items(items)
 
 
+def _run_tavily_enrichment_with_queries(
+    queries: list[dict[str, Any]],
+    trade_date: str,
+    deadline: float,
+) -> list[dict[str, Any]]:
+    """Run Tavily enrichment with pre-built queries (e.g. from news advisor)."""
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key or not queries:
+        return []
+
+    items: list[dict[str, Any]] = []
+    for index, spec in enumerate(queries[:3], start=1):
+        if time.monotonic() >= deadline:
+            break
+        payload = _build_tavily_payload(spec, trade_date)
+        try:
+            response = requests.post(
+                TAVILY_SEARCH_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=min(30, max(1, int(deadline - time.monotonic()))),
+            )
+            data = response.json()
+        except Exception:
+            continue
+        _save_enrichment_raw_response({"ticker": "advisor"}, trade_date, index, payload, data)
+        if response.status_code >= 400:
+            continue
+        items.extend(_items_from_tavily_response(data))
+    return _dedupe_news_items(items)
+
+
 def _build_enrichment_queries(profile: dict[str, Any]) -> list[dict[str, Any]]:
     ticker = str(profile.get("ticker") or profile.get("ts_code") or "")
     name = str(profile.get("name") or "")
     full_name = str(profile.get("full_name") or name)
     industry = str(profile.get("industry") or "")
     query_base = " ".join(part for part in (ticker, name) if part)
+
+    from .ticker_utils import is_a_share_ticker
+    if is_a_share_ticker(ticker):
+        return [
+            {
+                "query": f"{query_base} 公告 业绩 新闻 舆情",
+                "include_domains": [],
+                "include_raw_content": False,
+            },
+            {
+                "query": f"{full_name} {ticker} 巨潮资讯 深交所 公告",
+                "include_domains": ["cninfo.com.cn", "szse.cn"],
+                "include_raw_content": True,
+            },
+            {
+                "query": f"{name} {industry} 行业 订单 经营 市场 情绪",
+                "include_domains": [],
+                "include_raw_content": False,
+            },
+        ]
+
+    # US / international stocks: English queries with relevant domains
     return [
         {
-            "query": f"{query_base} 公告 业绩 新闻 舆情",
+            "query": f"{ticker} {name} earnings news press release",
             "include_domains": [],
             "include_raw_content": False,
         },
         {
-            "query": f"{full_name} {ticker} 巨潮资讯 深交所 公告",
-            "include_domains": ["cninfo.com.cn", "szse.cn"],
+            "query": f"{full_name} SEC filing investor relations",
+            "include_domains": ["sec.gov", "prnewswire.com", "businesswire.com"],
             "include_raw_content": True,
         },
         {
-            "query": f"{name} {industry} 行业 订单 经营 市场 情绪",
+            "query": f"{name} {industry} industry outlook market analysis",
             "include_domains": [],
             "include_raw_content": False,
         },
@@ -513,6 +614,7 @@ def _news_dedupe_key(item: dict[str, Any]) -> str:
 def _find_wrong_identity_hits(items: list[dict[str, Any]], profile: dict[str, Any]) -> set[str]:
     profile_names = _profile_name_aliases(profile)
     profile_codes = _profile_code_aliases(profile)
+    hints = _get_wrong_identity_hints()
     hits: set[str] = set()
 
     for item in items:
@@ -524,7 +626,7 @@ def _find_wrong_identity_hits(items: list[dict[str, Any]], profile: dict[str, An
             hits.update(wrong_codes)
 
         binds_profile_code = bool(item_codes & profile_codes)
-        for name in WRONG_IDENTITY_HINTS:
+        for name in hints:
             if name in text and not _is_profile_alias(name, profile_names):
                 if item_source == "report" or binds_profile_code:
                     hits.add(name)
@@ -568,11 +670,33 @@ def _wrong_names_bound_to_profile_code(
         candidate = match.group(1).strip()
         if not candidate or _is_profile_alias(candidate, profile_names):
             continue
-        if profile.get("profile_source") == "yfinance" and candidate not in WRONG_IDENTITY_HINTS:
+        # Always flag known confusion names
+        hints = set(_get_wrong_identity_hints())
+        if candidate in hints:
+            hits.add(candidate)
             continue
-        if candidate:
+        # For yfinance profiles (English names): skip non-hint candidates
+        # since Chinese names are likely valid translations, not wrong identity
+        if profile.get("profile_source") == "yfinance":
+            continue
+        # For other profiles: flag if the name is unrelated to any profile name
+        if not _names_are_related(candidate, profile_names):
             hits.add(candidate)
     return hits
+
+
+def _names_are_related(candidate: str, profile_names: set[str]) -> bool:
+    """Check if candidate name has any substring relationship with profile names."""
+    for name in profile_names:
+        if not name:
+            continue
+        if candidate in name or name in candidate:
+            return True
+        # Check for significant character overlap (handles abbreviations)
+        common = set(candidate) & set(name)
+        if len(common) >= min(len(candidate), len(name)) * 0.6:
+            return True
+    return False
 
 
 def _is_profile_alias(candidate: str, profile_names: set[str]) -> bool:
@@ -648,7 +772,8 @@ def _format_evidence_news_package(
 def _format_item(idx: int, item: dict[str, Any], profile: dict[str, Any]) -> str:
     title = str(item.get("title") or "Untitled").strip()
     publisher = str(item.get("publisher") or item.get("source") or "unknown").strip()
-    parts = [f"### {idx}. {title} (publisher: {publisher})"]
+    credibility = item.get("credibility", "low")
+    parts = [f"### {idx}. {title} (publisher: {publisher}, credibility: {credibility})"]
     if item.get("published"):
         parts.append(f"Published: {item['published']}")
     content = str(item.get("content") or "").strip()

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from datetime import datetime
 from typing import Annotated, Any
 from io import StringIO
 
@@ -55,6 +56,8 @@ except Exception:  # pragma: no cover - curl_cffi is an indirect yfinance depend
 
 # Configuration and routing logic
 from .config import get_config
+from .consistency import attach_cross_source_info, create_llm_from_config, cross_source_summary
+from .credibility import attach_credibility, credibility_summary
 from .progress import emit_progress
 
 # Tools organized by category
@@ -177,8 +180,22 @@ def get_vendor(category: str, method: str = None) -> str:
     # Fall back to category-level configuration
     return config.get("data_vendors", {}).get(category, "default")
 
+# Simple in-memory cache for news results within a single graph execution.
+# Prevents duplicate API calls when Sentiment Analyst and News Analyst both
+# request the same news data.  Cleared automatically when the module is
+# re-imported (i.e., each graph run starts fresh).
+_news_result_cache: dict[tuple, str] = {}
+
+
 def route_to_vendor(method: str, *args, **kwargs):
     """Route method calls to appropriate vendor implementation with fallback support."""
+    cache_key = None
+    # Check cache for news methods to avoid duplicate calls across analysts
+    if method in {"get_news", "get_global_news"}:
+        cache_key = (method, tuple(str(a) for a in args), tuple(sorted((k, str(v)) for k, v in kwargs.items() if v is not None)))
+        if cache_key in _news_result_cache:
+            return _news_result_cache[cache_key]
+
     category = get_category_for_method(method)
     vendor_config = get_vendor(category, method)
     primary_vendors = [v.strip() for v in vendor_config.split(',') if v.strip()]
@@ -187,7 +204,11 @@ def route_to_vendor(method: str, *args, **kwargs):
         raise ValueError(f"Method '{method}' not supported")
 
     if method in {"get_news", "get_global_news"}:
-        return _route_news_to_vendors(method, primary_vendors, *args, **kwargs)
+        result = _route_news_to_vendors(method, primary_vendors, *args, **kwargs)
+        # Cache the result for subsequent calls with the same parameters
+        if cache_key is not None:
+            _news_result_cache[cache_key] = result
+        return result
 
     # Build fallback chain: primary vendors first, then remaining available vendors
     all_available_vendors = list(VENDOR_METHODS[method].keys())
@@ -306,7 +327,10 @@ def _route_news_to_vendors(method: str, vendors: list[str], *args, **kwargs) -> 
         successes.append((vendor, result))
 
     if successes:
-        return _format_curated_news(method, successes, errors)
+        # Extract date window for staleness filtering (args are ticker, start_date, end_date for get_news)
+        start_date = str(args[1]) if len(args) >= 2 else ""
+        end_date = str(args[2]) if len(args) >= 3 else ""
+        return _format_curated_news(method, successes, errors, start_date, end_date)
 
     details = "; ".join(f"{vendor}: {err}" for vendor, err in errors) or "no news vendors configured"
     return f"No curated news found for '{method}'. Source status: {details}."
@@ -422,6 +446,8 @@ def _format_curated_news(
     method: str,
     successes: list[tuple[str, Any]],
     errors: list[tuple[str, Exception | str]],
+    start_date: str = "",
+    end_date: str = "",
 ) -> str:
     cfg = get_config()
     max_items = int(cfg.get("news_curator_max_items", 10))
@@ -429,12 +455,28 @@ def _format_curated_news(
     for vendor, result in successes:
         items.extend(_extract_news_items(vendor, result))
 
+    # Timeliness: filter items whose published date is outside the query window
+    stale_count = 0
+    if start_date and end_date:
+        items, stale_count = _filter_stale_items(items, start_date, end_date)
+
+    # Cross-source consistency detection (before dedup to capture multi-source events)
+    if len(successes) >= 2:
+        llm = create_llm_from_config()
+        attach_cross_source_info(items, llm)
     curated = _dedupe_news_items(items)[:max_items]
+    attach_credibility(curated)
+    cred_summary = credibility_summary(curated)
+    cs_summary = cross_source_summary(curated) if len(successes) >= 2 else {"confirmed": 0, "single_source": 0}
     sections = [
         "## Curated News Package",
         f"Method: `{method}`",
         "Sources used: " + ", ".join(vendor for vendor, _ in successes),
+        f"Credibility: {cred_summary['high']} high, {cred_summary['medium']} medium, {cred_summary['low']} low",
+        f"Cross-source: {cs_summary['confirmed']} confirmed by multiple sources, {cs_summary['single_source']} single-source only",
     ]
+    if stale_count:
+        sections.append(f"Timeliness: {stale_count} item(s) filtered as outside the {start_date}~{end_date} window.")
 
     if errors:
         sections.append(
@@ -457,7 +499,10 @@ def _format_curated_news(
         publisher = item.get("publisher") or source
         score = item.get("score")
         score_part = f", score: {score:.3f}" if isinstance(score, (float, int)) else ""
-        body = [f"### {idx}. {title} (source: {source}, publisher: {publisher}{score_part})"]
+        credibility = item.get("credibility", "low")
+        cs_tag = item.get("cross_source_tag", "")
+        cs_part = f", {cs_tag}" if cs_tag else ""
+        body = [f"### {idx}. {title} (source: {source}, publisher: {publisher}{score_part}, credibility: {credibility}{cs_part})"]
         if item.get("published"):
             body.append(f"Published: {item['published']}")
         if item.get("content"):
@@ -549,6 +594,65 @@ def _extract_markdown_news_items(vendor: str, text: str) -> list[dict[str, Any]]
             }
         )
     return items
+
+
+_STALE_DATE_FORMATS = (
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%Y-%m-%dT%H:%M:%S%z",
+    "%Y-%m-%d",
+    "%Y%m%dT%H%M%S",
+    "%Y%m%d",
+    "%b %d, %Y",
+    "%B %d, %Y",
+)
+
+
+def _parse_date_best_effort(raw: str) -> datetime | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    cleaned = re.sub(r"\s+[A-Z]{2,4}$", "", text)
+    for fmt in _STALE_DATE_FORMATS:
+        try:
+            return datetime.strptime(cleaned, fmt).replace(tzinfo=None)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+    except (ValueError, AttributeError):
+        return None
+
+
+def _filter_stale_items(
+    items: list[dict[str, Any]], start_date: str, end_date: str
+) -> tuple[list[dict[str, Any]], int]:
+    """Remove items whose published date is outside the [start, end+1d] window.
+
+    Returns (kept_items, stale_count).
+    """
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+    except ValueError:
+        return items, 0
+
+    from datetime import timedelta
+
+    end_inclusive = end + timedelta(days=1)
+    kept = []
+    stale_count = 0
+    for item in items:
+        # Respect pre-computed stale flag from Tavily
+        if item.get("stale"):
+            stale_count += 1
+            continue
+        pub_dt = _parse_date_best_effort(item.get("published", ""))
+        if pub_dt is not None and (pub_dt < start or pub_dt >= end_inclusive):
+            stale_count += 1
+            continue
+        kept.append(item)
+    return kept, stale_count
 
 
 def _dedupe_news_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
