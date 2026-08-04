@@ -42,6 +42,18 @@ Breaking changes within the 0.x line are called out explicitly.
   Prompt and report bodies lazy-load on disclosure; run input, published reports,
   and the complete artifact index live under the active-run header. Zero or
   missing duration values are displayed as unavailable, not as measured `0s`.
+- **Yahoo Finance reachability preflight.** `tradingagents/web/connectivity.py`
+  probes `query2.finance.yahoo.com` before a non-A-share run is created; an
+  unreachable Yahoo returns a 503 `yfinance_unreachable` so the web UI can
+  prompt for a VPN. A-share tickers skip the probe.
+- **EastMoney A-share news fallback.** `eastmoney_news.py` adds a keyless
+  EastMoney search-api-web source for individual-stock news, registered in
+  `interface.py`'s `get_news` vendor chain as a fallback after Tavily for
+  A-share tickers.
+- **Run-history deletion and Chinese output default.** Persisted runs can be
+  deleted from the sidebar after an in-app confirmation; the active (running)
+  run is refused with a 409 `run_active`. The output-language default is now
+  Chinese, and the inspector width only changes while actively dragged.
 
 ### Changed
 
@@ -64,17 +76,30 @@ Breaking changes within the 0.x line are called out explicitly.
   `datetime.UTC` alias. SSE keepalive waits catch `asyncio.TimeoutError`, which
   remains distinct from the built-in `TimeoutError` on Python 3.10. Together
   these preserve the declared Python 3.10-3.13 CI matrix.
+- **Northbound and insider data no longer depend on akshare.** `china_capital_flow.py`
+  routes northbound flow/holdings and insider trades through the EastMoney HTTP
+  client (with a short timeout) instead of akshare calls that could hang for
+  120s; failures degrade quickly to `AshareCapabilityUnavailableError` rather
+  than stalling the run.
+
+### Fixed
+
+- **A-share margin financing report keyed by the wrong column.**
+  `eastmoney.py:get_a_share_margin_financing` filtered the EastMoney
+  `RPTA_WEB_RZRQ_GGMX` report on `SECURITY_CODE`, which the report does not key;
+  switched to the correct `SCODE` filter so all A-share tickers return margin
+  data.
 
 ### Verification
 
-- Frontend: strict TypeScript passed; 112 Vitest tests passed across 19 files;
+- Frontend: strict TypeScript passed; 115 Vitest tests passed across 19 files;
   production build transformed 326 modules and produced
-  `index-Cop7FA7y.js` (411,254 bytes) plus
-  `index-DZB4KDt-.css` (35,812 bytes).
-- Backend: 67 integration-focused web tests passed. The isolated-HOME full
-  repository suite completed with 1,335 passed, 19 warnings, and 68 subtests;
-  repository-wide Ruff checks also passed. CI installs `.[dev,web]` and remains
-  the authority for the declared Python 3.10-3.13 compatibility matrix.
+  `index-DyLX7bsa.js` (384,596 bytes) plus
+  `index-Cm1J-e_n.css` (41,503 bytes).
+- Backend: 339 web tests passed. The isolated-HOME full repository suite
+  completed with 1,373 passed, 19 warnings, and 68 subtests; repository-wide
+  Ruff checks also passed. CI installs `.[dev,web]` and remains the authority
+  for the declared Python 3.10-3.13 compatibility matrix.
 - Browser: 10 deterministic Playwright specs passed against the fake runner,
   including the staged research dossier, canonical final report, round/lane
   timeline, flat inspector, run disclosure, and real-browser SVG edges. This
