@@ -121,6 +121,26 @@ def test_margin_financing_is_a_safe_empty_data_failure(monkeypatch):
         eastmoney.get_a_share_margin_financing("000001")
 
 
+def test_margin_financing_filters_by_scode_and_renders_rows(monkeypatch):
+    # RPTA_WEB_RZRQ_GGMX keys the security by SCODE; filtering on SECURITY_CODE
+    # silently matches zero rows for every ticker (regression guard).
+    captured = {}
+
+    def fake_em_get(url, *, params, **_kwargs):
+        captured["params"] = params
+        return {"result": {"data": [{"DATE": "2026-08-03", "SCODE": "688825", "SECNAME": "x", "RZYE": 1}]}}
+
+    monkeypatch.setattr(eastmoney, "em_get", fake_em_get)
+
+    report = eastmoney.get_a_share_margin_financing("688825")
+
+    flt = captured["params"]["filter"]
+    assert 'SCODE="688825"' in flt
+    assert "SECURITY_CODE" not in flt
+    assert captured["params"]["sortColumns"] == "DATE"
+    assert "688825" in report
+
+
 def test_capital_flow_sina_backup_parses_and_labels_source(monkeypatch):
     class _FakeResp:
         text = '[{"opendate":"2026-07-20","trade":"10.5","netamount":"100000","turnover":"5000000"}]'

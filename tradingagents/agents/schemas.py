@@ -101,6 +101,20 @@ class ResearchDelegationTask(BaseModel):
         )
 
 
+class ModelClaimInput(BaseModel):
+    """Public reader claim emitted during the same structured decision call."""
+
+    text: str = Field(min_length=1, max_length=600)
+    evidence_ref_ids: list[str] = Field(min_length=1, max_length=8)
+
+
+class ResearchPublicDigest(BaseModel):
+    agreed_facts: list[ModelClaimInput] = Field(default_factory=list, max_length=5)
+    key_disagreements: list[ModelClaimInput] = Field(default_factory=list, max_length=5)
+    changed_views: list[ModelClaimInput] = Field(default_factory=list, max_length=5)
+    remaining_uncertainties: list[ModelClaimInput] = Field(default_factory=list, max_length=5)
+
+
 class ResearchPlan(BaseModel):
     """Structured investment plan produced by the Research Manager.
 
@@ -150,6 +164,10 @@ class ResearchPlan(BaseModel):
             "include hidden reasoning, prompts, or tool traces."
         ),
     )
+    public_digest: ResearchPublicDigest | None = Field(
+        default=None,
+        description="Optional public reader digest with evidence-ref IDs supplied by the system prompt.",
+    )
 
 
 class ResearchStrategySignal(BaseModel):
@@ -162,6 +180,11 @@ class ResearchStrategySignal(BaseModel):
     rationale: str = Field(
         default="",
         description="A short public evidence summary; never private model reasoning.",
+    )
+    key_findings: list[ModelClaimInput] | None = Field(
+        default=None,
+        max_length=3,
+        description="Optional reader findings with only supplied evidence-ref IDs.",
     )
 
     @model_validator(mode="after")
@@ -282,6 +305,12 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
 # ---------------------------------------------------------------------------
 
 
+class PortfolioReaderFields(BaseModel):
+    executive_summary: ModelClaimInput
+    catalysts: list[ModelClaimInput] = Field(default_factory=list, max_length=3)
+    invalidation_conditions: list[ModelClaimInput] = Field(default_factory=list, max_length=3)
+
+
 class PortfolioDecision(BaseModel):
     """Structured output produced by the Portfolio Manager.
 
@@ -349,6 +378,10 @@ class PortfolioDecision(BaseModel):
             "explicitly supplied score, not a fabricated causal claim."
         ),
     )
+    reader_fields: PortfolioReaderFields | None = Field(
+        default=None,
+        description="Optional reader summary, catalysts, and invalidation conditions with supplied evidence refs.",
+    )
 
     @field_validator("price_target", mode="before")
     @classmethod
@@ -364,6 +397,10 @@ class RiskDebateSignal(BaseModel):
     evidence_summary: str = Field(
         default="",
         description="Short public evidence summary, not a reasoning trace.",
+    )
+    evidence_summary_ref: ModelClaimInput | None = Field(
+        default=None,
+        description="Optional referenced public risk summary using only system-supplied evidence IDs.",
     )
 
     @model_validator(mode="after")
@@ -392,6 +429,12 @@ class DecisionDriver(BaseModel):
         min_length=1,
         max_length=320,
         description="Source URI, artifact ID, or report section supporting this driver.",
+    )
+    evidence_ref_ids: list[str] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=8,
+        description="Optional validated reader evidence references; the legacy text citation is preserved above.",
     )
     direction: Literal["positive", "negative", "risk"]
 

@@ -48,6 +48,9 @@ def _create_app(**kwargs: Any):
     # error until Story E3 adds the FastAPI boundary.
     from tradingagents.web.api import create_app
 
+    # Tests must not perform a real Yahoo network probe; tests exercising the
+    # preflight pass their own connectivity_check explicitly.
+    kwargs.setdefault("connectivity_check", lambda _ticker: None)
     return create_app(**kwargs)
 
 
@@ -311,6 +314,88 @@ def test_create_validates_and_translates_only_safe_input_before_start(api):
     assert response.json() == jsonable_encoder(created)
 
 
+def test_create_blocks_global_ticker_when_yfinance_unreachable(tmp_path: Path):
+    from tradingagents.web.connectivity import YahooUnavailableError
+
+    store = RunStore(tmp_path / "runs")
+    manager = RecordingManager(store)
+
+    def fail_check(ticker: str) -> None:
+        raise YahooUnavailableError("connection refused")
+
+    app = _create_app(
+        store=store,
+        manager=manager,
+        broker=EventBroker(store),
+        connectivity_check=fail_check,
+    )
+    client = TestClient(app)
+
+    response = client.post("/api/runs", json=VALID_RUN_BODY)
+
+    assert response.status_code == 503
+    body = response.json()["detail"]
+    assert body["code"] == "yfinance_unreachable"
+    assert "VPN" in body["message"]
+    # No run must be created and the manager is never called.
+    assert manager.calls == []
+    assert store.list_runs() == []
+
+
+def test_create_skips_preflight_for_a_share_ticker(tmp_path: Path):
+    # The real preflight no-ops for A-share tickers (domestic providers, no VPN).
+    # Inject it with a session that fails loudly if any network probe occurs.
+    from tradingagents.web.connectivity import check_yfinance_reachable
+
+    class _BoomSession:
+        def get(self, url, **kwargs):
+            raise AssertionError(f"unexpected network probe: {url}")
+
+    def preflight(ticker: str) -> None:
+        check_yfinance_reachable(ticker, session=_BoomSession())
+
+    store = RunStore(tmp_path / "runs")
+    manager = RecordingManager(store)
+    app = _create_app(
+        store=store,
+        manager=manager,
+        broker=EventBroker(store),
+        connectivity_check=preflight,
+    )
+    client = TestClient(app)
+
+    body = {**VALID_RUN_BODY, "ticker": "688825"}
+    response = client.post("/api/runs", json=body)
+
+    assert response.status_code == 201
+
+
+def test_retry_blocks_global_ticker_when_yfinance_unreachable(tmp_path: Path):
+    from tradingagents.web.connectivity import YahooUnavailableError
+
+    store = RunStore(tmp_path / "runs")
+    manager = RecordingManager(store)
+    source = _snapshot(ticker="AAPL", status="failed")
+    store.create_run(source)
+
+    def fail_check(_ticker: str) -> None:
+        raise YahooUnavailableError("timeout")
+
+    app = _create_app(
+        store=store,
+        manager=manager,
+        broker=EventBroker(store),
+        connectivity_check=fail_check,
+    )
+    client = TestClient(app)
+
+    response = client.post(f"/api/runs/{source.run_id}/retry")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "yfinance_unreachable"
+    assert ("retry", source.run_id) not in manager.calls
+
+
 def test_create_preserves_requested_analyst_order(api):
     client, _store, manager = api
 
@@ -516,6 +601,42 @@ def test_run_history_and_snapshot_are_newest_first_and_secret_free(api):
     assert read.status_code == 200
     assert read.json()["metadata"]["api_key"] == "[REDACTED]"
     assert secret not in listed.text + read.text
+
+
+def test_delete_run_removes_it_and_returns_204(api):
+    client, store, _manager = api
+    victim = _snapshot(status="completed")
+    kept = _snapshot(status="completed")
+    store.create_run(victim)
+    store.create_run(kept)
+
+    response = client.delete(f"/api/runs/{victim.run_id}")
+
+    assert response.status_code == 204
+    assert client.get(f"/api/runs/{victim.run_id}").status_code == 404
+    assert [item["run_id"] for item in client.get("/api/runs").json()] == [
+        kept.run_id
+    ]
+
+
+def test_delete_run_blocks_the_active_run(api):
+    client, store, manager = api
+    active = _snapshot(status="running")
+    store.create_run(active)
+    manager.active_run_id = active.run_id
+
+    response = client.delete(f"/api/runs/{active.run_id}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "run_active"
+    assert client.get(f"/api/runs/{active.run_id}").status_code == 200
+
+
+def test_delete_run_returns_404_for_unknown_run(api):
+    client, _store, _manager = api
+    response = client.delete("/api/runs/does-not-exist")
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "not_found"
 
 
 def test_cancel_retry_and_resume_delegate_to_manager_with_expected_http_semantics(api):

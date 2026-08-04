@@ -8,13 +8,14 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { RunSummaryDTO } from "../api/contracts";
-import { listRuns } from "../api/client";
+import { deleteRun, listRecentRuns } from "../api/client";
 
 export interface UseRunHistoryResult {
   runs: RunSummaryDTO[];
   loading: boolean;
   error: Error | null;
   refresh: () => Promise<void>;
+  removeRun: (run_id: string) => Promise<boolean>;
 }
 
 export function useRunHistory(): UseRunHistoryResult {
@@ -25,9 +26,22 @@ export function useRunHistory(): UseRunHistoryResult {
   const refresh = useCallback((): Promise<void> => {
     setLoading(true);
     setError(null);
-    return listRuns()
-      .then((result: RunSummaryDTO[]) => {
-        setRuns(result);
+    return listRecentRuns()
+      .then((page) => {
+        setRuns(
+          page.items.map((item) => ({
+            run_id: item.run_id,
+            status: item.status,
+            ticker: item.ticker,
+            analysis_date: "",
+            asset_type: "stock",
+            created_at: item.created_at,
+            updated_at: item.created_at,
+            latest_sequence: item.latest_sequence,
+            final_signal: item.final_signal,
+            summary: undefined,
+          })),
+        );
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err : new Error(String(err)));
@@ -41,5 +55,16 @@ export function useRunHistory(): UseRunHistoryResult {
     void refresh();
   }, [refresh]);
 
-  return { runs, loading, error, refresh };
+  const removeRun = useCallback(async (run_id: string): Promise<boolean> => {
+    try {
+      await deleteRun(run_id);
+      setRuns((current) => current.filter((run) => run.run_id !== run_id));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      return false;
+    }
+  }, []);
+
+  return { runs, loading, error, refresh, removeRun };
 }

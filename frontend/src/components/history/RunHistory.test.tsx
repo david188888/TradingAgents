@@ -11,11 +11,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import type { RunSummaryDTO } from "../../api/contracts";
 
 const mockStore = vi.hoisted(() => ({
-  useWorkbenchStore: vi.fn(),
+  useWorkbenchSelection: vi.fn(),
 }));
 
 vi.mock("../../state/WorkbenchStore", () => ({
-  useWorkbenchStore: mockStore.useWorkbenchStore,
+  useWorkbenchSelection: mockStore.useWorkbenchSelection,
 }));
 
 import { RunHistory } from "./RunHistory";
@@ -80,11 +80,11 @@ function makeStore(
 describe("RunHistory", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStore.useWorkbenchStore.mockReturnValue(makeStore());
+    mockStore.useWorkbenchSelection.mockReturnValue(makeStore());
   });
 
   it("renders runs from props (newest-first as provided)", () => {
-    render(<RunHistory runs={FIXTURES} loading={false} error={null} />);
+    render(<RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={vi.fn()} />);
 
     const items = screen.getAllByRole("listitem");
     expect(items).toHaveLength(3);
@@ -100,9 +100,9 @@ describe("RunHistory", () => {
 
   it("calls selectRun with the run_id when an item is clicked", () => {
     const selectRun = vi.fn();
-    mockStore.useWorkbenchStore.mockReturnValue(makeStore({ selectRun }));
+    mockStore.useWorkbenchSelection.mockReturnValue(makeStore({ selectRun }));
 
-    render(<RunHistory runs={FIXTURES} loading={false} error={null} />);
+    render(<RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={vi.fn()} />);
 
     const items = screen.getAllByRole("listitem");
     expect(items).toHaveLength(3);
@@ -112,13 +112,13 @@ describe("RunHistory", () => {
   });
 
   it("renders the placeholder when there are no runs", () => {
-    render(<RunHistory runs={[]} loading={false} error={null} />);
+    render(<RunHistory runs={[]} loading={false} error={null} onDeleteRun={vi.fn()} />);
     expect(screen.getByText("暂无运行记录")).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
   });
 
   it("renders the loading placeholder while loading with no runs yet", () => {
-    render(<RunHistory runs={[]} loading={true} error={null} />);
+    render(<RunHistory runs={[]} loading={true} error={null} onDeleteRun={vi.fn()} />);
     expect(screen.getByText("加载中…")).toBeInTheDocument();
   });
 
@@ -128,9 +128,44 @@ describe("RunHistory", () => {
         runs={[]}
         loading={false}
         error={new Error("network down")}
+        onDeleteRun={vi.fn()}
       />,
     );
     expect(screen.getByText(/加载失败/)).toBeInTheDocument();
     expect(screen.getByText(/network down/)).toBeInTheDocument();
+  });
+
+  it("calls onDeleteRun after confirming a delete button", () => {
+    const onDeleteRun = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={onDeleteRun} />,
+    );
+
+    const deleteButtons = screen.getAllByRole("button", {
+      name: /删除 .* 的运行记录/,
+    });
+    fireEvent.click(deleteButtons[0]);
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(onDeleteRun).toHaveBeenCalledWith("run-1");
+    confirmSpy.mockRestore();
+  });
+
+  it("does not call onDeleteRun when deletion is cancelled", () => {
+    const onDeleteRun = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(
+      <RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={onDeleteRun} />,
+    );
+
+    const deleteButtons = screen.getAllByRole("button", {
+      name: /删除 .* 的运行记录/,
+    });
+    fireEvent.click(deleteButtons[0]);
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(onDeleteRun).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 });

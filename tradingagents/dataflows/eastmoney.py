@@ -204,10 +204,13 @@ def get_a_share_margin_financing(ticker: str, curr_date: str | None = None) -> s
         params={
             "reportName": "RPTA_WEB_RZRQ_GGMX",
             "columns": "ALL",
-            "filter": f'(SECURITY_CODE="{code}")',
+            # This report keys the security by SCODE, not SECURITY_CODE; the
+            # latter silently matches zero rows for every ticker. Sort by DATE
+            # (its trade-date column), not TRADE_DATE which does not exist here.
+            "filter": f'(SCODE="{code}")',
             "pageNumber": "1",
             "pageSize": "20",
-            "sortColumns": "TRADE_DATE",
+            "sortColumns": "DATE",
             "sortTypes": "-1",
             "source": "WEB",
             "client": "WEB",

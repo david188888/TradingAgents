@@ -151,12 +151,12 @@ describe("RoleInputPanel", () => {
 
     const disclosure = container.querySelector("details.inspector-prompt") as HTMLDetailsElement;
     expect(disclosure.open).toBe(false);
-    await waitFor(() => expect(mockClient.readArtifactText).toHaveBeenCalledWith("inspector-run", "state-2"));
-    expect(mockClient.readArtifactText).not.toHaveBeenCalledWith("inspector-run", "prompt-1");
+    await waitFor(() => expect(mockClient.readArtifactText).toHaveBeenCalledWith("inspector-run", "state-2", expect.any(AbortSignal)));
+    expect(mockClient.readArtifactText).not.toHaveBeenCalledWith("inspector-run", "prompt-1", expect.any(AbortSignal));
     fireEvent.click(within(disclosure).getByText("模型实际输入"));
     expect(disclosure.open).toBe(true);
     expect(await screen.findByText(/SYSTEM: inspect evidence/)).toBeInTheDocument();
-    expect(mockClient.readArtifactText).toHaveBeenCalledWith("inspector-run", "prompt-1");
+    expect(mockClient.readArtifactText).toHaveBeenCalledWith("inspector-run", "prompt-1", expect.any(AbortSignal));
     expect(container.querySelector(".prompt-artifact .datablock")).not.toBeNull();
   });
 });

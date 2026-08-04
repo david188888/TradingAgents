@@ -141,7 +141,7 @@ describe("MarketChart spatial/index helpers", () => {
         source_ids: ["data:b"],
       },
     });
-    render(<MarketChart run_id="run_20260723T000000000000Z_1234abcd" latest_sequence={2} artifact_count={1} />);
+    render(<MarketChart run_id="run_20260723T000000000000Z_1234abcd" market_projection_version={2} />);
 
     await waitFor(() => expect(mockClient.getMarketView).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("img", { name: "已捕获 2 根K线和 1 条事件；拖动底部区间条筛选本地归因" })).toBeInTheDocument();
@@ -180,7 +180,7 @@ describe("MarketChart spatial/index helpers", () => {
       trigger: { reasons: ["evidence_thin"], cache_key: "b".repeat(64) },
       cache_configured: true,
     });
-    render(<MarketChart run_id="run_20260723T000000000000Z_1234abcd" latest_sequence={2} artifact_count={1} />);
+    render(<MarketChart run_id="run_20260723T000000000000Z_1234abcd" market_projection_version={2} />);
 
     await screen.findByRole("button", { name: "读取 positive 的已缓存深度审阅" });
     fireEvent.click(screen.getByRole("button", { name: "读取 positive 的已缓存深度审阅" }));

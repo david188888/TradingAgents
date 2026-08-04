@@ -221,19 +221,12 @@ function _edgeGeometry(
 
 function _curvedPath(geom: EdgeGeometry, kind: EdgeKind): string {
   const { x1, y1, x2, y2 } = geom;
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-
+  const midX = x1 + Math.max(18, (x2 - x1) / 2);
   if (kind === "adversarial") {
-    // Curved arc between same-stage opponents (more vertical distance).
-    const midX = (x1 + x2) / 2;
-    const offset = Math.abs(dy) * 0.3 + 10;
-    return `M ${x1} ${y1} C ${midX + offset} ${y1}, ${midX - offset} ${y2}, ${x2} ${y2}`;
+    const midY = y1 + (y2 - y1) / 2;
+    return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
   }
-
-  // Gentle cubic bezier for handoff and convergence.
-  const cpOffset = Math.max(20, dx * 0.4);
-  return `M ${x1} ${y1} C ${x1 + cpOffset} ${y1}, ${x2 - cpOffset} ${y2}, ${x2} ${y2}`;
+  return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
 }
 
 function _deriveActiveStage(

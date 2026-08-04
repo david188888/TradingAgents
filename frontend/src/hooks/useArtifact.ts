@@ -1,10 +1,3 @@
-/**
- * G3 - Lazy artifact content loader with an in-memory cache.
- *
- * Wraps readArtifactText so inspector and run disclosures can pull artifacts on demand
- * without refetching on re-mount. The cache is module-level (cleared on page
- * reload) and keyed by `${run_id}:${artifact_id}`.
- */
 import { useCallback, useEffect, useState } from "react";
 import { readArtifactText } from "../api/client";
 
@@ -15,69 +8,74 @@ export interface UseArtifactResult {
   reload(): void;
 }
 
-/** Module-level cache: survives across hook instances within a page session. */
+const MAX_CACHED_ARTIFACTS = 24;
 const cache = new Map<string, string>();
 
-function cacheKey(run_id: string, artifact_id: string): string {
-  return `${run_id}:${artifact_id}`;
+function cacheValue(key: string, value: string): void {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > MAX_CACHED_ARTIFACTS) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (oldest) cache.delete(oldest);
+  }
 }
 
+function cacheKey(runId: string, artifactId: string): string {
+  return `${runId}:${artifactId}`;
+}
+
+/** Lazy, bounded artifact reader. Cleanup aborts the actual HTTP request. */
 export function useArtifact(
-  run_id: string | null,
-  artifact_id: string | null,
+  runId: string | null,
+  artifactId: string | null,
 ): UseArtifactResult {
   const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(
-    run_id !== null && artifact_id !== null,
-  );
+  const [loading, setLoading] = useState<boolean>(runId !== null && artifactId !== null);
   const [error, setError] = useState<string | null>(null);
-  const [reloadToken, setReloadToken] = useState<number>(0);
+  const [reloadToken, setReloadToken] = useState(0);
 
   const reload = useCallback((): void => {
-    if (run_id !== null && artifact_id !== null) {
-      cache.delete(cacheKey(run_id, artifact_id));
-    }
-    setReloadToken((n) => n + 1);
-  }, [run_id, artifact_id]);
+    if (runId !== null && artifactId !== null) cache.delete(cacheKey(runId, artifactId));
+    setReloadToken((value) => value + 1);
+  }, [artifactId, runId]);
 
   useEffect(() => {
-    if (run_id === null || artifact_id === null) {
+    if (runId === null || artifactId === null) {
       setContent(null);
       setLoading(false);
       setError(null);
       return;
     }
-    const key = cacheKey(run_id, artifact_id);
+    const key = cacheKey(runId, artifactId);
     const cached = cache.get(key);
     if (cached !== undefined) {
+      cache.delete(key);
+      cache.set(key, cached);
       setContent(cached);
       setLoading(false);
       setError(null);
       return;
     }
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     setContent(null);
-    readArtifactText(run_id, artifact_id)
-      .then((text: string) => {
-        cache.set(key, text);
-        if (!cancelled) {
+    void readArtifactText(runId, artifactId, controller.signal)
+      .then((text) => {
+        cacheValue(key, text);
+        if (!controller.signal.aborted) {
           setContent(text);
           setLoading(false);
         }
       })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          setError(message);
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : String(reason));
           setLoading(false);
         }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [run_id, artifact_id, reloadToken]);
+    return () => controller.abort();
+  }, [artifactId, reloadToken, runId]);
 
   return { content, loading, error, reload };
 }

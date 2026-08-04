@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import threading
 import uuid
 from contextlib import suppress
@@ -29,6 +30,12 @@ ARTIFACT_KIND_DIRECTORIES = {
 }
 ARTIFACT_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+FIXED_JSON_LOCATORS = frozenset(
+    {
+        "projections/reader-brief-v1.json",
+        "projections/run-view-v1.json",
+    }
+)
 
 
 class RunStoreError(RuntimeError):
@@ -315,6 +322,13 @@ class RunStore:
         return entries
 
     def list_runs(self) -> list[RunSummary]:
+        """List summaries without replaying every run's event log.
+
+        ``append_event`` advances ``run.json`` in the same per-run critical
+        section as the durable event append. A history list only needs that
+        committed snapshot; validating every historical ``events.jsonl`` made
+        the common sidebar refresh scale with the total audit history.
+        """
         summaries = []
         with self._global_lock:
             for path in self.root.iterdir():
@@ -322,10 +336,63 @@ class RunStore:
                     continue
                 try:
                     validate_run_id(path.name)
-                    summaries.append(RunSummary.from_snapshot(self.read_snapshot(path.name)))
+                    summaries.append(RunSummary.from_snapshot(self._read_snapshot_fast(path)))
                 except (ValueError, RunStoreError):
                     continue
-        return sorted(summaries, key=lambda summary: summary.created_at, reverse=True)
+        return sorted(
+            summaries,
+            key=lambda summary: (summary.created_at, summary.run_id),
+            reverse=True,
+        )
+
+    def delete_run(self, run_id: str) -> None:
+        """Delete a run's persisted directory and its entire durable history.
+
+        Raises :class:`RunNotFound` if the run does not exist. The caller is
+        responsible for refusing to delete a run that is still actively
+        executing (see ``api.py``); the store only removes committed state.
+        """
+        run_dir = self._run_dir(run_id)
+        with self._global_lock, self.lock_for(run_id):
+            if not run_dir.is_dir():
+                raise RunNotFound(run_id)
+            shutil.rmtree(run_dir)
+            self._fsync_directory(self.root)
+
+    def write_fixed_json(self, run_id: str, locator: str, value: Any) -> None:
+        """Atomically materialize a versioned projection at an approved path.
+
+        These files are deterministic caches over append-only facts, not raw
+        agent artifacts. Their fixed names make a cheap read possible while
+        keeping all path construction server-owned.
+        """
+        if locator not in FIXED_JSON_LOCATORS:
+            raise InvalidStorePath("unsupported fixed JSON locator")
+        run_dir = self._run_dir(run_id)
+        destination = run_dir / locator
+        if destination.parent.parent.resolve() != run_dir.resolve():
+            raise InvalidStorePath("fixed JSON path escapes run directory")
+        content = canonical_business_value(value).bytes + b"\n"
+        with self.lock_for(run_id):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            self._write_bytes_atomic(destination, content)
+            self._fsync_directory(destination.parent)
+            self._fsync_directory(run_dir)
+
+    def read_fixed_json(self, run_id: str, locator: str) -> dict[str, Any]:
+        if locator not in FIXED_JSON_LOCATORS:
+            raise InvalidStorePath("unsupported fixed JSON locator")
+        run_dir = self._run_dir(run_id)
+        destination = run_dir / locator
+        try:
+            value = json.loads(destination.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise RunNotFound(locator) from exc
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            raise RunStoreCorruption(f"invalid fixed JSON projection {locator}") from exc
+        if not isinstance(value, dict):
+            raise RunStoreCorruption(f"invalid fixed JSON projection {locator}")
+        return value
 
     def store_artifact(
         self,
@@ -413,6 +480,15 @@ class RunStore:
         content = canonical_business_value(payload).bytes + b"\n"
         self._write_bytes_atomic(run_dir / "run.json", content)
         self._fsync_directory(run_dir)
+
+    @staticmethod
+    def _read_snapshot_fast(run_dir: Path) -> RunSnapshot:
+        """Read only the atomically maintained snapshot used for list views."""
+        try:
+            payload = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+            return RunSnapshot.from_dict(payload)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise RunStoreCorruption(f"invalid run snapshot for {run_dir.name}") from exc
 
     @staticmethod
     def _write_bytes_atomic(destination: Path, content: bytes) -> None:

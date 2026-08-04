@@ -127,6 +127,9 @@ def create_aggressive_debator(llm):
             "count": risk_debate_state["count"] + 1,
         }
 
-        return {"risk_debate_state": new_risk_debate_state}
+        return {
+            "risk_debate_state": new_risk_debate_state,
+            "reader_public_output": {"kind": "risk", "value": signal.model_dump(mode="json")},
+        }
 
     return aggressive_node

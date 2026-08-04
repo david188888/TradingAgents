@@ -24,6 +24,7 @@ export const API = {
   config: "/api/config",
   runs: "/api/runs",
   run: (run_id: string) => `/api/runs/${run_id}`,
+  runView: (run_id: string) => `/api/runs/${run_id}/view`,
   cancel: (run_id: string) => `/api/runs/${run_id}/cancel`,
   retry: (run_id: string) => `/api/runs/${run_id}/retry`,
   resume: (run_id: string) => `/api/runs/${run_id}/resume`,
@@ -42,6 +43,12 @@ export const API = {
     }).toString()}`,
   events: (run_id: string, after?: number) =>
     `/api/runs/${run_id}/events${after != null ? `?after=${after}` : ""}`,
+  recentRuns: (limit = 20, cursor?: string) =>
+    `/api/runs?${new URLSearchParams({
+      view: "recent",
+      limit: String(limit),
+      ...(cursor ? { cursor } : {}),
+    }).toString()}`,
 } as const;
 
 export const EVENT_SCHEMA_VERSION = 1 as const;
@@ -237,6 +244,105 @@ export interface ArtifactMetadataDTO {
   content_sha256: string;
   byte_size: number;
   locator: string;
+}
+
+export type DataQualityLevelDTO = "healthy" | "limited" | "conflicted" | "unknown";
+export type BriefAvailabilityDTO = "full" | "partial" | "unavailable";
+
+export interface DataQualityDTO {
+  level: DataQualityLevelDTO;
+  degraded_capabilities: string[];
+  unavailable_capabilities: string[];
+  conflicts: Array<{ severity: "medium" | "high" | "critical"; message_code: string }>;
+  checks: Array<{ check: string; status: string; reason_code: string | null }>;
+}
+
+export interface PublicClaimDTO {
+  claim_id: string;
+  text: string;
+  evidence_ref_ids: string[];
+}
+
+export interface ReaderBriefDTO {
+  schema_version: number;
+  run_id: string;
+  ticker: string;
+  source_sequence: number;
+  generated_at: string;
+  availability: BriefAvailabilityDTO;
+  omissions: string[];
+  research_rating: string;
+  execution: {
+    availability: "ready" | "unavailable";
+    requested_action: string | null;
+    requested_quantity: number | null;
+    effective_action: string | null;
+    effective_quantity: number | null;
+    reason_code: string | null;
+  };
+  executive_summary: PublicClaimDTO | null;
+  price_target: number | null;
+  time_horizon: string | null;
+  drivers: Array<PublicClaimDTO & { direction: "positive" | "negative" | "risk"; importance: number }>;
+  risks: PublicClaimDTO[];
+  catalysts: PublicClaimDTO[];
+  invalidation_conditions: PublicClaimDTO[];
+  analyst_cards: Array<{ lens: string; conviction: number | null; confidence: number; abstain: boolean; findings: PublicClaimDTO[] }>;
+  debate_digest: { agreed_facts: PublicClaimDTO[]; key_disagreements: PublicClaimDTO[]; changed_views: PublicClaimDTO[]; remaining_uncertainties: PublicClaimDTO[] };
+  risk_consensus: { conviction: number | null; disagreement: string; abstained_roles: string[] };
+  data_quality: DataQualityDTO;
+  evidence_refs: Array<{ ref_id: string; label: string; resolution_status: "available" | "target_missing" }>;
+}
+
+export interface WorkflowProjectionDTO {
+  total_roles: number;
+  completed_roles: number;
+  active_actor_id: string | null;
+  stages: Array<{ stage_id: string; status: string; actors: Array<{ actor_id: string; status: string; latest_turn_id: string | null; completed_turns: number }> }>;
+}
+
+export interface RunViewEnvelopeDTO {
+  schema_version: number;
+  projection_status: "ready" | "partial" | "legacy_fallback" | "unavailable";
+  reason_code: string | null;
+  source_sequence: number;
+  terminal: boolean;
+  view: {
+    run: {
+      run_id: string;
+      ticker: string;
+      status: RunStatusLiteral;
+      created_at: string;
+      completed_at: string | null;
+      latest_sequence: number;
+      final_signal: string | null;
+      duration_ms: number | null;
+      data_quality_level: DataQualityLevelDTO;
+    };
+    brief: { availability: BriefAvailabilityDTO; reason_code: string | null; value: ReaderBriefDTO | null };
+    workflow: WorkflowProjectionDTO;
+    section_index: Array<{ section_id: string; label: string; availability: string; artifact_ids: string[]; turn_ids: string[] }>;
+    data_quality: DataQualityDTO;
+    market_projection_version: number;
+    available_audit_counts: { turns: number; prompts: number; tool_calls: number; data_calls: number; artifacts: number; reports: number };
+    legacy_fallback: { final_signal: string | null; portfolio_artifact_id: string | null; complete_report_artifact_id: string | null } | null;
+  };
+}
+
+export interface RecentRunsPageDTO {
+  schema_version: number;
+  items: Array<{
+    run_id: string;
+    ticker: string;
+    status: RunStatusLiteral;
+    created_at: string;
+    completed_at: string | null;
+    latest_sequence: number;
+    final_signal: string | null;
+    duration_ms: number | null;
+    data_quality_level: DataQualityLevelDTO;
+  }>;
+  next_cursor: string | null;
 }
 
 // ---------------------------------------------------------------------------

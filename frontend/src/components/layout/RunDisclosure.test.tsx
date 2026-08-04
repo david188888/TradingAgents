@@ -68,7 +68,7 @@ describe("RunDisclosure", () => {
     fireEvent.click(reportSummary);
     expect(await screen.findByText("Research prose.")).toBeInTheDocument();
     expect(mockClient.readArtifactText).toHaveBeenCalledTimes(1);
-    expect(mockClient.readArtifactText).toHaveBeenCalledWith("disclosure-run", "report-artifact");
+    expect(mockClient.readArtifactText).toHaveBeenCalledWith("disclosure-run", "report-artifact", expect.any(AbortSignal));
     expect(container.querySelector(".run-report .prose")).not.toBeNull();
   });
 });

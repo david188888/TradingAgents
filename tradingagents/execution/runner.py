@@ -666,6 +666,11 @@ class AnalysisRunner:
             for event in events
             if event.type == "report.updated" and event.payload.get("graph_task_id")
         }
+        promoted_public_outputs = {
+            str(event.payload.get("graph_task_id"))
+            for event in events
+            if event.type == "artifact.written" and event.payload.get("public_output_kind")
+        }
         observer.refresh_from_events()
         for commit in commits:
             candidate = candidates[commit.graph_task_id]
@@ -680,6 +685,14 @@ class AnalysisRunner:
                     )
                 )
                 promoted_state_tasks.add(commit.graph_task_id)
+            _promote_public_output(
+                observer,
+                commit,
+                delta,
+                marker.event_id,
+                marker.sequence,
+                promoted_public_outputs,
+            )
             _promote_report_revisions(
                 observer,
                 commit,
@@ -947,6 +960,61 @@ def _state_updated_draft(
         parent_event_id=checkpoint_event_id,
         status="committed",
     )
+
+def _promote_public_output(
+    observer: Any,
+    commit: Any,
+    delta: Mapping[str, Any],
+    checkpoint_event_id: str,
+    committed_sequence: int,
+    promoted_tasks: set[str],
+) -> None:
+    """Publish a typed public output only after its graph delta is committed."""
+    if not commit.turn_id or commit.graph_task_id in promoted_tasks:
+        return
+    raw = delta.get("reader_public_output")
+    if not isinstance(raw, Mapping):
+        return
+    kind = raw.get("kind")
+    value = raw.get("value")
+    if kind not in {"research", "trader", "portfolio", "risk"} or not isinstance(value, Mapping):
+        return
+    public_value = {
+        "schema_version": 1,
+        "run_id": observer.run_id,
+        "turn_id": commit.turn_id,
+        "committed_sequence": committed_sequence,
+        **dict(value),
+    }
+    artifact = observer.store.store_artifact(
+        observer.run_id,
+        kind=f"public-{kind}",
+        value=public_value,
+    )
+    from tradingagents.observability.events import RunEventDraft
+
+    observer.emit(
+        RunEventDraft(
+            observer.run_id,
+            "artifact.written",
+            {
+                "artifact_id": artifact.artifact_id,
+                "kind": artifact.kind,
+                "media_type": artifact.media_type,
+                "content_sha256": artifact.content_sha256,
+                "byte_size": artifact.byte_size,
+                "locator": artifact.locator,
+                "turn_id": commit.turn_id,
+                "graph_task_id": commit.graph_task_id,
+                "public_output_kind": kind,
+                "committed_sequence": committed_sequence,
+            },
+            node_id=commit.node_id,
+            parent_event_id=checkpoint_event_id,
+            status="committed",
+        )
+    )
+    promoted_tasks.add(commit.graph_task_id)
 
 
 _REPORT_FIELDS = {

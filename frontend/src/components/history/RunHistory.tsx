@@ -11,7 +11,7 @@
  */
 import type { CSSProperties } from "react";
 import type { RunStatusLiteral, RunSummaryDTO } from "../../api/contracts";
-import { useWorkbenchStore } from "../../state/WorkbenchStore";
+import { useWorkbenchSelection } from "../../state/WorkbenchStore";
 
 interface StatusBadge {
   /** Extra class for completed (green) -> "ok"; empty for others. */
@@ -38,10 +38,18 @@ export interface RunHistoryProps {
   runs: RunSummaryDTO[];
   loading: boolean;
   error: Error | null;
+  /** Called after the user confirms deletion of a run. */
+  onDeleteRun: (run_id: string) => void;
 }
 
-export function RunHistory({ runs, loading, error }: RunHistoryProps): JSX.Element {
-  const { run_id, selectRun } = useWorkbenchStore();
+export function RunHistory({ runs, loading, error, onDeleteRun }: RunHistoryProps): JSX.Element {
+  const { run_id, selectRun } = useWorkbenchSelection();
+
+  const handleDelete = (run: RunSummaryDTO): void => {
+    if (window.confirm(`确定删除 ${run.ticker} 的运行记录吗？此操作不可恢复。`)) {
+      onDeleteRun(run.run_id);
+    }
+  };
 
   return (
     <section className="history">
@@ -70,9 +78,21 @@ export function RunHistory({ runs, loading, error }: RunHistoryProps): JSX.Eleme
               >
                 <div className="history-top">
                   <strong>{run.ticker}</strong>
-                  <span className={badgeClassName} style={badgeStyle}>
-                    {badge.dot ? `● ${badge.label}` : badge.label}
-                  </span>
+                  <div className="history-actions">
+                    <span className={badgeClassName} style={badgeStyle}>
+                      {badge.dot ? `● ${badge.label}` : badge.label}
+                    </span>
+                    <button
+                      className="history-delete"
+                      aria-label={`删除 ${run.ticker} 的运行记录`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(run);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
                 <div className="history-sub">
                   <span>{new Date(run.created_at).toLocaleString()}</span>

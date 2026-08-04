@@ -16,6 +16,8 @@ import type {
   MarketEventDTO,
   MarketEventLayer2DTO,
   MarketViewDTO,
+  RecentRunsPageDTO,
+  RunViewEnvelopeDTO,
   RunCreateRequestDTO,
   RunSnapshotDTO,
   RunSummaryDTO,
@@ -114,6 +116,7 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) {
@@ -123,6 +126,7 @@ async function request<T>(
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
   if (!resp.ok) {
     throw await toApiError(resp);
@@ -138,6 +142,22 @@ export function getConfig(): Promise<ConfigPayload> {
 /** GET /api/runs */
 export function listRuns(): Promise<RunSummaryDTO[]> {
   return request<RunSummaryDTO[]>("GET", API.runs);
+}
+
+/** GET /api/runs?view=recent */
+export function listRecentRuns(
+  signal?: AbortSignal,
+): Promise<RecentRunsPageDTO> {
+  return request<RecentRunsPageDTO>("GET", API.recentRuns(), undefined, signal);
+}
+
+/** GET /api/runs/{run_id}/view */
+export function getRunView(
+  run_id: string,
+  signal?: AbortSignal,
+): Promise<RunViewEnvelopeDTO> {
+  assertRunId(run_id);
+  return request<RunViewEnvelopeDTO>("GET", API.runView(run_id), undefined, signal);
 }
 
 /** GET /api/runs/{run_id} */
@@ -172,6 +192,22 @@ export function resumeRun(run_id: string): Promise<RunSnapshotDTO> {
   return request<RunSnapshotDTO>("POST", API.resume(run_id));
 }
 
+/**
+ * DELETE /api/runs/{run_id} (204). The endpoint returns no body, so this uses
+ * a raw fetch rather than the JSON-returning request() helper. Throws ApiError
+ * on 404 run_not_found or 409 run_active (a running analysis cannot be deleted).
+ */
+export async function deleteRun(run_id: string): Promise<void> {
+  assertRunId(run_id);
+  const resp = await fetch(`${API_BASE}${API.run(run_id)}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    throw await toApiError(resp);
+  }
+}
+
 /** GET /api/runs/{run_id}/artifacts */
 export function listArtifacts(
   run_id: string,
@@ -189,9 +225,10 @@ export function listArtifacts(
 export function getMarketView(
   run_id: string,
   sequence?: number,
+  signal?: AbortSignal,
 ): Promise<MarketViewDTO> {
   assertRunId(run_id);
-  return request<MarketViewDTO>("GET", API.marketView(run_id, sequence));
+  return request<MarketViewDTO>("GET", API.marketView(run_id, sequence), undefined, signal);
 }
 
 /**
@@ -215,6 +252,7 @@ export function getMarketEventLayer2(
 export async function readArtifact(
   run_id: string,
   artifact_id: string,
+  signal?: AbortSignal,
 ): Promise<{ content: ArrayBuffer; media_type: string }> {
   assertRunId(run_id);
   if (!artifact_id) {
@@ -224,6 +262,7 @@ export async function readArtifact(
   const resp = await fetch(`${API_BASE}${path}`, {
     method: "GET",
     headers: { Accept: "*/*" },
+    signal,
   });
   if (!resp.ok) {
     throw await toApiError(resp);
@@ -238,7 +277,8 @@ export async function readArtifact(
 export async function readArtifactText(
   run_id: string,
   artifact_id: string,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const { content } = await readArtifact(run_id, artifact_id);
+  const { content } = await readArtifact(run_id, artifact_id, signal);
   return new TextDecoder("utf-8").decode(content);
 }

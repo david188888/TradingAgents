@@ -125,7 +125,7 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
         )
         prompt += constraints_line
         enforce_constraints = state.get("portfolio_context") is not None
-        final_trade_decision, clamp_events = _constrained_pm_decision(
+        final_trade_decision, clamp_events, portfolio_public_output = _constrained_pm_decision(
             structured_llm,
             llm,
             prompt,
@@ -152,7 +152,7 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
             "count": risk_debate_state["count"],
         }
 
-        return {
+        result = {
             "risk_debate_state": new_risk_debate_state,
             "final_trade_decision": final_trade_decision,
             # Preserve the evidence verdict in this role's persisted delta so
@@ -162,6 +162,12 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
             "allowed_actions": [asdict(action) for action in allowed_actions],
             "clamp_events": [asdict(event) for event in clamp_events],
         }
+        if portfolio_public_output is not None:
+            result["reader_public_output"] = {
+                "kind": "portfolio",
+                "value": portfolio_public_output.model_dump(mode="json"),
+            }
+        return result
 
     return portfolio_manager_node
 
@@ -183,19 +189,29 @@ def _constrained_pm_decision(
     allowed_actions,
     enforce_constraints,
     risk_signals,
-):
+) -> tuple[str, list, PortfolioDecision | None]:
     """Run the PM once, then make its requested order legal deterministically."""
     if not enforce_constraints:
+        if structured_llm is not None:
+            try:
+                decision = structured_llm.invoke(prompt)
+                if not isinstance(decision, PortfolioDecision):
+                    raise ValueError("structured output did not produce PortfolioDecision")
+                return render_pm_decision(decision, risk_signals=risk_signals), [], decision
+            except Exception:
+                pass
         return (
             invoke_structured_or_freetext(
-                structured_llm,
+                None,
                 llm,
                 prompt,
                 lambda decision: render_pm_decision(decision, risk_signals=risk_signals),
                 "Portfolio Manager",
             ),
             [],
+            None,
         )
+
     if structured_llm is not None:
         try:
             decision = structured_llm.invoke(prompt)
@@ -210,8 +226,8 @@ def _constrained_pm_decision(
             rendered += f"\n\n**Execution Constraint**: {applied_action.upper()} {applied_quantity}"
             if event is not None:
                 rendered += "\n\n**Clamp Audit**: " + json.dumps(asdict(event), ensure_ascii=False)
-                return rendered, [event]
-            return rendered, []
+                return rendered, [event], decision
+            return rendered, [], decision
         except Exception:
             # Preserve the existing provider-agnostic fallback behavior. A
             # free-text response cannot safely request an order, so the
@@ -225,7 +241,7 @@ def _constrained_pm_decision(
         lambda decision: render_pm_decision(decision, risk_signals=risk_signals),
         "Portfolio Manager",
     )
-    return rendered + "\n\n**Execution Constraint**: HOLD 0", []
+    return rendered + "\n\n**Execution Constraint**: HOLD 0", [], None
 
 
 def _risk_signals_from_state(risk_debate_state: Mapping[str, object]) -> list[RiskDebateSignal]:

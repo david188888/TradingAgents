@@ -109,7 +109,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "checkpoint_enabled": False,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
-    "output_language": "English",
+    "output_language": "Chinese",
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
@@ -142,11 +142,13 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "core_stock_apis": "mootdx,yfinance,tushare,akshare,alpha_vantage",  # Options: mootdx, yfinance, tushare, akshare, alpha_vantage (mootdx = A-share only, TCP 7709 no IP ban)
         "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
         "fundamental_data": "yfinance,tushare,akshare,alpha_vantage",  # Options: yfinance, tushare, akshare, alpha_vantage
-        "news_data": "tavily,yfinance,alpha_vantage",  # Options: tavily, alpha_vantage, yfinance
+        "news_data": "tavily,eastmoney,yfinance,alpha_vantage",  # Options: tavily, eastmoney (A-share keyless), alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         # Optional A-share research supplements.  Their failures degrade to a
         # source-labelled unavailable result and do not affect core OHLCV.
-        "a_share_market_data": "eastmoney,china_exchange",
+        # ths serves aggregate northbound flow (get_a_share_northbound_flow);
+        # it is skipped automatically for the other methods in this category.
+        "a_share_market_data": "ths,eastmoney,china_exchange",
         "a_share_valuation": "tencent",
         "a_share_research": "eastmoney,ths",
         "a_share_options": "sina",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -26,6 +26,7 @@ from tradingagents.portfolio import PortfolioContext, Position
 from tradingagents.presets import load_preset_catalog
 
 from .broker import EventBroker, Keepalive, SubscriptionClosed
+from .connectivity import YahooUnavailableError
 from .manager import (
     ActiveRunConflict,
     ResumeRunConflict,
@@ -36,6 +37,7 @@ from .manager import (
 )
 from .market_layer2 import build_market_event_layer2_view
 from .market_view import build_market_view
+from .projections import InvalidCursor, RunProjectionPublisher, recent_runs_page
 from .schemas import RESEARCH_DEPTHS, SUPPORTED_OUTPUT_LANGUAGES, RunCreateRequest
 from .store import (
     InvalidStorePath,
@@ -167,8 +169,13 @@ def create_app(
     environment: Mapping[str, str] | None = None,
     checkpoint_available: bool = True,
     recover_startup: bool = True,
+    connectivity_check: Callable[[str], None] | None = None,
 ) -> FastAPI:
-    """Compose the HTTP layer without importing it from legacy CLI paths."""
+    """Compose the HTTP layer without importing it from legacy CLI paths.
+
+    ``connectivity_check`` is injected so tests can avoid a real Yahoo probe;
+    production wires it to :func:`tradingagents.web.connectivity.check_yfinance_reachable`.
+    """
     if manager is not None:
         # Reuse the manager's broker so worker persist (manager.broker) and
         # SSE subscribe (app.state.broker) share one _subscribers registry.
@@ -188,6 +195,10 @@ def create_app(
         selected_broker = broker or EventBroker(selected_store)
         selected_manager = SingleRunManager(selected_store, selected_broker)
     selected_environment = os.environ if environment is None else environment
+    if connectivity_check is None:
+        from .connectivity import check_yfinance_reachable
+
+        connectivity_check = check_yfinance_reachable
     assets_root = Path(static_dir or Path(__file__).with_name("static")).resolve()
 
     @asynccontextmanager
@@ -282,6 +293,17 @@ def create_app(
     async def handle_not_resumable(_request: Request, _exc: RunNotResumable):
         return _error_response(409, "run_not_resumable", "The run cannot be resumed.")
 
+    @app.exception_handler(YahooUnavailableError)
+    async def handle_yahoo_unavailable(_request: Request, exc: YahooUnavailableError):
+        # Global tickers need yfinance (VPN); the preflight failed. Surface a
+        # distinct code so the frontend can prompt the user to enable a VPN.
+        return _error_response(
+            503,
+            "yfinance_unreachable",
+            "无法连接行情数据源（Yahoo Finance）。请开启 VPN 后重试。",
+            fields=("ticker",),
+        )
+
     @app.exception_handler(ResumeRunConflict)
     async def handle_resume_conflict(_request: Request, exc: ResumeRunConflict):
         return _error_response(
@@ -299,11 +321,30 @@ def create_app(
         )
 
     @app.get("/api/runs")
-    def list_runs() -> list[dict[str, Any]]:
-        return [asdict(summary) for summary in selected_store.list_runs()]
+    def list_runs(
+        view: str | None = Query(default=None),
+        limit: int = Query(default=20),
+        cursor: str | None = Query(default=None),
+    ) -> Any:
+        summaries = selected_store.list_runs()
+        if view is None:
+            # Preserve the original array contract for existing clients.
+            return [asdict(summary) for summary in summaries]
+        if view != "recent":
+            raise ApiBoundaryError(400, "invalid_view", "Unsupported run list view.")
+        try:
+            return recent_runs_page(summaries, limit=limit, cursor=cursor)
+        except ValueError as exc:
+            raise ApiBoundaryError(422, "invalid_limit", "limit must be between 1 and 100.") from exc
+        except InvalidCursor as exc:
+            raise ApiBoundaryError(400, "invalid_cursor", "The cursor is invalid for this run list.") from exc
 
     @app.post("/api/runs", status_code=201)
     def create_run(body: RunCreateRequest) -> dict[str, Any]:
+        # Global (non-A-share) tickers route through yfinance, which is
+        # unreachable from a mainland network without a VPN. Fail fast with a
+        # 503 before creating the run instead of wasting the whole analysis.
+        connectivity_check(body.ticker)
         request_model, configured_keys = _analysis_request(
             body,
             selected_environment,
@@ -318,17 +359,65 @@ def create_app(
     def get_run(run_id: str) -> dict[str, Any]:
         return selected_store.read_snapshot(run_id).as_dict()
 
+    @app.get("/api/runs/{run_id}/view")
+    def get_run_view(run_id: str) -> dict[str, Any]:
+        # A projection problem is represented inside the envelope. The raw run
+        # and audit artifacts remain reachable through their existing routes.
+        return RunProjectionPublisher(selected_store).read_or_rebuild_view(run_id)
+
+    @app.get("/api/runs/{run_id}/evidence-refs/{ref_id}")
+    def get_evidence_ref(run_id: str, ref_id: str) -> dict[str, Any]:
+        """Resolve a validated ReaderBrief reference without accepting a locator."""
+        envelope = RunProjectionPublisher(selected_store).read_or_rebuild_view(run_id)
+        brief = envelope["view"]["brief"].get("value")
+        if not isinstance(brief, Mapping):
+            raise ApiBoundaryError(404, "ref_not_found", "The requested evidence reference was not found.")
+        reference = next(
+            (item for item in brief.get("evidence_refs", []) if isinstance(item, Mapping) and item.get("ref_id") == ref_id),
+            None,
+        )
+        if reference is None:
+            raise ApiBoundaryError(404, "ref_not_found", "The requested evidence reference was not found.")
+        target = reference.get("target")
+        if not isinstance(target, Mapping) or target.get("kind") != "artifact" or not isinstance(target.get("artifact_id"), str):
+            raise ApiBoundaryError(410, "ref_target_missing", "The evidence target is no longer available.")
+        artifact_id = target["artifact_id"]
+        metadata = {item["artifact_id"]: item for item in _artifact_metadata(selected_store, run_id)}
+        if artifact_id not in metadata:
+            raise ApiBoundaryError(410, "ref_target_missing", "The evidence target is no longer available.")
+        return {
+            "ref_id": ref_id,
+            "label": reference.get("label"),
+            "resolution_status": "available",
+            "target": dict(target),
+            "artifact": metadata[artifact_id],
+            "read_url": f"/api/runs/{run_id}/artifacts/{artifact_id}",
+        }
+
     @app.post("/api/runs/{run_id}/cancel", status_code=202)
     def cancel_run(run_id: str) -> dict[str, Any]:
         return selected_manager.cancel(run_id).as_dict()
 
     @app.post("/api/runs/{run_id}/retry", status_code=201)
     def retry_run(run_id: str) -> dict[str, Any]:
+        source = selected_store.read_snapshot(run_id)
+        connectivity_check(source.ticker)
         return selected_manager.retry(run_id).as_dict()
 
     @app.post("/api/runs/{run_id}/resume", status_code=202)
     def resume_run(run_id: str) -> dict[str, Any]:
         return selected_manager.resume(run_id).as_dict()
+
+    @app.delete("/api/runs/{run_id}", status_code=204)
+    def delete_run(run_id: str) -> Response:
+        if selected_manager.active_run_id == run_id:
+            raise ApiBoundaryError(
+                409,
+                "run_active",
+                "A running analysis cannot be deleted.",
+            )
+        selected_store.delete_run(run_id)
+        return Response(status_code=204)
 
     @app.get("/api/runs/{run_id}/artifacts")
     def list_artifacts(run_id: str) -> list[dict[str, Any]]:

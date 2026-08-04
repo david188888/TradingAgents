@@ -145,6 +145,13 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
         lastSeqRef.current = 0;
         reconnectCountRef.current = 0;
         dispatch({ type: "snapshot", snapshot });
+        if (TERMINAL_RUN_STATUSES.has(snapshot.status)) {
+          // Terminal history is rendered from /view. Replaying its entire
+          // audit event log here would only reconstruct data the default UI
+          // deliberately does not mount.
+          setStatus("closed");
+          return;
+        }
         setStatus("replaying");
         streamFrom(0);
       })

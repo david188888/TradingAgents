@@ -11,36 +11,30 @@ from tradingagents.dataflows.china_capital_flow import ChinaCapitalFlowProvider
 from tradingagents.dataflows.china_macro import ChinaMacroProvider
 
 
-class _CapitalApi:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, object]]] = []
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
 
-    def stock_hsgt_hist_em(self, **kwargs):
-        self.calls.append(("flow", kwargs))
-        return pd.DataFrame(
-            [
-                {"日期": "2026-07-01", "北向资金": 10},
-                {"日期": "2026-07-02", "北向资金": -5},
-            ]
-        )
+    def raise_for_status(self):
+        return None
 
-    def stock_hsgt_hold_stock_em(self, **kwargs):
-        self.calls.append(("holdings", kwargs))
-        return pd.DataFrame(
-            [
-                {"代码": "600519", "名称": "贵州茅台", "持股市值": 100},
-                {"代码": "000001", "名称": "平安银行", "持股市值": 10},
-            ]
-        )
+    def json(self):
+        return self._payload
 
-    def stock_ggcg_em(self, **kwargs):
-        self.calls.append(("insider", kwargs))
-        return pd.DataFrame(
-            [
-                {"证券代码": "600519", "变动日期": "2026-07-01", "变动人": "示例高管"},
-                {"证券代码": "000001", "变动日期": "2026-07-01", "变动人": "他人"},
-            ]
-        )
+
+class _FakeSession:
+    """Records requests and returns canned JSON for the direct-HTTP adapters."""
+
+    def __init__(self, *, northbound=None, insider_rows=None):
+        self.calls: list[tuple[str, dict]] = []
+        self._northbound = northbound
+        self._insider_rows = insider_rows or []
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls.append((url, dict(params or {})))
+        if "hexin" in url:
+            return _FakeResponse(self._northbound or {"time": [], "hgt": [], "sgt": []})
+        return _FakeResponse({"result": {"data": self._insider_rows}})
 
 
 class _MacroApi:
@@ -56,46 +50,52 @@ class _MacroApi:
         return pd.DataFrame([{"月份": "2026-06", "同比": 0.1}])
 
 
-def test_northbound_flow_honours_source_date_window_and_keeps_scope_explicit():
-    api = _CapitalApi()
+def test_northbound_flow_uses_ths_series_and_keeps_scope_market_wide():
+    session = _FakeSession(
+        northbound={"time": ["09:30", "10:00"], "hgt": [1.5, 2.0], "sgt": [0.5, 0.8]}
+    )
 
-    report = ChinaCapitalFlowProvider(api).northbound_flow("2026-07-02", "2026-07-02")
+    report = ChinaCapitalFlowProvider(session).northbound_flow()
 
     assert report.ticker is None
-    assert report.data["日期"].tolist() == ["2026-07-02"]
-    assert api.calls == [("flow", {"symbol": "北向资金"})]
-    assert "not an attribution" in report.render()
+    assert report.provider == "ths"
+    assert report.data["time"].tolist() == ["09:30", "10:00"]
+    assert report.data["hgt_net_buy_yi"].tolist() == [1.5, 2.0]
+    assert "hexin" in session.calls[0][0]
+    assert "Not a per-ticker attribution" in report.note
 
 
-def test_northbound_and_insider_reports_filter_market_wide_rows_to_requested_ticker():
-    api = _CapitalApi()
-    provider = ChinaCapitalFlowProvider(api)
+def test_insider_trades_filters_one_ticker_without_full_market_pagination():
+    session = _FakeSession(
+        insider_rows=[
+            {"SECURITY_CODE": "600519", "HOLDER_NAME": "示例高管", "CHANGE_NUM": 100, "END_DATE": "2026-07-01 00:00:00"},
+            {"SECURITY_CODE": "000001", "HOLDER_NAME": "他人", "CHANGE_NUM": 5, "END_DATE": "2026-07-01 00:00:00"},
+        ]
+    )
 
-    holdings = provider.northbound_holdings("600519", "3日排行")
-    insider = provider.insider_trades("600519", "2026-07-01", "2026-07-01")
+    report = ChinaCapitalFlowProvider(session).insider_trades("600519")
 
-    assert holdings.ticker == "600519.SS"
-    assert holdings.data["代码"].tolist() == ["600519"]
-    assert insider.data["证券代码"].tolist() == ["600519"]
-    assert "not a complete beneficial-ownership register" in holdings.render()
-    assert "must be verified against the source filing" in insider.render()
-    assert api.calls == [
-        ("holdings", {"market": "北向", "indicator": "3日排行"}),
-        ("insider", {"symbol": "全部"}),
-    ]
+    assert report.ticker == "600519.SS"
+    assert report.provider == "eastmoney"
+    _, params = session.calls[0]
+    assert 'SECURITY_CODE="600519"' in params["filter"]
+    assert params["pageSize"] == "50"
+    assert "must be verified against the source filing" in report.note
 
 
-def test_capital_adapters_fail_closed_for_non_a_share_or_unrecognized_schema():
-    api = _CapitalApi()
-    provider = ChinaCapitalFlowProvider(api)
+def test_capital_adapters_fail_closed_for_non_a_share_and_depleted_holdings():
+    session = _FakeSession()
+    provider = ChinaCapitalFlowProvider(session)
 
     with pytest.raises(AshareCapabilityUnavailableError, match="not an A-share ticker"):
         provider.insider_trades("AAPL")
 
-    with pytest.raises(AshareCapabilityUnavailableError, match="unsupported indicator"):
-        provider.northbound_holdings("600519", "任意排行")
+    # Per-stock northbound holdings have had no usable upstream rows since the
+    # 2024-08 disclosure cutoff; degrade fast instead of paginating the market.
+    with pytest.raises(AshareCapabilityUnavailableError, match="disclosure cutoff"):
+        provider.northbound_holdings("600519", "3日排行")
 
-    assert api.calls == []
+    assert session.calls == []
 
 
 def test_china_macro_series_are_explicitly_labelled_and_partial_unavailability_is_visible():

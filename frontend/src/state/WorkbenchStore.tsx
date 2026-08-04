@@ -7,17 +7,25 @@
  * The context value is recreated when run_id or stream changes, which is the
  * desired re-render trigger.
  */
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useRunStream } from "../hooks/useRunStream";
+import { useRunView } from "../hooks/useRunView";
 
-export interface WorkbenchStoreValue {
+export interface WorkbenchSelectionValue {
   run_id: string | null;
   selectRun: (id: string | null) => void;
-  stream: ReturnType<typeof useRunStream>;
 }
 
-const WorkbenchContext = createContext<WorkbenchStoreValue | null>(null);
+export interface WorkbenchRunValue {
+  stream: ReturnType<typeof useRunStream>;
+  view: ReturnType<typeof useRunView>;
+}
+
+export interface WorkbenchStoreValue extends WorkbenchSelectionValue, WorkbenchRunValue {}
+
+const WorkbenchSelectionContext = createContext<WorkbenchSelectionValue | null>(null);
+const WorkbenchRunContext = createContext<WorkbenchRunValue | null>(null);
 
 export function WorkbenchProvider({
   children,
@@ -26,21 +34,37 @@ export function WorkbenchProvider({
 }): JSX.Element {
   const [run_id, setRunId] = useState<string | null>(null);
   const stream = useRunStream(run_id);
+  const view = useRunView(run_id);
   const selectRun = useCallback((id: string | null): void => {
     setRunId(id);
   }, []);
-  const value: WorkbenchStoreValue = { run_id, selectRun, stream };
+  const selectionValue = useMemo(() => ({ run_id, selectRun }), [run_id, selectRun]);
+  const runValue = useMemo(() => ({ stream, view }), [stream, view]);
   return (
-    <WorkbenchContext.Provider value={value}>
-      {children}
-    </WorkbenchContext.Provider>
+    <WorkbenchSelectionContext.Provider value={selectionValue}>
+      <WorkbenchRunContext.Provider value={runValue}>
+        {children}
+      </WorkbenchRunContext.Provider>
+    </WorkbenchSelectionContext.Provider>
   );
 }
 
-export function useWorkbenchStore(): WorkbenchStoreValue {
-  const ctx = useContext(WorkbenchContext);
+export function useWorkbenchSelection(): WorkbenchSelectionValue {
+  const ctx = useContext(WorkbenchSelectionContext);
   if (ctx === null) {
-    throw new Error("useWorkbenchStore must be used within a WorkbenchProvider");
+    throw new Error("useWorkbenchSelection must be used within a WorkbenchProvider");
   }
   return ctx;
+}
+
+export function useWorkbenchRun(): WorkbenchRunValue {
+  const ctx = useContext(WorkbenchRunContext);
+  if (ctx === null) {
+    throw new Error("useWorkbenchRun must be used within a WorkbenchProvider");
+  }
+  return ctx;
+}
+
+export function useWorkbenchStore(): WorkbenchStoreValue {
+  return { ...useWorkbenchSelection(), ...useWorkbenchRun() };
 }

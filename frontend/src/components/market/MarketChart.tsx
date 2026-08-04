@@ -193,11 +193,10 @@ function cssColor(variable: string, fallback: string): string {
 
 export interface MarketChartProps {
   run_id: string;
-  latest_sequence: number;
-  artifact_count: number;
+  market_projection_version: number;
 }
 
-export function MarketChart({ run_id, latest_sequence, artifact_count }: MarketChartProps): JSX.Element {
+export function MarketChart({ run_id, market_projection_version }: MarketChartProps): JSX.Element {
   const [view, setView] = useState<MarketViewDTO | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -212,16 +211,10 @@ export function MarketChart({ run_id, latest_sequence, artifact_count }: MarketC
   const pendingClickRef = useRef<{ x: number; y: number; event: MarketEventDTO | null } | null>(null);
 
   useEffect(() => {
-    if (artifact_count === 0) {
-      setView({ bars: [], events: [], coverage: { bar_source_artifact_ids: [], event_source_artifact_ids: [], skipped_artifact_count: 0, as_of_sequence: latest_sequence } });
-      setLoading(false);
-      setError(null);
-      return;
-    }
     let active = true;
     setLoading(true);
     setError(null);
-    void getMarketView(run_id, latest_sequence)
+    void getMarketView(run_id, market_projection_version)
       .then((next) => {
         if (!active) return;
         setView(next);
@@ -237,7 +230,7 @@ export function MarketChart({ run_id, latest_sequence, artifact_count }: MarketC
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [run_id, artifact_count, latest_sequence]);
+  }, [run_id, market_projection_version]);
 
   const allBars = view?.bars ?? [];
   const selectedBars = useMemo(() => range === null ? allBars : allBars.slice(range[0], range[1] + 1), [allBars, range]);

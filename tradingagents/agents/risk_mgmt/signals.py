@@ -113,5 +113,7 @@ def replace_risk_signal(
             if not isinstance(item, dict) or item.get("role") == signal.role:
                 continue
             retained.append(dict(item))
-    retained.append(signal.model_dump(mode="json"))
+    serialized = signal.model_dump(mode="json")
+    serialized.pop("evidence_summary_ref", None)
+    retained.append(serialized)
     return retained

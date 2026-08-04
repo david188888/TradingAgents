@@ -24,6 +24,12 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+@media (max-width: 1099px) {
+  body {
+    min-width: 0;
+  }
+}
+
 button,
 input,
 select,

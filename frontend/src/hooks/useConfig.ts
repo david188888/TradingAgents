@@ -93,7 +93,7 @@ export function useConfig(): UseConfigResult {
   const [llmProvider, setLlmProviderState] = useState<string>("");
   const [quickThinkLlm, setQuickThinkLlm] = useState<string>("");
   const [deepThinkLlm, setDeepThinkLlm] = useState<string>("");
-  const [outputLanguage, setOutputLanguage] = useState<string>("English");
+  const [outputLanguage, setOutputLanguage] = useState<string>("Chinese");
   const [checkpointEnabled, setCheckpointEnabled] = useState<boolean>(false);
   const [portfolioEnabled, setPortfolioEnabled] = useState<boolean>(false);
   const [portfolioCash, setPortfolioCash] = useState<string>("");

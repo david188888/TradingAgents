@@ -190,38 +190,9 @@ describe("useRunStream Bug 1: onClose reconnect preserves state", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    // 重放 3 个事件，最后一个为 terminal
-    await act(async () => {
-      mocks.getHandlers()!.onEvent(runStarted("run_term", 1));
-      mocks.getHandlers()!.onEvent(
-        ev("run_term", 2, "turn.started", {
-          role_instance_id: "run_term:analyst.market",
-          turn_id: "t1",
-          graph_task_id: "gt1",
-          graph_step: 1,
-          turn_index: 1,
-          turn_status: "started",
-        }),
-      );
-      mocks.getHandlers()!.onEvent(
-        ev("run_term", 3, "run.completed", {
-          run_status: "completed",
-          summary: "done",
-        }),
-      );
-    });
-
-    // terminal 事件到达后 eventSource 触发 onClose
-    await act(async () => {
-      mocks.getHandlers()!.onClose();
-    });
-
-    // 推进超过 RECONNECT_DELAY_MS
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(900);
-    });
-
-    // terminal 且所有事件已收到 -> closed，不重连
+    // Terminal history is hydrated from the lightweight /view endpoint, so
+    // the stream hook must not open an after=0 replay subscription at all.
+    expect(mocks.getHandlers()).toBeNull();
     expect(result.current.status).toBe("closed");
   });
 });

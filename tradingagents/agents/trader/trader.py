@@ -50,18 +50,32 @@ def create_trader(llm):
             },
         ]
 
-        trader_plan = invoke_structured_or_freetext(
-            structured_llm,
-            llm,
-            messages,
-            render_trader_proposal,
-            "Trader",
-        )
-
-        return {
+        trader_plan, trader_public_output = _render_trader_plan(structured_llm, llm, messages)
+        result = {
             "messages": [AIMessage(content=trader_plan)],
             "trader_investment_plan": trader_plan,
             "sender": name,
         }
+        if trader_public_output is not None:
+            result["reader_public_output"] = {
+                "kind": "trader",
+                "value": trader_public_output.model_dump(mode="json"),
+            }
+        return result
 
     return functools.partial(trader_node, name="Trader")
+
+
+def _render_trader_plan(structured_llm, llm, messages) -> tuple[str, TraderProposal | None]:
+    if structured_llm is not None:
+        try:
+            proposal = structured_llm.invoke(messages)
+            if not isinstance(proposal, TraderProposal):
+                raise ValueError("structured output did not produce TraderProposal")
+            return render_trader_proposal(proposal), proposal
+        except Exception:
+            pass
+    return (
+        invoke_structured_or_freetext(None, llm, messages, render_trader_proposal, "Trader"),
+        None,
+    )

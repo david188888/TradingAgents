@@ -66,6 +66,7 @@ from .eastmoney import (
     get_a_share_capital_flow_sina,
     get_a_share_margin_financing,
 )
+from .eastmoney_news import get_news_eastmoney
 from .fred import get_macro_data as get_fred_macro_data
 from .mootdx_provider import get_stock_mootdx
 from .option_provider import get_a_share_option_greeks, get_a_share_option_tquote
@@ -340,6 +341,10 @@ VENDOR_METHODS = {
     # news_data
     "get_news": {
         "tavily": get_news_tavily,
+        # Keyless domestic A-share company-news fallback (search-api-web).
+        # yfinance/alpha_vantage are global-only and skipped for A-share tickers,
+        # so this is the natural second source before exchange announcements.
+        "eastmoney": get_news_eastmoney,
         "alpha_vantage": get_alpha_vantage_news,
         "yfinance": get_news_yfinance,
         # A fallback-only adapter for public exchange announcements.  It is
@@ -370,9 +375,9 @@ VENDOR_METHODS = {
         "eastmoney": get_a_share_capital_flow,
         "sina": get_a_share_capital_flow_sina,
     },
-    "get_a_share_northbound_flow": {"akshare": get_a_share_northbound_flow},
-    "get_a_share_northbound_holdings": {"akshare": get_a_share_northbound_holdings},
-    "get_a_share_insider_trades": {"akshare": get_a_share_insider_trades},
+    "get_a_share_northbound_flow": {"ths": get_a_share_northbound_flow},
+    "get_a_share_northbound_holdings": {"eastmoney": get_a_share_northbound_holdings},
+    "get_a_share_insider_trades": {"eastmoney": get_a_share_insider_trades},
     "get_a_share_margin_financing": {
         "eastmoney": get_a_share_margin_financing,
     },
@@ -790,7 +795,7 @@ def _route_news_to_vendors(
     """Fetch news from configured sources and curate a compact source-labeled package."""
     configured_vendors = [vendor for vendor in vendors if vendor != "default"]
     if not configured_vendors:
-        configured_vendors = ["tavily", "yfinance", "alpha_vantage"]
+        configured_vendors = ["tavily", "eastmoney", "yfinance", "alpha_vantage"]
     successes: list[tuple[str, Any]] = []
     errors: list[tuple[str, Exception | str]] = []
 

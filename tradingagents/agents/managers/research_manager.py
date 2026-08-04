@@ -94,7 +94,7 @@ Present your verdict under your own identity as the Research Manager. Do not sty
         if use_default_report_lenses and delegation_executor is None:
             default_executor, default_requests = build_default_report_lens_delegation(state)
 
-        investment_plan = _render_plan_with_delegation(
+        investment_plan, research_public_output = _render_plan_with_delegation(
             structured_llm,
             llm,
             prompt,
@@ -111,10 +111,16 @@ Present your verdict under your own identity as the Research Manager. Do not sty
             "count": investment_debate_state["count"],
         }
 
-        return {
+        result = {
             "investment_debate_state": new_investment_debate_state,
             "investment_plan": investment_plan,
         }
+        if research_public_output is not None:
+            result["reader_public_output"] = {
+                "kind": "research",
+                "value": research_public_output.model_dump(mode="json"),
+            }
+        return result
 
     return research_manager_node
 
@@ -126,18 +132,13 @@ def _render_plan_with_delegation(
     delegation_executor: ResearchDelegationExecutor | None,
     *,
     requests: tuple[ResearchDelegationRequest, ...] | None = None,
-) -> str:
-    """Keep one LLM turn while appending only public delegated findings.
-
-    A non-structured provider retains the established free-text fallback.
-    Delegation-policy errors never fall back into another LLM turn; they simply
-    leave the final plan without an untrusted subagent finding.
-    """
+) -> tuple[str, ResearchPlan | None]:
+    """Keep the rendered handoff and its public typed source from one LLM turn."""
     if structured_llm is None:
         rendered = invoke_structured_or_freetext(
             None, llm, prompt, render_research_plan, "Research Manager"
         )
-        return _append_delegation_to_freetext(rendered, delegation_executor, requests)
+        return _append_delegation_to_freetext(rendered, delegation_executor, requests), None
     try:
         plan = structured_llm.invoke(prompt)
         if not isinstance(plan, ResearchPlan):
@@ -145,22 +146,24 @@ def _render_plan_with_delegation(
     except (ObservationError, AssertionError):
         raise
     except Exception:
-        return invoke_structured_or_freetext(
-            None, llm, prompt, render_research_plan, "Research Manager"
+        return (
+            invoke_structured_or_freetext(
+                None, llm, prompt, render_research_plan, "Research Manager"
+            ),
+            None,
         )
 
     selected_requests = (
         requests if requests is not None else tuple(task.to_domain() for task in plan.delegation_tasks)
     )
     if delegation_executor is None or not selected_requests:
-        return render_research_plan(plan)
+        return render_research_plan(plan), plan
     try:
         results = delegation_executor.execute(selected_requests)
     except ResearchDelegationError:
-        # The manager's core judgement is still useful.  Avoid storing the
-        # rejected request/error because it might contain model-private text.
-        return render_research_plan(plan)
-    return render_research_plan(plan, results)
+        # Delegation failure does not invalidate the primary public judgement.
+        return render_research_plan(plan), plan
+    return render_research_plan(plan, results), plan
 
 
 def _append_delegation_to_freetext(

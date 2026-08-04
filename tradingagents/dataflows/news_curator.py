@@ -28,8 +28,9 @@ from .ticker_utils import normalize_ticker_symbol, to_akshare_symbol
 def _is_empty_news_result(result: Any) -> bool:
     if result is None:
         return True
-    if isinstance(result, dict) and result.get("source") == "tavily":
-        return len(result.get("items") or []) == 0
+    # Structured dict results (tavily/eastmoney/...) carry an explicit items list.
+    if isinstance(result, dict) and isinstance(result.get("items"), list):
+        return len(result["items"]) == 0
     text = str(result).strip()
     if not text:
         return True

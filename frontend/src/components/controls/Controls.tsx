@@ -10,10 +10,12 @@
 import { useState } from "react";
 import { useConfig } from "../../hooks/useConfig";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
-import { createRun, cancelRun } from "../../api/client";
+import { ApiError, createRun, cancelRun } from "../../api/client";
 import type { ResearchDepth } from "../../api/contracts";
 
 const DEPTH_OPTIONS: ResearchDepth[] = [1, 3, 5];
+/** Backend preflight code when a global ticker cannot reach Yahoo Finance. */
+const VPN_BLOCKED_CODE = "yfinance_unreachable";
 
 export interface ControlsProps {
   /** Called after a new run is successfully created so the history list refreshes. */
@@ -24,6 +26,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
   const cfg = useConfig();
   const store = useWorkbenchStore();
   const [apiError, setApiError] = useState<string | null>(null);
+  const [vpnMessage, setVpnMessage] = useState<string | null>(null);
   const [starting, setStarting] = useState<boolean>(false);
 
   const runActive =
@@ -35,6 +38,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
     const req = cfg.buildRequest();
     if (req === null) return;
     setApiError(null);
+    setVpnMessage(null);
     setStarting(true);
     createRun(req)
       .then((snap) => {
@@ -42,7 +46,13 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         refreshHistory?.();
       })
       .catch((e: unknown) => {
-        setApiError(e instanceof Error ? e.message : String(e));
+        if (e instanceof ApiError && e.code === VPN_BLOCKED_CODE) {
+          // The backend blocked a global (yfinance) ticker because Yahoo is
+          // unreachable — prompt the user to enable the VPN (modal, not inline).
+          setVpnMessage(e.message);
+        } else {
+          setApiError(e instanceof Error ? e.message : String(e));
+        }
       })
       .finally(() => {
         setStarting(false);
@@ -362,6 +372,38 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
           </button>
         )}
       </div>
+
+      {vpnMessage !== null && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => setVpnMessage(null)}
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vpn-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="vpn-modal-title">需要开启 VPN</h3>
+            <p>{vpnMessage}</p>
+            <p className="modal-hint">
+              美股 / 港股等海外标的通过 Yahoo Finance 获取数据。请开启 VPN
+              后重试；A 股无需 VPN。
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setVpnMessage(null)}
+              >
+                知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

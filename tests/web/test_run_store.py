@@ -67,6 +67,31 @@ def test_run_directory_is_never_derived_from_ticker_or_traversal(tmp_path):
         store.read_snapshot("../escape")
 
 
+def test_delete_run_removes_the_entire_run_and_unknown_delete_raises(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from tradingagents.observability.events import RunEventDraft
+
+    store = RunStore(tmp_path)
+    keep = _snapshot()
+    victim = _snapshot()
+    store.create_run(keep)
+    store.create_run(victim)
+    store.append_event(
+        RunEventDraft(victim.run_id, "run.started", {"run_status": "running"})
+    )
+    assert (tmp_path / victim.run_id).is_dir()
+
+    store.delete_run(victim.run_id)
+
+    assert not (tmp_path / victim.run_id).exists()
+    assert [summary.run_id for summary in store.list_runs()] == [keep.run_id]
+    with pytest.raises(RunNotFound):
+        store.read_snapshot(victim.run_id)
+    with pytest.raises(RunNotFound):
+        store.delete_run(victim.run_id)
+
+
 def test_append_event_is_redacted_durable_and_strictly_sequenced(tmp_path):
     store = RunStore(tmp_path)
     snapshot = store.create_run(_snapshot())
