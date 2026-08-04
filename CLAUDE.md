@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TradingAgents is a LangGraph-based multi-agent LLM financial trading analysis framework. This is **David's fork**, optimized primarily for the **China A-share market** as the main use case, with A-share data providers (tushare/akshare), Tavily news curation, an Evidence Steward gate, and other enhancements on top of upstream (TauricResearch/TradingAgents). Non-A-share tickers (US/crypto/commodity/forex) are supported but secondary.
 
-The fork is synced to **upstream v0.3.1** (2026-07). It adopts upstream's architectural improvements (provider registry, verified data-access contract, symbol normalization, structured output, analyst execution planning) but strips team/enterprise-oriented expansion: **do not re-add** Bedrock, Kimi, Groq, Mistral, NVIDIA NIM, or Polymarket. FRED macro data is kept. The default LLM provider is **DeepSeek**. See `.upstream-sync-report.md` for the full sync rationale.
+The fork is synced to **upstream v0.3.1** (2026-07). It adopts upstream's architectural improvements (provider registry, verified data-access contract, symbol normalization, structured output, analyst execution planning) but strips team/enterprise-oriented expansion: **do not re-add** Bedrock, Kimi, Groq, Mistral, NVIDIA NIM, or Polymarket. FRED macro data is kept. The default LLM provider is **DeepSeek**.
 
 ## Common Commands
 

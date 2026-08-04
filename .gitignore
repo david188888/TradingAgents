@@ -251,3 +251,7 @@ frontend/test-results/
 
 # Local e2e / run-store artifacts
 output/
+
+# Local AI tooling (not part of the project)
+.claude/
+.codex/

@@ -87,7 +87,6 @@ See [CLAUDE.md](CLAUDE.md) for the authoritative reference on architecture, data
 - [A-share data capabilities](docs/a-share-data-capabilities.md)
 - [Observability and replay](docs/observability-replay.md)
 - [Workbench presets](docs/workbench-presets.md)
-- [CHANGELOG](CHANGELOG.md)
 
 ## License
 
