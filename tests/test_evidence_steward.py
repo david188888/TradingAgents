@@ -62,7 +62,7 @@ def _disable_llm_advisor(monkeypatch):
     )
 
 
-def test_evidence_steward_fault_persists_only_exception_category(monkeypatch):
+def test_evidence_steward_fault_is_reported_without_extra_state_field(monkeypatch):
     secret = "must-not-persist"
 
     def fail_evaluation(_state):
@@ -76,7 +76,7 @@ def test_evidence_steward_fault_persists_only_exception_category(monkeypatch):
     result = create_evidence_steward()({})
 
     assert result["evidence_status"] == EvidenceStatus.LOW_CONFIDENCE.value
-    assert result["evidence_steward_fault"] == "RuntimeError"
+    assert "evidence_steward_fault" not in result
     assert "Fault category: RuntimeError" in result["evidence_report"]
     assert secret not in result["evidence_report"]
 

@@ -21,7 +21,9 @@ from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
+from tradingagents.agents.evidence_steward import create_evidence_steward
 from tradingagents.agents.utils.agent_states import AgentState
+from tradingagents.dataflows.evidence import EvidenceStatus
 from tradingagents.execution.models import (
     AnalysisCancelled,
     AnalysisRequest,
@@ -177,6 +179,7 @@ class _ObservedWorkflow:
         observer: DurableRunObserver | None = None,
         cancel_after_bootstrap: bool = False,
         reader_public_output: dict[str, Any] | None = None,
+        evidence_steward_first: bool = False,
     ) -> None:
         self.control = control
         self.cancellation_token = cancellation_token
@@ -186,6 +189,7 @@ class _ObservedWorkflow:
         self.observer = observer
         self.cancel_after_bootstrap = cancel_after_bootstrap
         self.reader_public_output = reader_public_output
+        self.evidence_steward_first = evidence_steward_first
         self.stream_records: list[dict[str, Any]] = []
 
     def compile(self, checkpointer=None) -> _RecordingGraph:
@@ -252,12 +256,20 @@ class _ObservedWorkflow:
             AgentState,
             context_schema=GraphObservationRunContext,
         )
-        first_name = "Market Analyst" if self.role_first or self.tool_cycle else "First"
-        first_task = (
-            ObservedNode("analyst.market", first_name, first_node)
-            if self.role_first or self.tool_cycle
-            else ObservedGraphTask(first_name, "maintenance", first_node)
-        )
+        if self.evidence_steward_first:
+            first_name = "Evidence Steward"
+            first_task = ObservedNode(
+                "evidence.steward",
+                first_name,
+                create_evidence_steward(),
+            )
+        else:
+            first_name = "Market Analyst" if self.role_first or self.tool_cycle else "First"
+            first_task = (
+                ObservedNode("analyst.market", first_name, first_node)
+                if self.role_first or self.tool_cycle
+                else ObservedGraphTask(first_name, "maintenance", first_node)
+            )
         builder.add_node(first_name, first_task)
         builder.add_node(
             "Second",
@@ -333,6 +345,7 @@ def _case(
     cancel_after_bootstrap: bool = False,
     cancel_after_create: bool = False,
     reader_public_output: dict[str, Any] | None = None,
+    evidence_steward_first: bool = False,
 ):
     control = control or _GraphControl()
     data_cache_dir = tmp_path / "cache"
@@ -368,6 +381,7 @@ def _case(
             effective_config=config,
             effective_config_artifact_id="config:frozen",
         ),
+        actual_config_getter=lambda: config,
     )
     workflow = _ObservedWorkflow(
         control,
@@ -378,6 +392,7 @@ def _case(
         observer=observer,
         cancel_after_bootstrap=cancel_after_bootstrap,
         reader_public_output=reader_public_output,
+        evidence_steward_first=evidence_steward_first,
     )
     propagator = _ObservedPropagator(
         cancellation_token,
@@ -707,6 +722,56 @@ def test_malformed_reader_public_output_is_not_promoted(
         event.type == "artifact.written"
         and event.payload.get("public_output_kind") == "trader"
         for event in case.store.read_events(case.snapshot.run_id)
+    )
+
+
+def test_evidence_steward_fault_degrades_through_checkpoint(
+    tmp_path,
+    monkeypatch,
+):
+    def fail_evaluation(_state):
+        raise RuntimeError("secret vendor detail")
+
+    monkeypatch.setattr(
+        "tradingagents.agents.evidence_steward.evaluate_and_enrich_evidence",
+        fail_evaluation,
+    )
+    case = _case(
+        tmp_path,
+        monkeypatch,
+        checkpoint_enabled=True,
+        evidence_steward_first=True,
+    )
+
+    result = AnalysisRunner(case.owner).run(
+        case.request,
+        observation_context=case.context,
+        checkpoint_guard=case.guard,
+    )
+
+    events = case.store.read_events(case.snapshot.run_id)
+    candidate = next(
+        event
+        for event in events
+        if event.type == "graph.task_output_ready"
+        and event.node_id == "Evidence Steward"
+    )
+    delta = json.loads(
+        case.store.read_artifact(
+            case.snapshot.run_id,
+            candidate.payload["business_delta_artifact_id"],
+        )
+    )
+
+    assert result.final_state["evidence_status"] == EvidenceStatus.LOW_CONFIDENCE.value
+    assert "evidence_steward_fault" not in delta
+    assert delta["evidence_status"] == EvidenceStatus.LOW_CONFIDENCE.value
+    assert "Fault category: RuntimeError" in delta["evidence_report"]
+    assert "secret vendor detail" not in delta["evidence_report"]
+    assert any(
+        event.type == "turn.completed"
+        and event.node_id == "Evidence Steward"
+        for event in events
     )
 
 

@@ -38,7 +38,6 @@ def create_evidence_steward():
             return {
                 "evidence_status": EvidenceStatus.LOW_CONFIDENCE.value,
                 "evidence_report": report,
-                "evidence_steward_fault": fault_detail,
                 "evidence_ledger": None,
                 "evidence_ledger_artifact_id": None,
             }
