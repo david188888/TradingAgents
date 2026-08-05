@@ -199,6 +199,7 @@ def test_business_projection_selects_only_declared_agent_state_channels():
         "news_report",
         "past_context",
         "portfolio_context",
+        "reader_public_output",
         "risk_debate_state",
         "sender",
         "sentiment_report",
@@ -237,6 +238,18 @@ def test_business_delta_rejects_observer_keys_but_removes_reserved_commit_map():
     assert business_delta_sha256(delta) == canonical_sha256({"market_report": "report"})
     with pytest.raises(UnsupportedCanonicalValue, match="observer_only"):
         project_business_delta({"market_report": "report", "observer_only": True})
+
+
+def test_business_delta_accepts_declared_reader_public_output():
+    delta = {
+        "reader_public_output": {
+            "kind": "trader",
+            "value": {"rating": "Hold"},
+        }
+    }
+
+    assert project_business_delta(delta) == delta
+    assert business_delta_sha256(delta) == canonical_sha256(delta)
 
 
 def test_pending_write_mutation_checks_ignore_framework_channels():

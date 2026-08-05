@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import json
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -175,6 +176,7 @@ class _ObservedWorkflow:
         tool_cycle: bool = False,
         observer: DurableRunObserver | None = None,
         cancel_after_bootstrap: bool = False,
+        reader_public_output: dict[str, Any] | None = None,
     ) -> None:
         self.control = control
         self.cancellation_token = cancellation_token
@@ -183,6 +185,7 @@ class _ObservedWorkflow:
         self.tool_cycle = tool_cycle
         self.observer = observer
         self.cancel_after_bootstrap = cancel_after_bootstrap
+        self.reader_public_output = reader_public_output
         self.stream_records: list[dict[str, Any]] = []
 
     def compile(self, checkpointer=None) -> _RecordingGraph:
@@ -228,10 +231,13 @@ class _ObservedWorkflow:
                     ],
                     "market_report": "",
                 }
-            return {
+            result = {
                 "messages": [AIMessage(content="first applied message")],
                 "market_report": "first applied report",
             }
+            if self.reader_public_output is not None:
+                result["reader_public_output"] = self.reader_public_output
+            return result
 
         def second_node(_state):
             control.second_calls += 1
@@ -326,6 +332,7 @@ def _case(
     tool_cycle: bool = False,
     cancel_after_bootstrap: bool = False,
     cancel_after_create: bool = False,
+    reader_public_output: dict[str, Any] | None = None,
 ):
     control = control or _GraphControl()
     data_cache_dir = tmp_path / "cache"
@@ -370,6 +377,7 @@ def _case(
         tool_cycle=tool_cycle,
         observer=observer,
         cancel_after_bootstrap=cancel_after_bootstrap,
+        reader_public_output=reader_public_output,
     )
     propagator = _ObservedPropagator(
         cancellation_token,
@@ -632,6 +640,74 @@ def test_role_state_report_and_completion_are_promoted_after_checkpoint(
         case.snapshot.run_id,
         report.payload["artifact_id"],
     ) == b"first applied report"
+
+
+def test_role_public_output_is_promoted_once_after_checkpoint(
+    tmp_path,
+    monkeypatch,
+):
+    case = _case(
+        tmp_path,
+        monkeypatch,
+        checkpoint_enabled=True,
+        role_first=True,
+        reader_public_output={
+            "kind": "trader",
+            "value": {"rating": "Hold"},
+        },
+    )
+
+    AnalysisRunner(case.owner).run(
+        case.request,
+        observation_context=case.context,
+        checkpoint_guard=case.guard,
+    )
+
+    events = case.store.read_events(case.snapshot.run_id)
+    public_outputs = [
+        event
+        for event in events
+        if event.type == "artifact.written"
+        and event.payload.get("public_output_kind") == "trader"
+    ]
+
+    assert len(public_outputs) == 1
+    artifact = public_outputs[0]
+    assert artifact.payload["kind"] == "public-trader"
+    assert json.loads(
+        case.store.read_artifact(case.snapshot.run_id, artifact.payload["artifact_id"])
+    ) == {
+        "committed_sequence": artifact.payload["committed_sequence"],
+        "rating": "Hold",
+        "run_id": case.snapshot.run_id,
+        "schema_version": 1,
+        "turn_id": artifact.payload["turn_id"],
+    }
+
+
+def test_malformed_reader_public_output_is_not_promoted(
+    tmp_path,
+    monkeypatch,
+):
+    case = _case(
+        tmp_path,
+        monkeypatch,
+        checkpoint_enabled=True,
+        role_first=True,
+        reader_public_output={"kind": "trader", "value": "not-an-object"},
+    )
+
+    AnalysisRunner(case.owner).run(
+        case.request,
+        observation_context=case.context,
+        checkpoint_guard=case.guard,
+    )
+
+    assert not any(
+        event.type == "artifact.written"
+        and event.payload.get("public_output_kind") == "trader"
+        for event in case.store.read_events(case.snapshot.run_id)
+    )
 
 
 def test_checkpoint_disabled_role_promotes_only_after_values_barrier(
