@@ -13,6 +13,7 @@ from tradingagents.agents.utils.structured import (
     invoke_structured_or_freetext,
 )
 from tradingagents.observability.errors import ObservationError
+from tradingagents.research import render_research_dossier
 from tradingagents.research.delegation import (
     ResearchDelegationError,
     ResearchDelegationExecutor,
@@ -82,6 +83,13 @@ Commit to a clear stance whenever the debate's strongest arguments warrant one; 
 {conviction_cap}
 
 Present your verdict under your own identity as the Research Manager. Do not style yourself as a "Moderator" or address a moderator — there is no moderator role; you are the judge of this debate.
+
+---
+
+**Structured Research Dossier (code-owned):**
+{render_research_dossier(state.get("research_dossier"))}
+
+Rules: unknown/not_assessed is not bear evidence; industry/comparable evidence cannot prove subject-company orders; earnings uplift and multiple rerating are separate decisions.
 
 ---
 

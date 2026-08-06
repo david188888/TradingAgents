@@ -25,6 +25,7 @@ from tradingagents.agents.utils.news_data_tools import (
     get_global_news,
     get_insider_transactions,
     get_news,
+    get_news_windows,
 )
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
@@ -38,6 +39,7 @@ __all__ = [
     "get_cashflow",
     "get_income_statement",
     "get_news",
+    "get_news_windows",
     "get_global_news",
     "get_insider_transactions",
     "get_macro_indicators",

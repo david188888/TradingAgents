@@ -151,6 +151,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "a_share_market_data": "ths,eastmoney,china_exchange",
         "a_share_valuation": "tencent",
         "a_share_research": "eastmoney,ths",
+        "a_share_company_data": "mootdx",
+        "a_share_official_data": "cninfo,china_exchange",
         "a_share_options": "sina",
         "a_share_sentiment": "ths,eastmoney",
         # These source records are optional supplements for A-share research;

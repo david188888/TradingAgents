@@ -42,10 +42,12 @@ from .china_data import (
 )
 from .china_macro import get_china_macro_indicators
 from .china_specialty import (
+    get_a_share_cninfo_announcements,
     get_a_share_exchange_announcements,
     get_a_share_official_news,
 )
 from .china_specialty_em import (
+    get_a_share_board_fund_flow,
     get_a_share_break_board_pool,
     get_a_share_bulk_trades_em,
     get_a_share_concept_blocks,
@@ -68,7 +70,7 @@ from .eastmoney import (
 )
 from .eastmoney_news import get_news_eastmoney
 from .fred import get_macro_data as get_fred_macro_data
-from .mootdx_provider import get_stock_mootdx
+from .mootdx_provider import get_a_share_f10, get_fundamentals_mootdx, get_stock_mootdx
 from .option_provider import get_a_share_option_greeks, get_a_share_option_tquote
 from .sentiment_provider import get_a_share_hot_concept, get_a_share_hot_list
 from .symbol_utils import NoMarketDataError
@@ -209,7 +211,16 @@ TOOLS_CATEGORIES = {
             "get_a_share_insider_trades",
             "get_a_share_margin_financing",
             "get_a_share_exchange_announcements",
+            "get_a_share_board_fund_flow",
         ],
+    },
+    "a_share_official_data": {
+        "description": "A-share primary official disclosures via CNINFO and exchange fallback",
+        "tools": ["get_a_share_cninfo_announcements"],
+    },
+    "a_share_company_data": {
+        "description": "A-share mootdx quarterly finance snapshot and bounded F10 company sections",
+        "tools": ["get_a_share_fundamentals_mootdx", "get_a_share_f10"],
     },
     "a_share_valuation": {
         "description": "A-share realtime valuation (PE/PB/market-cap/turnover/price-limits) via Tencent",
@@ -241,6 +252,7 @@ TOOLS_CATEGORIES = {
             "get_a_share_limit_up_ladder",
             "get_a_share_daily_dragon_tiger",
             "get_a_share_industry_ranking",
+            "get_a_share_board_fund_flow",
             "get_a_share_concept_blocks",
             "get_a_share_break_board_pool",
             "get_a_share_limit_down_pool",
@@ -272,6 +284,7 @@ VENDOR_LIST = [
     "alpha_vantage",
     "eastmoney",
     "china_exchange",
+    "cninfo",
     "iwencai",
     "cls",
 ]
@@ -289,6 +302,7 @@ VENDOR_MARKETS: dict[str, frozenset[str]] = {
     "akshare": frozenset({"a_share"}),
     "eastmoney": frozenset({"a_share"}),
     "china_exchange": frozenset({"a_share"}),
+    "cninfo": frozenset({"a_share"}),
     "iwencai": frozenset({"a_share"}),
     "cls": frozenset({"a_share"}),
     "sina": frozenset({"a_share"}),
@@ -386,6 +400,10 @@ VENDOR_METHODS = {
         # explicitly-labelled keyless public fallback second.
         "china_exchange": get_a_share_exchange_announcements,
     },
+    "get_a_share_cninfo_announcements": {
+        "cninfo": get_a_share_cninfo_announcements,
+        "china_exchange": get_a_share_exchange_announcements,
+    },
     # Public specialty datasets delivered by AKShare.  These are deliberately
     # separate from core market data because they are optional supplements.
     "get_a_share_bulk_trades": {"eastmoney": get_a_share_bulk_trades_em},
@@ -399,9 +417,12 @@ VENDOR_METHODS = {
     },
     "get_a_share_break_board_pool": {"eastmoney": get_a_share_break_board_pool},
     "get_a_share_valuation": {"tencent": get_a_share_valuation},
+    "get_a_share_fundamentals_mootdx": {"mootdx": get_fundamentals_mootdx},
+    "get_a_share_f10": {"mootdx": get_a_share_f10},
     "get_a_share_research_reports": {"eastmoney": get_a_share_research_reports},
     "get_a_share_eps_forecast": {"ths": get_a_share_eps_forecast},
     "get_a_share_industry_ranking": {"eastmoney": get_a_share_industry_ranking},
+    "get_a_share_board_fund_flow": {"eastmoney": get_a_share_board_fund_flow},
     "get_a_share_concept_blocks": {"eastmoney": get_a_share_concept_blocks},
     "get_a_share_option_tquote": {"sina": get_a_share_option_tquote},
     "get_a_share_option_greeks": {"sina": get_a_share_option_greeks},

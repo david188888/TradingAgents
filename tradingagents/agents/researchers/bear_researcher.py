@@ -3,6 +3,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
 )
 from tradingagents.evaluation.source_alignment import render_source_alignment_summary
+from tradingagents.research import render_research_dossier
 from tradingagents.skills import (
     build_role_skill_prompt,
     build_skill_trigger_context,
@@ -117,6 +118,12 @@ def create_bear_researcher(llm):
                 "bear_researcher", trigger_text=skill_trigger_text
             ),
             language_instruction=get_language_instruction(),
+        )
+
+        prompt += (
+            "\nStructured research dossier (code-owned; unknown/not_assessed are not bull evidence):\n"
+            + render_research_dossier(state.get("research_dossier"))
+            + "\nChallenge each unsupported transmission edge instead of treating missing data as bearish.\n"
         )
 
         response = llm.invoke(prompt)

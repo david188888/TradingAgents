@@ -12,9 +12,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Protocol
 
+import pandas as pd
 import requests
 
 from .china_data import ChinaDataUnavailableError
@@ -24,6 +25,9 @@ from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare
 
 SSE_ANNOUNCEMENT_URL = "https://query.sse.com.cn/security/stock/queryCompanyBulletin.do"
 SZSE_ANNOUNCEMENT_URL = "https://www.szse.cn/api/disc/announcement/annList"
+CNINFO_ANNOUNCEMENT_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
+CNINFO_STOCK_LIST_URL = "http://www.cninfo.com.cn/new/data/szse_stock.json"
+_CNINFO_ORGID_MAP: dict[str, str] = {}
 
 
 @dataclass(frozen=True)
@@ -161,6 +165,114 @@ class EastMoneyAnnouncementFallback:
         return records
 
 
+def get_a_share_cninfo_announcements(
+    ticker: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    page_size: int = 30,
+) -> str:
+    """Fetch CNINFO company disclosures with dynamic orgId resolution.
+
+    CNINFO is kept separate from exchange bulletin metadata because it exposes
+    disclosure type, full-text detail URL, and (when present) the PDF attachment.
+    """
+    code = _require_a_share_code(ticker)
+    org_id = _cninfo_orgid(code)
+    response = requests.post(
+        CNINFO_ANNOUNCEMENT_URL,
+        data={
+            "stock": f"{code},{org_id}",
+            "tabName": "fulltext",
+            "pageSize": str(max(1, min(page_size, 100))),
+            "pageNum": "1",
+            "column": "",
+            "category": "",
+            "plate": "",
+            "seDate": f"{start_date or ''}~{end_date or ''}" if start_date or end_date else "",
+            "searchkey": "",
+            "secid": "",
+            "sortName": "",
+            "sortType": "",
+            "isHLtitle": "true",
+        },
+        headers={
+            "User-Agent": "TradingAgents/1.0",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Referer": "https://www.cninfo.com.cn/new/disclosure",
+            "Origin": "https://www.cninfo.com.cn",
+        },
+        timeout=15,
+    )
+    if not 200 <= int(response.status_code) < 300:
+        raise ChinaDataUnavailableError(f"CNINFO returned HTTP {response.status_code} for {code}.")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ChinaDataUnavailableError(f"CNINFO returned invalid JSON for {code}.") from exc
+    records = []
+    for item in payload.get("announcements") or []:
+        if not isinstance(item, dict):
+            continue
+        published = _cninfo_ts_to_date(item.get("announcementTime"))
+        if start_date and published and published < start_date:
+            continue
+        if end_date and published and published > end_date:
+            continue
+        announcement_id = str(item.get("announcementId") or "")
+        records.append({
+            "Published": published,
+            "Type": item.get("announcementTypeName") or "",
+            "Title": item.get("announcementTitle") or "",
+            "Announcement ID": announcement_id,
+            "Detail URL": f"https://www.cninfo.com.cn/new/disclosure/detail?annoId={announcement_id}",
+            "PDF URL": item.get("adjunctUrl") or item.get("adjunctUrlName") or "",
+        })
+    if not records:
+        raise ChinaDataUnavailableError(f"CNINFO returned no announcements for {code}.")
+    _capture_cninfo_raw(payload, ticker=ticker)
+    return "\n".join([
+        f"# China A-share CNINFO disclosures for {normalize_ticker_symbol(ticker)}",
+        "# Source: cninfo.com.cn",
+        "# Evidence level: primary company disclosure",
+        f"# Requested window: {start_date or '?'} to {end_date or '?'}",
+        f"# Total records: {len(records)}",
+        "",
+        pd.DataFrame(records).to_csv(index=False),
+    ])
+
+
+def _cninfo_ts_to_date(value: object) -> str:
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value) / 1000).strftime("%Y-%m-%d")
+    return str(value or "")[:10]
+
+
+def _cninfo_orgid(code: str) -> str:
+    global _CNINFO_ORGID_MAP
+    if not _CNINFO_ORGID_MAP:
+        try:
+            response = requests.get(CNINFO_STOCK_LIST_URL, headers={"User-Agent": "TradingAgents/1.0"}, timeout=15)
+            payload = response.json()
+            _CNINFO_ORGID_MAP = {
+                str(row.get("code")): str(row.get("orgId"))
+                for row in payload.get("stockList", [])
+                if isinstance(row, dict) and row.get("code") and row.get("orgId")
+            }
+        except Exception:
+            _CNINFO_ORGID_MAP = {}
+    if code in _CNINFO_ORGID_MAP:
+        return _CNINFO_ORGID_MAP[code]
+    if code.startswith("6"):
+        return f"gssh0{code}"
+    if code.startswith(("8", "9", "4")):
+        return f"gsbj0{code}"
+    return f"gssz0{code}"
+
+
+def _capture_cninfo_raw(payload: object, *, ticker: str) -> None:
+    from tradingagents.observability.provenance import capture_vendor_raw
+
+    capture_vendor_raw(payload, metadata={"provider": "cninfo", "dataset": "announcements", "ticker": ticker})
 def get_a_share_exchange_announcements(
     ticker: str,
     start_date: str | None = None,

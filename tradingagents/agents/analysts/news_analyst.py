@@ -7,6 +7,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_macro_indicators,
     get_news,
     get_news_research_bundle,
+    get_news_windows,
 )
 from tradingagents.skills import (
     build_role_report_contract,
@@ -31,11 +32,12 @@ def create_news_analyst(llm):
             get_global_news,
             get_macro_indicators,
             get_news_research_bundle,
+            get_news_windows,
         ]
 
         system_message = (
             f"You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(ticker, start_date, end_date) for {asset_label}-specific news by ticker symbol, get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news, get_macro_indicators(indicator, curr_date, look_back_days) to ground macro commentary in actual data from FRED (e.g. 'cpi', 'core_pce', 'unemployment', 'fed_funds_rate', '10y_treasury', 'yield_curve'). When company news and a macro view are both useful, prefer get_news_research_bundle(symbol, curr_date, request): it maps a plain-language request only to reviewed capabilities, fetches a bounded subset concurrently, and returns capability-level provenance plus public error categories. It cannot select providers or invoke arbitrary tools. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
-            + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
+            + """ Make sure to append a Markdown table at the end of the report. Use `get_news_windows(ticker, curr_date)` for fixed 7-day event, 180-day theme, and 4-year official windows. Never write “the theme does not exist” from an empty 7-day window; distinguish event_window, theme_window, official_window, and forecast_window in the report."""
             + get_language_instruction()
         )
         system_message += build_role_skill_prompt(

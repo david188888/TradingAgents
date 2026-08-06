@@ -25,6 +25,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_market_research_bundle,
     get_news,
     get_news_research_bundle,
+    get_news_windows,
     get_stock_data,
     get_verified_market_snapshot,
     resolve_instrument_identity,
@@ -232,6 +233,7 @@ class TradingAgentsGraph:
                     get_insider_transactions,
                     get_macro_indicators,
                     get_news_research_bundle,
+                    get_news_windows,
                 ]
             ),
             "fundamentals": ToolNode(

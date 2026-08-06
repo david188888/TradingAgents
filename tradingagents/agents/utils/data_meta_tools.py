@@ -111,6 +111,39 @@ def _announcements(symbol: str, _curr_date: str, _request: str) -> str:
     return route_to_vendor("get_a_share_exchange_announcements", symbol)
 
 
+def _research_reports(symbol: str, curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_research_reports", symbol, as_of=curr_date)
+
+
+def _eps_forecast(symbol: str, curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_eps_forecast", symbol, as_of=curr_date)
+
+
+def _mootdx_finance(symbol: str, curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_fundamentals_mootdx", symbol, curr_date)
+
+
+def _f10(symbol: str, _curr_date: str, request: str) -> str:
+    category = "最新提示"
+    for candidate in ("公司概况", "财务分析", "股东研究", "资本运作", "行业分析", "公司大事"):
+        if candidate in request:
+            category = candidate
+            break
+    return route_to_vendor("get_a_share_f10", symbol, category)
+
+
+def _valuation(symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_valuation", symbol)
+
+
+def _board_fund_flow(_symbol: str, _curr_date: str, request: str) -> str:
+    board_type = "concept" if "概念" in request.lower() or "concept" in request.lower() else "industry"
+    period = "10d" if "10" in request else ("5d" if "5" in request else "today")
+    return route_to_vendor("get_a_share_board_fund_flow", board_type, period, 20)
+
+
+def _cninfo_announcements(symbol: str, curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_cninfo_announcements", symbol, _start_date(curr_date, 1460), curr_date)
 def _fundamentals(symbol: str, curr_date: str, _request: str) -> str:
     return route_to_vendor("get_fundamentals", symbol, curr_date)
 
@@ -159,16 +192,26 @@ _CAPABILITIES: tuple[Capability, ...] = (
     Capability("insider_trades", "get_a_share_insider_trades", "market", _insider_trades, ("董监高", "高管增持", "高管减持", "insider"), True),
     Capability("dragon_tiger", "get_a_share_dragon_tiger", "market", _dragon_tiger, ("龙虎榜", "dragon tiger"), True),
     Capability("exchange_announcements", "get_a_share_exchange_announcements", "market", _announcements, ("公告", "announcement"), True),
+    Capability("research_reports", "get_a_share_research_reports", "fundamentals", _research_reports, ("研报", "research report", "report"), True),
+    Capability("eps_forecast", "get_a_share_eps_forecast", "fundamentals", _eps_forecast, ("eps", "一致预期", "预测", "forecast"), True),
+    Capability("mootdx_finance", "get_a_share_fundamentals_mootdx", "fundamentals", _mootdx_finance, ("mootdx", "财务快照", "季度快照"), True),
+    Capability("f10", "get_a_share_f10", "fundamentals", _f10, ("f10", "公司概况", "股东研究", "资本运作", "行业分析"), True),
+    Capability("valuation", "get_a_share_valuation", "fundamentals", _valuation, ("估值", "pe", "pb", "市值", "valuation"), True),
     Capability("fundamentals", "get_fundamentals", "fundamentals", _fundamentals, default=True),
     Capability("balance_sheet", "get_balance_sheet", "fundamentals", _balance_sheet, ("资产负债", "balance sheet", "debt", "负债"), default=True),
     Capability("cashflow", "get_cashflow", "fundamentals", _cashflow, ("现金流", "cash flow", "free cash"), default=True),
     Capability("income_statement", "get_income_statement", "fundamentals", _income_statement, ("利润表", "income statement", "revenue", "营收", "利润"), default=True),
+    Capability("board_fund_flow", "get_a_share_board_fund_flow", "news", _board_fund_flow, ("板块资金", "行业资金", "概念资金", "board fund"), True),
+    Capability("cninfo_announcements", "get_a_share_cninfo_announcements", "news", _cninfo_announcements, ("巨潮", "cninfo", "公告全文", "披露"), True),
+    Capability("industry_ranking", "get_a_share_industry_ranking", "news", lambda _symbol, _date, _request: route_to_vendor("get_a_share_industry_ranking"), ("行业排名", "行业涨跌", "industry ranking"), True),
     Capability("company_news", "get_news", "news", _company_news, default=True),
     Capability("global_news", "get_global_news", "news", _global_news, ("宏观", "global", "market-wide", "行业", "sector")),
     Capability("macro_cpi", "get_macro_indicators", "news", _macro_cpi, ("cpi", "inflation", "通胀")),
     Capability("macro_rates", "get_macro_indicators", "news", _macro_rates, ("rate", "rates", "利率", "fed", "美联储")),
     Capability("china_macro", "get_china_macro_indicators", "news", _china_macro, ("中国宏观", "中国经济", "中国通胀", "中国pmi", "经济周期", "景气"), True),
 )
+
+
 
 
 def _normalized_request(request: str) -> str:

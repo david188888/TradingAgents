@@ -74,6 +74,7 @@ def _format_report(
     title: str,
     caveat: str,
     source: str = "eastmoney",
+    as_of: str | None = None,
 ) -> str:
     if data.empty:
         raise ChinaDataUnavailableError(f"{source} returned no rows for {title}.")
@@ -84,6 +85,7 @@ def _format_report(
             f"# Note: {caveat}",
             f"# Total records: {len(data)}",
             f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            *([f"# Analysis cutoff: {as_of}"] if as_of else []),
             "",
             data.to_csv(index=False),
         ]
@@ -529,7 +531,11 @@ def get_a_share_dragon_tiger_official(trade_date: str) -> str:
     return report
 
 
-def get_a_share_research_reports(ticker: str, max_pages: int = 3) -> str:
+def get_a_share_research_reports(
+    ticker: str,
+    max_pages: int = 3,
+    as_of: str | None = None,
+) -> str:
     """A-share research reports (个股研报) via EastMoney reportapi direct.
 
     Returns published report list with org/title/rating/forecast-EPS fields.
@@ -565,7 +571,10 @@ def get_a_share_research_reports(ticker: str, max_pages: int = 3) -> str:
         rows = payload.get("data") or []
         if not rows:
             break
-        all_records.extend(rows)
+        all_records.extend(
+            row for row in rows
+            if not as_of or str(row.get("publishDate", ""))[:10] <= as_of
+        )
         if page >= (payload.get("TotalPage", 1) or 1):
             break
     if not all_records:
@@ -588,11 +597,14 @@ def get_a_share_research_reports(ticker: str, max_pages: int = 3) -> str:
     return _format_report(
         rows_df,
         title=f"China A-share research reports for {normalize_ticker_symbol(ticker)}",
-        caveat="EastMoney reportapi; EPS fields are analyst forecasts (predictThisYearEps/predictNextYearEps).",
+        caveat=(
+            "EastMoney reportapi; EPS fields are analyst forecasts "
+            f"(predictThisYearEps/predictNextYearEps); analysis cutoff={as_of or 'not supplied'}."
+        ),
+        as_of=as_of,
     )
 
-
-def get_a_share_eps_forecast(ticker: str) -> str:
+def get_a_share_eps_forecast(ticker: str, as_of: str | None = None) -> str:
     """A-share consensus EPS forecast (机构一致预期EPS) via THS (10jqka).
 
     Parses the THS worth.html table; the 'mean' column is the institutional
@@ -632,17 +644,98 @@ def get_a_share_eps_forecast(ticker: str) -> str:
     return _format_report(
         target,
         title=f"China A-share consensus EPS forecast for {normalize_ticker_symbol(ticker)}",
-        caveat="THS basic.10jqka.com.cn; 'mean' column = institutional consensus EPS; <3 forecast institutions is low-confidence.",
+        caveat="THS basic.10jqka.com.cn; 'mean' column = institutional consensus EPS; this is a forecast snapshot, not reported EPS; <3 forecast institutions is low-confidence.",
         source="ths",
+        as_of=as_of,
+    )
+
+
+def get_a_share_board_fund_flow(
+    board_type: str = "industry",
+    period: str = "today",
+    top_n: int = 20,
+) -> str:
+    """Return industry/concept/region board money-flow rankings."""
+    board_fs = {"industry": "m:90+t:2", "concept": "m:90+t:3", "region": "m:90+t:1"}
+    period_fields = {
+        "today": ("f62", "f62", "f184", "f3", "f204"),
+        "5d": ("f164", "f164", "f165", "f109", "f257"),
+        "10d": ("f174", "f174", "f175", "f160", ""),
+    }
+    if board_type not in board_fs:
+        raise ValueError(f"unsupported board_type: {board_type}")
+    if period not in period_fields:
+        raise ValueError(f"unsupported board period: {period}")
+    if not 1 <= int(top_n) <= 200:
+        raise ValueError("top_n must be between 1 and 200")
+    fid, main_field, pct_field, change_field, leader_field = period_fields[period]
+    fields = ["f12", "f14", change_field, main_field, pct_field]
+    if leader_field:
+        fields.append(leader_field)
+    if period == "today":
+        fields.extend(["f66", "f72", "f78", "f84"])
+    base_params = {
+        "pz": "200",
+        "po": "1",
+        "np": "1",
+        "fltt": "2",
+        "invt": "2",
+        "fid": fid,
+        "fs": board_fs[board_type],
+        "fields": ",".join(dict.fromkeys(fields)),
+    }
+    items: list[dict[str, Any]] = []
+    total = 0
+    page = 1
+    while len(items) < int(top_n):
+        payload = em_get(
+            _INDUSTRY_CLIST_URL,
+            params={**base_params, "pn": str(page)},
+            headers={"Referer": _EASTMONEY_QUOTE_REFERER},
+        )
+        data = payload.get("data") or {}
+        diff = data.get("diff") or []
+        if isinstance(diff, dict):
+            diff = list(diff.values())
+        if not diff:
+            break
+        items.extend(row for row in diff if isinstance(row, dict))
+        total = int(data.get("total") or total or len(items))
+        if len(diff) < 200 or (total and len(items) >= total):
+            break
+        page += 1
+    if not items:
+        raise ChinaDataUnavailableError(f"EastMoney returned no board fund-flow rows for {board_type}/{period}.")
+    rows = []
+    for index, item in enumerate(items[: int(top_n)], start=1):
+        row = {
+            "Rank": index,
+            "Board": item.get("f14", ""),
+            "Code": item.get("f12", ""),
+            "Change %": item.get(change_field, 0),
+            "Main Net Inflow (CNY)": item.get(main_field, 0),
+            "Main Net Ratio %": item.get(pct_field, 0),
+            "Leader": item.get(leader_field, "") if leader_field else "",
+        }
+        if period == "today":
+            row.update({
+                "Super Large Net (CNY)": item.get("f66", 0),
+                "Large Net (CNY)": item.get("f72", 0),
+                "Medium Net (CNY)": item.get("f78", 0),
+                "Small Net (CNY)": item.get("f84", 0),
+            })
+        rows.append(row)
+    _capture_vendor_raw({"board_type": board_type, "period": period, "total": total, "rows": rows}, metadata={"provider": "eastmoney", "dataset": "board_fund_flow", "ticker": None})
+    return _format_report(
+        pd.DataFrame(rows),
+        title=f"China A-share {board_type} board fund flow ({period})",
+        caveat="EastMoney push2 clist; amount fields are CNY; period-specific fields are not interchangeable.",
     )
 
 
 def get_a_share_industry_ranking(top_n: int = 20) -> str:
-    """A-share industry-board ranking (行业板块涨跌排名) via EastMoney push2 clist.
+    """A-share industry-board ranking via EastMoney push2 clist."""
 
-    Returns all ~100 industry boards sorted by change% descending, with
-    up/down stock counts and the leading stock per board.
-    """
     payload = em_get(
         _INDUSTRY_CLIST_URL,
         params={

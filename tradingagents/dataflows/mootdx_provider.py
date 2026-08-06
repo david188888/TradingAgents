@@ -113,6 +113,57 @@ def _a_share_code(ticker: str) -> str:
     return to_akshare_symbol(canonical)
 
 
+def get_fundamentals_mootdx(ticker: str, curr_date: str | None = None) -> str:
+    """Return mootdx's 37-field quarterly A-share financial snapshot."""
+    code = _a_share_code(ticker)
+    client = tdx_client()
+    try:
+        raw = client.finance(symbol=code)
+    except Exception as exc:
+        raise ChinaDataUnavailableError(f"mootdx finance failed for {code}: {type(exc).__name__}") from exc
+    if raw is None or (hasattr(raw, "empty") and raw.empty):
+        raise ChinaDataUnavailableError(f"mootdx returned no finance snapshot for {code}.")
+    from tradingagents.observability.provenance import capture_vendor_raw
+
+    payload = raw.to_dict(orient="records") if isinstance(raw, pd.DataFrame) else raw
+    capture_vendor_raw(payload, metadata={"provider": "mootdx", "dataset": "finance_snapshot", "ticker": ticker, "as_of": curr_date})
+    frame = raw if isinstance(raw, pd.DataFrame) else pd.DataFrame([raw] if isinstance(raw, dict) else raw)
+    return "\n".join([
+        f"# China A-share mootdx finance snapshot for {normalize_ticker_symbol(ticker)}",
+        "# Source: mootdx",
+        "# Data type: quarterly snapshot; not real-time fundamentals",
+        f"# Analysis cutoff: {curr_date or 'not supplied'}",
+        "# Raw monetary units and field meanings must be read from the source schema.",
+        "",
+        frame.to_csv(index=False),
+    ])
+
+
+def get_a_share_f10(ticker: str, category: str = "最新提示") -> str:
+    """Return a bounded mootdx F10 company-information section."""
+    allowed = {"最新提示", "公司概况", "财务分析", "股东研究", "股本结构", "资本运作", "业内点评", "行业分析", "公司大事"}
+    if category not in allowed:
+        raise ValueError(f"unsupported F10 category: {category}")
+    code = _a_share_code(ticker)
+    client = tdx_client()
+    try:
+        text = str(client.F10(symbol=code, name=category) or "").strip()
+    except Exception as exc:
+        raise ChinaDataUnavailableError(f"mootdx F10 failed for {code}: {type(exc).__name__}") from exc
+    if not text:
+        raise ChinaDataUnavailableError(f"mootdx returned no F10 text for {code}/{category}.")
+    from tradingagents.observability.provenance import capture_vendor_raw
+
+    capture_vendor_raw({"category": category, "text": text}, metadata={"provider": "mootdx", "dataset": "f10", "ticker": ticker})
+    # F10股东研究可能包含上万字历史表格；保留最新上下文的有界前缀。
+    return "\n".join([
+        f"# China A-share F10 for {normalize_ticker_symbol(ticker)}",
+        "# Source: mootdx",
+        f"# Category: {category}",
+        "# Text is source material, not an interpreted company fact.",
+        "",
+        text[:12000],
+    ])
 def _format_mootdx_daily(df: pd.DataFrame) -> pd.DataFrame:
     """Rename mootdx columns to the local OHLCV schema.
 
