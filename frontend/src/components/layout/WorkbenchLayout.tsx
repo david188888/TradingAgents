@@ -6,6 +6,11 @@ import { SwarmStatusCard } from "../status/SwarmStatusCard";
 import { WorkflowMap } from "../workflow/WorkflowMap";
 import { AuditReader } from "../reader/AuditReader";
 import { DecisionBrief } from "../reader/DecisionBrief";
+import { FailedRunView } from "../reader/FailedRunView";
+import { RunDisclosure } from "./RunDisclosure";
+import { DebateTimeline } from "../timeline/DebateTimeline";
+import { StageDetail } from "../timeline/StageDetail";
+import type { JourneyStageId } from "../../api/contracts";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { useRunHistory } from "../../hooks/useRunHistory";
 
@@ -35,6 +40,7 @@ export function WorkbenchLayout(): JSX.Element {
   const [selectedTurn, setSelectedTurn] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [expandedStage, setExpandedStage] = useState<JourneyStageId | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const inspectorWidthRef = useRef(DEFAULT_INSPECTOR_WIDTH);
   const resizeFrameRef = useRef<number | null>(null);
@@ -105,7 +111,12 @@ export function WorkbenchLayout(): JSX.Element {
     setAuditOpen(false);
     setInspectorOpen(false);
     setSelectedTurn(null);
+    setExpandedStage(null);
   }, [run_id]);
+
+  const toggleStage = (stage: JourneyStageId): void => {
+    setExpandedStage((current) => (current === stage ? null : stage));
+  };
 
   useEffect(() => {
     const current = state?.meta.status ?? null;
@@ -164,32 +175,66 @@ export function WorkbenchLayout(): JSX.Element {
               <span className="eyebrow">研究工作台</span>
               <h2>选择一次运行</h2>
             </section>
-          ) : view.loading ? (
+          ) : view.loading && !state ? (
             <section className="reader-skeleton" aria-busy="true">
               <span className="eyebrow">正在读取研究投影</span>
               <div /><div /><div />
             </section>
-          ) : view.error ? (
+          ) : view.error && !state ? (
             <section className="reader-empty">
               <h2>无法读取运行视图</h2>
               <p className="entry-error">{view.error.message}</p>
             </section>
-          ) : view.view ? (
-            <>
-              <DecisionBrief envelope={view.view} onOpenAudit={() => setAuditOpen(true)} />
-              {auditOpen ? (
-                <AuditReader
-                  runId={run_id}
-                  completeReportArtifactId={completeReportArtifactId}
-                  onClose={() => setAuditOpen(false)}
-                />
-              ) : null}
-            </>
-          ) : state ? (
+          ) : state && !(view.view?.terminal) ? (
+            /* Live run (or a terminal run still replaying events): the swarm
+               view is the monitoring surface; the reader surface takes over
+               only once the projection is terminal. */
             <>
               <SwarmStatusCard state={state} streamStatus={stream.status} />
               <WorkflowMap onRoleSelected={handleRoleSelected} />
+              <RunDisclosure state={state} />
             </>
+          ) : view.view ? (
+            view.view.view.run.status === "failed" ? (
+              <FailedRunView envelope={view.view} />
+            ) : view.view.view.run.status === "completed" ? (
+              <>
+                <DecisionBrief envelope={view.view} onOpenAudit={() => setAuditOpen(true)} />
+                <DebateTimeline
+                  journey={view.view.view.debate_journey}
+                  selectedStage={expandedStage}
+                  onStageToggle={toggleStage}
+                />
+                {expandedStage ? (
+                  <StageDetail
+                    stageId={expandedStage}
+                    envelope={view.view}
+                    runId={run_id}
+                    onOpenAudit={() => setAuditOpen(true)}
+                  />
+                ) : null}
+                {auditOpen ? (
+                  <AuditReader
+                    runId={run_id}
+                    completeReportArtifactId={completeReportArtifactId}
+                    onClose={() => setAuditOpen(false)}
+                  />
+                ) : null}
+              </>
+            ) : (
+              /* Terminal but neither completed nor failed (cancelled /
+                 interrupted historical run): the honest fallback. */
+              <>
+                <DecisionBrief envelope={view.view} onOpenAudit={() => setAuditOpen(true)} />
+                {auditOpen ? (
+                  <AuditReader
+                    runId={run_id}
+                    completeReportArtifactId={completeReportArtifactId}
+                    onClose={() => setAuditOpen(false)}
+                  />
+                ) : null}
+              </>
+            )
           ) : null}
         </main>
 

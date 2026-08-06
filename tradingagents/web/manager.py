@@ -583,6 +583,13 @@ class SingleRunManager:
         except Exception:
             # A derived cache must never change an already-committed run outcome.
             pass
+        try:
+            from .debate_summary import schedule_debate_summary
+
+            schedule_debate_summary(self.store, run_id)
+        except Exception:
+            # Summary generation is a best-effort reading aid; never terminal.
+            pass
 
     def _finish_cancelled(self, run_id: str) -> None:
         snapshot = self.store.read_snapshot(run_id)

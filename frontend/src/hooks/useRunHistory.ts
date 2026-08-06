@@ -39,6 +39,7 @@ export function useRunHistory(): UseRunHistoryResult {
             updated_at: item.created_at,
             latest_sequence: item.latest_sequence,
             final_signal: item.final_signal,
+            error_category: item.error_category,
             summary: undefined,
           })),
         );

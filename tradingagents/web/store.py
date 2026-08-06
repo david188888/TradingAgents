@@ -34,6 +34,7 @@ FIXED_JSON_LOCATORS = frozenset(
     {
         "projections/reader-brief-v1.json",
         "projections/run-view-v1.json",
+        "projections/debate-summary-v1.json",
     }
 )
 

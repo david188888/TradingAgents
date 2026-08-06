@@ -20,16 +20,16 @@ from tradingagents.observability.events import PersistedEvent
 from tradingagents.observability.roles import ROLE_REGISTRY
 from tradingagents.portfolio import ConvictionSignal, aggregate_risk_convictions
 
+from .debate_summary import DEBATE_SUMMARY_LOCATOR, ensure_debate_summary
 from .market_view import build_market_view
 from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
 from .store import RunNotFound, RunStore, RunStoreCorruption, RunStoreError
-
 SCHEMA_VERSION = 1
 RUN_VIEW_LOCATOR = "projections/run-view-v1.json"
 READER_BRIEF_LOCATOR = "projections/reader-brief-v1.json"
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
 RECENT_ELIGIBLE_STATUSES = frozenset(
-    {"created", "running", "cancel_requested", "completed", "cancelled", "interrupted"}
+    {"created", "running", "cancel_requested", "completed", "failed", "cancelled", "interrupted"}
 )
 
 
@@ -51,6 +51,8 @@ def run_summary_v1(snapshot: RunSnapshot, *, data_quality_level: str) -> dict[st
         "completed_at": snapshot.completed_at,
         "latest_sequence": snapshot.latest_sequence,
         "final_signal": snapshot.final_signal,
+        "error_category": snapshot.error_category,
+        "error_message": snapshot.error_message,
         "duration_ms": duration_ms,
         "data_quality_level": data_quality_level,
     }
@@ -146,6 +148,61 @@ def build_workflow(events: Iterable[PersistedEvent]) -> dict[str, Any]:
     }
 
 
+def build_debate_journey(
+    workflow: Mapping[str, Any],
+    events: Iterable[PersistedEvent],
+    reader_brief: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Six-stage reading skeleton over committed facts.
+
+    Stage statuses come from the workflow projection; actual debate round
+    counts are measured from turn.completed events (not from the requested
+    max-debate-rounds config, which may not have been reached). The global
+    insight block only surfaces real typed outputs — never estimated
+    conviction numbers, which belong to the summary artifact.
+    """
+    completed_turns: Counter[str] = Counter()
+    for event in events:
+        if event.type == "turn.completed" and event.actor_id:
+            completed_turns[event.actor_id] += 1
+
+    research_rounds = max(
+        completed_turns.get("researcher.bull", 0),
+        completed_turns.get("researcher.bear", 0),
+    )
+    risk_rounds = max(
+        completed_turns.get("risk.aggressive", 0),
+        completed_turns.get("risk.neutral", 0),
+        completed_turns.get("risk.conservative", 0),
+    )
+    round_counts = {"research": research_rounds, "risk": risk_rounds}
+
+    stages: list[dict[str, Any]] = []
+    for stage in workflow.get("stages", []):
+        stage_id = stage.get("stage_id")
+        stages.append(
+            {
+                "stage_id": stage_id,
+                "status": stage.get("status"),
+                "rounds": round_counts.get(stage_id),
+            }
+        )
+
+    brief = reader_brief or {}
+    risk_consensus = brief.get("risk_consensus") or {}
+    debate_digest = brief.get("debate_digest") or {}
+    return {
+        "stages": stages,
+        "research_rating": brief.get("research_rating"),
+        "disagreement_count": len(debate_digest.get("key_disagreements") or []),
+        "risk_consensus": {
+            "conviction": risk_consensus.get("conviction"),
+            "disagreement": risk_consensus.get("disagreement", "unavailable"),
+            "abstained_roles": list(risk_consensus.get("abstained_roles") or []),
+        },
+    }
+
+
 def build_run_view(store: RunStore, run_id: str) -> dict[str, Any]:
     """Build a lightweight view without parsing any Markdown report body."""
     snapshot = store.read_snapshot(run_id)
@@ -167,6 +224,9 @@ def build_run_view(store: RunStore, run_id: str) -> dict[str, Any]:
     if snapshot.status not in TERMINAL_STATUSES and reader_brief is None:
         status = "partial"
     market_version = _market_projection_version(store, run_id, events)
+    workflow = build_workflow(events)
+    debate_journey = build_debate_journey(workflow, events, reader_brief)
+    debate_summary = _read_debate_summary(store, run_id, snapshot)
     return {
         "schema_version": SCHEMA_VERSION,
         "projection_status": status,
@@ -180,7 +240,9 @@ def build_run_view(store: RunStore, run_id: str) -> dict[str, Any]:
                 "reason_code": None if reader_brief else "legacy_no_typed_outputs",
                 "value": reader_brief,
             },
-            "workflow": build_workflow(events),
+            "workflow": workflow,
+            "debate_journey": debate_journey,
+            "debate_summary": debate_summary,
             "section_index": _section_index(events, complete_report),
             "data_quality": quality,
             "market_projection_version": market_version,
@@ -217,6 +279,14 @@ class RunProjectionPublisher:
             )
             if brief is not None:
                 self.store.write_fixed_json(run_id, READER_BRIEF_LOCATOR, brief)
+            # Non-blocking lazy summary: if a background generation is already
+            # running (lock held) this returns None immediately and the cache
+            # lands as "pending"; after a restart the first reader of an old
+            # completed run pays the one-shot LLM cost here.
+            if snapshot.status == "completed":
+                ensure_debate_summary(
+                    self.store, run_id, snapshot=snapshot, events=events
+                )
             view = build_run_view(self.store, run_id)
             self.store.write_fixed_json(run_id, RUN_VIEW_LOCATOR, view)
             return view
@@ -265,6 +335,7 @@ def recent_runs_page(
                 "completed_at": None,
                 "latest_sequence": item.latest_sequence,
                 "final_signal": item.final_signal,
+                "error_category": item.error_category,
                 "duration_ms": None,
                 "data_quality_level": "unknown",
             }
@@ -429,14 +500,17 @@ def _build_reader_brief(
             "abstained_roles": list(aggregate.abstained_roles),
         }
 
-    execution = {
-        "availability": "unavailable",
-        "requested_action": portfolio.get("execution_action"),
-        "requested_quantity": portfolio.get("requested_quantity"),
-        "effective_action": None,
-        "effective_quantity": None,
-        "reason_code": "typed_constraint_outcome_missing",
-    }
+    execution = portfolio.get("execution_outcome")
+    if not isinstance(execution, Mapping):
+        execution = {
+            "availability": "unavailable",
+            "requested_action": portfolio.get("execution_action"),
+            "requested_quantity": portfolio.get("requested_quantity"),
+            "effective_action": None,
+            "effective_quantity": None,
+            "reason_code": "typed_constraint_outcome_missing",
+        }
+        omissions.append("typed_constraint_outcome_missing")
     unique_omissions = list(dict.fromkeys(omissions))
     return {
         "schema_version": SCHEMA_VERSION,
@@ -494,6 +568,25 @@ def _read_current_brief(store: RunStore, run_id: str, source_sequence: int) -> d
     if brief.get("schema_version") != SCHEMA_VERSION or brief.get("source_sequence") != source_sequence:
         return None
     return brief
+
+
+def _read_debate_summary(store: RunStore, run_id: str, snapshot: RunSnapshot) -> dict[str, Any]:
+    """Read a committed summary projection without ever invoking an LLM.
+
+    Generation happens in a background thread scheduled after run.completed,
+    or lazily via RunProjectionPublisher.publish_view when a completed run's
+    summary cache is missing (e.g. service restarted). The read path itself
+    stays a pure file read.
+    """
+    if snapshot.status != "completed":
+        return {"availability": "unavailable", "reason_code": "run_not_completed", "value": None}
+    try:
+        value = store.read_fixed_json(run_id, DEBATE_SUMMARY_LOCATOR)
+    except (RunNotFound, RunStoreCorruption):
+        value = None
+    if value:
+        return {"availability": "ready", "reason_code": None, "value": value}
+    return {"availability": "pending", "reason_code": "summary_not_generated", "value": None}
 
 
 def _artifact_index(events: Iterable[PersistedEvent]) -> dict[str, Mapping[str, Any]]:

@@ -162,6 +162,7 @@ class RunSummary:
     latest_sequence: int
     final_signal: str | None = None
     summary: str | None = None
+    error_category: str | None = None
 
     @classmethod
     def from_snapshot(cls, snapshot: RunSnapshot) -> RunSummary:
@@ -176,4 +177,5 @@ class RunSummary:
             latest_sequence=snapshot.latest_sequence,
             final_signal=snapshot.final_signal,
             summary=snapshot.summary,
+            error_category=snapshot.error_category,
         )

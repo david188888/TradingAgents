@@ -235,6 +235,7 @@ export interface RunSummaryDTO {
   latest_sequence: number;
   final_signal?: string | null;
   summary?: string | null;
+  error_category?: string | null;
 }
 
 export interface ArtifactMetadataDTO {
@@ -301,6 +302,60 @@ export interface WorkflowProjectionDTO {
   stages: Array<{ stage_id: string; status: string; actors: Array<{ actor_id: string; status: string; latest_turn_id: string | null; completed_turns: number }> }>;
 }
 
+export type JourneyStageId = "analysts" | "evidence" | "research" | "trading" | "risk" | "portfolio";
+export type JourneyStageStatus = "waiting" | "running" | "completed" | "failed" | "cancelled" | "interrupted" | "skipped";
+
+export interface DebateJourneyDTO {
+  stages: Array<{ stage_id: JourneyStageId; status: JourneyStageStatus; rounds: number | null }>;
+  research_rating: string | null;
+  disagreement_count: number;
+  risk_consensus: {
+    conviction: number | null;
+    disagreement: string;
+    abstained_roles: string[];
+  };
+}
+
+export interface ResearchRoundSummaryDTO {
+  round_index: number;
+  topic: string;
+  summary: string;
+  keywords: string[];
+  bull_summary: string;
+  bear_summary: string;
+  bull_estimated_conviction: number | null;
+  bear_estimated_conviction: number | null;
+  /** Lane -> output artifact_id for L3 full-text loading (deterministic, not LLM). */
+  sources?: Partial<Record<"bull" | "bear", string>>;
+}
+
+export interface RiskRoundSummaryDTO {
+  round_index: number;
+  topic: string;
+  summary: string;
+  keywords: string[];
+  aggressive_summary: string;
+  neutral_summary: string;
+  conservative_summary: string;
+  sources?: Partial<Record<"aggressive" | "neutral" | "conservative", string>>;
+}
+
+export interface DebateSummaryValueDTO {
+  schema_version: 1;
+  run_id: string;
+  generated_at: string;
+  model: string;
+  global_summary: string;
+  research_debate: ResearchRoundSummaryDTO[];
+  risk_debate: RiskRoundSummaryDTO[];
+}
+
+export interface DebateSummaryEnvelopeDTO {
+  availability: "ready" | "pending" | "unavailable";
+  reason_code: string | null;
+  value: DebateSummaryValueDTO | null;
+}
+
 export interface RunViewEnvelopeDTO {
   schema_version: number;
   projection_status: "ready" | "partial" | "legacy_fallback" | "unavailable";
@@ -316,11 +371,15 @@ export interface RunViewEnvelopeDTO {
       completed_at: string | null;
       latest_sequence: number;
       final_signal: string | null;
+      error_category: string | null;
+      error_message: string | null;
       duration_ms: number | null;
       data_quality_level: DataQualityLevelDTO;
     };
     brief: { availability: BriefAvailabilityDTO; reason_code: string | null; value: ReaderBriefDTO | null };
     workflow: WorkflowProjectionDTO;
+    debate_journey: DebateJourneyDTO;
+    debate_summary: DebateSummaryEnvelopeDTO;
     section_index: Array<{ section_id: string; label: string; availability: string; artifact_ids: string[]; turn_ids: string[] }>;
     data_quality: DataQualityDTO;
     market_projection_version: number;
@@ -339,6 +398,7 @@ export interface RecentRunsPageDTO {
     completed_at: string | null;
     latest_sequence: number;
     final_signal: string | null;
+    error_category: string | null;
     duration_ms: number | null;
     data_quality_level: DataQualityLevelDTO;
   }>;

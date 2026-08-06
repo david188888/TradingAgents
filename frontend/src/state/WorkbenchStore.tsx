@@ -7,7 +7,7 @@
  * The context value is recreated when run_id or stream changes, which is the
  * desired re-render trigger.
  */
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useRunStream } from "../hooks/useRunStream";
 import { useRunView } from "../hooks/useRunView";
@@ -34,7 +34,30 @@ export function WorkbenchProvider({
 }): JSX.Element {
   const [run_id, setRunId] = useState<string | null>(null);
   const stream = useRunStream(run_id);
-  const view = useRunView(run_id);
+  const viewRefreshKey = useRef(0);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // When the SSE stream reaches a terminal state (run.completed/run.failed
+  // observed, or the history snapshot is already terminal), force the view
+  // projection to refetch: the live run's in-flight partial view must give
+  // way to the committed completed view.
+  const previousStreamStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = previousStreamStatus.current;
+    const current = stream.status;
+    if (
+      previous !== null &&
+      previous !== "closed" &&
+      current === "closed" &&
+      run_id !== null
+    ) {
+      viewRefreshKey.current += 1;
+      setRefreshKey(viewRefreshKey.current);
+    }
+    previousStreamStatus.current = current;
+  }, [run_id, stream.status]);
+
+  const view = useRunView(run_id, refreshKey);
   const selectRun = useCallback((id: string | null): void => {
     setRunId(id);
   }, []);
