@@ -197,6 +197,10 @@ def get_fundamentals_akshare(ticker: str, curr_date: str = None) -> str:
     )
 
     if isinstance(financial_abstract, pd.DataFrame) and not financial_abstract.empty:
+        financial_abstract = _filter_statement_as_of(
+            financial_abstract,
+            curr_date or datetime.now().strftime("%Y-%m-%d"),
+        )
         sections.append(_dataframe_head_markdown("Financial Abstract (Sina)", financial_abstract))
     if isinstance(individual_info, pd.DataFrame) and not individual_info.empty:
         sections.append(_dataframe_head_markdown("Individual Info", individual_info))
@@ -273,6 +277,9 @@ def _get_tushare_statement(
         df,
         title=f"China A-share {title} data for {ts_code}",
         source="tushare",
+        monetary_unit="CNY",
+        monetary_scale=100_000_000,
+        as_of=curr_date,
     )
 
 
@@ -304,12 +311,20 @@ def _get_akshare_statement_sina(
         raise ChinaDataUnavailableError(
             f"AKShare Sina returned no {title.lower()} data for {sina_symbol}."
         )
+    df = _filter_statement_as_of(df, curr_date)
+    if df.empty:
+        raise ChinaDataUnavailableError(
+            f"AKShare Sina returned no {title.lower()} data on or before {curr_date}."
+        )
     if "报告日" in df.columns:
         df = df.sort_values("报告日", ascending=False)
     return _format_dataframe_report(
         df,
         title=f"China A-share {title} for {sina_symbol}",
         source="akshare (sina)",
+        monetary_unit="CNY",
+        monetary_scale=100_000_000,
+        as_of=curr_date,
     )
 
 
@@ -341,6 +356,25 @@ def get_income_statement_akshare(ticker: str, freq: str = "quarterly", curr_date
         title="Income Statement",
         raw_method="akshare_get_income_statement",
     )
+
+
+def _filter_statement_as_of(df: pd.DataFrame, curr_date: str) -> pd.DataFrame:
+    """Remove reports published after the analysis cutoff date.
+
+    Sina has used both ``报告日`` and ``公告日期`` across statement endpoints;
+    when neither exists we retain the raw table rather than inventing a date.
+    """
+    date_column = next(
+        (column for column in ("报告日", "公告日期", "报告期") if column in df.columns),
+        None,
+    )
+    if date_column is None:
+        return df
+    cutoff = pd.to_datetime(curr_date, errors="coerce")
+    if pd.isna(cutoff):
+        raise ChinaDataUnavailableError(f"invalid financial cutoff date: {curr_date}")
+    dates = pd.to_datetime(df[date_column], errors="coerce")
+    return df.loc[dates.isna() | (dates <= cutoff)].copy()
 
 
 def _get_tushare_pro():
@@ -420,22 +454,38 @@ def _format_akshare_daily(df: pd.DataFrame) -> pd.DataFrame:
     return renamed
 
 
-def _format_dataframe_report(df: pd.DataFrame, *, title: str, source: str) -> str:
+def _format_dataframe_report(
+    df: pd.DataFrame,
+    *,
+    title: str,
+    source: str,
+    monetary_unit: str | None = None,
+    monetary_scale: int | None = None,
+    as_of: str | None = None,
+) -> str:
     if df is None or df.empty:
         raise ChinaDataUnavailableError(f"{source} returned no rows for {title}.")
+    if len({str(column) for column in df.columns}) != len(df.columns):
+        raise ChinaDataUnavailableError(f"{source} returned duplicate columns for {title}.")
     clean = df.copy()
     for col in clean.select_dtypes(include=["float", "float64"]).columns:
         clean[col] = clean[col].round(4)
-    return "\n".join(
-        [
-            f"# {title}",
-            f"# Source: {source}",
-            f"# Total records: {len(clean)}",
-            f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "",
-            clean.to_csv(index=False),
-        ]
-    )
+    headers = [
+        f"# {title}",
+        f"# Source: {source}",
+        f"# Total records: {len(clean)}",
+        f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+    ]
+    if as_of:
+        headers.append(f"# Analysis cutoff: {as_of}")
+    if monetary_unit and monetary_scale:
+        headers.extend([
+            f"# Monetary raw unit: {monetary_unit}",
+            f"# Monetary display scale: {monetary_unit}_{monetary_scale}",
+            f"# Monetary normalization formula: raw_value / {monetary_scale}",
+            "# Raw CSV values are preserved; do not infer a different scale.",
+        ])
+    return "\n".join([*headers, "", clean.to_csv(index=False)])
 
 
 def _date_to_api(date_value: str) -> str:

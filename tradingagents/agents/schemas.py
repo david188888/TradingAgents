@@ -443,6 +443,7 @@ def render_pm_decision(
     decision: PortfolioDecision,
     *,
     risk_signals: list[RiskDebateSignal] | None = None,
+    execution_outcome: dict[str, object] | None = None,
 ) -> str:
     """Render a PortfolioDecision back to the markdown shape the rest of the system expects.
 
@@ -462,7 +463,25 @@ def render_pm_decision(
         parts.extend(["", f"**Price Target**: {decision.price_target}"])
     if decision.time_horizon:
         parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
-    if decision.execution_action is not None:
+    if execution_outcome is not None:
+        requested_action = execution_outcome.get("requested_action")
+        requested_quantity = execution_outcome.get("requested_quantity")
+        if requested_action is not None:
+            label = "Requested Execution"
+            if execution_outcome.get("availability") != "executable":
+                label += " (not executable)"
+            parts.extend([
+                "",
+                f"**{label}**: {requested_action} {requested_quantity or 0}",
+            ])
+        parts.extend([
+            "",
+            "**Effective Execution**: "
+            f"{execution_outcome.get('effective_action') or 'none'} "
+            f"{execution_outcome.get('effective_quantity') or 0} "
+            f"({execution_outcome.get('reason_code') or 'unknown'})",
+        ])
+    elif decision.execution_action is not None:
         quantity = decision.requested_quantity or 0
         parts.extend(["", f"**Requested Execution**: {decision.execution_action.value} {quantity}"])
     effective_risk_signals = decision.risk_signals if risk_signals is None else risk_signals

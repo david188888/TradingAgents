@@ -58,6 +58,7 @@ class PortfolioContext:
     cash: float
     positions: tuple[Position, ...] = ()
     mark_prices: Mapping[str, float] = field(default_factory=dict)
+    positions_complete: bool = True
     currency: str = "CNY"
     limits: PortfolioLimits = field(default_factory=PortfolioLimits)
 
@@ -80,6 +81,31 @@ class AllowedAction:
     max_quantity: int
     price: float | None
     reason: str
+    lot_size: int = 1
+
+
+@dataclass(frozen=True)
+class ExecutionOutcome:
+    """Deterministic distinction between requested intent and effective order."""
+
+    availability: Literal["executable", "unavailable"]
+    requested_action: str | None
+    requested_quantity: int | None
+    effective_action: Action | None
+    effective_quantity: int | None
+    reason_code: str
+    constraint_reason: str | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "availability": self.availability,
+            "requested_action": self.requested_action,
+            "requested_quantity": self.requested_quantity,
+            "effective_action": self.effective_action,
+            "effective_quantity": self.effective_quantity,
+            "reason_code": self.reason_code,
+            "constraint_reason": self.constraint_reason,
+        }
 
 
 @dataclass(frozen=True)
@@ -104,7 +130,9 @@ def compute_allowed_actions(
     portfolio-weight limit; otherwise the calculation fails closed.
     """
     if context is None:
-        return (AllowedAction("hold", 0, None, "portfolio_not_provided"),)
+        return (AllowedAction("hold", 0, None, "portfolio_not_provided", 1),)
+    if not context.positions_complete:
+        return (AllowedAction("hold", 0, None, "portfolio_positions_incomplete", 1),)
     if not ticker.strip():
         raise ValueError("ticker is required")
     if reference_price is None:
@@ -131,11 +159,11 @@ def compute_allowed_actions(
     sellable = current.sellable_quantity if current and current.sellable_quantity is not None else current_quantity
     max_sell = _round_down(sellable, context.limits.lot_size)
 
-    actions = [AllowedAction("hold", 0, price, "always_available")]
+    actions = [AllowedAction("hold", 0, price, "always_available", context.limits.lot_size)]
     if max_buy > 0:
-        actions.append(AllowedAction("buy", max_buy, price, "cash_and_position_limit"))
+        actions.append(AllowedAction("buy", max_buy, price, "cash_and_position_limit", context.limits.lot_size))
     if max_sell > 0:
-        actions.append(AllowedAction("sell", max_sell, price, "sellable_position_limit"))
+        actions.append(AllowedAction("sell", max_sell, price, "sellable_position_limit", context.limits.lot_size))
     return tuple(actions)
 
 
@@ -170,6 +198,7 @@ def portfolio_context_from_dict(value: Mapping[str, object] | None) -> Portfolio
         cash=float(value["cash"]),
         positions=positions,
         mark_prices={str(ticker): float(price) for ticker, price in prices.items()},
+        positions_complete=bool(value.get("positions_complete", True)),
         currency=str(value.get("currency", "CNY")),
         limits=PortfolioLimits(
             max_position_weight=float(raw_limits.get("max_position_weight", 0.10)),
@@ -199,7 +228,9 @@ def clamp_execution(
             reason="requested_action_not_allowed",
         )
     quantity = max(0, int(requested_quantity))
+    lot_size = max(1, int(allowed.lot_size))
     applied = min(quantity, allowed.max_quantity)
+    applied = (applied // lot_size) * lot_size
     if allowed.action == "hold":
         applied = 0
     if applied != quantity:

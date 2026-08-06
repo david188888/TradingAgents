@@ -41,6 +41,7 @@ class EvidenceStatus(str, Enum):
     LOW_CONFIDENCE = "LOW_CONFIDENCE"
     NEEDS_ENRICHMENT = "NEEDS_ENRICHMENT"
     FAIL_STOP = "FAIL_STOP"
+    GATE_ERROR = "GATE_ERROR"
 
 
 class EvidenceGateError(RuntimeError):
@@ -663,6 +664,7 @@ def _assess_news_items(items: list[dict[str, Any]], profile: dict[str, Any]) -> 
     llm = create_llm_from_config()
     attach_cross_source_info(items, llm)
     attach_credibility(items)
+    _annotate_entity_roles(items, profile)
 
     wrong_hits = _find_wrong_identity_hits(items, profile)
     if wrong_hits:
@@ -676,8 +678,17 @@ def _assess_news_items(items: list[dict[str, Any]], profile: dict[str, Any]) -> 
         }
 
     company_items = [item for item in items if _is_company_relevant(item, profile)]
-    official_items = [item for item in items if _is_official_item(item)]
-    industry_items = [item for item in items if _is_industry_relevant(item, profile)]
+    official_items = [
+        item
+        for item in items
+        if item.get("entity_role") == "subject" and _is_official_item(item)
+    ]
+    industry_items = [
+        item
+        for item in items
+        if item.get("entity_role") in {"subject", "comparable"}
+        and _is_industry_relevant(item, profile)
+    ]
     mixed = _dedupe_news_items([*company_items, *official_items, *industry_items])
 
     min_company = int(cfg.get("news_min_company_items", 3))
@@ -1003,6 +1014,44 @@ def _news_dedupe_key(item: dict[str, Any]) -> str:
     return normalized[:160]
 
 
+def _annotate_entity_roles(items: list[dict[str, Any]], profile: dict[str, Any]) -> None:
+    """Classify evidence without treating every non-target code as contamination.
+
+    Explicit roles from an upstream curator win. Otherwise, target identity is
+    a subject; a non-target code in an industry context is a comparable; all
+    remaining unbound material is noise. Only an explicitly target-bound
+    identity conflict can be a hard stop.
+    """
+    profile_codes = _profile_code_aliases(profile)
+    profile_names = _profile_name_aliases(profile)
+    for item in items:
+        explicit = str(item.get("entity_role") or "").strip().lower()
+        if explicit in {"subject", "comparable", "noise"}:
+            continue
+        text = _item_text(item)
+        codes = _explicit_stock_codes(text)
+        if any(code in text for code in profile_codes) or any(
+            name and name in text for name in profile_names
+        ):
+            item["entity_role"] = "subject"
+        elif codes and _is_industry_relevant(item, profile):
+            item["entity_role"] = "comparable"
+        else:
+            item["entity_role"] = "noise"
+
+
+def _is_primary_identity_binding(text: str, profile: dict[str, Any]) -> bool:
+    """Return true only when text presents a code as the document subject."""
+    codes = _explicit_stock_codes(text) - _profile_code_aliases(profile)
+    if not codes:
+        return False
+    return bool(re.search(
+        r"(?:证券代码|股票代码|证券简称|股票简称|公告主体|公司名称|stock\\s+code|ticker)",
+        text,
+        flags=re.IGNORECASE,
+    ))
+
+
 def _find_wrong_identity_hits(items: list[dict[str, Any]], profile: dict[str, Any]) -> set[str]:
     profile_names = _profile_name_aliases(profile)
     profile_codes = _profile_code_aliases(profile)
@@ -1016,10 +1065,16 @@ def _find_wrong_identity_hits(items: list[dict[str, Any]], profile: dict[str, An
 
     for item in items:
         text = _item_text(item)
+        item_role = str(item.get("entity_role") or "").lower()
+        if item_role in {"comparable", "noise"} and not (
+            _is_primary_identity_binding(text, profile)
+            or any(name in text for name in hints)
+        ):
+            continue
         item_codes = _explicit_stock_codes(text)
         wrong_codes = {code for code in item_codes if code not in profile_codes}
         item_source = str(item.get("source") or "")
-        if item_source == "report":
+        if item_source == "report" and _is_primary_identity_binding(text, profile):
             hits.update(wrong_codes)
 
         binds_profile_code = bool(item_codes & profile_codes)
@@ -1112,6 +1167,8 @@ def _is_profile_alias(candidate: str, profile_names: set[str]) -> bool:
 
 
 def _is_company_relevant(item: dict[str, Any], profile: dict[str, Any]) -> bool:
+    if item.get("entity_role") in {"comparable", "noise"}:
+        return False
     text = _item_text(item)
     candidates = {
         str(profile.get("ticker") or ""),

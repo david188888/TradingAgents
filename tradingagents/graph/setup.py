@@ -350,7 +350,11 @@ class GraphSetup:
             else:
                 workflow.add_edge(current_clear, "Evidence Steward")
 
-        workflow.add_edge("Evidence Steward", "Bull Researcher")
+        workflow.add_conditional_edges(
+            "Evidence Steward",
+            self._route_after_evidence,
+            {"Bull Researcher": "Bull Researcher", END: END},
+        )
 
         # Both research-debate edges share the complete DEBATE_PATH_MAP (#1088).
         for debate_node in ("Bull Researcher", "Bear Researcher"):
@@ -372,3 +376,10 @@ class GraphSetup:
         workflow.add_edge("Portfolio Manager", END)
 
         return workflow
+
+    @staticmethod
+    def _route_after_evidence(state: AgentState) -> str:
+        """Never turn an evidence-gate system fault into an investment decision."""
+        if state.get("evidence_status") == "GATE_ERROR":
+            return END
+        return "Bull Researcher"

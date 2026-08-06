@@ -11,6 +11,7 @@ from .conviction import ConvictionAggregate, ConvictionSignal, aggregate_risk_co
 from .models import (
     AllowedAction,
     ClampEvent,
+    ExecutionOutcome,
     PortfolioContext,
     PortfolioLimits,
     Position,
@@ -22,6 +23,7 @@ from .models import (
 __all__ = [
     "AllowedAction",
     "ClampEvent",
+    "ExecutionOutcome",
     "PortfolioContext",
     "PortfolioLimits",
     "Position",

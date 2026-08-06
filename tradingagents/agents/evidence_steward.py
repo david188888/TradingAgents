@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 
 from tradingagents.dataflows.evidence import (
+    EvidenceGateError,
     EvidenceStatus,
     evaluate_and_enrich_evidence,
 )
+from tradingagents.research import build_research_dossier
 
 logger = logging.getLogger(__name__)
 
@@ -15,31 +17,34 @@ logger = logging.getLogger(__name__)
 def create_evidence_steward():
     def evidence_steward_node(state):
         try:
-            return evaluate_and_enrich_evidence(state)
+            result = evaluate_and_enrich_evidence(state)
+            result["research_dossier"] = build_research_dossier({**state, **result})
+            return result
+        except EvidenceGateError:
+            # A verdict-level hard stop is a research decision, not a system
+            # fault. Preserve its terminal semantics for the graph runner.
+            raise
         except Exception as exc:
-            # Unexpected non-verdict exceptions degrade to a gate-unavailable
-            # outcome with the fault recorded, rather than failing the whole
-            # run with an evidence-rejection category.
-            fault_detail = type(exc).__name__
-            logger.warning(
-                "Evidence steward failed unexpectedly; degrading to "
-                "LOW_CONFIDENCE (fault category: %s)",
-                fault_detail,
+            # Unexpected failures are distinct from evidence verdicts. Keep the
+            # public fault category only; never leak vendor URLs or exception text.
+            fault_category = type(exc).__name__
+            logger.exception(
+                "Evidence steward failed unexpectedly (fault category: %s)",
+                fault_category,
             )
             report = "\n".join([
                 "## Evidence Steward Report",
-                "Status: gate unavailable",
-                f"Evidence confidence: {EvidenceStatus.LOW_CONFIDENCE.value} "
-                "(evidence steward fault)",
-                f"Fault category: {fault_detail}",
-                "Evidence gate could not complete; downstream agents proceed with "
-                "unassessed evidence at reduced conviction.",
+                "Status: gate error",
+                f"Evidence status: {EvidenceStatus.GATE_ERROR.value}",
+                f"Fault category: {fault_category}",
+                "Evidence gate could not complete; no investment verdict is executable.",
             ])
             return {
-                "evidence_status": EvidenceStatus.LOW_CONFIDENCE.value,
+                "evidence_status": EvidenceStatus.GATE_ERROR.value,
+                "evidence_gate_fault": fault_category,
                 "evidence_report": report,
                 "evidence_ledger": None,
                 "evidence_ledger_artifact_id": None,
+                "research_dossier": build_research_dossier(state),
             }
-
     return evidence_steward_node

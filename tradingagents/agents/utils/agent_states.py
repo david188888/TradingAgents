@@ -94,12 +94,19 @@ class AgentState(MessagesState):
         dict[str, Any], "Canonical instrument identity verified by the evidence gate"
     ]
     evidence_status: Annotated[str, "Evidence gate status"]
+    evidence_gate_fault: Annotated[
+        str | None, "Public fault category when the evidence gate itself fails"
+    ]
     evidence_report: Annotated[str, "Evidence sufficiency and enrichment report"]
     evidence_ledger: Annotated[
         dict[str, Any], "Structured claim-evidence-criterion audit ledger without private reasoning"
     ]
     evidence_ledger_artifact_id: Annotated[
         str | None, "Durable evidence-ledger artifact when an observer is active"
+    ]
+    research_dossier: Annotated[
+        dict[str, Any],
+        "A-share-first structured chain: windows, claims, milestones, edges, profit bridge, valuation",
     ]
 
     # researcher team discussion step
@@ -123,6 +130,10 @@ class AgentState(MessagesState):
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
     allowed_actions: Annotated[list[dict[str, Any]], "Deterministic PM action limits"]
     clamp_events: Annotated[list[dict[str, Any]], "Deterministic PM constraint audit events"]
+    execution_outcome: Annotated[
+        dict[str, Any] | None,
+        "Single source of truth for requested versus effective execution",
+    ]
     feature_contributions: Annotated[
         list[dict[str, Any]],
         "Measured feature attribution inputs; never inferred from model prose",

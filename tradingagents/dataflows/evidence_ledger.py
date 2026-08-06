@@ -181,6 +181,7 @@ def _evidence_record(
         "artifact_hash": artifact_hash,
         "source_artifact_ids": _string_list(item.get("provenance_artifact_ids")),
         "data_as_of": str(item.get("published") or trade_date or ""),
+        "entity_role": str(item.get("entity_role") or "unknown"),
         "verification_status": _item_status(item, default=status),
         "contradicts": [],
         "title": source_record["title"],

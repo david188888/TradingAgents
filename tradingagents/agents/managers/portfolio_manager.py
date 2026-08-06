@@ -30,6 +30,7 @@ from tradingagents.agents.utils.structured import (
 )
 from tradingagents.portfolio import (
     AllowedAction,
+    ExecutionOutcome,
     aggregate_risk_convictions,
     clamp_execution,
     compute_allowed_actions,
@@ -124,8 +125,10 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
             "portfolio_manager", trigger_text=skill_trigger_text
         )
         prompt += constraints_line
-        enforce_constraints = state.get("portfolio_context") is not None
-        final_trade_decision, clamp_events, portfolio_public_output = _constrained_pm_decision(
+        # The hold-only allowed-action set is also the deterministic guard for
+        # research-only runs with no portfolio context.
+        enforce_constraints = True
+        final_trade_decision, clamp_events, portfolio_public_output, execution_outcome = _constrained_pm_decision(
             structured_llm,
             llm,
             prompt,
@@ -159,17 +162,31 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
             # the final-decision turn can render the same machine-readable
             # confidence badge as the evidence steward without a new event.
             "evidence_status": evidence_status,
-            "allowed_actions": [asdict(action) for action in allowed_actions],
+            "allowed_actions": [_public_allowed_action(action) for action in allowed_actions],
             "clamp_events": [asdict(event) for event in clamp_events],
+            "execution_outcome": execution_outcome.as_dict(),
         }
         if portfolio_public_output is not None:
             result["reader_public_output"] = {
                 "kind": "portfolio",
-                "value": portfolio_public_output.model_dump(mode="json"),
+                "value": {
+                    **portfolio_public_output.model_dump(mode="json"),
+                    "execution_outcome": execution_outcome.as_dict(),
+                },
             }
         return result
 
     return portfolio_manager_node
+
+
+def _public_allowed_action(action: AllowedAction) -> dict[str, object]:
+    """Keep the legacy public shape while lot size remains an internal guard."""
+    return {
+        "action": action.action,
+        "max_quantity": action.max_quantity,
+        "price": action.price,
+        "reason": action.reason,
+    }
 
 
 def _allowed_actions_from_state(state) -> tuple[tuple[AllowedAction, ...], str | None]:
@@ -189,29 +206,17 @@ def _constrained_pm_decision(
     allowed_actions,
     enforce_constraints,
     risk_signals,
-) -> tuple[str, list, PortfolioDecision | None]:
-    """Run the PM once, then make its requested order legal deterministically."""
-    if not enforce_constraints:
-        if structured_llm is not None:
-            try:
-                decision = structured_llm.invoke(prompt)
-                if not isinstance(decision, PortfolioDecision):
-                    raise ValueError("structured output did not produce PortfolioDecision")
-                return render_pm_decision(decision, risk_signals=risk_signals), [], decision
-            except Exception:
-                pass
-        return (
-            invoke_structured_or_freetext(
-                None,
-                llm,
-                prompt,
-                lambda decision: render_pm_decision(decision, risk_signals=risk_signals),
-                "Portfolio Manager",
-            ),
-            [],
-            None,
-        )
-
+) -> tuple[str, list, PortfolioDecision | None, ExecutionOutcome]:
+    """Run the PM once and persist the requested/effective execution pair."""
+    unavailable = ExecutionOutcome(
+        availability="unavailable",
+        requested_action=None,
+        requested_quantity=None,
+        effective_action="hold",
+        effective_quantity=0,
+        reason_code="portfolio_not_provided",
+        constraint_reason="No portfolio context was supplied.",
+    )
     if structured_llm is not None:
         try:
             decision = structured_llm.invoke(prompt)
@@ -222,16 +227,40 @@ def _constrained_pm_decision(
             applied_action, applied_quantity, event = clamp_execution(
                 action_name, quantity, allowed_actions
             )
-            rendered = render_pm_decision(decision, risk_signals=risk_signals)
+            allowed = next(
+                (action for action in allowed_actions if action.action == action_name.lower()),
+                None,
+            )
+            executable = allowed is not None and allowed.reason not in {
+                "portfolio_not_provided",
+                "portfolio_positions_incomplete",
+            }
+            audit_event = event if executable else None
+            outcome = ExecutionOutcome(
+                availability="executable" if executable else "unavailable",
+                requested_action=action_name,
+                requested_quantity=quantity,
+                effective_action=applied_action,
+                effective_quantity=applied_quantity,
+                reason_code=(
+                    "requested_quantity_clamped" if audit_event is not None
+                    else (allowed.reason if allowed is not None else "requested_action_not_allowed")
+                ),
+                constraint_reason=allowed.reason if allowed is not None else None,
+            )
+            rendered = render_pm_decision(
+                decision,
+                risk_signals=risk_signals,
+                execution_outcome=outcome.as_dict(),
+            )
             rendered += f"\n\n**Execution Constraint**: {applied_action.upper()} {applied_quantity}"
-            if event is not None:
-                rendered += "\n\n**Clamp Audit**: " + json.dumps(asdict(event), ensure_ascii=False)
-                return rendered, [event], decision
-            return rendered, [], decision
+            if audit_event is not None:
+                rendered += "\n\n**Clamp Audit**: " + json.dumps(asdict(audit_event), ensure_ascii=False)
+                return rendered, [audit_event], decision, outcome
+            return rendered, [], decision, outcome
         except Exception:
-            # Preserve the existing provider-agnostic fallback behavior. A
-            # free-text response cannot safely request an order, so the
-            # deterministic result below remains Hold.
+            # A free-text fallback has no safe typed request. Keep the research
+            # result readable, but make execution explicitly unavailable.
             pass
 
     rendered = invoke_structured_or_freetext(
@@ -241,7 +270,7 @@ def _constrained_pm_decision(
         lambda decision: render_pm_decision(decision, risk_signals=risk_signals),
         "Portfolio Manager",
     )
-    return rendered + "\n\n**Execution Constraint**: HOLD 0", [], None
+    return rendered, [], None, unavailable
 
 
 def _risk_signals_from_state(risk_debate_state: Mapping[str, object]) -> list[RiskDebateSignal]:
