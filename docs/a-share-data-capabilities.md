@@ -6,18 +6,18 @@
 |---|---|---|---|
 | 资金流、两融 | `get_a_share_capital_flow`、`get_a_share_margin_financing` | EastMoney 公共接口 | 单只 A 股 |
 | 交易所公告 | `get_a_share_exchange_announcements` | 上交所/深交所优先，EastMoney 公开备胎 | 单只 A 股 |
-| 大宗交易 | `get_a_share_bulk_trades` | AKShare 的公开 EastMoney 适配 | 单只 A 股、日期区间 |
-| 股东户数 | `get_a_share_shareholder_counts` | AKShare | 单只 A 股 |
-| 限售解禁 | `get_a_share_lockup_releases` | AKShare 的公开 EastMoney 适配 | 单只 A 股、日期区间 |
-| 龙虎榜 | `get_a_share_dragon_tiger` | AKShare | 单只 A 股、交易日、买入或卖出 |
-| 涨停梯队 | `get_a_share_limit_up_ladder` | AKShare | 交易日；输出当日连板/题材字段计数和成分行 |
+| 大宗交易 | `get_a_share_bulk_trades` | EastMoney direct（datacenter） | 单只 A 股、日期区间 |
+| 股东户数 | `get_a_share_shareholder_counts` | EastMoney direct（datacenter） | 单只 A 股 |
+| 限售解禁 | `get_a_share_lockup_releases` | EastMoney direct（datacenter） | 单只 A 股、日期区间 |
+| 龙虎榜 | `get_a_share_dragon_tiger` | EastMoney direct（datacenter），交易所官方备份 | 单只 A 股、交易日、买入或卖出 |
+| 涨停梯队 | `get_a_share_limit_up_ladder` | EastMoney direct（push2ex） | 交易日；输出当日连板/题材字段计数和成分行 |
 | 互动易 | `get_a_share_interactive_questions`、`get_a_share_interactive_answers` | AKShare/CNINFO | 单只 A 股；回答必须给已知问题 ID |
 | iWenCai 查询 | `search_a_share_iwencai` | 可选 `pywencai` 客户端 | 自然语言查询 |
 
 当前刻意不把下列内容伪装成已交付能力：
 
 - “炸板率”需要可靠的盘中事件时间序列，当前涨停池只提供公开的日终事实，报告不会估算该指标。
-- 财联社电报使用签名客户端契约；没有经过审查的本地签名提供方时，`get_cls_telegraph` 明确返回不可用，不复制或猜测浏览器签名。
+- 财联社电报使用 `sign` 查询参数，但签名可在本地完全计算（`md5(sha1(按 key 排序后的 query string))`），无需 API key 或浏览器 token；`get_cls_telegraph` 作为 EastMoney 全球新闻的独立备份，任何失败都会返回类型化不可用。
 - iWenCai 只在用户显式安装兼容的 `pywencai` 时启用；没有该客户端时返回不可用，系统不会抓取网页或制造查询结果。
 
 路由默认把上述数据归为可降级的 A 股补充能力：它们的失败不会使 OHLCV、财务报表或最终研究流程被误判为数据缺失。

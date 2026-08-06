@@ -52,7 +52,7 @@ tradingagents web                          # serve at http://127.0.0.1:8000
 tradingagents web --port 8765 --open       # custom port + open browser
 ```
 
-The workbench binds only to `127.0.0.1` and runs the real TradingAgents graph via a React/TypeScript frontend with a FastAPI + SSE backend. It groups all 13 roles into six workflow stages with typed edges, renders narrative artifacts as sanitized Markdown, and provides a **reader-first surface** — a **DecisionBrief** and **AuditReader** for inspecting each turn's identity, evidence, prompt, and output. The run history sidebar lets you browse and revisit completed analyses. The bundled frontend does not require Node.js at runtime.
+The workbench binds only to `127.0.0.1` and runs the real TradingAgents graph via a React/TypeScript frontend with a FastAPI + SSE backend. It groups all 13 roles into six workflow stages with typed edges and renders narrative artifacts as sanitized Markdown. The reading surface is **progressive**: a completed run defaults to a **DecisionBrief** (rating / conclusion / drivers / risks) above a six-stage **debate journey** timeline — click a stage to expand **round cards** (LLM-generated topic, summary, keywords, bull/bear conviction bars), then expand a card to the full two/three-lane debate text. Run history groups active / completed / failed runs (recent failures keep their error category), and the opt-in **AuditReader** still exposes the complete report. The bundled frontend does not require Node.js at runtime.
 
 Rebuild the frontend from source when changing `frontend/src/`:
 ```bash
