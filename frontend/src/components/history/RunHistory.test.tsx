@@ -44,6 +44,7 @@ const FIXTURES: RunSummaryDTO[] = [
     latest_sequence: 10,
     final_signal: null,
     summary: null,
+    error_category: "provider_timeout",
   },
   {
     run_id: "run-3",
@@ -93,9 +94,49 @@ describe("RunHistory", () => {
     expect(screen.getByText("000001.SZ")).toBeInTheDocument();
     expect(screen.getByText("AAPL")).toBeInTheDocument();
 
-    expect(screen.getByText(/已完成/)).toBeInTheDocument();
-    expect(screen.getByText(/失败/)).toBeInTheDocument();
-    expect(screen.getByText(/运行中/)).toBeInTheDocument();
+    expect(screen.getByText("已完成", { selector: ".history-group-title" })).toBeInTheDocument();
+    expect(screen.getByText(/失败（最近/)).toBeInTheDocument();
+    expect(screen.getByText("进行中", { selector: ".history-group-title" })).toBeInTheDocument();
+    // The running item still carries the pulsing status badge.
+    expect(screen.getByText(/● 运行中/)).toBeInTheDocument();
+  });
+
+  it("groups runs into active / completed / failed sections", () => {
+    render(<RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={vi.fn()} />);
+
+    expect(screen.getByText("进行中", { selector: ".history-group-title" })).toBeInTheDocument();
+    expect(screen.getByText("已完成", { selector: ".history-group-title" })).toBeInTheDocument();
+    expect(screen.getByText(/失败（最近/)).toBeInTheDocument();
+
+    // Failed item shows the mapped error category instead of a final signal.
+    expect(screen.getByText(/供应商超时/)).toBeInTheDocument();
+    // All three fixtures still rendered.
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+  });
+
+  it("renders only the 3 most recent failed runs", () => {
+    const manyFailed: RunSummaryDTO[] = Array.from({ length: 5 }, (_, index) => ({
+      run_id: `fail-${index}`,
+      status: "failed",
+      ticker: `F${index}`,
+      analysis_date: "2026-07-18",
+      asset_type: "stock",
+      // index 0 is newest; order is preserved as supplied
+      created_at: `2026-07-18T0${5 - index}:00:00Z`,
+      updated_at: `2026-07-18T0${5 - index}:00:00Z`,
+      latest_sequence: 1,
+      final_signal: null,
+      summary: null,
+      error_category: "unexpected_internal_failure",
+    }));
+
+    render(<RunHistory runs={manyFailed} loading={false} error={null} onDeleteRun={vi.fn()} />);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    // Items preserve supplied order (newest first per backend contract).
+    expect(screen.getByText("F0")).toBeInTheDocument();
+    expect(screen.queryByText("F3")).not.toBeInTheDocument();
+    expect(screen.getByText(/更早的失败记录已折叠/)).toBeInTheDocument();
   });
 
   it("calls selectRun with the run_id when an item is clicked", () => {
@@ -104,10 +145,9 @@ describe("RunHistory", () => {
 
     render(<RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={vi.fn()} />);
 
-    const items = screen.getAllByRole("listitem");
-    expect(items).toHaveLength(3);
-
-    fireEvent.click(items[0]);
+    // Click the completed-run item (identified by ticker), since active runs
+    // are grouped first and list order is no longer the fixture order.
+    fireEvent.click(screen.getByText("600519.SS").closest("li")!);
     expect(selectRun).toHaveBeenCalledWith("run-1");
   });
 
@@ -142,10 +182,7 @@ describe("RunHistory", () => {
       <RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={onDeleteRun} />,
     );
 
-    const deleteButtons = screen.getAllByRole("button", {
-      name: /删除 .* 的运行记录/,
-    });
-    fireEvent.click(deleteButtons[0]);
+    fireEvent.click(screen.getByRole("button", { name: "删除 600519.SS 的运行记录" }));
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(onDeleteRun).toHaveBeenCalledWith("run-1");
@@ -159,10 +196,7 @@ describe("RunHistory", () => {
       <RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={onDeleteRun} />,
     );
 
-    const deleteButtons = screen.getAllByRole("button", {
-      name: /删除 .* 的运行记录/,
-    });
-    fireEvent.click(deleteButtons[0]);
+    fireEvent.click(screen.getByRole("button", { name: "删除 600519.SS 的运行记录" }));
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(onDeleteRun).not.toHaveBeenCalled();
