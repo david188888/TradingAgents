@@ -68,7 +68,6 @@ def test_run_directory_is_never_derived_from_ticker_or_traversal(tmp_path):
 
 
 def test_delete_run_removes_the_entire_run_and_unknown_delete_raises(tmp_path):
-    from concurrent.futures import ThreadPoolExecutor
 
     from tradingagents.observability.events import RunEventDraft
 

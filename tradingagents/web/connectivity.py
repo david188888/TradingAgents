@@ -77,10 +77,9 @@ def check_yfinance_reachable(
         status = int(response.status_code)
     except (TypeError, ValueError):
         status = 0
-    if not (200 <= status < 300):
+    if not (200 <= status < 300) and (status >= 500 or status == 0):
         # A 4xx on a real symbol (e.g. 429) still proves the host is reachable;
         # treat 5xx and transport-level failures as unavailable.
-        if status >= 500 or status == 0:
-            raise YahooUnavailableError(
-                f"{_YAHOO_PROBE_HOST} returned HTTP {status}"
-            )
+        raise YahooUnavailableError(
+            f"{_YAHOO_PROBE_HOST} returned HTTP {status}"
+        )

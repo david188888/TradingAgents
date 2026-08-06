@@ -24,6 +24,7 @@ from .debate_summary import DEBATE_SUMMARY_LOCATOR, ensure_debate_summary
 from .market_view import build_market_view
 from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
 from .store import RunNotFound, RunStore, RunStoreCorruption, RunStoreError
+
 SCHEMA_VERSION = 1
 RUN_VIEW_LOCATOR = "projections/run-view-v1.json"
 READER_BRIEF_LOCATOR = "projections/reader-brief-v1.json"
@@ -733,7 +734,7 @@ def _valid_view(value: Mapping[str, Any], source_sequence: int) -> bool:
 
 
 def _encode_cursor(created_at: str, run_id: str) -> str:
-    payload = f"v1|recent|{created_at}|{run_id}".encode("utf-8")
+    payload = f"v1|recent|{created_at}|{run_id}".encode()
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 

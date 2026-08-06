@@ -1,20 +1,42 @@
 import hashlib
 import json
-from datetime import datetime, timezone
 
 import pytest
 
-from tradingagents.observability.events import RunEventDraft
+from tradingagents.observability.events import PersistedEvent, RunEventDraft
 from tradingagents.web.projections import (
     InvalidCursor,
     RunProjectionPublisher,
+    build_debate_journey,
+    build_workflow,
     recent_runs_page,
 )
 from tradingagents.web.run_models import RunSnapshot
 from tradingagents.web.store import InvalidStorePath, RunStore
 
 
-def _snapshot(*, run_id: str, status: str = "completed") -> RunSnapshot:
+def _completed_turn(run_id: str, sequence: int, actor_id: str) -> PersistedEvent:
+    return PersistedEvent(
+        event_id=f"{run_id}:{sequence}",
+        run_id=run_id,
+        sequence=sequence,
+        timestamp="2026-08-03T00:00:00Z",
+        type="turn.completed",
+        payload={
+            "turn_id": f"{actor_id}-1",
+            "turn_index": 1,
+            "turn_status": "completed",
+            "role_instance_id": actor_id,
+            "graph_task_id": f"gt-{actor_id}",
+            "graph_step": sequence,
+            "reason": "test_complete",
+            "duration_ms": 10,
+        },
+        actor_id=actor_id,
+    )
+
+
+def _snapshot(*, run_id: str, status: str = "completed", **kwargs) -> RunSnapshot:
     return RunSnapshot.create(
         run_id=run_id,
         ticker="AAPL",
@@ -23,12 +45,20 @@ def _snapshot(*, run_id: str, status: str = "completed") -> RunSnapshot:
         llm_provider="openai",
         quick_think_llm="fast",
         deep_think_llm="deep",
+        **kwargs,
     ).evolve(status=status)
 
 
-def test_recent_page_filters_failed_before_limit_and_has_stable_cursor(tmp_path):
+def test_recent_page_includes_failed_runs_with_error_category_and_stable_cursor(tmp_path):
     store = RunStore(tmp_path / "runs")
-    failed = store.create_run(_snapshot(run_id="run_20260803T010101000000Z_aaaaaaaa", status="failed"))
+    failed = store.create_run(
+        _snapshot(
+            run_id="run_20260803T010101000000Z_aaaaaaaa",
+            status="failed",
+            error_category="provider_timeout",
+            error_message="TimeoutError: upstream timed out",
+        )
+    )
     first = store.create_run(_snapshot(run_id="run_20260803T020202000000Z_bbbbbbbb"))
     second = store.create_run(_snapshot(run_id="run_20260803T030303000000Z_cccccccc"))
 
@@ -38,7 +68,9 @@ def test_recent_page_filters_failed_before_limit_and_has_stable_cursor(tmp_path)
     assert page["next_cursor"]
     next_page = recent_runs_page(store.list_runs(), limit=1, cursor=page["next_cursor"])
     assert [item["run_id"] for item in next_page["items"]] == [first.run_id]
-    assert failed.run_id not in {item["run_id"] for item in page["items"] + next_page["items"]}
+    final_page = recent_runs_page(store.list_runs(), limit=1, cursor=next_page["next_cursor"])
+    assert [item["run_id"] for item in final_page["items"]] == [failed.run_id]
+    assert final_page["items"][0]["error_category"] == "provider_timeout"
     with pytest.raises(InvalidCursor):
         recent_runs_page(store.list_runs(), limit=1, cursor="not-a-cursor")
 
@@ -61,6 +93,42 @@ def test_run_view_is_a_cached_legacy_shell_without_markdown_parsing(tmp_path):
     }
     assert first == second
     assert (tmp_path / "runs" / run.run_id / "projections" / "run-view-v1.json").is_file()
+
+
+def test_debate_journey_measures_rounds_from_completed_turns(tmp_path):
+    run_id = "run_20260803T050505000000Z_eeeeeeee"
+    events = [
+        _completed_turn(run_id, seq, actor_id)
+        for seq, actor_id in enumerate(
+            (
+                "researcher.bull",
+                "researcher.bear",
+                "researcher.bull",
+                "researcher.bear",
+                "manager.research",
+                "trader",
+                "risk.aggressive",
+                "risk.neutral",
+                "risk.conservative",
+                "manager.portfolio",
+            ),
+            start=1,
+        )
+    ]
+    workflow = build_workflow(events)
+    journey = build_debate_journey(workflow, events, reader_brief=None)
+
+    rounds = {stage["stage_id"]: stage["rounds"] for stage in journey["stages"]}
+    assert rounds["research"] == 2
+    assert rounds["risk"] == 1
+    assert rounds["trading"] is None
+    # No typed public outputs -> insight fields degrade without crashing.
+    assert journey["research_rating"] is None
+    assert journey["risk_consensus"] == {
+        "conviction": None,
+        "disagreement": "unavailable",
+        "abstained_roles": [],
+    }
 
 
 def test_reader_brief_uses_committed_public_outputs_without_markdown_parsing(tmp_path):

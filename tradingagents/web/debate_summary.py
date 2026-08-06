@@ -369,9 +369,9 @@ def ensure_debate_summary(
         # Merge deterministic source references (never produced by the LLM).
         # Pair by list position; a round the LLM omitted or hallucinated simply
         # has no source map rather than failing the whole projection.
-        for item, sources in zip(value["research_debate"], research_sources):
+        for item, sources in zip(value["research_debate"], research_sources, strict=False):
             item["sources"] = {k: v for k, v in sources.items() if k != "round_index"}
-        for item, sources in zip(value["risk_debate"], risk_sources):
+        for item, sources in zip(value["risk_debate"], risk_sources, strict=False):
             item["sources"] = {k: v for k, v in sources.items() if k != "round_index"}
         store.write_fixed_json(run_id, DEBATE_SUMMARY_LOCATOR, value)
         return value

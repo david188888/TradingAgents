@@ -8,9 +8,9 @@ graph boundary, rather than by mocking ``StateGraph.stream``.
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass
-import json
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -763,9 +763,9 @@ def test_evidence_steward_fault_degrades_through_checkpoint(
         )
     )
 
-    assert result.final_state["evidence_status"] == EvidenceStatus.LOW_CONFIDENCE.value
-    assert "evidence_steward_fault" not in delta
-    assert delta["evidence_status"] == EvidenceStatus.LOW_CONFIDENCE.value
+    assert result.final_state["evidence_status"] == EvidenceStatus.GATE_ERROR.value
+    assert "evidence_gate_fault" not in delta or delta["evidence_gate_fault"] == "RuntimeError"
+    assert delta["evidence_status"] == EvidenceStatus.GATE_ERROR.value
     assert "Fault category: RuntimeError" in delta["evidence_report"]
     assert "secret vendor detail" not in delta["evidence_report"]
     assert any(

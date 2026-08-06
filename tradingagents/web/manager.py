@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import threading
 from collections.abc import Callable, Mapping
 from copy import deepcopy
@@ -29,8 +30,8 @@ from tradingagents.observability.roles import ROLE_REGISTRY, role_instance_id
 
 from .broker import EventBroker
 from .degradations import summarize_data_degradations
-from .reports import ReportArtifactWriter, ReportPublicationError
 from .projections import RunProjectionPublisher
+from .reports import ReportArtifactWriter, ReportPublicationError
 from .run_models import RunSnapshot, utc_timestamp
 from .store import RunStore
 
@@ -578,11 +579,9 @@ class SingleRunManager:
                 timestamp=terminal_timestamp,
             )
         )
-        try:
-            RunProjectionPublisher(self.store).publish_view(run_id)
-        except Exception:
+        with contextlib.suppress(Exception):
             # A derived cache must never change an already-committed run outcome.
-            pass
+            RunProjectionPublisher(self.store).publish_view(run_id)
         try:
             from .debate_summary import schedule_debate_summary
 
