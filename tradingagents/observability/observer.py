@@ -18,7 +18,7 @@ from tradingagents.observability.events import ArtifactRef, PersistedEvent, RunE
 from tradingagents.observability.redaction import redact_recursive
 from tradingagents.observability.roles import ROLES_BY_ACTOR_ID, role_instance_id
 from tradingagents.observability.scratchpad import ScratchpadEntry, ScratchpadEventType
-from tradingagents.web.store import RunStore
+from tradingagents.runtime.store import RunStore
 
 from .context import (
     ObservationContext,

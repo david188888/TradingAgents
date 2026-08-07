@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from tradingagents.web.run_models import RunSnapshot
+if TYPE_CHECKING:  # pragma: no cover - annotations only
+    from tradingagents.runtime.run_models import RunSnapshot
 
 CYCLE_RECORD_SCHEMA_VERSION = 1
 

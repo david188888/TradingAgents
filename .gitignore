@@ -267,3 +267,7 @@ output/
 /frontend/playwright.config.ts
 /frontend/e2e/
 /scripts/e2e_server.py
+
+# Local planning / docs (kept local-only, not pushed)
+/CHANGELOG.md
+/REFACTOR_PLAN.md

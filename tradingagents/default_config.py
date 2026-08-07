@@ -284,3 +284,54 @@ DEFAULT_CONFIG = _apply_env_overrides({
         },
     },
 })
+
+
+def validate_config(config: dict) -> list[str]:
+    """Return a list of configuration problems; [] means the config is usable.
+
+    Structural checks only: provider/model presence, positive round counts,
+    boolean switches and numeric knobs. Vendor names are validated separately
+    by ``dataflows.registry.validate_data_vendors``; model existence is left to
+    the LLM client layer.
+    """
+    problems: list[str] = []
+    provider = str(config.get("llm_provider", "")).strip().lower()
+    if not provider:
+        problems.append("llm_provider is required")
+    for key in ("deep_think_llm", "quick_think_llm"):
+        if not str(config.get(key, "")).strip():
+            problems.append(f"{key} is required")
+    for key in ("max_debate_rounds", "max_risk_discuss_rounds", "max_recur_limit"):
+        try:
+            if int(config.get(key, 0)) < 1:
+                problems.append(f"{key} must be a positive integer")
+        except (TypeError, ValueError):
+            problems.append(f"{key} must be an integer, got {config.get(key)!r}")
+    for key in (
+        "checkpoint_enabled",
+        "halt_on_missing_data",
+        "evidence_gate_enabled",
+        "evidence_stop_on_fail",
+    ):
+        if not isinstance(config.get(key), bool):
+            problems.append(f"{key} must be a boolean, got {config.get(key)!r}")
+    temperature = config.get("temperature")
+    if temperature is not None and temperature != "":
+        try:
+            float(temperature)
+        except (TypeError, ValueError):
+            problems.append(f"temperature must be numeric, got {temperature!r}")
+    for key in (
+        "max_tool_calls_per_turn",
+        "max_tool_messages_in_context",
+        "llm_max_retries",
+    ):
+        value = config.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            if int(value) < 0:
+                problems.append(f"{key} must be non-negative")
+        except (TypeError, ValueError):
+            problems.append(f"{key} must be an integer, got {value!r}")
+    return problems

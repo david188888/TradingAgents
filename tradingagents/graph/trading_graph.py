@@ -33,8 +33,9 @@ from tradingagents.agents.utils.agent_utils import (
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.analysts import ANALYST_WIRE_KEYS
 from tradingagents.dataflows.config import set_config
+from tradingagents.dataflows.registry import validate_data_vendors
 from tradingagents.dataflows.utils import safe_ticker_component
-from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.default_config import DEFAULT_CONFIG, validate_config
 from tradingagents.execution.models import (
     AnalysisRequest,
     AnalysisResult,
@@ -95,6 +96,8 @@ class TradingAgentsGraph:
         self.config = config or DEFAULT_CONFIG
         self.callbacks = callbacks or []
         self.observation_enabled = observation_enabled
+
+        self._validate_effective_config()
 
         # Update the interface's config
         set_config(self.config)
@@ -164,6 +167,23 @@ class TradingAgentsGraph:
         )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
+
+    def _validate_effective_config(self) -> None:
+        """Fail fast on structurally invalid configuration before LLM/graph setup.
+
+        Validates the merged view (defaults + provided overrides) so a partial
+        caller-supplied config inherits defaults, while a bad override (unknown
+        vendor, non-boolean switch, invalid round count) fails here with a
+        readable message instead of surfacing deep inside an LLM or router call.
+        """
+        merged = dict(DEFAULT_CONFIG)
+        merged.update(self.config)
+        problems = validate_config(merged) + validate_data_vendors(merged)
+        if problems:
+            raise ValueError(
+                "invalid TradingAgents configuration:\n- "
+                + "\n- ".join(problems)
+            )
 
     def _get_provider_kwargs(self) -> dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
