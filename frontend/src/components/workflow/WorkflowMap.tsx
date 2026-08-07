@@ -48,6 +48,7 @@ export function WorkflowMap({ onRoleSelected }: WorkflowMapProps): JSX.Element {
   const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [nodeRects, setNodeRects] = useState<Record<string, NodeRect>>({});
   const [mapWidth, setMapWidth] = useState(0);
+  const [mapHeight, setMapHeight] = useState(0);
 
   // Measure node positions and map width whenever layout changes.
   useEffect(() => {
@@ -57,6 +58,7 @@ export function WorkflowMap({ onRoleSelected }: WorkflowMapProps): JSX.Element {
     const measure = (): void => {
       const mapRect = mapEl.getBoundingClientRect();
       setMapWidth(mapRect.width);
+      setMapHeight(mapRect.height);
       const rects: Record<string, NodeRect> = {};
       for (const [actor_id, el] of Object.entries(nodeRefs.current)) {
         if (!el) continue;
@@ -103,9 +105,9 @@ export function WorkflowMap({ onRoleSelected }: WorkflowMapProps): JSX.Element {
     if (!showEdges) return [];
     return EDGES.map((edge) => ({
       edge,
-      geom: _edgeGeometry(edge, nodeRects),
+      geom: _edgeGeometry(edge, nodeRects, mapWidth, mapHeight),
     })).filter((item): item is { edge: EdgeDef; geom: EdgeGeometry } => item.geom !== null);
-  }, [nodeRects, showEdges]);
+  }, [nodeRects, showEdges, mapHeight, mapWidth]);
 
   const setNodeRef = (actor_id: string) => (el: HTMLDivElement | null) => {
     nodeRefs.current[actor_id] = el;
@@ -184,7 +186,7 @@ export function WorkflowMap({ onRoleSelected }: WorkflowMapProps): JSX.Element {
             </marker>
           </defs>
           {edgePaths.map(({ edge, geom }, i) => {
-            const path = _curvedPath(geom, edge.kind);
+            const path = _curvedPath(geom, edge.kind, mapWidth);
             return (
               <path
                 key={i}
@@ -206,22 +208,35 @@ export function WorkflowMap({ onRoleSelected }: WorkflowMapProps): JSX.Element {
 function _edgeGeometry(
   edge: EdgeDef,
   rects: Record<string, NodeRect>,
+  mapWidth: number,
+  mapHeight: number,
 ): EdgeGeometry | null {
   const from = rects[edge.from];
   const to = rects[edge.to];
   if (!from || !to) return null;
 
+  // Keep endpoints inside the SVG viewport. Reverse debate edges can
+  // otherwise route their midpoint beyond the map border.
+  const inset = 2;
+  const maxX = Math.max(inset, mapWidth - inset);
+  const maxY = Math.max(inset, mapHeight - inset);
+  const clampX = (value: number): number => Math.min(maxX, Math.max(inset, value));
+  const clampY = (value: number): number => Math.min(maxY, Math.max(inset, value));
+
   // Anchor points: center-right of source, center-left of target.
-  const x1 = from.left + from.width;
-  const y1 = from.top + from.height / 2;
-  const x2 = to.left;
-  const y2 = to.top + to.height / 2;
+  const x1 = clampX(from.left + from.width);
+  const y1 = clampY(from.top + from.height / 2);
+  const x2 = clampX(to.left);
+  const y2 = clampY(to.top + to.height / 2);
   return { x1, y1, x2, y2 };
 }
 
-function _curvedPath(geom: EdgeGeometry, kind: EdgeKind): string {
+function _curvedPath(geom: EdgeGeometry, kind: EdgeKind, mapWidth: number): string {
   const { x1, y1, x2, y2 } = geom;
-  const midX = x1 + Math.max(18, (x2 - x1) / 2);
+  const midX = Math.min(
+    Math.max(2, mapWidth - 2),
+    x1 + Math.max(18, (x2 - x1) / 2),
+  );
   if (kind === "adversarial") {
     const midY = y1 + (y2 - y1) / 2;
     return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;

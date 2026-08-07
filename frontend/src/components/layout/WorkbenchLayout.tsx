@@ -211,6 +211,7 @@ export function WorkbenchLayout(): JSX.Element {
                     envelope={view.view}
                     runId={run_id}
                     onOpenAudit={() => setAuditOpen(true)}
+                    onRoleSelected={handleRoleSelected}
                   />
                 ) : null}
                 {auditOpen ? (

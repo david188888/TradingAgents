@@ -1057,7 +1057,8 @@ aside.inspector {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  overflow: visible;
+  overflow: hidden;
+  clip-path: inset(1px round var(--radius-lg));
 }
 
 .edge-handoff {
@@ -2970,6 +2971,48 @@ td.input-ref {
 }
 
 .stage-detail-pending { margin: 6px 0 0; }
+
+.stage-turn-outputs {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.stage-turn-output {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+
+.stage-turn-select {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stage-turn-select:hover .stage-turn-role { color: var(--accent); }
+.stage-turn-role { font-size: 12px; font-weight: 650; }
+.stage-turn-open { color: var(--accent); font-size: 11px; white-space: nowrap; }
+.stage-turn-badge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 10px;
+}
+.stage-turn-output .prose { max-width: none; margin-top: 10px; }
 
 .stage-rounds {
   display: flex;

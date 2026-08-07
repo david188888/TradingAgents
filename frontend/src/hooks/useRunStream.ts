@@ -146,10 +146,11 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
         reconnectCountRef.current = 0;
         dispatch({ type: "snapshot", snapshot });
         if (TERMINAL_RUN_STATUSES.has(snapshot.status)) {
-          // Terminal history is rendered from /view. Replaying its entire
-          // audit event log here would only reconstruct data the default UI
-          // deliberately does not mount.
-          setStatus("closed");
+          // A completed history run still needs its persisted event facts for
+          // role selection, output artifacts, and the right-hand inspector.
+          // Replay is read-only and does not re-run the analysis.
+          setStatus("replaying");
+          streamFrom(0);
           return;
         }
         setStatus("replaying");
