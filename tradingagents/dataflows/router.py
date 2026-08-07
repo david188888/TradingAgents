@@ -33,6 +33,7 @@ _A_SHARE_TICKER_CAPABILITIES = {
     "get_a_share_lockup_releases",
     "get_a_share_dragon_tiger",
     "get_a_share_interactive_questions",
+    "get_news",
 }
 
 
@@ -47,6 +48,9 @@ _A_SHARE_NON_TICKER_CAPABILITIES = {
     "get_a_share_limit_down_pool",
     "get_a_share_prev_limit_up_pool",
     "get_a_share_northbound_flow",
+    "get_a_share_stock_monitor",
+    "get_a_share_price_anomaly",
+    "get_a_share_price_anomaly_count",
     "get_china_macro_indicators",
     "get_a_share_interactive_answers",
     "search_a_share_iwencai",

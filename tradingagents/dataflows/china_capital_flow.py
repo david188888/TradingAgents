@@ -205,7 +205,7 @@ def get_a_share_insider_trades(
 def _require_a_share_code(ticker: str, capability: str) -> str:
     canonical = normalize_ticker_symbol(ticker)
     if not is_a_share_ticker(canonical):
-        raise AshareCapabilityUnavailableError(capability, "akshare", f"{ticker} is not an A-share ticker")
+        raise AshareCapabilityUnavailableError(capability, "eastmoney", f"{ticker} is not an A-share ticker")
     return to_akshare_symbol(canonical)
 
 
@@ -229,7 +229,7 @@ def _filter_date_window(
         if end:
             selected = selected.loc[dates <= end]
         if selected.empty:
-            raise AshareCapabilityUnavailableError("date_window", "akshare", "no rows in requested date window")
+            raise AshareCapabilityUnavailableError("date_window", "eastmoney", "no rows in requested date window")
         return selected
     # The provider gave rows, but no stable date field.  Preserve the rows and
     # say so in the report note instead of fabricating a time filter.
@@ -240,7 +240,7 @@ def _parse_iso_date(value: str) -> date:
     try:
         return date.fromisoformat(value[:10])
     except (AttributeError, ValueError) as exc:
-        raise AshareCapabilityUnavailableError("date_window", "akshare", f"invalid ISO date: {value!r}") from exc
+        raise AshareCapabilityUnavailableError("date_window", "eastmoney", f"invalid ISO date: {value!r}") from exc
 
 
 def _ticker_report(

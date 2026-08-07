@@ -141,7 +141,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "data_vendors": {
         "core_stock_apis": "mootdx,yfinance,tushare,akshare,alpha_vantage",  # Options: mootdx, yfinance, tushare, akshare, alpha_vantage (mootdx = A-share only, TCP 7709 no IP ban; akshare removed from the runtime chain but kept in config so an explicit override stays valid)
         "technical_indicators": "local,yfinance",  # Options: local (A-share stockstats over mootdx/tushare), alpha_vantage, yfinance
-        "fundamental_data": "tushare,akshare,sina,alpha_vantage",  # Options: tushare, akshare, sina (direct quotes.sina.cn), alpha_vantage, yfinance
+        "fundamental_data": "tushare,akshare,alpha_vantage",  # A-share fundamentals: Tushare -> AKShare; Sina is used only for the three statements below
         "news_data": "tavily,eastmoney,yfinance,alpha_vantage",  # Options: tavily, eastmoney (A-share keyless), alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         # Optional A-share research supplements.  Their failures degrade to a
@@ -174,6 +174,10 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # A-share indicators are computed locally from the mootdx/tushare OHLCV
         # chain; non-A-share tickers skip "local" and use yfinance.
         "get_indicators": "local,yfinance",
+        # News uses one shared company-news chain; the router filters vendors
+        # by market. Global news has its own method-compatible chain.
+        "get_news": "tavily,eastmoney,yfinance,alpha_vantage",
+        "get_global_news": "tavily,yfinance,alpha_vantage",
     },
     # Tavily news search controls. Defaults intentionally keep API usage low.
     "halt_on_missing_data": True,

@@ -32,7 +32,7 @@ from .news_curator import (
 )
 from .progress import _emit_data_progress
 from .registry import VENDOR_METHODS, get_category_for_method, get_vendor
-from .router import _market_for_request
+from .router import _market_for_request, _should_skip_vendor_for_symbol
 from .ticker_utils import is_a_share_ticker
 from .vendor_errors import (
     _record_vendor_failure,
@@ -99,9 +99,17 @@ def _route_news_to_vendors(
     **kwargs,
 ) -> str:
     """Fetch news from configured sources and curate a compact source-labeled package."""
-    configured_vendors = [vendor for vendor in vendors if vendor != "default"]
+    configured_vendors = [
+        vendor
+        for vendor in vendors
+        if vendor != "default" and not _should_skip_vendor_for_symbol(method, vendor, args)
+    ]
     if not configured_vendors:
-        configured_vendors = ["tavily", "eastmoney", "yfinance", "alpha_vantage"]
+        configured_vendors = [
+            vendor
+            for vendor in ("tavily", "eastmoney", "yfinance", "alpha_vantage")
+            if not _should_skip_vendor_for_symbol(method, vendor, args)
+        ]
     successes: list[tuple[str, Any]] = []
     errors: list[tuple[str, Exception | str]] = []
 

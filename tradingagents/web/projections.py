@@ -26,6 +26,7 @@ from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
 from .store import RunNotFound, RunStore, RunStoreCorruption, RunStoreError
 
 SCHEMA_VERSION = 1
+VIEW_CACHE_VERSION = 2
 RUN_VIEW_LOCATOR = "projections/run-view-v1.json"
 READER_BRIEF_LOCATOR = "projections/reader-brief-v1.json"
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
@@ -61,16 +62,16 @@ def run_summary_v1(snapshot: RunSnapshot, *, data_quality_level: str) -> dict[st
 
 def data_quality_v1(snapshot: RunSnapshot) -> dict[str, Any]:
     degraded = list(snapshot.degraded_data_sources)
-    unavailable = [
+    unavailable = list(dict.fromkeys(
         str(item.get("capability"))
         for item in degraded
         if isinstance(item, Mapping) and item.get("status") == "unavailable"
-    ]
-    degraded_capabilities = [
+    ))
+    degraded_capabilities = list(dict.fromkeys(
         str(item.get("capability"))
         for item in degraded
         if isinstance(item, Mapping) and item.get("status") == "degraded"
-    ]
+    ))
     level = "limited" if unavailable or degraded_capabilities else "unknown"
     return {
         "level": level,
@@ -230,6 +231,7 @@ def build_run_view(store: RunStore, run_id: str) -> dict[str, Any]:
     debate_summary = _read_debate_summary(store, run_id, snapshot)
     return {
         "schema_version": SCHEMA_VERSION,
+        "projection_cache_version": VIEW_CACHE_VERSION,
         "projection_status": status,
         "reason_code": "legacy_no_typed_outputs" if reader_brief is None else None,
         "source_sequence": snapshot.latest_sequence,
@@ -728,6 +730,7 @@ def _duration_ms(snapshot: RunSnapshot) -> int | None:
 def _valid_view(value: Mapping[str, Any], source_sequence: int) -> bool:
     return (
         value.get("schema_version") == SCHEMA_VERSION
+        and value.get("projection_cache_version") == VIEW_CACHE_VERSION
         and value.get("source_sequence") == source_sequence
         and isinstance(value.get("view"), Mapping)
     )
