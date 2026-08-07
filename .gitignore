@@ -263,3 +263,7 @@ output/
 /tests/test_sina_statements.py
 /tests/web/test_debate_summary.py
 /frontend/src/components/timeline/*.test.tsx
+/tests/test_tencent_provider.py
+/tests/test_vendor_markets.py
+/frontend/e2e/workbench.spec.ts
+/scripts/e2e_server.py
