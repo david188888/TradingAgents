@@ -21,7 +21,7 @@ tradingagents analyze                    # jump straight to analysis
 python -m cli.main                       # equivalent
 tradingagents inspect-preset <path>      # validate a workbench analyst preset
 
-# Tests
+# Tests (local-only — tests/ is NOT tracked on GitHub; clone ships runnable code + docs only)
 pytest                                    # all tests
 pytest -m unit                            # unit tests only
 pytest -m integration                     # integration tests (require external services)
@@ -74,7 +74,7 @@ Key concepts:
 | `tradingagents/llm_clients/` | LLM provider abstraction: factory pattern routing to OpenAI-compatible / Anthropic / Google / Azure |
 | `tradingagents/default_config.py` | **Single source of truth for all configuration**, supports `TRADINGAGENTS_*` env-var overrides |
 | `cli/` | Typer + Rich interactive CLI |
-| `tests/` | pytest suite (130+ test files), conftest auto-injects dummy API keys |
+| `tests/` | pytest suite (130+ test files), conftest auto-injects dummy API keys. **Local-only** — not tracked on GitHub |
 
 ### Data Fetching Fallback Chain
 

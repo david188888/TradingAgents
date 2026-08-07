@@ -256,14 +256,14 @@ output/
 .claude/
 .codex/
 
-# Test files are kept local-only; the public fork stays clean (2026-08)
-/tests/test_a_stock_data_adapters.py
-/tests/test_company_resolution.py
-/tests/test_indicators_local.py
-/tests/test_sina_statements.py
-/tests/web/test_debate_summary.py
-/frontend/src/components/timeline/*.test.tsx
-/tests/test_tencent_provider.py
-/tests/test_vendor_markets.py
-/frontend/e2e/workbench.spec.ts
+# Tests, dev-only assets, and e2e scaffolding are kept local-only;
+# the public fork stays clean and only ships runnable code + key docs (2026-08)
+/tests/
+/assets/
+/frontend/src/**/*.test.ts
+/frontend/src/**/*.test.tsx
+/frontend/src/test/
+/frontend/vitest.config.ts
+/frontend/playwright.config.ts
+/frontend/e2e/
 /scripts/e2e_server.py
