@@ -29,15 +29,14 @@ from .china_capital_flow import (
 )
 from .china_data import (
     ChinaDataUnavailableError,
-    get_balance_sheet_akshare,
+    get_balance_sheet_sina,
     get_balance_sheet_tushare,
-    get_cashflow_akshare,
+    get_cashflow_sina,
     get_cashflow_tushare,
     get_fundamentals_akshare,
     get_fundamentals_tushare,
-    get_income_statement_akshare,
+    get_income_statement_sina,
     get_income_statement_tushare,
-    get_stock_akshare,
     get_stock_tushare,
 )
 from .china_macro import get_china_macro_indicators
@@ -90,6 +89,7 @@ from .y_finance import (
     get_fundamentals as get_yfinance_fundamentals,
     get_income_statement as get_yfinance_income_statement,
     get_insider_transactions as get_yfinance_insider_transactions,
+    get_stock_stats_indicators_local,
     get_stock_stats_indicators_window,
     get_YFin_data_online,
 )
@@ -278,6 +278,7 @@ VENDOR_LIST = [
     "tushare",
     "akshare",
     "sina",
+    "local",
     "tavily",
     "yfinance",
     "fred",
@@ -306,9 +307,14 @@ VENDOR_MARKETS: dict[str, frozenset[str]] = {
     "iwencai": frozenset({"a_share"}),
     "cls": frozenset({"a_share"}),
     "sina": frozenset({"a_share"}),
+    "local": frozenset({"a_share"}),
     "yfinance": frozenset({"global"}),
     "fred": frozenset({"global"}),
-    "alpha_vantage": frozenset({"a_share", "global"}),
+    # alpha_vantage has no A-share coverage (OHLCV/fundamentals/indicators all
+    # return empty for Chinese tickers), so it is excluded from every A-share
+    # chain. Keeping it global-only avoids one doomed HTTP call per A-share
+    # request while preserving its non-A-share fallback role.
+    "alpha_vantage": frozenset({"global"}),
     "tavily": frozenset({"a_share", "global"}),
 }
 
@@ -318,12 +324,18 @@ VENDOR_METHODS = {
     "get_stock_data": {
         "mootdx": get_stock_mootdx,
         "tushare": get_stock_tushare,
-        "akshare": get_stock_akshare,
+        # akshare removed from the A-share OHLCV chain: mootdx (TCP 7709, no IP
+        # ban) is the primary source and tushare is the stable fallback; akshare
+        # only added import/install overhead on this path.
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
     },
     # technical_indicators
+    # ``local`` computes indicators locally from the A-share OHLCV chain
+    # (mootdx -> tushare) via stockstats, giving A-shares a working indicator
+    # source instead of the NO_DATA_AVAILABLE sentinel from alpha_vantage.
     "get_indicators": {
+        "local": get_stock_stats_indicators_local,
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
     },
@@ -336,19 +348,21 @@ VENDOR_METHODS = {
     },
     "get_balance_sheet": {
         "tushare": get_balance_sheet_tushare,
-        "akshare": get_balance_sheet_akshare,
+        # Sina direct (quotes.sina.cn, zero key) replaces the akshare wrapper of
+        # the same underlying source; see china_data._get_sina_statement_direct.
+        "sina": get_balance_sheet_sina,
         "alpha_vantage": get_alpha_vantage_balance_sheet,
         "yfinance": get_yfinance_balance_sheet,
     },
     "get_cashflow": {
         "tushare": get_cashflow_tushare,
-        "akshare": get_cashflow_akshare,
+        "sina": get_cashflow_sina,
         "alpha_vantage": get_alpha_vantage_cashflow,
         "yfinance": get_yfinance_cashflow,
     },
     "get_income_statement": {
         "tushare": get_income_statement_tushare,
-        "akshare": get_income_statement_akshare,
+        "sina": get_income_statement_sina,
         "alpha_vantage": get_alpha_vantage_income_statement,
         "yfinance": get_yfinance_income_statement,
     },

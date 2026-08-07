@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import requests
 
 from .config import get_config
 from .ticker_utils import (
@@ -355,6 +356,145 @@ def get_income_statement_akshare(ticker: str, freq: str = "quarterly", curr_date
         report_type="利润表",
         title="Income Statement",
         raw_method="akshare_get_income_statement",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sina direct financial statements (quotes.sina.cn, zero key)
+# ---------------------------------------------------------------------------
+# Aligned with a-stock-data SKILL.md §6.4: the same Sina source that the old
+# akshare ``stock_financial_report_sina`` wrapper called, but requested directly
+# over HTTP so the SDK failure plane (akfamily/akshare issues #7101/#7103/#6148)
+# is removed. The response structure is ``result.data.report_list`` keyed by
+# reporting period; each period's ``data`` is the list of line items.
+
+_SINA_STATEMENT_REPORT_TYPES = {
+    "fzb": ("资产负债表", "Balance Sheet"),
+    "lrb": ("利润表", "Income Statement"),
+    "llb": ("现金流量表", "Cash Flow"),
+}
+
+
+def _sina_statement_prefix(ticker: str) -> str:
+    """Pick the exchange prefix Sina's financial report endpoint expects."""
+    code = to_akshare_symbol(ticker)
+    return "sh" if code.startswith(("5", "6", "9")) else "sz"
+
+
+def _get_sina_statement_direct(
+    ticker: str,
+    curr_date: str | None,
+    *,
+    report_type: str,
+    title: str,
+    raw_method: str,
+) -> str:
+    """Retrieve one financial statement directly from Sina (zero key).
+
+    Replaces the akshare ``stock_financial_report_sina`` wrapper with a direct
+    HTTP call to ``quotes.sina.cn`` so the SDK dependency is removed from the
+    statement chain while keeping the same underlying data source.
+    """
+    code = to_akshare_symbol(ticker)
+    if not is_a_share_ticker(ticker):
+        raise ChinaDataUnavailableError(f"{ticker} is not recognized as an A-share ticker.")
+    paper_code = f"{_sina_statement_prefix(ticker)}{code}"
+    curr_date = curr_date or datetime.now().strftime("%Y-%m-%d")
+    url = (
+        "https://quotes.sina.cn/cn/api/openapi.php/"
+        "CompanyFinanceService.getFinanceReport2022"
+    )
+    params = {
+        "paperCode": paper_code,
+        "source": report_type,
+        "type": "0",
+        "page": "1",
+        "num": "8",
+    }
+    try:
+        resp = requests.get(
+            url,
+            params=params,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15,
+        )
+        payload = resp.json()
+    except Exception as exc:  # noqa: BLE001 - degrade to next vendor
+        raise ChinaDataUnavailableError(
+            f"Sina {title} request failed for {paper_code}: {exc}"
+        ) from exc
+    report_list = (
+        payload.get("result", {}).get("data", {}).get("report_list", {}) or {}
+    )
+    if not report_list:
+        raise ChinaDataUnavailableError(
+            f"Sina returned no {title.lower()} data for {paper_code}."
+        )
+    rows = []
+    for period in sorted(report_list.keys(), reverse=True):
+        period_obj = report_list[period]
+        rec = {
+            "报告期": f"{period[:4]}-{period[4:6]}-{period[6:8]}"
+        }
+        for item in period_obj.get("data", []) or []:
+            item_title = item.get("item_title")
+            if not item_title or item.get("item_value") is None:
+                continue
+            rec[item_title] = item.get("item_value")
+        rows.append(rec)
+    df = pd.DataFrame(rows)
+    if df.empty:
+        raise ChinaDataUnavailableError(
+            f"Sina returned no {title.lower()} data for {paper_code}."
+        )
+    _save_raw_data(ticker, curr_date, raw_method, df)
+    df = _filter_statement_as_of(df, curr_date)
+    if df.empty:
+        raise ChinaDataUnavailableError(
+            f"Sina returned no {title.lower()} data on or before {curr_date}."
+        )
+    if "报告期" in df.columns:
+        df = df.sort_values("报告期", ascending=False)
+    return _format_dataframe_report(
+        df,
+        title=f"China A-share {title} for {paper_code}",
+        source="sina direct",
+        monetary_unit="CNY",
+        monetary_scale=100_000_000,
+        as_of=curr_date,
+    )
+
+
+def get_balance_sheet_sina(ticker: str, freq: str = "quarterly", curr_date: str = None) -> str:
+    """A-share balance sheet via Sina direct (zero key)."""
+    return _get_sina_statement_direct(
+        ticker,
+        curr_date,
+        report_type="fzb",
+        title="Balance Sheet",
+        raw_method="sina_get_balance_sheet",
+    )
+
+
+def get_cashflow_sina(ticker: str, freq: str = "quarterly", curr_date: str = None) -> str:
+    """A-share cash flow statement via Sina direct (zero key)."""
+    return _get_sina_statement_direct(
+        ticker,
+        curr_date,
+        report_type="llb",
+        title="Cash Flow",
+        raw_method="sina_get_cashflow",
+    )
+
+
+def get_income_statement_sina(ticker: str, freq: str = "quarterly", curr_date: str = None) -> str:
+    """A-share income statement via Sina direct (zero key)."""
+    return _get_sina_statement_direct(
+        ticker,
+        curr_date,
+        report_type="lrb",
+        title="Income Statement",
+        raw_method="sina_get_income_statement",
     )
 
 

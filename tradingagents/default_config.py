@@ -139,9 +139,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
-        "core_stock_apis": "mootdx,yfinance,tushare,akshare,alpha_vantage",  # Options: mootdx, yfinance, tushare, akshare, alpha_vantage (mootdx = A-share only, TCP 7709 no IP ban)
-        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
-        "fundamental_data": "yfinance,tushare,akshare,alpha_vantage",  # Options: yfinance, tushare, akshare, alpha_vantage
+        "core_stock_apis": "mootdx,yfinance,tushare,akshare,alpha_vantage",  # Options: mootdx, yfinance, tushare, akshare, alpha_vantage (mootdx = A-share only, TCP 7709 no IP ban; akshare removed from the runtime chain but kept in config so an explicit override stays valid)
+        "technical_indicators": "local,yfinance",  # Options: local (A-share stockstats over mootdx/tushare), alpha_vantage, yfinance
+        "fundamental_data": "tushare,akshare,sina,alpha_vantage",  # Options: tushare, akshare, sina (direct quotes.sina.cn), alpha_vantage, yfinance
         "news_data": "tavily,eastmoney,yfinance,alpha_vantage",  # Options: tavily, eastmoney (A-share keyless), alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         # Optional A-share research supplements.  Their failures degrade to a
@@ -164,7 +164,16 @@ DEFAULT_CONFIG = _apply_env_overrides({
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
-        # Example: "get_stock_data": "alpha_vantage",  # Override category default
+        # The three A-share statements drop the akshare wrapper in favor of the
+        # Sina direct endpoint (quotes.sina.cn, zero key); tushare remains the
+        # primary A-share statement source.  Non-A-share tickers skip tushare/
+        # sina via the market matrix and fall through to yfinance/alpha_vantage.
+        "get_balance_sheet": "tushare,sina",
+        "get_cashflow": "tushare,sina",
+        "get_income_statement": "tushare,sina",
+        # A-share indicators are computed locally from the mootdx/tushare OHLCV
+        # chain; non-A-share tickers skip "local" and use yfinance.
+        "get_indicators": "local,yfinance",
     },
     # Tavily news search controls. Defaults intentionally keep API usage low.
     "halt_on_missing_data": True,

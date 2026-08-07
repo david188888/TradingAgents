@@ -65,12 +65,21 @@ def get_ticker() -> str:
 def normalize_ticker_symbol(ticker: str) -> str:
     """Resolve user input to its canonical Yahoo symbol (single source of truth).
 
-    First infers A-share exchange suffixes for bare six-digit codes (e.g.
-    ``002636`` -> ``002636.SZ``), then delegates to the data layer's
-    ``normalize_symbol`` for commodity/forex/crypto resolution (e.g.
-    ``BTCUSD`` -> ``BTC-USD``, ``XAUUSD`` -> ``GC=F``). Falls back to the
-    plain upper-case if the data layer is unavailable.
+    First tries the input resolver (company names and multi-format A-share codes
+    via ``company_resolution``), then infers A-share exchange suffixes for bare
+    six-digit codes, then delegates to the data layer's ``normalize_symbol`` for
+    commodity/forex/crypto resolution (e.g. ``BTCUSD`` -> ``BTC-USD``,
+    ``XAUUSD`` -> ``GC=F``). Falls back to the plain upper-case if the data
+    layer is unavailable.
     """
+    try:
+        from tradingagents.dataflows.company_resolution import resolve_input_to_ticker
+
+        resolved = resolve_input_to_ticker(ticker)
+        if resolved:
+            return resolved
+    except Exception:
+        pass
     try:
         from tradingagents.dataflows.symbol_utils import normalize_symbol
         from tradingagents.dataflows.ticker_utils import (

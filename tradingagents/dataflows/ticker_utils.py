@@ -14,6 +14,33 @@ _A_SHARE_EXCHANGE_BY_PREFIX = {
     "9": "SH",
 }
 
+# Shanghai-listed index codes (000xxx segment) that must route to the SH
+# exchange, not the SZ fallback a bare prefix would infer.  Verified against
+# a-stock-data's ``SH_INDEX`` whitelist; ``000001`` stays SZ (Ping An Bank)
+# unless the caller passes an explicit ``sh`` prefix / ``.SS`` suffix.
+_SH_INDEX_CODES = frozenset({"000300", "000905", "000016", "000688", "000852", "000010"})
+
+# Beijing Stock Exchange new-segment prefix: since 2024-04 new listings use the
+# 920xxx segment and since 2025-10 the old 43/83/87 codes are fully retired
+# (renumbered to 920xxx).  ``92`` must be matched before the generic ``9`` -> SH
+# rule so a BSE code is never routed to Shanghai.
+_BJ_NEW_SEGMENT_PREFIX = "92"
+
+
+def infer_a_share_exchange(code: str) -> str | None:
+    """Infer exchange from a six-digit A-share code.
+
+    Checks the Shanghai index whitelist first, then the Beijing 920xxx segment,
+    then the legacy prefix map.
+    """
+    if not re.fullmatch(r"\d{6}", str(code or "")):
+        return None
+    if code in _SH_INDEX_CODES:
+        return "SH"
+    if code.startswith(_BJ_NEW_SEGMENT_PREFIX):
+        return "BJ"
+    return _A_SHARE_EXCHANGE_BY_PREFIX.get(code[0])
+
 
 def normalize_ticker_symbol(ticker: str) -> str:
     """Normalize user ticker input while preserving exchange suffixes.
@@ -49,13 +76,6 @@ def is_a_share_ticker(ticker: str) -> bool:
     """Return True when the ticker looks like a Shanghai/Shenzhen/Beijing A-share."""
     canonical = normalize_ticker_symbol(ticker)
     return bool(re.fullmatch(r"\d{6}\.(SS|SH|SZ|BJ)", canonical))
-
-
-def infer_a_share_exchange(code: str) -> str | None:
-    """Infer exchange from a six-digit A-share code."""
-    if not re.fullmatch(r"\d{6}", str(code or "")):
-        return None
-    return _A_SHARE_EXCHANGE_BY_PREFIX.get(code[0])
 
 
 def to_yfinance_symbol(ticker: str) -> str:

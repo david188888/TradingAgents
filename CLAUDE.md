@@ -79,10 +79,10 @@ Key concepts:
 ### Data Fetching Fallback Chain
 
 Data calls route through `tradingagents/dataflows/interface.py` → `route_to_vendor()`:
-- **A-share stock data**: mootdx → tushare → akshare → alpha_vantage (mootdx = TDX TCP 7709, no IP ban, primary; yfinance skipped for A-shares - needs VPN, poor coverage)
-- **Non-A-share stock data**: yfinance → alpha_vantage (tushare/akshare skipped)
-- **A-share fundamentals/financial statements**: tushare → akshare (Sina) → alpha_vantage; Sina-based `stock_financial_report_sina` and `stock_financial_abstract` are the reliable AKShare fallback because EastMoney endpoints are frequently blocked by anti-crawler measures (akfamily/akshare issues #7101, #7103, #6148)
-- **Technical indicators**: yfinance → alpha_vantage (no A-share indicator source; returns NO_DATA_AVAILABLE sentinel when unavailable)
+- **A-share stock data**: mootdx → tushare (mootdx = TDX TCP 7709, no IP ban, primary; akshare removed from this chain; alpha_vantage is global-only via VENDOR_MARKETS; yfinance skipped for A-shares - needs VPN, poor coverage)
+- **Non-A-share stock data**: yfinance → alpha_vantage (tushare/akshare/sina skipped)
+- **A-share fundamentals/financial statements**: tushare → Sina direct (`quotes.sina.cn`, zero key) → alpha_vantage; the old akshare `stock_financial_report_sina` wrapper was replaced by the direct `china_data.get_*_sina` adapters (same underlying source, no SDK failure plane); `get_fundamentals` keeps akshare (`stock_financial_abstract`) as a fallback
+- **Technical indicators**: local (A-share stockstats over mootdx/tushare OHLCV) → yfinance → alpha_vantage; the A-share local vendor replaces the old NO_DATA_AVAILABLE sentinel
 - **News**: multi-source parallel fetch → deduplication → credibility scoring → cross-source consistency detection → curated output. A-share tickers add a keyless EastMoney stock-news fallback (`eastmoney_news.py`) after Tavily.
 - Each tool method can be individually vendor-configured; tool-level config takes precedence over category-level
 
@@ -96,7 +96,7 @@ Data calls route through `tradingagents/dataflows/interface.py` → `route_to_ve
 
 ### Fork-Specific Features (vs upstream)
 
-1. **A-share support**: `tradingagents/dataflows/china_data.py` + `tradingagents/dataflows/mootdx_provider.py`; mootdx (TDX TCP 7709, no IP ban) is the primary A-share OHLCV source, tushare remains primary for fundamentals, akshare is fallback (yfinance is skipped — needs VPN, poor A-share coverage). A-share financial statements use Sina-based AKShare (`stock_financial_report_sina`, `stock_financial_abstract`) as reliable fallback when EastMoney endpoints are blocked. Local three-tier identity resolution (tushare -> akshare -> yfinance).
+1. **A-share support**: `tradingagents/dataflows/china_data.py` + `tradingagents/dataflows/mootdx_provider.py`; mootdx (TDX TCP 7709, no IP ban) is the primary A-share OHLCV source, tushare remains primary for fundamentals, akshare is the `get_fundamentals` fallback (yfinance is skipped — needs VPN, poor A-share coverage). A-share financial statements use Sina direct HTTP (`get_*_sina` in china_data.py) as the reliable fallback. Local identity resolution: tushare -> EastMoney push2 direct -> akshare -> yfinance.
 2. **Tavily news**: `tradingagents/dataflows/tavily_news.py`, A-share query templates, topic fallback, domain/score filters
 3. **Evidence Steward**: `tradingagents/agents/evidence_steward.py` + `tradingagents/dataflows/evidence.py`, assesses evidence sufficiency before downstream debate and enriches via Tavily when thin/contradictory/identity-ambiguous. Terminal verdicts are `PASS`, `LOW_CONFIDENCE`, and `FAIL_STOP`; `evidence_stop_on_fail` defaults to `False`, but hard identity conflicts and fatal core-data conditions remain unconditional stops. `LOW_CONFIDENCE` reaches Research/Portfolio Manager prompts as a conviction cap. Unexpected steward faults persist only the exception category, never raw exception text.
 4. **News Advisor**: `tradingagents/dataflows/news_advisor.py`, LLM-driven (Agentic RAG reflection) coverage-gap analysis + targeted search
@@ -115,4 +115,4 @@ Data calls route through `tradingagents/dataflows/interface.py` → `route_to_ve
 - **Single source of truth for config**: All configurable items must be managed through `default_config.py`'s `DEFAULT_CONFIG` dict + `_ENV_OVERRIDES` mapping
 - **Structured output**: Research Manager / Trader / Portfolio Manager use Pydantic schemas to constrain LLM output; `render_*` functions convert back to markdown for downstream consumers
 - **Evidence-aware degradation**: ordinary provider gaps and thin coverage should remain explicit and continue as `LOW_CONFIDENCE`; hard identity conflicts and fatal core-data conditions remain `FAIL_STOP`. Never erase limitations or silently promote degraded evidence to `PASS`
-- **A-share-first identity resolution**: A-share tickers resolve identity via the local 3-tier chain (tushare -> akshare -> yfinance) in `resolve_canonical_company_profile()`; non-A-share tickers use upstream `resolve_instrument_identity()` (yfinance). The branch lives in `TradingAgentsGraph.resolve_instrument_context()`. Never bypass the local chain for A-shares - yfinance coverage is poor and often returns wrong/English names.
+- **A-share-first identity resolution**: A-share tickers resolve identity via the local chain (tushare -> EastMoney push2 direct -> akshare -> yfinance) in `resolve_canonical_company_profile()`; non-A-share tickers use upstream `resolve_instrument_identity()` (yfinance). The branch lives in `TradingAgentsGraph.resolve_instrument_context()`, which also normalises company names / multi-format codes via `company_resolution.resolve_input_to_ticker()`. Never bypass the local chain for A-shares - yfinance coverage is poor and often returns wrong/English names.

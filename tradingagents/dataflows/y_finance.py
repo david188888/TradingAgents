@@ -112,14 +112,22 @@ def get_YFin_data_online(
 
     return header + csv_string
 
-def get_stock_stats_indicators_window(
+def _build_indicators_window_report(
     symbol: Annotated[str, "ticker symbol of the company"],
     indicator: Annotated[str, "technical indicator to get the analysis and report of"],
     curr_date: Annotated[
         str, "The current trading date you are trading on, YYYY-mm-dd"
     ],
     look_back_days: Annotated[int, "how many days to look back"],
+    via_vendor: bool = False,
 ) -> str:
+    """Build a ``date: value`` indicator report over a look-back window.
+
+    ``via_vendor`` routes the underlying OHLCV through the vendor fallback chain
+    instead of yfinance. The yfinance entry point must keep ``via_vendor=False``
+    (it is the yfinance vendor itself); the A-share local entry point uses
+    ``via_vendor=True`` so indicators are computed from mootdx/tushare rows.
+    """
 
     best_ind_params = {
         # Moving Averages
@@ -205,7 +213,9 @@ def get_stock_stats_indicators_window(
 
     # Optimized: Get stock data once and calculate indicators for all dates
     try:
-        indicator_data = _get_stock_stats_bulk(symbol, indicator, curr_date)
+        indicator_data = _get_stock_stats_bulk(
+            symbol, indicator, curr_date, via_vendor=via_vendor
+        )
 
         # Generate the date range we need
         current_dt = curr_date_dt
@@ -252,19 +262,58 @@ def get_stock_stats_indicators_window(
     return result_str
 
 
+def get_stock_stats_indicators_window(
+    symbol: Annotated[str, "ticker symbol of the company"],
+    indicator: Annotated[str, "technical indicator to get the analysis and report of"],
+    curr_date: Annotated[
+        str, "The current trading date you are trading on, YYYY-mm-dd"
+    ],
+    look_back_days: Annotated[int, "how many days to look back"],
+) -> str:
+    """Global-market indicator window via yfinance OHLCV (unchanged contract)."""
+    return _build_indicators_window_report(
+        symbol, indicator, curr_date, look_back_days, via_vendor=False
+    )
+
+
+def get_stock_stats_indicators_local(
+    symbol: Annotated[str, "ticker symbol of the company"],
+    indicator: Annotated[str, "technical indicator to get the analysis and report of"],
+    curr_date: Annotated[
+        str, "The current trading date you are trading on, YYYY-mm-dd"
+    ],
+    look_back_days: Annotated[int, "how many days to look back"],
+) -> str:
+    """A-share indicator window computed locally from the vendor OHLCV chain.
+
+    Routes through ``load_ohlcv(..., via_vendor=True)`` (mootdx -> tushare) so
+    A-shares get real MA/MACD/RSI/BOLL/ATR/VWMA/MFI values instead of the
+    ``NO_DATA_AVAILABLE`` sentinel that alpha_vantage returned for Chinese
+    tickers. The output contract is identical to
+    ``get_stock_stats_indicators_window`` (``date: value`` lines).
+    """
+    return _build_indicators_window_report(
+        symbol, indicator, curr_date, look_back_days, via_vendor=True
+    )
+
+
 def _get_stock_stats_bulk(
     symbol: Annotated[str, "ticker symbol of the company"],
     indicator: Annotated[str, "technical indicator to calculate"],
-    curr_date: Annotated[str, "current date for reference"]
+    curr_date: Annotated[str, "current date for reference"],
+    via_vendor: bool = False,
 ) -> dict:
     """
     Optimized bulk calculation of stock stats indicators.
     Fetches data once and calculates indicator for all available dates.
     Returns dict mapping date strings to indicator values.
+
+    ``via_vendor`` routes the OHLCV fetch through the vendor fallback chain
+    (A-share: mootdx -> tushare); the yfinance entry point keeps it False.
     """
     from stockstats import wrap
 
-    data = load_ohlcv(symbol, curr_date)
+    data = load_ohlcv(symbol, curr_date, via_vendor=via_vendor)
     df = wrap(data)
     df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 

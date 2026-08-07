@@ -357,6 +357,11 @@ class TradingAgentsGraph:
     def resolve_instrument_context(self, ticker: str, asset_type: str = "stock") -> str:
         """Resolve ticker identity once and return the full instrument context.
 
+        Company names and multi-format codes are normalised first so any entry
+        point (CLI/web/API) accepts ``贵州茅台``, ``688825`` or ``SH688825`` and
+        lands on the same canonical ticker.  The resolution is idempotent: an
+        already-canonical ticker passes through unchanged.
+
         A-share tickers resolve via the local 3-tier chain (tushare/akshare/
         yfinance) so agents anchor to the correct Chinese company; non-A-share
         tickers use upstream's yfinance lookup. Both inject identity into the
@@ -365,8 +370,13 @@ class TradingAgentsGraph:
         path and the CLI call this so the resolved identity reaches the whole
         graph regardless of entry point.
         """
+        from tradingagents.dataflows.company_resolution import resolve_input_to_ticker
         from tradingagents.dataflows.evidence import resolve_canonical_company_profile
         from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+
+        resolved_input = resolve_input_to_ticker(ticker)
+        if resolved_input:
+            ticker = resolved_input
 
         if is_a_share_ticker(ticker):
             profile = resolve_canonical_company_profile(ticker)

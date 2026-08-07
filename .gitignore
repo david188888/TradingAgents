@@ -255,3 +255,11 @@ output/
 # Local AI tooling (not part of the project)
 .claude/
 .codex/
+
+# Test files are kept local-only; the public fork stays clean (2026-08)
+/tests/test_a_stock_data_adapters.py
+/tests/test_company_resolution.py
+/tests/test_indicators_local.py
+/tests/test_sina_statements.py
+/tests/web/test_debate_summary.py
+/frontend/src/components/timeline/*.test.tsx

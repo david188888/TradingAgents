@@ -386,6 +386,10 @@ def resolve_canonical_company_profile(ticker: str) -> dict[str, Any]:
             )
     except Exception as exc:
         profile["resolution_error"] = str(exc)
+    # EastMoney push2 direct (zero key) fills identity without the akshare SDK;
+    # it sits between the tushare primary and the akshare/yfinance fallbacks.
+    if not profile.get("name"):
+        _apply_eastmoney_profile(profile)
     if not profile.get("name"):
         _apply_akshare_profile(profile)
     if not profile.get("name"):
@@ -410,6 +414,63 @@ def format_company_profile(profile: dict[str, Any] | None) -> str:
 
 
 _A_SHARE_CODE_NAME_CACHE: dict[str, str] | None = None
+
+
+def _apply_eastmoney_profile(profile: dict[str, Any]) -> None:
+    """Fill profile identity from EastMoney push2 (zero key, direct HTTP).
+
+    Aligned with a-stock-data SKILL.md §6.3 ``eastmoney_stock_info`` and
+    replaces the akshare ``stock_individual_info_em`` wrapper (which calls the
+    same push2 source) with a direct request, so identity resolution no longer
+    depends on the akshare SDK. Best-effort: failures are recorded on the
+    profile and the resolution chain falls through to akshare/yfinance.
+    """
+    try:
+        symbol = str(profile.get("symbol") or "")
+        if not re.fullmatch(r"\d{6}", symbol):
+            return
+        # push2 secid market: 1 for Shanghai, 0 for Shenzhen/Beijing.  920xxx BSE
+        # new-segment codes are served under market 0.
+        market_code = 1 if symbol.startswith(("5", "6", "9")) else 0
+        if symbol.startswith("92"):
+            market_code = 0
+        url = "https://push2.eastmoney.com/api/qt/stock/get"
+        params = {
+            "fltt": "2",
+            "invt": "2",
+            "fields": "f57,f58,f84,f85,f127,f116,f117,f189,f43",
+            "secid": f"{market_code}.{symbol}",
+        }
+        resp = requests.get(
+            url,
+            params=params,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10,
+        )
+        data = (resp.json() or {}).get("data") or {}
+        if not data:
+            profile["eastmoney_resolution_error"] = "push2 returned empty data"
+            return
+        name = str(data.get("f58") or "").strip()
+        if name:
+            profile["name"] = name
+            if not profile.get("full_name"):
+                profile["full_name"] = name
+        if data.get("f127"):
+            profile["industry"] = str(data["f127"])
+        if data.get("f84") is not None:
+            profile["total_shares"] = data.get("f84")
+        if data.get("f85") is not None:
+            profile["float_shares"] = data.get("f85")
+        if data.get("f116") is not None:
+            profile["market_cap"] = data.get("f116")
+        if data.get("f117") is not None:
+            profile["float_market_cap"] = data.get("f117")
+        if data.get("f189"):
+            profile["list_date"] = str(data["f189"])
+        profile["profile_source"] = "eastmoney_push2"
+    except Exception as exc:  # noqa: BLE001 - best-effort supplement
+        profile["eastmoney_resolution_error"] = str(exc)
 
 
 def _apply_akshare_profile(profile: dict[str, Any]) -> None:
