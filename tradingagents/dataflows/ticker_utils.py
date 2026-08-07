@@ -6,9 +6,11 @@ import re
 
 _A_SHARE_EXCHANGE_BY_PREFIX = {
     "0": "SZ",
+    "1": "SZ",  # Shenzhen ETFs/LOFs (159xxx/16xxx segments)
     "2": "SZ",
     "3": "SZ",
     "4": "BJ",
+    "5": "SH",  # Shanghai ETFs/LOFs (510xxx/512xxx/518xxx/588xxx segments)
     "6": "SH",
     "8": "BJ",
     "9": "SH",
@@ -26,6 +28,15 @@ _SH_INDEX_CODES = frozenset({"000300", "000905", "000016", "000688", "000852", "
 # rule so a BSE code is never routed to Shanghai.
 _BJ_NEW_SEGMENT_PREFIX = "92"
 
+# Strict ticker forms accepted by research/EPS-style endpoints that only
+# understand a bare six-digit code.  A market identifier may appear either as
+# a prefix (SH600519) or a suffix (600519.SH), never both.  Anchored so a
+# 7-digit or mixed string is rejected instead of silently truncated.
+_STRICT_TICKER_RE = re.compile(
+    r"^(?:(SH|SZ|BJ)(\d{6})|(\d{6})(?:\.(SH|SZ|BJ))?)$",
+    re.IGNORECASE,
+)
+
 
 def infer_a_share_exchange(code: str) -> str | None:
     """Infer exchange from a six-digit A-share code.
@@ -40,6 +51,59 @@ def infer_a_share_exchange(code: str) -> str | None:
     if code.startswith(_BJ_NEW_SEGMENT_PREFIX):
         return "BJ"
     return _A_SHARE_EXCHANGE_BY_PREFIX.get(code[0])
+
+
+def _natural_market(digits: str) -> str:
+    """The market a six-digit A-share code naturally belongs to.
+
+    Used only to validate an explicit market identifier; never to guess.
+    ``000xxx`` is intentionally ambiguous (SH index / SZ stock) and is handled
+    by the caller, mirroring a-stock-data's ``norm_ticker``.
+    """
+    if digits.startswith("92") or digits[:2] in ("43", "83", "87"):
+        return "BJ"
+    if digits[0] in ("5", "6", "9"):
+        return "SH"
+    return "SZ"
+
+
+def strict_ticker_code(code: str, *, stock_only: bool = False) -> str:
+    """Parse a supported ticker form into a bare six-digit A-share code.
+
+    Accepts ``600519`` / ``SH600519`` / ``600519.SH`` / ``BJ920982``.  Raises
+    ``ValueError`` on malformed or ambiguous input instead of guessing a code:
+    silently picking the wrong instrument (for example ``SH000001`` as Ping An
+    Bank, or truncating ``6005190`` to ``600519``) is worse than failing
+    loudly.  ``stock_only`` rejects explicit Shanghai index codes (``000xxx``)
+    for stock-only endpoints such as research reports and consensus forecasts.
+    """
+    raw = str(code or "").strip()
+    match = _STRICT_TICKER_RE.match(raw)
+    if not match:
+        raise ValueError(
+            f"无法把 {code!r} 解析为 6 位股票代码；支持格式：600519 / "
+            "SH600519 / 600519.SH（前缀与后缀二选一，不能同时写）"
+        )
+    digits = match.group(2) or match.group(3)
+    market = (match.group(1) or match.group(4) or "").lower()
+    if market:
+        if digits.startswith("000"):
+            # 000xxx is shared between Shanghai indices and Shenzhen stocks.
+            # An explicit identifier here is disambiguation, not contradiction.
+            if market == "bj":
+                raise ValueError(f"{code!r} 市场标识与号段矛盾：000xxx 不属北交所。")
+            if stock_only and market == "sh":
+                raise ValueError(
+                    f"{code!r} 指向沪市指数而非个股（沪市无 000xxx 个股），本接口只服务个股。"
+                    f"要查同号段的深市个股请显式传 sz{digits}。"
+                )
+        else:
+            natural = _natural_market(digits)
+            if market != natural.lower():
+                raise ValueError(
+                    f"{code!r} 的市场标识与号段矛盾：{digits} 属 {natural} 市，而不是 {market.upper()} 市。"
+                )
+    return digits
 
 
 def normalize_ticker_symbol(ticker: str) -> str:

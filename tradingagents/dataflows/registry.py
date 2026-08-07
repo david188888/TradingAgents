@@ -67,8 +67,11 @@ from .china_specialty_em import (
     get_a_share_limit_up_ladder_em,
     get_a_share_lockup_releases_em,
     get_a_share_prev_limit_up_pool,
+    get_a_share_price_anomaly_count_em,
+    get_a_share_price_anomaly_em,
     get_a_share_research_reports,
     get_a_share_shareholder_counts_em,
+    get_a_share_stock_monitor_em,
 )
 from .config import get_config
 from .eastmoney import (
@@ -182,6 +185,9 @@ TOOLS_CATEGORIES = {
             "get_a_share_prev_limit_up_pool",
             "get_a_share_interactive_questions",
             "get_a_share_interactive_answers",
+            "get_a_share_stock_monitor",
+            "get_a_share_price_anomaly",
+            "get_a_share_price_anomaly_count",
         ],
     },
     "a_share_query_data": {
@@ -369,6 +375,9 @@ VENDOR_METHODS = {
     "get_a_share_prev_limit_up_pool": {"eastmoney": get_a_share_prev_limit_up_pool},
     "get_a_share_interactive_questions": {"akshare": get_a_share_interactive_questions},
     "get_a_share_interactive_answers": {"akshare": get_a_share_interactive_answers},
+    "get_a_share_stock_monitor": {"eastmoney": get_a_share_stock_monitor_em},
+    "get_a_share_price_anomaly": {"eastmoney": get_a_share_price_anomaly_em},
+    "get_a_share_price_anomaly_count": {"eastmoney": get_a_share_price_anomaly_count_em},
     "search_a_share_iwencai": {"iwencai": search_a_share_iwencai},
     "get_cls_telegraph": {"cls": get_cls_telegraph},
 }

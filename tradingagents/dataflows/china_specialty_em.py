@@ -16,15 +16,25 @@ independent rate-limit plane, for when EastMoney bans the IP.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
 import requests
 
 from .china_data import ChinaDataUnavailableError
-from .eastmoney import EASTMONEY_DATACENTER_URL, _extract_records, em_get
-from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare_symbol
+from .eastmoney import (
+    EASTMONEY_DATACENTER_URL,
+    _extract_records,
+    em_get,
+    em_get_json,
+)
+from .ticker_utils import (
+    is_a_share_ticker,
+    normalize_ticker_symbol,
+    strict_ticker_code,
+    to_akshare_symbol,
+)
 
 _EASTMONEY_QUOTE_REFERER = "https://quote.eastmoney.com/"
 _ZTB_UT = "7eea3edcaed734bea9cbfc24409ed989"
@@ -66,6 +76,20 @@ def _require_a_share_code(ticker: str) -> str:
     if not is_a_share_ticker(canonical):
         raise ChinaDataUnavailableError(f"{ticker} is not recognized as an A-share ticker.")
     return to_akshare_symbol(canonical)
+
+
+def _require_strict_a_share_code(ticker: str) -> str:
+    """Validate a stock-only A-share code strictly; raise ChinaDataUnavailableError.
+
+    The strict parser rejects malformed or contradictory forms (for example
+    ``SZ600519`` or ``SH000001`` on stock-only research endpoints) before the
+    generic A-share check runs, so the public contract stays one typed error.
+    """
+    try:
+        code = strict_ticker_code(ticker, stock_only=True)
+    except ValueError as exc:
+        raise ChinaDataUnavailableError(str(exc)) from exc
+    return _require_a_share_code(code)
 
 
 def _format_report(
@@ -542,7 +566,7 @@ def get_a_share_research_reports(
     The ``predictThisYearEps``/``predictNextYearEps`` fields are analyst
     forecasts, distinct from tushare's reported fundamentals.
     """
-    code = _require_a_share_code(ticker)
+    code = _require_strict_a_share_code(ticker)
     all_records: list[dict[str, Any]] = []
     for page in range(1, max_pages + 1):
         payload = em_get(
@@ -610,7 +634,7 @@ def get_a_share_eps_forecast(ticker: str, as_of: str | None = None) -> str:
     Parses the THS worth.html table; the 'mean' column is the institutional
     consensus EPS.  Independent of EastMoney's rate-limit plane.
     """
-    code = _require_a_share_code(ticker)
+    code = _require_strict_a_share_code(ticker)
     url = f"https://basic.10jqka.com.cn/new/{code}/worth.html"
     try:
         resp = requests.get(
@@ -816,4 +840,192 @@ def get_a_share_concept_blocks(ticker: str) -> str:
         pd.DataFrame(rows),
         title=f"China A-share board membership for {normalize_ticker_symbol(ticker)}",
         caveat="EastMoney push2 slist; mixed industry/concept/region boards; board names are self-describing.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Key-stock monitor pool + intraday price anomaly (a-stock-data v3.6.0 §8.4/§8.5)
+# ---------------------------------------------------------------------------
+
+_CN_TZ = timezone(timedelta(hours=8))
+_MONITOR_URL = "https://mobappconfig.securities.eastmoney.com/emcfg/stock_monitor.json"
+# MARKET is three-valued and includes the letter "B" for BSE; treating it as
+# 0/1 would mislabel every Beijing-listed monitored stock as Shenzhen.
+_MONITOR_MARKET = {"1": "SH", "0": "SZ", "B": "BJ"}
+
+_ANOMALY_BASE = "https://dycalchis.eastmoney.com/price-anomaly"
+# EastMoney H5 fixed public params; missing ``team`` is rejected by the API
+# with {"result":1001,"msg":"unknow team"}.
+_ANOMALY_HQ_PARAMS = {
+    "team": "h5",
+    "product": "EastMoney",
+    "client": "WAP",
+    "version": "9001",
+    "name": "WAP",
+    "user": "123",
+}
+# Anomaly rule codes (e field) -> text; s==6 (STAR) with e in 4..7 maps to the
+# stricter e*10 threshold tier.
+_ANOMALY_RULES = {
+    1: "主板连续10个交易日内4次出现同向异常波动",
+    2: "创业板连续10个交易日内3次出现同向异常波动",
+    3: "科创板连续10个交易日内3次出现同向异常波动",
+    4: "连续十个交易日内日收盘价涨跌幅偏离值累计达到+100%",
+    5: "连续十个交易日内日收盘价涨跌幅偏离值累计达到-50%",
+    6: "连续三十个交易日内日收盘价涨跌幅偏离值累计达到+200%",
+    7: "连续三十个交易日内日收盘价涨跌幅偏离值累计达到-70%",
+    8: "北交所连续10个交易日内3次出现同向异常波动",
+    40: "连续十个交易日内日收盘价涨跌幅偏离值累计达到+150%",
+    50: "连续十个交易日内日收盘价涨跌幅偏离值累计达到-60%",
+    60: "连续30个交易日内日收盘价涨跌幅偏离值累计达到+300%",
+    70: "连续30个交易日内日收盘价涨跌幅偏离值累计达到-75%",
+}
+
+
+def _cn_today() -> str:
+    """Today's date in Beijing time (YYYY-MM-DD)."""
+    return datetime.now(_CN_TZ).date().isoformat()
+
+
+def _anomaly_market(code: object, m: object, board: object = None) -> str:
+    """Anomaly record -> exchange.
+
+    BSE and SZSE are both m=0 in EastMoney's scheme, so the code segment must
+    win; rule code 8 is BSE-specific and is an additional tie-breaker.
+    """
+    c = str(code or "")
+    if c.startswith("920") or c[:2] in ("43", "83", "87") or board == 8:
+        return "BJ"
+    return "SH" if m == 1 else "SZ"
+
+
+def _anomaly_get(path: str, page_size: int, page_no: int, **extra: str) -> dict[str, Any]:
+    """Fetch an anomaly endpoint; fail fast when the API rejects the request.
+
+    The endpoint uses ``result != 0`` to express refusal.  Treating that as
+    "no anomalies today" would silently hide a contract change.
+    """
+    payload = em_get(
+        f"{_ANOMALY_BASE}/{path}",
+        params={
+            **_ANOMALY_HQ_PARAMS,
+            "pageSize": str(page_size),
+            "pageNo": str(page_no),
+            **extra,
+        },
+        headers={"Referer": "https://vipmoney.eastmoney.com/"},
+        timeout=20,
+    )
+    if payload.get("result") != 0:
+        raise ChinaDataUnavailableError(
+            f"EastMoney price-anomaly endpoint rejected the request: "
+            f"result={payload.get('result')} msg={payload.get('msg')!r}"
+        )
+    return payload
+
+
+def get_a_share_stock_monitor_em(only_active: bool = True) -> str:
+    """A-share key-stock monitor pool (重点监控池) via EastMoney zero-auth JSON.
+
+    Lists exchange risk-warned / key-monitored instruments with their validity
+    window.  ``only_active`` keeps only rows whose window covers today (Beijing
+    time), so stale monitoring entries are not presented as current.
+    """
+    rows = em_get_json(
+        _MONITOR_URL,
+        headers={"Referer": "https://vipmoney.eastmoney.com/"},
+        timeout=20,
+    )
+    if not isinstance(rows, list):
+        raise ChinaDataUnavailableError("EastMoney monitor pool returned a non-list payload.")
+    today = _cn_today()
+    records: list[dict[str, Any]] = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        start = str(item.get("VALIDATESTARTDATE", ""))
+        end = str(item.get("VALIDATEENDDATE", ""))
+        if only_active and not (start <= today <= end):
+            continue
+        raw_mkt = str(item.get("MARKET", "")).upper()
+        records.append(
+            {
+                "Code": item.get("STKCODE", ""),
+                "Name": item.get("STKNAME", ""),
+                "Market": _MONITOR_MARKET.get(raw_mkt, f"?{raw_mkt}"),
+                "Start": start,
+                "End": end,
+                "Link": item.get("LINK_URL", ""),
+            }
+        )
+    if not records:
+        raise ChinaDataUnavailableError("EastMoney returned no active key-stock monitor rows.")
+    _capture_vendor_raw(rows, metadata={"provider": "eastmoney", "dataset": "stock_monitor", "ticker": None})
+    return _format_report(
+        pd.DataFrame(records),
+        title=f"China A-share key-stock monitor pool (as of {today})",
+        caveat="EastMoney emcfg stock_monitor.json; exchange risk-warning / key-monitor list with validity window; MARKET is 1=SH / 0=SZ / B=BJ.",
+    )
+
+
+def get_a_share_price_anomaly_em(page_size: int = 200, page_no: int = 1) -> str:
+    """A-share intraday price-anomaly detail (日内异动明细, severe abnormal move)."""
+    payload = _anomaly_get("list", page_size, page_no)
+    rows: list[dict[str, Any]] = []
+    for item in payload.get("data") or []:
+        if not isinstance(item, dict):
+            continue
+        e = item.get("e")
+        key = e * 10 if (item.get("s") == 6 and e in (4, 5, 6, 7)) else e
+        rows.append(
+            {
+                "Code": item.get("c"),
+                "Name": item.get("n"),
+                "Market": _anomaly_market(item.get("c"), item.get("m"), item.get("s")),
+                "Change %": item.get("a"),
+                "Deviation %": item.get("x"),
+                "Window Days": item.get("d"),
+                "Board": item.get("s"),
+                "Rule Code": key,
+                "Rule": _ANOMALY_RULES.get(key, f"unknown rule code {key}"),
+                "Today": item.get("o") != 2,
+            }
+        )
+    if not rows:
+        raise ChinaDataUnavailableError("EastMoney returned no price-anomaly rows.")
+    _capture_vendor_raw(payload, metadata={"provider": "eastmoney", "dataset": "price_anomaly", "ticker": None})
+    return _format_report(
+        pd.DataFrame(rows),
+        title=f"China A-share intraday price anomalies ({payload.get('date', '')})",
+        caveat="EastMoney price-anomaly/list; severe abnormal-move criterion; non-trading hours return the previous trading day; rule code 8 is BSE-only.",
+    )
+
+
+def get_a_share_price_anomaly_count_em(page_size: int = 50, page_no: int = 1) -> str:
+    """A-share price-anomaly aggregate count per instrument (异动统计)."""
+    payload = _anomaly_get("count", page_size, page_no)
+    rows: list[dict[str, Any]] = []
+    for item in payload.get("data") or []:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "Code": item.get("c"),
+                "Name": item.get("n"),
+                "Market": _anomaly_market(item.get("c"), item.get("m"), item.get("s")),
+                "Price": item.get("p"),
+                "Change %": item.get("a"),
+                "Times": item.get("t"),
+                "Deviation %": item.get("x"),
+                "Window Days": item.get("d"),
+                "Board": item.get("s"),
+            }
+        )
+    if not rows:
+        raise ChinaDataUnavailableError("EastMoney returned no price-anomaly count rows.")
+    _capture_vendor_raw(payload, metadata={"provider": "eastmoney", "dataset": "price_anomaly_count", "ticker": None})
+    return _format_report(
+        pd.DataFrame(rows),
+        title=f"China A-share price-anomaly counts ({payload.get('date', '')})",
+        caveat="EastMoney price-anomaly/count; aggregated anomaly times per instrument; 'Times' is an integer count (unlike the list endpoint's target-value t).",
     )

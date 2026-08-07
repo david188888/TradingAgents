@@ -6,8 +6,8 @@ EastMoney bans an IP.  See a-stock-data SKILL.md §1.2.
 
 Field index map (verified against a-stock-data V3.4.1, correcting the common
 "Tencent field 43 = PB" error -- 43 is amplitude%, 46 is PB):
-  3=price, 32=change%, 38=turnover%, 39=PE_TTM, 44=market_cap(yi),
-  45=float_market_cap(yi), 46=PB, 47=limit_up, 48=limit_down.
+  3=price, 32=change%, 38=turnover%, 39=PE_TTM, 44=float_market_cap(yi),
+  45=total_market_cap(yi), 46=PB, 47=limit_up, 48=limit_down.
 """
 
 from __future__ import annotations

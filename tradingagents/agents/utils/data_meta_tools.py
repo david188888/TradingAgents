@@ -103,8 +103,8 @@ def _insider_trades(symbol: str, curr_date: str, _request: str) -> str:
     return route_to_vendor("get_a_share_insider_trades", symbol, _start_date(curr_date), curr_date)
 
 
-def _dragon_tiger(symbol: str, _curr_date: str, _request: str) -> str:
-    return route_to_vendor("get_a_share_dragon_tiger", symbol)
+def _dragon_tiger(symbol: str, curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_dragon_tiger", symbol, curr_date)
 
 
 def _announcements(symbol: str, _curr_date: str, _request: str) -> str:
@@ -204,6 +204,8 @@ _CAPABILITIES: tuple[Capability, ...] = (
     Capability("board_fund_flow", "get_a_share_board_fund_flow", "news", _board_fund_flow, ("板块资金", "行业资金", "概念资金", "board fund"), True),
     Capability("cninfo_announcements", "get_a_share_cninfo_announcements", "news", _cninfo_announcements, ("巨潮", "cninfo", "公告全文", "披露"), True),
     Capability("industry_ranking", "get_a_share_industry_ranking", "news", lambda _symbol, _date, _request: route_to_vendor("get_a_share_industry_ranking"), ("行业排名", "行业涨跌", "industry ranking"), True),
+    Capability("stock_monitor", "get_a_share_stock_monitor", "market", lambda _symbol, _date, _request: route_to_vendor("get_a_share_stock_monitor"), ("重点监控", "风险警示", "监控池", "重点监控池", "monitor"), True),
+    Capability("price_anomaly", "get_a_share_price_anomaly", "market", lambda _symbol, _date, _request: route_to_vendor("get_a_share_price_anomaly"), ("异动", "异常波动", "严重异常", "anomaly", "price anomaly"), True),
     Capability("company_news", "get_news", "news", _company_news, default=True),
     Capability("global_news", "get_global_news", "news", _global_news, ("宏观", "global", "market-wide", "行业", "sector")),
     Capability("macro_cpi", "get_macro_indicators", "news", _macro_cpi, ("cpi", "inflation", "通胀")),

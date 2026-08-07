@@ -132,6 +132,26 @@ class EastMoneyHTTPClient:
 _default_client = EastMoneyHTTPClient()
 
 
+def em_get_json(
+    url: str,
+    *,
+    params: Mapping[str, Any] | None = None,
+    timeout: float | None = None,
+    client: EastMoneyHTTPClient | None = None,
+    headers: Mapping[str, str] | None = None,
+) -> Any:
+    """Get and validate one EastMoney JSON response through the shared gateway.
+
+    Unlike :func:`em_get`, the JSON root may be any shape (including a list),
+    which some zero-auth endpoints (e.g. the key-stock monitor pool) return.
+    """
+    response = (client or _default_client).get(url, params=params, timeout=timeout, headers=headers)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise VendorHTTPError("eastmoney", int(response.status_code), "invalid JSON response") from exc
+
+
 def em_get(
     url: str,
     *,
@@ -141,13 +161,9 @@ def em_get(
     headers: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Get and validate one EastMoney JSON response through the shared gateway."""
-    response = (client or _default_client).get(url, params=params, timeout=timeout, headers=headers)
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise VendorHTTPError("eastmoney", int(response.status_code), "invalid JSON response") from exc
+    payload = em_get_json(url, params=params, timeout=timeout, client=client, headers=headers)
     if not isinstance(payload, dict):
-        raise VendorHTTPError("eastmoney", int(response.status_code), "JSON root is not an object")
+        raise VendorHTTPError("eastmoney", 200, "JSON root is not an object")
     return payload
 
 
