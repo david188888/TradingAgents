@@ -8,6 +8,35 @@ import yfinance as yf
 from stockstats import wrap
 from yfinance.exceptions import YFRateLimitError
 
+try:
+    # curl_cffi is a yfinance dependency; guard the import so a broken or
+    # optional environment never breaks this module's import itself.
+    from curl_cffi.requests.exceptions import (
+        CertificateVerifyError as _CurlCertificateVerifyError,
+        ConnectionError as _CurlConnectionError,
+        Timeout as _CurlTimeout,
+    )
+
+    _CURL_TRANSIENT_ERRORS = (_CurlConnectionError, _CurlTimeout)
+    _CURL_NON_TRANSIENT_ERRORS = (_CurlCertificateVerifyError,)
+
+    def _is_curl_transient(exc: BaseException) -> bool:
+        """True for curl transport failures that heal on their own.
+
+        Covers connection refused/dropped (curl 7/52/56), TLS connect races
+        such as right after a VPN link comes up (curl 35 -> SSLError, which is
+        a ConnectionError subclass), and timeouts (curl 28). Certificate
+        verification failures (curl 60) are excluded: a bad cert will not heal.
+        """
+        return isinstance(exc, _CURL_TRANSIENT_ERRORS) and not isinstance(
+            exc, _CURL_NON_TRANSIENT_ERRORS
+        )
+
+except Exception:  # pragma: no cover - curl_cffi is a yfinance dependency
+    def _is_curl_transient(exc: BaseException) -> bool:
+        return False
+
+
 from .config import get_config
 from .symbol_utils import NoMarketDataError, normalize_symbol
 from .ticker_utils import is_a_share_ticker
@@ -28,11 +57,14 @@ OHLCV_CACHE_TTL_SECONDS = 900
 
 
 def yf_retry(func, max_retries=3, base_delay=2.0):
-    """Execute a yfinance call with exponential backoff on rate limits.
+    """Execute a yfinance call with exponential backoff on transient failures.
 
-    yfinance raises YFRateLimitError on HTTP 429 responses but does not
-    retry them internally. This wrapper adds retry logic specifically
-    for rate limits. Other exceptions propagate immediately.
+    yfinance raises YFRateLimitError on HTTP 429 responses but does not retry
+    them internally. This wrapper adds retry logic for rate limits and for
+    transient curl transport failures -- connection refused/dropped, TLS
+    connect races (e.g. right after a VPN link comes up), and timeouts --
+    which also heal on their own. Certificate verification errors and all
+    other exceptions propagate immediately.
     """
     for attempt in range(max_retries + 1):
         try:
@@ -40,7 +72,20 @@ def yf_retry(func, max_retries=3, base_delay=2.0):
         except YFRateLimitError:
             if attempt < max_retries:
                 delay = base_delay * (2 ** attempt)
-                logger.warning(f"Yahoo Finance rate limited, retrying in {delay:.0f}s (attempt {attempt + 1}/{max_retries})")
+                logger.warning(
+                    "Yahoo Finance rate limited, retrying in %.0fs (attempt %d/%d)",
+                    delay, attempt + 1, max_retries,
+                )
+                time.sleep(delay)
+            else:
+                raise
+        except Exception as exc:
+            if _is_curl_transient(exc) and attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "Yahoo Finance transient transport error %s, retrying in %.0fs (attempt %d/%d)",
+                    type(exc).__name__, delay, attempt + 1, max_retries,
+                )
                 time.sleep(delay)
             else:
                 raise
