@@ -393,6 +393,14 @@ def test_canonical_profile_falls_back_to_yfinance_when_china_sources_unavailable
         "_apply_akshare_profile",
         lambda profile: profile.update({"akshare_resolution_error": "akshare unavailable"}),
     )
+    # EastMoney push2 is a live network call; freeze it too so the test is
+    # deterministic regardless of runner egress (CI could reach push2 and fill
+    # name from f58, skipping the yfinance fallback the test intends to cover).
+    monkeypatch.setattr(
+        evidence,
+        "_apply_eastmoney_profile",
+        lambda profile: profile.update({"eastmoney_resolution_error": "eastmoney unavailable"}),
+    )
     monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(Ticker=FakeTicker))
 
     profile = resolve_canonical_company_profile("002396.SZ")
