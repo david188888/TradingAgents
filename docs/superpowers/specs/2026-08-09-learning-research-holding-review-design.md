@@ -59,6 +59,7 @@ HoldingInput
   cash: finite number >= 0 | null
   total_account_value: finite number > 0 | null
   currency: ISO-4217 string | null
+  facts_as_of: YYYY-MM-DD | null
   original_thesis: string | null
 
 HoldingContext
@@ -71,7 +72,8 @@ HoldingContext
 - 不使用交易所整手规则限制 `quantity`；这是复盘输入，不是订单输入。
 - `average_cost` 是每单位账面成本，不是总成本，也不是当前市场价格。
 - `total_account_value` 是用户提供的账户总权益事实，包含现金与持仓；不得从 `cash` 反推。
-- 首版不做自动换汇或混合币种计算。`currency` 未提供时保留为 null，只有 instrument identity 能证明报价币种后才允许相关金额计算。
+- 首版不做自动换汇或混合币种计算。`currency` 未提供时保留为 null，并始终视为 `currency_unverified`；instrument identity 只能证明证券报价币种，不能证明用户金额币种。UI 可以提示常见报价币种，但不得静默替用户选择。
+- `facts_as_of` 表示 quantity、average cost、cash 与 NAV 的用户事实时点。省略时在 normalization 中明确填入本次 `analysis_date`；显式提供时必须与 `analysis_date` 相同，否则拒绝。UI 固定提示“持仓事实以分析日期为准”。
 - `original_thesis` 是可选的用户原始持仓理由；未提供时不得猜测买入逻辑。
 - `company_research` 不得携带新 `holding` 字段。
 - `holding_review` 必须携带 `holding`，且 `holding.ticker` 必须与目标 ticker 归一化后相同。
@@ -122,7 +124,7 @@ Controls
 - fingerprint 使用归一化 ticker、mode、horizon 和完整的归一化 HoldingContext；任一字段变化都不兼容。
 - retry 原样复制归一化上下文。编辑 mode、horizon 或 holding 必须创建新运行。
 - legacy snapshot 必须先归一化，再计算 resume fingerprint；无法归一化时阻止 resume，不静默转为公司研究。
-- `run.started.holding_summary` 在公司研究为 null；持仓复盘只公开 ticker、quantity、average_cost、currency、source 以及 `has_cash`、`has_total_account_value`、`has_original_thesis`，不在事件流重复现金、NAV 或 thesis 正文。
+- `run.started.holding_summary` 在公司研究为 null；持仓复盘只公开 ticker、quantity、average_cost、currency、facts_as_of、source 以及 `has_cash`、`has_total_account_value`、`has_original_thesis`，不在事件流重复现金、NAV 或 thesis 正文。
 
 ## 4. 输出语义
 
@@ -155,14 +157,15 @@ Controls
 
 NAV 无论是否存在，都不能解锁推荐仓位、目标仓位、交易股数或订单参数。NAV 只允许用于描述性计算当前持仓市值、当前集中度和情景敏感性。
 
-当前集中度只在以下条件全部满足时计算：用户提供 `total_account_value`、存在 analysis-date 对齐的可信市场价格、金额币种与报价币种一致。否则输出结构化 unavailable：
+当前集中度只在以下条件全部满足时计算：用户提供 `total_account_value`、`facts_as_of` 与 analysis date 一致、存在 analysis-date 对齐的可信市场价格、用户显式提供的金额币种与报价币种一致。否则输出结构化 unavailable：
 
 - `total_account_value_not_provided`
 - `verified_market_price_unavailable`
 - `currency_unverified`
 - `currency_mismatch`
+- `holding_facts_as_of_mismatch`
 
-盈亏与情景敏感性同样要求可信市场价格；不得用平均成本冒充当前价格。
+盈亏与情景敏感性同样要求可信市场价格、已验证且一致的币种，以及与 analysis date 一致的 `facts_as_of`；不得用平均成本冒充当前价格。
 
 允许输出“增加关注、维持观察、降低风险暴露”等研究语言，但必须明确它是复盘意见，不是交易指令。Portfolio Manager 在此模式中承担持仓风险复盘职责，不承担订单生成或执行职责。
 
@@ -175,6 +178,7 @@ NAV 无论是否存在，都不能解锁推荐仓位、目标仓位、交易股�
 - 现金（可选）；
 - 账户总资产（可选）。
 - 币种（可选）；
+- 持仓事实日期（可选，默认本次分析日期）；
 - 原始持仓理由（可选）。
 
 固定提示：
@@ -199,11 +203,11 @@ NAV 无论是否存在，都不能解锁推荐仓位、目标仓位、交易股�
 6. mode 缺失 + 仅 legacy portfolio：推断 `holding_review` 并执行 legacy 映射。
 7. mode、holding、portfolio 均缺失：推断 `company_research`。
 
-Legacy 映射必须在 portfolio 中找到唯一一个归一化 ticker 与运行目标一致、quantity > 0、average_cost > 0 的仓位。映射 quantity、average_cost、cash 与 portfolio currency；`total_account_value` 和 `original_thesis` 为 null，不从 mark prices 或 cash 推算。目标缺失、重复或字段无效时返回稳定兼容错误；不得回退为公司研究。
+Legacy 映射必须在 portfolio 中找到唯一一个归一化 ticker 与运行目标一致、quantity > 0、average_cost > 0 的仓位。映射 quantity、average_cost、cash 与 portfolio currency；`facts_as_of` 归一化为 analysis date；`total_account_value` 和 `original_thesis` 为 null，不从 mark prices 或 cash 推算。目标缺失、重复或字段无效时分别返回稳定兼容错误；不得回退为公司研究。
 
 旧请求缺少 `horizon` 时继续使用 `medium`。
 
-Legacy portfolio 可以继续进入兼容路径，但其 limits、sellable quantity 与 mark-price execution 字段不进入新版 HoldingContext，也不得提升为 Reader 的交易语义。旧快照无法完成上述映射时，resume 返回稳定阻止原因并要求新建运行。
+Legacy portfolio 可以继续进入兼容路径，但其 limits、sellable quantity 与 mark-price execution 字段不进入新版 HoldingContext，也不得提升为 Reader 的交易语义。旧快照无法完成上述映射时，resume 返回 `legacy_resume_normalization_failed` 并要求新建运行。
 
 ## 7. 校验与公开错误
 
@@ -221,8 +225,10 @@ HTTP 边界保持 `extra="forbid"`。非法组合返回 typed 422，并冻结 co
 | `holding_cash_invalid` | `holding.cash` |
 | `holding_nav_invalid` | `holding.total_account_value` |
 | `holding_currency_invalid` | `holding.currency` |
+| `holding_as_of_mismatch` | `holding.facts_as_of` |
 | `legacy_target_position_missing` | `portfolio.positions` |
 | `legacy_target_position_ambiguous` | `portfolio.positions` |
+| `legacy_target_position_invalid` | `portfolio.positions` |
 
 Reader 中不可计算项使用 `{status: "unavailable", reason_code: <stable code>}`，不能只输出自然语言 unavailable。
 
@@ -243,7 +249,8 @@ Reader 中不可计算项使用 `{status: "unavailable", reason_code: <stable co
 - omitted/null 的 fingerprint 等价；holding 任一归一化事实变化都会使 fingerprint 不兼容。
 - create → snapshot → SSE → resume → AgentState 使用 golden contract 验证。
 - company mode 的 AgentState 明确没有 holding/portfolio context。
-- 缺 NAV、缺市场价格、币种未验证和币种冲突分别产生稳定 reason code。
+- 缺 NAV、缺市场价格、币种未验证、币种冲突和持仓事实日期不一致分别产生稳定 reason code。
+- legacy 无效目标仓位返回 `legacy_target_position_invalid`；旧快照无法归一化时 resume 返回 `legacy_resume_normalization_failed`。
 - 缺 original thesis 时不得推断用户买入理由。
 
 ### 8.2 前端
