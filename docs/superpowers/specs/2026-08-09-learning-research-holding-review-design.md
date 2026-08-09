@@ -120,7 +120,7 @@ Controls
 
 - 新 snapshot 必须显式保存 mode、horizon 和 `holding_context`（公司研究为 null）；字段可缺失只用于 legacy 反序列化。
 - company research 的 AgentState 中 `holding_context=null`，且 `portfolio_context=null`。
-- omitted 的 HoldingInput 可选值在 normalization 后统一为 null；omitted 与显式 null 产生相同 fingerprint。
+- 除 `facts_as_of` 外，omitted 的 HoldingInput 可选值在 normalization 后统一为 null。`facts_as_of` omitted 或显式 null 均归一化为 `analysis_date`；两种写法产生相同 fingerprint。
 - fingerprint 使用归一化 ticker、mode、horizon 和完整的归一化 HoldingContext；任一字段变化都不兼容。
 - retry 原样复制归一化上下文。编辑 mode、horizon 或 holding 必须创建新运行。
 - legacy snapshot 必须先归一化，再计算 resume fingerprint；无法归一化时阻止 resume，不静默转为公司研究。
@@ -157,13 +157,12 @@ Controls
 
 NAV 无论是否存在，都不能解锁推荐仓位、目标仓位、交易股数或订单参数。NAV 只允许用于描述性计算当前持仓市值、当前集中度和情景敏感性。
 
-当前集中度只在以下条件全部满足时计算：用户提供 `total_account_value`、`facts_as_of` 与 analysis date 一致、存在 analysis-date 对齐的可信市场价格、用户显式提供的金额币种与报价币种一致。否则输出结构化 unavailable：
+当前集中度只在以下条件全部满足时计算：用户提供 `total_account_value`、存在 analysis-date 对齐的可信市场价格、用户显式提供的金额币种与报价币种一致。`facts_as_of` 的非法值或显式不一致已在请求边界拒绝，不会进入 Reader。其余缺失条件输出结构化 unavailable：
 
 - `total_account_value_not_provided`
 - `verified_market_price_unavailable`
 - `currency_unverified`
 - `currency_mismatch`
-- `holding_facts_as_of_mismatch`
 
 盈亏与情景敏感性同样要求可信市场价格、已验证且一致的币种，以及与 analysis date 一致的 `facts_as_of`；不得用平均成本冒充当前价格。
 
@@ -203,7 +202,7 @@ NAV 无论是否存在，都不能解锁推荐仓位、目标仓位、交易股�
 6. mode 缺失 + 仅 legacy portfolio：推断 `holding_review` 并执行 legacy 映射。
 7. mode、holding、portfolio 均缺失：推断 `company_research`。
 
-Legacy 映射必须在 portfolio 中找到唯一一个归一化 ticker 与运行目标一致、quantity > 0、average_cost > 0 的仓位。映射 quantity、average_cost、cash 与 portfolio currency；`facts_as_of` 归一化为 analysis date；`total_account_value` 和 `original_thesis` 为 null，不从 mark prices 或 cash 推算。目标缺失、重复或字段无效时分别返回稳定兼容错误；不得回退为公司研究。
+Legacy 映射先只按归一化 ticker 查找目标仓位：零条返回 `legacy_target_position_missing`，多条返回 `legacy_target_position_ambiguous`。唯一匹配后再校验 quantity > 0 与 average_cost > 0；失败返回 `legacy_target_position_invalid`。校验通过后映射 quantity、average_cost、cash 与 portfolio currency；`facts_as_of` 归一化为 analysis date；`total_account_value` 和 `original_thesis` 为 null，不从 mark prices 或 cash 推算。任何失败都不得回退为公司研究。
 
 旧请求缺少 `horizon` 时继续使用 `medium`。
 
@@ -225,6 +224,7 @@ HTTP 边界保持 `extra="forbid"`。非法组合返回 typed 422，并冻结 co
 | `holding_cash_invalid` | `holding.cash` |
 | `holding_nav_invalid` | `holding.total_account_value` |
 | `holding_currency_invalid` | `holding.currency` |
+| `holding_as_of_invalid` | `holding.facts_as_of` |
 | `holding_as_of_mismatch` | `holding.facts_as_of` |
 | `legacy_target_position_missing` | `portfolio.positions` |
 | `legacy_target_position_ambiguous` | `portfolio.positions` |
@@ -249,7 +249,7 @@ Reader 中不可计算项使用 `{status: "unavailable", reason_code: <stable co
 - omitted/null 的 fingerprint 等价；holding 任一归一化事实变化都会使 fingerprint 不兼容。
 - create → snapshot → SSE → resume → AgentState 使用 golden contract 验证。
 - company mode 的 AgentState 明确没有 holding/portfolio context。
-- 缺 NAV、缺市场价格、币种未验证、币种冲突和持仓事实日期不一致分别产生稳定 reason code。
+- 缺 NAV、缺市场价格、币种未验证和币种冲突分别产生稳定 Reader reason code；非法或不一致的持仓事实日期分别在请求边界产生 `holding_as_of_invalid` 或 `holding_as_of_mismatch`。
 - legacy 无效目标仓位返回 `legacy_target_position_invalid`；旧快照无法归一化时 resume 返回 `legacy_resume_normalization_failed`。
 - 缺 original thesis 时不得推断用户买入理由。
 
