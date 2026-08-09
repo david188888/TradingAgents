@@ -63,7 +63,9 @@ HoldingInput
   original_thesis: string | null
 
 HoldingContext
-  <all normalized HoldingInput fields; omitted optionals become null>
+  <all normalized HoldingInput fields>
+  <omitted optionals become null except facts_as_of>
+  facts_as_of: omitted or null becomes analysis_date
   source: user_provided | legacy_portfolio
 ```
 
@@ -187,7 +189,7 @@ NAV 无论是否存在，都不能解锁推荐仓位、目标仓位、交易股�
 前端请求规则：
 
 - 公司研究不发送 `holding`。
-- 持仓复盘不发送未填写的可选数字。
+- 持仓复盘不发送任何未填写的可选字段；不得以空字符串代替省略的 cash、NAV、currency、facts_as_of 或 original_thesis。
 - 切换回公司研究时清除持仓字段的请求语义，避免隐藏字段泄漏到新运行。
 
 ## 6. 兼容策略
