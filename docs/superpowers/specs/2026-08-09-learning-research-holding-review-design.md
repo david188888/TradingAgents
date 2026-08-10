@@ -1,6 +1,6 @@
 # TradingAgents 学习型公司研究与持仓复盘设计
 
-**状态：** 待实现  
+**状态：** 实施中（工作分支：`codex/learning-research-holding-review`；尚未创建本轮提交）  
 **日期：** 2026-08-09  
 **范围：** Phase 1 / P1-1 双模式与三周期输入增量  
 **依赖：** `2026-08-09-tradingagents-decision-reader-design.md`
