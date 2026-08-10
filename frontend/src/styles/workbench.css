@@ -86,9 +86,29 @@
 .layout {
   --inspector-width: 340px;
   display: grid;
-  grid-template-columns: 288px minmax(0, 1fr) 10px clamp(320px, var(--inspector-width), min(640px, 45vw));
+  grid-template-columns: 288px minmax(0, 1fr);
   min-height: calc(100vh - 56px);
   align-items: start;
+}
+
+.layout.with-inspector {
+  grid-template-columns: 288px minmax(0, 1fr) 10px clamp(320px, var(--inspector-width), min(640px, 45vw));
+}
+
+.audit-toggle {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: var(--muted);
+  background: var(--panel);
+  font: 500 11px var(--font-sans);
+  cursor: pointer;
+}
+
+.audit-toggle:hover,
+.audit-toggle:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 aside.sidebar,
@@ -3297,4 +3317,3 @@ td.input-ref {
     height: min(680px, calc(100vh - 92px));
   }
 }
-

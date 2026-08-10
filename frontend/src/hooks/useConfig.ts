@@ -13,10 +13,12 @@
 import { useEffect, useState } from "react";
 import type {
   ConfigResponseDTO,
+  HoldingInputDTO,
   ModelOptionDTO,
-  PortfolioDTO,
   ProviderDTO,
   ResearchDepth,
+  ResearchHorizon,
+  ResearchMode,
   RunCreateRequestDTO,
 } from "../api/contracts";
 import { getConfig } from "../api/client";
@@ -47,20 +49,24 @@ export interface UseConfigResult {
   setOutputLanguage: (v: string) => void;
   checkpoint_enabled: boolean;
   setCheckpointEnabled: (v: boolean) => void;
-  portfolio_enabled: boolean;
-  setPortfolioEnabled: (v: boolean) => void;
-  portfolio_cash: string;
-  setPortfolioCash: (v: string) => void;
-  portfolio_mark_price: string;
-  setPortfolioMarkPrice: (v: string) => void;
-  portfolio_quantity: string;
-  setPortfolioQuantity: (v: string) => void;
-  portfolio_sellable_quantity: string;
-  setPortfolioSellableQuantity: (v: string) => void;
-  portfolio_average_cost: string;
-  setPortfolioAverageCost: (v: string) => void;
-  portfolio_max_weight: string;
-  setPortfolioMaxWeight: (v: string) => void;
+  mode: ResearchMode;
+  setMode: (v: ResearchMode) => void;
+  horizon: ResearchHorizon;
+  setHorizon: (v: ResearchHorizon) => void;
+  holding_quantity: string;
+  setHoldingQuantity: (v: string) => void;
+  holding_average_cost: string;
+  setHoldingAverageCost: (v: string) => void;
+  holding_cash: string;
+  setHoldingCash: (v: string) => void;
+  holding_total_account_value: string;
+  setHoldingTotalAccountValue: (v: string) => void;
+  holding_currency: string;
+  setHoldingCurrency: (v: string) => void;
+  holding_facts_as_of: string;
+  setHoldingFactsAsOf: (v: string) => void;
+  holding_original_thesis: string;
+  setHoldingOriginalThesis: (v: string) => void;
 
   selectedProvider: ProviderDTO | null;
   quickOptions: ModelOptionDTO[];
@@ -95,14 +101,15 @@ export function useConfig(): UseConfigResult {
   const [deepThinkLlm, setDeepThinkLlm] = useState<string>("");
   const [outputLanguage, setOutputLanguage] = useState<string>("Chinese");
   const [checkpointEnabled, setCheckpointEnabled] = useState<boolean>(false);
-  const [portfolioEnabled, setPortfolioEnabled] = useState<boolean>(false);
-  const [portfolioCash, setPortfolioCash] = useState<string>("");
-  const [portfolioMarkPrice, setPortfolioMarkPrice] = useState<string>("");
-  const [portfolioQuantity, setPortfolioQuantity] = useState<string>("0");
-  const [portfolioSellableQuantity, setPortfolioSellableQuantity] =
-    useState<string>("");
-  const [portfolioAverageCost, setPortfolioAverageCost] = useState<string>("");
-  const [portfolioMaxWeight, setPortfolioMaxWeight] = useState<string>("0.1");
+  const [mode, setMode] = useState<ResearchMode>("company_research");
+  const [horizon, setHorizon] = useState<ResearchHorizon>("medium");
+  const [holdingQuantity, setHoldingQuantity] = useState<string>("");
+  const [holdingAverageCost, setHoldingAverageCost] = useState<string>("");
+  const [holdingCash, setHoldingCash] = useState<string>("");
+  const [holdingTotalAccountValue, setHoldingTotalAccountValue] = useState<string>("");
+  const [holdingCurrency, setHoldingCurrency] = useState<string>("");
+  const [holdingFactsAsOf, setHoldingFactsAsOf] = useState<string>("");
+  const [holdingOriginalThesis, setHoldingOriginalThesis] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -211,33 +218,24 @@ export function useConfig(): UseConfigResult {
         validationError = "请选择快速思考模型";
       } else if (!deepThinkLlm) {
         validationError = "请选择深度思考模型";
-      } else if (portfolioEnabled) {
-        const cash = Number(portfolioCash);
-        const markPrice = Number(portfolioMarkPrice);
-        const quantity = Number(portfolioQuantity);
-        const sellableQuantity = portfolioSellableQuantity
-          ? Number(portfolioSellableQuantity)
-          : quantity;
-        const averageCost = portfolioAverageCost
-          ? Number(portfolioAverageCost)
-          : markPrice;
-        const maxWeight = Number(portfolioMaxWeight);
-        if (!Number.isFinite(cash) || cash < 0) {
-          validationError = "组合现金必须是非负数字";
-        } else if (!Number.isFinite(markPrice) || markPrice <= 0) {
-          validationError = "组合参考价格必须大于 0";
-        } else if (!Number.isInteger(quantity) || quantity < 0) {
-          validationError = "持仓数量必须是非负整数";
+      } else if (mode === "holding_review") {
+        const quantity = Number(holdingQuantity);
+        const averageCost = Number(holdingAverageCost);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          validationError = "持仓数量必须是大于 0 的数字";
+        } else if (!Number.isFinite(averageCost) || averageCost <= 0) {
+          validationError = "平均成本必须是大于 0 的数字";
+        } else if (holdingCash !== "" && (!Number.isFinite(Number(holdingCash)) || Number(holdingCash) < 0)) {
+          validationError = "现金必须是非负数字";
         } else if (
-          !Number.isInteger(sellableQuantity) ||
-          sellableQuantity < 0 ||
-          sellableQuantity > quantity
+          holdingTotalAccountValue !== "" &&
+          (!Number.isFinite(Number(holdingTotalAccountValue)) || Number(holdingTotalAccountValue) <= 0)
         ) {
-          validationError = "可卖数量必须是 0 到持仓数量之间的整数";
-        } else if (!Number.isFinite(averageCost) || averageCost < 0) {
-          validationError = "持仓成本必须是非负数字";
-        } else if (!Number.isFinite(maxWeight) || maxWeight <= 0 || maxWeight > 1) {
-          validationError = "单标的上限必须在 0% 到 100% 之间";
+          validationError = "账户总资产必须是大于 0 的数字";
+        } else if (holdingCurrency !== "" && !/^[A-Za-z]{3}$/.test(holdingCurrency)) {
+          validationError = "币种请使用三个英文字母，例如 CNY";
+        } else if (holdingFactsAsOf !== "" && holdingFactsAsOf !== analysisDate) {
+          validationError = "持仓事实日期必须与分析日期一致";
         }
       }
     }
@@ -247,49 +245,37 @@ export function useConfig(): UseConfigResult {
     if (config === null || validationError !== null) return null;
     const orderedAnalysts = [...selectedAnalysts];
     const normalizedTicker = ticker.trim();
-    const portfolio: PortfolioDTO | null = portfolioEnabled
-      ? {
-          cash: Number(portfolioCash),
-          positions:
-            Number(portfolioQuantity) > 0
-              ? [
-                  {
-                    ticker: normalizedTicker,
-                    quantity: Number(portfolioQuantity),
-                    average_cost: portfolioAverageCost
-                      ? Number(portfolioAverageCost)
-                      : Number(portfolioMarkPrice),
-                    sellable_quantity: portfolioSellableQuantity
-                      ? Number(portfolioSellableQuantity)
-                      : Number(portfolioQuantity),
-                  },
-                ]
-              : [],
-          mark_prices: { [normalizedTicker]: Number(portfolioMarkPrice) },
-          currency: "CNY",
-          limits: {
-            max_position_weight: Number(portfolioMaxWeight),
-            lot_size: /^\d{6}(?:[.](?:SH|SZ|SS|BJ))?$/i.test(normalizedTicker)
-              ? 100
-              : 1,
-            fee_rate: 0.0005,
-            minimum_fee: 0,
-            allow_short: false,
-          },
-        }
-      : null;
+    const holding: HoldingInputDTO | undefined =
+      mode === "holding_review"
+        ? {
+            ticker: normalizedTicker,
+            quantity: Number(holdingQuantity),
+            average_cost: Number(holdingAverageCost),
+            ...(holdingCash !== "" ? { cash: Number(holdingCash) } : {}),
+            ...(holdingTotalAccountValue !== ""
+              ? { total_account_value: Number(holdingTotalAccountValue) }
+              : {}),
+            ...(holdingCurrency !== "" ? { currency: holdingCurrency.toUpperCase() } : {}),
+            ...(holdingFactsAsOf !== "" ? { facts_as_of: holdingFactsAsOf } : {}),
+            ...(holdingOriginalThesis.trim() !== ""
+              ? { original_thesis: holdingOriginalThesis.trim() }
+              : {}),
+          }
+        : undefined;
     return {
       ticker: normalizedTicker,
       analysis_date: analysisDate,
       selected_analysts: orderedAnalysts,
       research_depth: researchDepth,
+      mode,
+      horizon,
       llm_provider: llmProvider,
       quick_think_llm: quickThinkLlm,
       deep_think_llm: deepThinkLlm,
       output_language: outputLanguage,
       checkpoint_enabled: checkpointEnabled,
       asset_type: null,
-      portfolio,
+      ...(holding !== undefined ? { holding } : {}),
     };
   }
 
@@ -318,20 +304,24 @@ export function useConfig(): UseConfigResult {
     setOutputLanguage,
     checkpoint_enabled: checkpointEnabled,
     setCheckpointEnabled,
-    portfolio_enabled: portfolioEnabled,
-    setPortfolioEnabled,
-    portfolio_cash: portfolioCash,
-    setPortfolioCash,
-    portfolio_mark_price: portfolioMarkPrice,
-    setPortfolioMarkPrice,
-    portfolio_quantity: portfolioQuantity,
-    setPortfolioQuantity,
-    portfolio_sellable_quantity: portfolioSellableQuantity,
-    setPortfolioSellableQuantity,
-    portfolio_average_cost: portfolioAverageCost,
-    setPortfolioAverageCost,
-    portfolio_max_weight: portfolioMaxWeight,
-    setPortfolioMaxWeight,
+    mode,
+    setMode,
+    horizon,
+    setHorizon,
+    holding_quantity: holdingQuantity,
+    setHoldingQuantity,
+    holding_average_cost: holdingAverageCost,
+    setHoldingAverageCost,
+    holding_cash: holdingCash,
+    setHoldingCash,
+    holding_total_account_value: holdingTotalAccountValue,
+    setHoldingTotalAccountValue,
+    holding_currency: holdingCurrency,
+    setHoldingCurrency,
+    holding_facts_as_of: holdingFactsAsOf,
+    setHoldingFactsAsOf,
+    holding_original_thesis: holdingOriginalThesis,
+    setHoldingOriginalThesis,
     selectedProvider,
     quickOptions,
     deepOptions,

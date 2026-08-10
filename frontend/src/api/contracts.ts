@@ -122,6 +122,20 @@ export interface ConfigResponseDTO {
 
 export type ResearchDepth = 1 | 3 | 5;
 export type AssetTypeLiteral = "stock" | "crypto";
+export type ResearchMode = "company_research" | "holding_review";
+export type ResearchHorizon = "short" | "medium" | "long";
+
+/** Minimal, user-provided facts for a learning-oriented holding review. */
+export interface HoldingInputDTO {
+  ticker: string;
+  quantity: number;
+  average_cost: number;
+  cash?: number;
+  total_account_value?: number;
+  currency?: string;
+  facts_as_of?: string;
+  original_thesis?: string;
+}
 
 export interface PortfolioPositionDTO {
   ticker: string;
@@ -152,6 +166,8 @@ export interface RunCreateRequestDTO {
   analysis_date: string;
   selected_analysts: string[];
   research_depth: ResearchDepth;
+  mode?: ResearchMode;
+  horizon?: ResearchHorizon;
   llm_provider: string;
   quick_think_llm: string;
   deep_think_llm: string;
@@ -159,6 +175,8 @@ export interface RunCreateRequestDTO {
   checkpoint_enabled: boolean;
   /** Null means "let the server derive from normalized ticker". */
   asset_type: AssetTypeLiteral | null;
+  holding?: HoldingInputDTO;
+  /** Legacy-only input. New clients must use holding instead. */
   portfolio?: PortfolioDTO | null;
 }
 
@@ -191,6 +209,10 @@ export interface RunSnapshotDTO {
   configured_keys: Record<string, boolean>;
   created_at: string;
   updated_at: string;
+  /** Explicit for new snapshots; absent only on legacy snapshots. */
+  mode?: ResearchMode | null;
+  horizon?: ResearchHorizon | null;
+  holding_context?: HoldingInputDTO & { source: "user_provided" | "legacy_portfolio" } | null;
   latest_sequence: number;
   final_signal?: string | null;
   /** Explicit for new completed runs; absent only on legacy snapshots. */
@@ -272,7 +294,7 @@ export interface ReaderBriefDTO {
   generated_at: string;
   availability: BriefAvailabilityDTO;
   omissions: string[];
-  research_rating: string;
+  research_rating: string | null;
   execution: {
     availability: "ready" | "unavailable";
     requested_action: string | null;
@@ -293,6 +315,31 @@ export interface ReaderBriefDTO {
   risk_consensus: { conviction: number | null; disagreement: string; abstained_roles: string[] };
   data_quality: DataQualityDTO;
   evidence_refs: Array<{ ref_id: string; label: string; resolution_status: "available" | "target_missing" }>;
+  holding_review?: {
+    original_thesis: { status: string; text?: string; reason_code?: string };
+    concentration: { status: string; reason_code?: string; weight?: number; position_market_value?: number; total_account_value?: number };
+    unrealized_pnl: { status: string; reason_code?: string; amount?: number; return_ratio?: number; cost_basis?: number; market_value?: number };
+    scenario_sensitivity: { status: string; reason_code?: string; market_price?: number; value_change_per_price_unit?: number; cost_gap_per_unit?: number };
+  } | null;
+  /** Validated learning synthesis. Evidence references remain explicitly unavailable until ResearchCase v2. */
+  learning_summary?: {
+    research_tilt: "favorable" | "neutral" | "cautious" | "insufficient_evidence";
+    confidence: number;
+    facts: string[];
+    inferences: string[];
+    unknowns: string[];
+    upside: { title: string; condition: string; implication: string };
+    base: { title: string; condition: string; implication: string };
+    downside: { title: string; condition: string; implication: string };
+    catalysts: string[];
+    invalidation_conditions: string[];
+    next_review: string;
+    holding_thesis_assessment?: {
+      status: "supported" | "challenged" | "not_assessable";
+      rationale: string;
+      current_research_hypothesis: string;
+    } | null;
+  } | null;
 }
 
 export interface WorkflowProjectionDTO {
@@ -367,6 +414,8 @@ export interface RunViewEnvelopeDTO {
       run_id: string;
       ticker: string;
       status: RunStatusLiteral;
+      mode: ResearchMode;
+      horizon: ResearchHorizon;
       created_at: string;
       completed_at: string | null;
       latest_sequence: number;

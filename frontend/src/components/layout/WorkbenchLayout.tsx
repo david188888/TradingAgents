@@ -155,10 +155,13 @@ export function WorkbenchLayout(): JSX.Element {
         <div className="top-meta">
           <span className="local-pill">● localhost</span>
           <span>仅用于研究，不构成投资建议</span>
+          <button type="button" className="audit-toggle" onClick={() => setInspectorOpen((open) => !open)}>
+            {inspectorOpen ? "收起审计栏" : "审计栏"}
+          </button>
         </div>
       </header>
 
-      <div className="layout" ref={layoutRef}>
+      <div className={`layout${inspectorOpen ? " with-inspector" : ""}`} ref={layoutRef}>
         <aside className="sidebar">
           <Controls refreshHistory={history.refresh} />
           <RunHistory
@@ -239,7 +242,7 @@ export function WorkbenchLayout(): JSX.Element {
           ) : null}
         </main>
 
-        <div
+        {inspectorOpen ? <div
           className="inspector-resizer"
           role="separator"
           aria-label="调整审计侧栏宽度"
@@ -254,15 +257,15 @@ export function WorkbenchLayout(): JSX.Element {
           onPointerMove={handleResizePointerMove}
           onPointerUp={handleResizePointerUp}
           onPointerCancel={handleResizePointerCancel}
-        />
+        /> : null}
         {inspectorOpen ? <button className="inspector-backdrop" aria-label="关闭审计侧栏" onClick={() => setInspectorOpen(false)} /> : null}
-        <aside className={`inspector${inspectorOpen ? " inspector-open" : ""}`}>
+        {inspectorOpen ? <aside className="inspector inspector-open">
           <div className="inspector-mobile-head">
             <span>审计依据</span>
             <button className="icon-command" aria-label="关闭审计侧栏" onClick={() => setInspectorOpen(false)}>×</button>
           </div>
           <Inspector selectedTurnId={selectedTurn} />
-        </aside>
+        </aside> : null}
       </div>
     </div>
   );

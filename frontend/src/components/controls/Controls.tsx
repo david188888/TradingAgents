@@ -100,6 +100,41 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
       </div>
 
       <div className="input-group">
+        <label htmlFor="ctrl-mode">研究模式</label>
+        <select
+          id="ctrl-mode"
+          value={cfg.mode}
+          onChange={(e) =>
+            cfg.setMode(
+              e.target.value === "holding_review" ? "holding_review" : "company_research",
+            )
+          }
+        >
+          <option value="company_research">公司研究</option>
+          <option value="holding_review">持仓复盘</option>
+        </select>
+        <small>公司研究用于理解标的；持仓复盘只用于学习和复查已有或模拟持仓。</small>
+      </div>
+
+      <div className="input-group">
+        <label htmlFor="ctrl-horizon">研究周期</label>
+        <select
+          id="ctrl-horizon"
+          value={cfg.horizon}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value === "short" || value === "medium" || value === "long") {
+              cfg.setHorizon(value);
+            }
+          }}
+        >
+          <option value="short">短期</option>
+          <option value="medium">中期</option>
+          <option value="long">长期</option>
+        </select>
+      </div>
+
+      <div className="input-group">
         <label htmlFor="ctrl-depth">研究深度</label>
         <select
           id="ctrl-depth"
@@ -245,97 +280,92 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         </label>
       </div>
 
-      <div className="input-group">
-        <label className="check" htmlFor="ctrl-portfolio-enabled">
-          <input
-            id="ctrl-portfolio-enabled"
-            type="checkbox"
-            checked={cfg.portfolio_enabled}
-            onChange={(e) => cfg.setPortfolioEnabled(e.target.checked)}
-          />
-          启用当前标的的组合约束
-        </label>
-        <small>
-          可选：据现金、持仓和上限给出可执行数量；不会保存模型私有推理。
-        </small>
-      </div>
-
-      {cfg.portfolio_enabled && (
+      {cfg.mode === "holding_review" && (
         <>
           <div className="input-group">
-            <label htmlFor="ctrl-portfolio-cash">可用现金（CNY）</label>
-            <input
-              id="ctrl-portfolio-cash"
-              type="number"
-              min="0"
-              step="any"
-              value={cfg.portfolio_cash}
-              onChange={(e) => cfg.setPortfolioCash(e.target.value)}
-              placeholder="如 100000"
-            />
-          </div>
-          <div className="input-group">
-            <label htmlFor="ctrl-portfolio-price">参考价格</label>
-            <input
-              id="ctrl-portfolio-price"
-              type="number"
-              min="0"
-              step="any"
-              value={cfg.portfolio_mark_price}
-              onChange={(e) => cfg.setPortfolioMarkPrice(e.target.value)}
-              placeholder="如 1500"
-            />
-          </div>
-          <div className="input-group grid-2">
-            <label htmlFor="ctrl-portfolio-quantity">
+            <label htmlFor="ctrl-holding-quantity">
               持仓数量
               <input
-                id="ctrl-portfolio-quantity"
+                id="ctrl-holding-quantity"
                 type="number"
-                min="0"
-                step="1"
-                value={cfg.portfolio_quantity}
-                onChange={(e) => cfg.setPortfolioQuantity(e.target.value)}
+                min="0.000001"
+                step="any"
+                value={cfg.holding_quantity}
+                onChange={(e) => cfg.setHoldingQuantity(e.target.value)}
+                placeholder="必填，如 100"
               />
             </label>
-            <label htmlFor="ctrl-portfolio-sellable">
-              可卖数量
+            <label htmlFor="ctrl-holding-cost">
+              平均成本（每单位）
               <input
-                id="ctrl-portfolio-sellable"
+                id="ctrl-holding-cost"
                 type="number"
-                min="0"
-                step="1"
-                value={cfg.portfolio_sellable_quantity}
-                onChange={(e) => cfg.setPortfolioSellableQuantity(e.target.value)}
-                placeholder="默认等于持仓"
+                min="0.000001"
+                step="any"
+                value={cfg.holding_average_cost}
+                onChange={(e) => cfg.setHoldingAverageCost(e.target.value)}
+                placeholder="必填"
               />
             </label>
           </div>
           <div className="input-group grid-2">
-            <label htmlFor="ctrl-portfolio-cost">
-              持仓成本
+            <label htmlFor="ctrl-holding-cash">
+              现金（可选）
               <input
-                id="ctrl-portfolio-cost"
+                id="ctrl-holding-cash"
                 type="number"
                 min="0"
                 step="any"
-                value={cfg.portfolio_average_cost}
-                onChange={(e) => cfg.setPortfolioAverageCost(e.target.value)}
-                placeholder="默认等于参考价"
+                value={cfg.holding_cash}
+                onChange={(e) => cfg.setHoldingCash(e.target.value)}
               />
             </label>
-            <label htmlFor="ctrl-portfolio-max-weight">
-              单标的上限（0-1）
+            <label htmlFor="ctrl-holding-nav">
+              账户总资产（可选）
               <input
-                id="ctrl-portfolio-max-weight"
+                id="ctrl-holding-nav"
                 type="number"
-                min="0.01"
-                max="1"
-                step="0.01"
-                value={cfg.portfolio_max_weight}
-                onChange={(e) => cfg.setPortfolioMaxWeight(e.target.value)}
+                min="0.000001"
+                step="any"
+                value={cfg.holding_total_account_value}
+                onChange={(e) => cfg.setHoldingTotalAccountValue(e.target.value)}
               />
             </label>
+          </div>
+          <div className="input-group grid-2">
+            <label htmlFor="ctrl-holding-currency">
+              金额币种（可选）
+              <input
+                id="ctrl-holding-currency"
+                type="text"
+                maxLength={3}
+                value={cfg.holding_currency}
+                onChange={(e) => cfg.setHoldingCurrency(e.target.value)}
+                placeholder="如 CNY"
+              />
+            </label>
+            <label htmlFor="ctrl-holding-as-of">
+              持仓事实日期（可选）
+              <input
+                id="ctrl-holding-as-of"
+                type="date"
+                value={cfg.holding_facts_as_of}
+                onChange={(e) => cfg.setHoldingFactsAsOf(e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="input-group">
+            <label htmlFor="ctrl-holding-thesis">原始持仓理由（可选）</label>
+            <textarea
+              id="ctrl-holding-thesis"
+              value={cfg.holding_original_thesis}
+              onChange={(e) => cfg.setHoldingOriginalThesis(e.target.value)}
+              placeholder="用于复查当初的研究逻辑；留空则不推测。"
+              rows={3}
+            />
+            <small>
+              持仓事实以分析日期为准。仅用于学习和复盘，不构成交易指令，也不会连接券商或执行订单。
+            </small>
           </div>
         </>
       )}
