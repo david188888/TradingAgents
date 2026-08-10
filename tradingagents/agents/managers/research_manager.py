@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from tradingagents.agents.schemas import (
-    LearningResearchSummary,
+    LearningResearchCaseDraft,
     ResearchPlan,
-    render_learning_research_summary,
+    render_learning_case_draft,
     render_research_plan,
 )
 from tradingagents.agents.utils.agent_utils import (
@@ -19,6 +19,12 @@ from tradingagents.agents.utils.structured import (
 )
 from tradingagents.observability.errors import ObservationError
 from tradingagents.research import render_research_dossier
+from tradingagents.research.claim_registry import (
+    CLAIM_LENSES,
+    CLAIM_PREDICATES,
+    CLAIM_TOPICS,
+    available_candidate_keys,
+)
 from tradingagents.research.delegation import (
     ResearchDelegationError,
     ResearchDelegationExecutor,
@@ -144,7 +150,10 @@ def _learning_research_result(state, llm) -> dict:
     """Keep the legacy research judge from emitting a transaction proposal."""
     debate_state = state["investment_debate_state"]
     evidence_status = str(state.get("evidence_status") or "unknown")
-    research_summary, public_summary = _render_learning_research(state, llm, evidence_status)
+    research_summary, draft = _render_learning_research(state, llm, evidence_status)
+    case_candidate: dict[str, object] = {"evidence_verdict": evidence_status}
+    if draft is not None:
+        case_candidate["draft"] = draft.model_dump(mode="json")
     result = {
         "investment_debate_state": {
             "judge_decision": research_summary,
@@ -155,17 +164,17 @@ def _learning_research_result(state, llm) -> dict:
             "count": debate_state["count"],
         },
         "investment_plan": research_summary,
-        "research_case_candidate": {"evidence_verdict": evidence_status},
+        "research_case_candidate": case_candidate,
     }
     # The rendered report remains available to downstream graph nodes, while
-    # the same validated object is promoted only after the graph checkpoint
+    # the same validated draft is promoted only after the graph checkpoint
     # commits.  Reader never has to infer a conclusion from Markdown.
-    if public_summary is not None:
+    if draft is not None:
         result["reader_public_output"] = {
             "kind": "research",
             "value": {
                 "kind": "learning_research_summary",
-                "summary": public_summary.model_dump(mode="json"),
+                "summary": draft.to_learning_summary_dict(),
             },
         }
     return result
@@ -173,19 +182,45 @@ def _learning_research_result(state, llm) -> dict:
 
 def _render_learning_research(
     state, llm, evidence_status: str
-) -> tuple[str, LearningResearchSummary | None]:
+) -> tuple[str, LearningResearchCaseDraft | None]:
     """Use one bounded synthesis turn; fall back to an explicit abstention."""
-    structured_llm = bind_structured(llm, LearningResearchSummary, "Research Manager")
+    structured_llm = bind_structured(llm, LearningResearchCaseDraft, "Research Manager")
     if structured_llm is None:
         return _learning_research_fallback(evidence_status), None
     mode = state.get("mode")
     holding_context = state.get("holding_context") if mode == "holding_review" else None
-    prompt = f"""你是学习型公司研究的 Research Manager。请只根据下方已给出的分析师报告和辩论，生成结构化研究摘要。
+    candidate_keys = available_candidate_keys(state)
+    coverage_keys = "、".join(candidate_keys["coverage"]) or "（无可用的 coverage 短 key）"
+    evidence_keys = "、".join(candidate_keys["evidence"]) or "（无可用的 evidence 短 key）"
+    lenses = "、".join(sorted(CLAIM_LENSES))
+    topics = "、".join(sorted(CLAIM_TOPICS))
+    predicates = "、".join(sorted(CLAIM_PREDICATES))
+    prompt = f"""你是学习型公司研究的 Research Manager。请只根据下方已给出的分析师报告和辩论，产出一个结构化、可证据绑定的研究案例草稿（LearningResearchCaseDraft）。
 
-硬性边界：这不是交易系统。不得建议或描述买入、卖出、持有、仓位比例、目标仓位、数量、订单、价格指令或执行时间。只输出研究倾向、事实、推论、未知、三种情景、催化剂、失效条件与下一次复核。
+硬性边界：这是学习型研究，不是交易系统。不得输出任何交易、仓位、数量、订单、价格指令或执行时间语义；也不得建议或描述买入、卖出、持有或仓位比例。只产出研究倾向、事实、推论、未知、三种情景、催化剂、失效条件与下一次复核。
 
 证据状态：{evidence_status}
 持仓复盘上下文（若有）：{holding_context!r}
+
+可用的 coverage 短 key（只可从下列中选择，不要编造不在列表中的 key）：
+{coverage_keys}
+
+可用的 evidence 短 key（只可从下列中选择，不要编造不在列表中的 key）：
+{evidence_keys}
+
+claim_key 四段格式：lens.topic.subject.predicate，其中：
+- lens 可选值：{lenses}
+- topic 可选值：{topics}
+- predicate 可选值：{predicates}
+- subject 用稳定的 snake_case 指标或实体名（例如 revenue_growth、cash_flow_margin、pe_ratio、announcement_date）。
+
+每条规则：
+- fact：至少引用一个可用的 evidence key 和一个可用的 coverage key；confidence 必填；不能引用其他 claim。
+- inference：confidence 必填；至少引用一个 evidence key；通过 supporting_claim_keys 引用 fact（不能引用 inference 或 unknown）。
+- unknown：不能有 evidence/supporting/confidence；必须给出 required_evidence 与 review_trigger；lifecycle_status 必须为 active。
+- scenario/catalysts/invalidation 引用的 claim_key 必须是你在本 draft 中自行定义过的 key；upside 与 downside 至少要有 trigger 或 invalidation。
+
+数量限制：facts 最多 5 条、inferences 最多 4 条、unknowns 最多 4 条、catalysts 与 invalidation_conditions 各不超过 4 条。
 
 市场报告：{state.get("market_report", "")}
 基本面报告：{state.get("fundamentals_report", "")}
@@ -200,9 +235,9 @@ assessment 必须说明当前证据是 supported、challenged 还是 not_assessa
 没有证据时明确列入 unknowns，并将 research_tilt 设为 insufficient_evidence。"""
     try:
         result = structured_llm.invoke(prompt)
-        if not isinstance(result, LearningResearchSummary):
-            result = LearningResearchSummary.model_validate(result)
-        return render_learning_research_summary(result), result
+        if not isinstance(result, LearningResearchCaseDraft):
+            result = LearningResearchCaseDraft.model_validate(result)
+        return render_learning_case_draft(result), result
     except Exception:
         return _learning_research_fallback(evidence_status), None
 

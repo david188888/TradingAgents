@@ -18,6 +18,17 @@ so that:
 
 from __future__ import annotations
 
+from tradingagents.research.claim_registry import (  # noqa: F401 - facade re-export
+    ALL_EVIDENCE_KEYS,
+    BUNDLE_EVIDENCE_KEYS,
+    CLAIM_LENSES,
+    CLAIM_PREDICATES,
+    CLAIM_TOPICS,
+    REPORT_EVIDENCE_KEYS,
+    available_candidate_keys,
+    validate_claim_key,
+)
+
 from ._common import (  # noqa: F401  - facade re-export
     _NULLISH_FLOAT,
     ModelClaimInput,
@@ -57,6 +68,13 @@ from ._research_case import (  # noqa: F401 - facade re-export
     ReviewItem,
     ReviewPlan,
     ScenarioSet,
+)
+from ._research_case_draft import (
+    ClaimDraft,
+    LearningResearchCaseDraft,
+    ReviewItemDraft,
+    ScenarioDraft,
+    render_learning_case_draft,
 )
 from ._risk import (  # noqa: F401  - facade re-export
     RiskDebateSignal,
