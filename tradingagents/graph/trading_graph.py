@@ -481,7 +481,13 @@ class TradingAgentsGraph:
         return result.final_state, result.final_signal
 
     def _log_state(self, trade_date, final_state):
-        """Log the final state to a JSON file."""
+        """Log the final state to a JSON file.
+
+        Learning/holding-review runs skip the trader and risk nodes, so the
+        trading-specific keys may be absent.  This is a debug log and must
+        never raise and mark an otherwise completed run as failed.
+        """
+        risk_state = final_state.get("risk_debate_state") or {}
         self.log_states_dict[str(trade_date)] = {
             "company_of_interest": final_state["company_of_interest"],
             "trade_date": final_state["trade_date"],
@@ -500,17 +506,21 @@ class TradingAgentsGraph:
                     "judge_decision"
                 ],
             },
-            "trader_investment_decision": final_state["trader_investment_plan"],
+            "trader_investment_decision": final_state.get(
+                "trader_investment_plan", "(not applicable: learning mode)"
+            ),
             "risk_debate_state": {
-                "aggressive_history": final_state["risk_debate_state"]["aggressive_history"],
-                "conservative_history": final_state["risk_debate_state"]["conservative_history"],
-                "neutral_history": final_state["risk_debate_state"]["neutral_history"],
-                "history": final_state["risk_debate_state"]["history"],
-                "risk_signals": final_state["risk_debate_state"].get("risk_signals", []),
-                "judge_decision": final_state["risk_debate_state"]["judge_decision"],
+                "aggressive_history": risk_state.get("aggressive_history", ""),
+                "conservative_history": risk_state.get("conservative_history", ""),
+                "neutral_history": risk_state.get("neutral_history", ""),
+                "history": risk_state.get("history", ""),
+                "risk_signals": risk_state.get("risk_signals", []),
+                "judge_decision": risk_state.get("judge_decision", ""),
             },
-            "investment_plan": final_state["investment_plan"],
-            "final_trade_decision": final_state["final_trade_decision"],
+            "investment_plan": final_state.get("investment_plan", ""),
+            "final_trade_decision": final_state.get(
+                "final_trade_decision", "(not applicable: learning mode)"
+            ),
         }
 
         # Save to file. Reject ticker values that would escape the

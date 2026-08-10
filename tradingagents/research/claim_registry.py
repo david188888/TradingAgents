@@ -62,21 +62,20 @@ ALL_EVIDENCE_KEYS = REPORT_EVIDENCE_KEYS | BUNDLE_EVIDENCE_KEYS
 
 
 def validate_claim_key(key: str) -> None:
-    """Validate a four-segment claim key against the registered vocabulary.
+    """Validate a four-segment claim key's shape and lens.
 
-    A claim key has the shape ``lens.topic.subject.predicate`` where ``lens``,
-    ``topic`` and ``predicate`` must be registered and ``subject`` is a stable
-    snake_case metric/entity name.  Raises ``ValueError`` on any violation.
+    A claim key has the shape ``lens.topic.subject.predicate``.  ``lens`` is
+    code-controlled (it routes the claim to an analyst card and must be one
+    of the registered lenses); the other three segments are stable snake_case
+    identifiers chosen by the model and are only shape-checked.  This keeps
+    evidence binding and the claim graph strict without demanding that the
+    model hit a fixed topic/predicate ontology on the first try.
     """
     if re.fullmatch(CLAIM_KEY_PATTERN, key) is None:
         raise ValueError(f"invalid claim key: {key!r}")
-    lens, topic, subject, predicate = key.split(".")
+    lens, _topic, subject, _predicate = key.split(".")
     if lens not in CLAIM_LENSES:
         raise ValueError(f"claim key lens is not registered: {lens}")
-    if topic not in CLAIM_TOPICS:
-        raise ValueError(f"claim key topic is not registered: {topic}")
-    if predicate not in CLAIM_PREDICATES:
-        raise ValueError(f"claim key predicate is not registered: {predicate}")
     if not subject:
         raise ValueError("claim key subject is required")
     return None

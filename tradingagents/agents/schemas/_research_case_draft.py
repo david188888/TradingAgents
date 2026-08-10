@@ -76,6 +76,8 @@ class ClaimDraft(_DraftModel):
                 raise ValueError("fact and inference claims require evidence keys")
         if self.claim_type == "fact" and self.supporting_claim_keys:
             raise ValueError("facts cannot depend on other claims")
+        if self.claim_type == "fact" and not self.coverage_keys:
+            raise ValueError("fact claims require at least one coverage key")
         if self.claim_type == "inference" and not self.supporting_claim_keys:
             raise ValueError("inferences require supporting fact claims")
         return self

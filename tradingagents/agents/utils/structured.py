@@ -41,13 +41,35 @@ NO_EXTERNAL_TOOLS = (
 )
 
 
+def _structured_method(llm: Any) -> str | None:
+    """Pick a structured-output method the model actually supports.
+
+    DeepSeek's Chat Completions endpoint rejects OpenAI's ``json_schema``
+    ``response_format`` ("This response_format type is unavailable now") even
+    though ``function_calling`` works once thinking mode is off.  Default every
+    other provider to LangChain's default (json_schema where supported).
+    """
+    model = ""
+    for attr in ("model_name", "model", "model_id"):
+        value = getattr(llm, attr, None)
+        if isinstance(value, str):
+            model = value.lower()
+            break
+    if "deepseek" in model:
+        return "function_calling"
+    return None
+
+
 def bind_structured(llm: Any, schema: type[T], agent_name: str) -> Any | None:
     """Return ``llm.with_structured_output(schema)`` or ``None`` if unsupported.
 
     Logs a warning when the binding fails so the user understands the agent
     will use free-text generation for every call instead of one-shot fallback.
     """
+    method = _structured_method(llm)
     try:
+        if method is not None:
+            return llm.with_structured_output(schema, method=method)
         return llm.with_structured_output(schema)
     except (NotImplementedError, AttributeError) as exc:
         logger.warning(

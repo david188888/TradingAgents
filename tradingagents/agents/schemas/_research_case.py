@@ -104,13 +104,15 @@ class PublicClaim(_PublicModel):
     @field_validator("claim_key")
     @classmethod
     def _registered_claim_key(cls, value: str) -> str:
-        lens, topic, subject, predicate = value.split(".")
+        # Only the lens segment is code-controlled; topic/subject/predicate
+        # are shape-checked by the field pattern so the model does not have
+        # to hit a fixed ontology on the first try.
+        parts = value.split(".")
+        if len(parts) != 4:
+            raise ValueError("claim key must have four segments")
+        lens, _topic, subject, _predicate = parts
         if lens not in _CLAIM_LENSES:
             raise ValueError("claim key lens is not registered")
-        if topic not in _CLAIM_TOPICS:
-            raise ValueError("claim key topic is not registered")
-        if predicate not in _CLAIM_PREDICATES:
-            raise ValueError("claim key predicate is not registered")
         if not subject:
             raise ValueError("claim key subject is required")
         return value

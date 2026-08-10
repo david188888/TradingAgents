@@ -1,6 +1,10 @@
-"""Research Manager: turns the bull/bear debate into a structured investment plan for the trader."""
+"""Research Manager: synthesizes analyst reports into research plans and learning cases."""
 
 from __future__ import annotations
+
+import logging
+
+from pydantic import ValidationError
 
 from tradingagents.agents.schemas import (
     LearningResearchCaseDraft,
@@ -21,8 +25,6 @@ from tradingagents.observability.errors import ObservationError
 from tradingagents.research import render_research_dossier
 from tradingagents.research.claim_registry import (
     CLAIM_LENSES,
-    CLAIM_PREDICATES,
-    CLAIM_TOPICS,
     available_candidate_keys,
 )
 from tradingagents.research.delegation import (
@@ -33,6 +35,8 @@ from tradingagents.research.delegation import (
     build_default_report_lens_delegation,
     render_delegation_results,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def create_research_manager(
@@ -193,8 +197,6 @@ def _render_learning_research(
     coverage_keys = "、".join(candidate_keys["coverage"]) or "（无可用的 coverage 短 key）"
     evidence_keys = "、".join(candidate_keys["evidence"]) or "（无可用的 evidence 短 key）"
     lenses = "、".join(sorted(CLAIM_LENSES))
-    topics = "、".join(sorted(CLAIM_TOPICS))
-    predicates = "、".join(sorted(CLAIM_PREDICATES))
     prompt = f"""你是学习型公司研究的 Research Manager。请只根据下方已给出的分析师报告和辩论，产出一个结构化、可证据绑定的研究案例草稿（LearningResearchCaseDraft）。
 
 硬性边界：这是学习型研究，不是交易系统。不得输出任何交易、仓位、数量、订单、价格指令或执行时间语义；也不得建议或描述买入、卖出、持有或仓位比例。只产出研究倾向、事实、推论、未知、三种情景、催化剂、失效条件与下一次复核。
@@ -208,14 +210,15 @@ def _render_learning_research(
 可用的 evidence 短 key（只可从下列中选择，不要编造不在列表中的 key）：
 {evidence_keys}
 
-claim_key 四段格式：lens.topic.subject.predicate，其中：
-- lens 可选值：{lenses}
-- topic 可选值：{topics}
-- predicate 可选值：{predicates}
-- subject 用稳定的 snake_case 指标或实体名（例如 revenue_growth、cash_flow_margin、pe_ratio、announcement_date）。
+claim_key 四段格式：lens.topic.subject.predicate，全部小写 snake_case，用点号分隔，其中：
+- lens（第一段）必须从下列四个视角中选一个：{lenses}
+- topic（第二段）是你为该论点归纳的稳定主题名，用 snake_case（例如 market_trend、revenue_growth、valuation、company_event、capital_flow）。
+- subject（第三段）是具体指标或实体名，用 snake_case（例如 revenue_growth、cash_flow_margin、pe_ratio、announcement_date）。
+- predicate（第四段）是该论点的方向性判断，用一个动词性 snake_case 词（例如 supportive、adverse、stable、improving、deteriorating、accelerating、uncertain）。
+- 除 lens 外，后三段不需要从固定枚举中选择，但必须是你自己一致使用的 snake_case 标识，供情景与复核引用。
 
 每条规则：
-- fact：至少引用一个可用的 evidence key 和一个可用的 coverage key；confidence 必填；不能引用其他 claim。
+- fact：至少引用一个可用的 evidence key 和一个可用的 coverage key（coverage 要与该 fact 的视角/数据匹配，例如价格趋势用 coverage:adjusted_price_history、事件用 coverage:company_event_window）；confidence 必填；不能引用其他 claim。
 - inference：confidence 必填；至少引用一个 evidence key；通过 supporting_claim_keys 引用 fact（不能引用 inference 或 unknown）。
 - unknown：不能有 evidence/supporting/confidence；必须给出 required_evidence 与 review_trigger；lifecycle_status 必须为 active。
 - scenario/catalysts/invalidation 引用的 claim_key 必须是你在本 draft 中自行定义过的 key；upside 与 downside 至少要有 trigger 或 invalidation。
@@ -232,14 +235,49 @@ claim_key 四段格式：lens.topic.subject.predicate，其中：
 assessment 必须说明当前证据是 supported、challenged 还是 not_assessable，并给出可观察的当前研究假设。
 若 original_thesis 缺失，绝不推测用户买入理由，也不要填写该字段。
 
-没有证据时明确列入 unknowns，并将 research_tilt 设为 insufficient_evidence。"""
-    try:
-        result = structured_llm.invoke(prompt)
-        if not isinstance(result, LearningResearchCaseDraft):
-            result = LearningResearchCaseDraft.model_validate(result)
-        return render_learning_case_draft(result), result
-    except Exception:
+没有证据时明确列入 unknowns，并将 research_tilt 设为 insufficient_evidence。
+
+claim_key 示例（严格遵守四段，每段必须以小写字母开头、只含小写字母数字下划线，不要包含股票代码或数字开头的段）：
+- market.price_trend.close.supportive
+- fundamentals.revenue_growth.quarterly.improving
+- news.company_event.announcement.absent
+- sentiment.capital_flow.net_inflow.supportive
+- fundamentals.valuation.pe_ratio.elevated
+常见错误：market.000338_sz.price（以数字开头）、market.price.close（只有三段）、market.momentum（只有两段）。"""
+
+    def _invoke_draft(structured_prompt: str) -> LearningResearchCaseDraft | None:
+        try:
+            result = structured_llm.invoke(structured_prompt)
+        except Exception as exc:
+            logger.warning("Research Manager: structured draft call failed (%s)", exc)
+            return None
+        if isinstance(result, LearningResearchCaseDraft):
+            return result
+        try:
+            return LearningResearchCaseDraft.model_validate(result)
+        except ValidationError as exc:
+            logger.warning("Research Manager: draft validation failed: %s", exc)
+            correction = (
+                f"\n\n你上一次的输出未通过校验，请只修正下列问题后重新输出完整的 LearningResearchCaseDraft，不要改变其他字段：\n{exc}\n"
+                "重点检查：每个 claim_key 必须是四段 lens.topic.subject.predicate，每段以小写字母开头、只含 a-z 0-9 _，不要加入股票代码。"
+            )
+            try:
+                retried = structured_llm.invoke(structured_prompt + correction)
+            except Exception as retry_exc:
+                logger.warning("Research Manager: draft retry call failed (%s)", retry_exc)
+                return None
+            if isinstance(retried, LearningResearchCaseDraft):
+                return retried
+            try:
+                return LearningResearchCaseDraft.model_validate(retried)
+            except ValidationError as retry_exc:
+                logger.warning("Research Manager: draft retry still invalid (%s)", retry_exc)
+                return None
+
+    draft = _invoke_draft(prompt)
+    if draft is None:
         return _learning_research_fallback(evidence_status), None
+    return render_learning_case_draft(draft), draft
 
 
 def _learning_research_fallback(evidence_status: str) -> str:
