@@ -1,12 +1,18 @@
 import json
-from datetime import date, timedelta
-from typing import Annotated
+from collections.abc import Mapping
+from typing import Annotated, Any
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
+from tradingagents.dataflows.coverage import CoveredText
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+from tradingagents.research.horizon_policy import InvestmentHorizon
+from tradingagents.research.news_prefetch import build_news_prefetch_plan
+
+MAX_PREFETCH_DATA_CHARS = 12_000
 
 
 @tool
@@ -55,39 +61,154 @@ def get_global_news(
 def get_news_windows(
     ticker: Annotated[str, "Target A-share ticker symbol"],
     curr_date: Annotated[str, "Analysis cutoff date in yyyy-mm-dd format"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
-    """Fetch fixed event/theme/official windows for an A-share target.
+    """Fetch policy-owned event/theme/official windows for a target.
 
-    The function owns the date boundaries so a model cannot silently turn a
-    seven-day event query into a claim that the longer-term theme is absent.
+    Horizon is injected from graph state and is not part of the model-visible
+    tool schema. Bare legacy callers use the medium policy.
     """
-    try:
-        end = date.fromisoformat(curr_date)
-    except ValueError:
-        return "Invalid analysis cutoff date."
-    windows = {
-        "event": 7,
-        "theme": 180,
-        "official": 1460,
+    horizon = _state_horizon(state)
+    return run_news_windows(ticker, curr_date, horizon=horizon)
+
+
+def _state_horizon(state: Mapping[str, Any] | None) -> InvestmentHorizon:
+    value = state.get("horizon") if state is not None else None
+    return value if value in {"short", "medium", "long"} else "medium"
+
+
+def _public_window_result(raw: object) -> dict[str, object]:
+    rendered = str(raw)
+    result: dict[str, object] = {
+        "status": "ok",
+        "data": rendered[:MAX_PREFETCH_DATA_CHARS],
+        "truncated": len(rendered) > MAX_PREFETCH_DATA_CHARS,
     }
-    result: dict[str, object] = {"ticker": ticker, "as_of": curr_date, "windows": {}}
-    for name, days in windows.items():
-        start = (end - timedelta(days=days)).isoformat()
-        try:
-            if name == "official" and is_a_share_ticker(ticker):
-                payload = route_to_vendor("get_a_share_cninfo_announcements", ticker, start, curr_date)
-            else:
-                payload = route_to_vendor("get_news", ticker, start, curr_date)
-        except Exception as exc:
-            payload = f"unavailable: {type(exc).__name__}"
-        result["windows"][name] = {
-            "start_date": start,
-            "end_date": curr_date,
-            "lookback_days": days,
-            "source_policy": "company news; official window requires separate公告核验",
-            "data": payload,
+    if isinstance(raw, CoveredText):
+        result["coverage"] = raw.coverage.model_dump(mode="json")
+    else:
+        result["coverage"] = {
+            "completeness": "unknown",
+            "degradations": ["source_coverage_not_reported"],
         }
+    return result
+
+
+def run_news_windows(
+    ticker: str,
+    curr_date: str,
+    *,
+    horizon: InvestmentHorizon,
+) -> str:
+    """Execute deterministic prefetch windows for one run and horizon."""
+    market = "a_share" if is_a_share_ticker(ticker) else "global"
+    try:
+        plan = build_news_prefetch_plan(horizon, curr_date, market=market)
+    except ValueError:
+        return "Invalid analysis cutoff date or investment horizon."
+    result: dict[str, object] = {
+        "ticker": ticker,
+        "as_of": curr_date,
+        "horizon": horizon,
+        "policy_version": plan.policy_version,
+        "windows": {},
+    }
+    windows = result["windows"]
+    assert isinstance(windows, dict)
+
+    company_events: dict[str, object] = {}
+    for window in plan.company_windows:
+        try:
+            payload = _public_window_result(
+                route_to_vendor(
+                    "get_news",
+                    ticker,
+                    window.start_date,
+                    curr_date,
+                    max_pages=plan.company_news_max_pages,
+                )
+            )
+        except Exception as exc:
+            payload = {"status": "unavailable", "error_type": type(exc).__name__}
+        company_events[window.window_id] = {
+            "start_date": window.start_date,
+            "end_date": curr_date,
+            "lookback_days": window.lookback_days,
+            "source_policy": "company_news",
+            **payload,
+        }
+    windows["company_events"] = company_events
+
+    if market == "a_share":
+        assert plan.research_reports_start is not None
+        assert plan.research_reports_max_pages is not None
+        try:
+            official = _public_window_result(
+                route_to_vendor(
+                    "get_a_share_cninfo_announcements",
+                    ticker,
+                    plan.official_start,
+                    curr_date,
+                    max_pages=plan.official_max_pages,
+                )
+            )
+        except Exception as exc:
+            official = {"status": "unavailable", "error_type": type(exc).__name__}
+        try:
+            research_reports = _public_window_result(
+                route_to_vendor(
+                    "get_a_share_research_reports",
+                    ticker,
+                    as_of=curr_date,
+                    start_date=plan.research_reports_start,
+                    max_pages=plan.research_reports_max_pages,
+                )
+            )
+        except Exception as exc:
+            research_reports = {
+                "status": "unavailable",
+                "error_type": type(exc).__name__,
+            }
+    else:
+        official = {
+            "status": "unavailable",
+            "reason": "official_filings_provider_not_implemented",
+        }
+        research_reports = {
+            "status": "unavailable",
+            "reason": "a_share_research_reports_not_applicable",
+        }
+    windows["official"] = {
+        "start_date": plan.official_start,
+        "end_date": curr_date,
+        "lookback_years": plan.official_lookback_years,
+        "source_policy": "official_disclosures",
+        **official,
+    }
+    windows["research_reports"] = {
+        "start_date": plan.research_reports_start,
+        "end_date": curr_date,
+        "lookback_years": plan.research_reports_lookback_years,
+        "source_policy": "company_research_reports",
+        **research_reports,
+    }
     return json.dumps(result, ensure_ascii=False)
+
+
+def create_news_window_prefetch_node():
+    """Create the deterministic graph task that precedes the News Analyst."""
+
+    def prefetch(state: Mapping[str, Any]) -> dict[str, str]:
+        horizon = _state_horizon(state)
+        return {
+            "news_window_bundle": run_news_windows(
+                str(state["company_of_interest"]),
+                str(state["trade_date"]),
+                horizon=horizon,
+            )
+        }
+
+    return prefetch
 
 
 @tool

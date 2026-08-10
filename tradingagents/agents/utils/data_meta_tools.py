@@ -24,6 +24,7 @@ from typing import Annotated, Literal
 from langchain_core.tools import tool
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
+from tradingagents.dataflows.coverage import CoveredText
 from tradingagents.dataflows.errors import (
     DataSourceUnavailableError,
     VendorError,
@@ -31,6 +32,8 @@ from tradingagents.dataflows.errors import (
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.market_data_validator import build_verified_market_snapshot
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+from tradingagents.research.horizon_policy import InvestmentHorizon
+from tradingagents.research.news_prefetch import build_news_prefetch_plan
 
 BundleFocus = Literal["market", "fundamentals", "news"]
 
@@ -72,7 +75,12 @@ def _market_snapshot(symbol: str, curr_date: str, _request: str) -> str:
 
 
 def _price_history(symbol: str, curr_date: str, _request: str) -> str:
-    return route_to_vendor("get_stock_data", symbol, _start_date(curr_date), curr_date)
+    return route_to_vendor(
+        "get_adjusted_price_history",
+        symbol,
+        _start_date(curr_date),
+        curr_date,
+    )
 
 
 def _rsi_indicator(symbol: str, curr_date: str, _request: str) -> str:
@@ -111,8 +119,25 @@ def _announcements(symbol: str, _curr_date: str, _request: str) -> str:
     return route_to_vendor("get_a_share_exchange_announcements", symbol)
 
 
+def _research_reports_for_horizon(
+    symbol: str,
+    curr_date: str,
+    horizon: InvestmentHorizon,
+) -> str:
+    plan = build_news_prefetch_plan(horizon, curr_date, market="a_share")
+    assert plan.research_reports_start is not None
+    assert plan.research_reports_max_pages is not None
+    return route_to_vendor(
+        "get_a_share_research_reports",
+        symbol,
+        as_of=curr_date,
+        start_date=plan.research_reports_start,
+        max_pages=plan.research_reports_max_pages,
+    )
+
+
 def _research_reports(symbol: str, curr_date: str, _request: str) -> str:
-    return route_to_vendor("get_a_share_research_reports", symbol, as_of=curr_date)
+    return _research_reports_for_horizon(symbol, curr_date, "medium")
 
 
 def _eps_forecast(symbol: str, curr_date: str, _request: str) -> str:
@@ -142,8 +167,25 @@ def _board_fund_flow(_symbol: str, _curr_date: str, request: str) -> str:
     return route_to_vendor("get_a_share_board_fund_flow", board_type, period, 20)
 
 
+def _cninfo_announcements_for_horizon(
+    symbol: str,
+    curr_date: str,
+    horizon: InvestmentHorizon,
+) -> str:
+    plan = build_news_prefetch_plan(horizon, curr_date, market="a_share")
+    return route_to_vendor(
+        "get_a_share_cninfo_announcements",
+        symbol,
+        plan.official_start,
+        curr_date,
+        max_pages=plan.official_max_pages,
+    )
+
+
 def _cninfo_announcements(symbol: str, curr_date: str, _request: str) -> str:
-    return route_to_vendor("get_a_share_cninfo_announcements", symbol, _start_date(curr_date, 1460), curr_date)
+    return _cninfo_announcements_for_horizon(symbol, curr_date, "medium")
+
+
 def _fundamentals(symbol: str, curr_date: str, _request: str) -> str:
     return route_to_vendor("get_fundamentals", symbol, curr_date)
 
@@ -160,8 +202,18 @@ def _income_statement(symbol: str, curr_date: str, _request: str) -> str:
     return route_to_vendor("get_income_statement", symbol, "quarterly", curr_date)
 
 
+def _company_news_for_horizon(
+    symbol: str,
+    curr_date: str,
+    horizon: InvestmentHorizon,
+) -> str:
+    market = "a_share" if is_a_share_ticker(symbol) else "global"
+    plan = build_news_prefetch_plan(horizon, curr_date, market=market)
+    return route_to_vendor("get_news", symbol, plan.theme_start, curr_date)
+
+
 def _company_news(symbol: str, curr_date: str, _request: str) -> str:
-    return route_to_vendor("get_news", symbol, _start_date(curr_date, 7), curr_date)
+    return _company_news_for_horizon(symbol, curr_date, "medium")
 
 
 def _global_news(_symbol: str, curr_date: str, _request: str) -> str:
@@ -182,7 +234,13 @@ def _china_macro(_symbol: str, _curr_date: str, _request: str) -> str:
 
 _CAPABILITIES: tuple[Capability, ...] = (
     Capability("verified_market_snapshot", "verified_market_snapshot", "market", _market_snapshot, default=True),
-    Capability("price_history", "get_stock_data", "market", _price_history, default=True),
+    Capability(
+        "adjusted_price_history",
+        "get_adjusted_price_history",
+        "market",
+        _price_history,
+        default=True,
+    ),
     Capability("rsi", "get_indicators", "market", _rsi_indicator, ("rsi", "超买", "超卖", "momentum", "动量")),
     Capability("macd", "get_indicators", "market", _macd_indicator, ("macd", "趋势", "trend", "动量")),
     Capability("capital_flow", "get_a_share_capital_flow", "market", _capital_flow, ("资金", "资金流", "capital flow"), True),
@@ -274,7 +332,9 @@ def _execute(
     """Execute a known capability and redact provider-specific failure text."""
 
     try:
-        result = str(capability.runner(symbol, curr_date, request))
+        raw_result = capability.runner(symbol, curr_date, request)
+        coverage = raw_result.coverage if isinstance(raw_result, CoveredText) else None
+        result = str(raw_result)
     except Exception as exc:  # router failures are converted into the envelope
         return {
             "capability": capability.id,
@@ -291,13 +351,16 @@ def _execute(
             "status": status,
             "message": "No usable data was returned for this capability.",
         }
-    return {
+    response: dict[str, object] = {
         "capability": capability.id,
         "route_method": capability.route_method,
         "status": status,
         "data": result[:MAX_RESULT_CHARS],
         "truncated": len(result) > MAX_RESULT_CHARS,
     }
+    if coverage is not None:
+        response["coverage"] = coverage.model_dump(mode="json")
+    return response
 
 
 def run_data_bundle(

@@ -161,7 +161,8 @@ def _route_news_to_vendors(
         try:
             with _provenance.attempt_scope(attempt):
                 _emit_data_progress("start", method, vendor, args)
-                result = VENDOR_METHODS[method][vendor](*args, **kwargs)
+                call_kwargs = _news_vendor_kwargs(method, vendor, kwargs)
+                result = VENDOR_METHODS[method][vendor](*args, **call_kwargs)
         except Exception as exc:
             artifact_id = _provenance.fail(attempt, exc)
             _record_vendor_failure(vendor, method, args, exc)
@@ -236,7 +237,8 @@ def _route_news_to_vendors(
             try:
                 with _provenance.attempt_scope(attempt):
                     _emit_data_progress("start", method, vendor, args)
-                    result = VENDOR_METHODS[method][vendor](*args, **kwargs)
+                    call_kwargs = _news_vendor_kwargs(method, vendor, kwargs)
+                    result = VENDOR_METHODS[method][vendor](*args, **call_kwargs)
             except Exception as exc:
                 artifact_id = _provenance.fail(attempt, exc)
                 _record_vendor_failure(vendor, method, args, exc)
@@ -294,6 +296,18 @@ def _route_news_to_vendors(
     return f"No curated news found for '{method}'. Source status: {details}."
 
 
+def _news_vendor_kwargs(
+    method: str,
+    vendor: str,
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Pass bounded pagination only to adapters that implement it."""
+    call_kwargs = dict(kwargs)
+    if method == "get_news" and vendor != "eastmoney":
+        call_kwargs.pop("max_pages", None)
+    return call_kwargs
+
+
 def _news_official_fallback_vendors(
     method: str,
     args: tuple[Any, ...],
@@ -310,5 +324,4 @@ def _news_official_fallback_vendors(
         for vendor in ("china_exchange",)
         if vendor not in already_attempted and vendor in VENDOR_METHODS[method]
     ]
-
 

@@ -8,6 +8,7 @@ from dateutil.relativedelta import relativedelta
 
 from tradingagents.observability.provenance import capture_vendor_raw
 
+from .coverage import CoveredText, PriceSeriesCoverageV1
 from .stockstats_utils import (
     StockstatsUtils,
     _assert_ohlcv_not_stale,
@@ -111,6 +112,96 @@ def get_YFin_data_online(
     header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
     return header + csv_string
+
+
+def get_YFin_adjusted_data_online(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> CoveredText:
+    """Fetch split/dividend-adjusted OHLCV with explicit yfinance semantics."""
+    datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    canonical = normalize_symbol(symbol)
+    ticker = yf.Ticker(canonical)
+    end_inclusive = (end_dt + relativedelta(days=1)).strftime("%Y-%m-%d")
+    source = "yfinance"
+    try:
+        data = yf_retry(
+            lambda: ticker.history(
+                start=start_date,
+                end=end_inclusive,
+                auto_adjust=True,
+                actions=False,
+            )
+        )
+    except CurlCffiRequestException:
+        data = load_ohlcv(symbol, end_date)
+        if "Date" in data.columns:
+            data = data.copy()
+            data["Date"] = pd.to_datetime(data["Date"])
+            data = data[
+                (data["Date"] >= pd.to_datetime(start_date))
+                & (data["Date"] <= pd.to_datetime(end_date))
+            ].set_index("Date")
+        source = "yfinance adjusted cache"
+    if data.empty:
+        raise NoMarketDataError(
+            symbol,
+            canonical,
+            f"no adjusted rows between {start_date} and {end_date}",
+        )
+    if data.index.tz is not None:
+        data.index = data.index.tz_localize(None)
+    if source == "yfinance":
+        _assert_ohlcv_not_stale(data, end_date, symbol, canonical)
+    data = data.sort_index()
+    _capture_yfinance_frame(
+        data,
+        "adjusted_ohlcv",
+        source=source,
+        symbol=canonical,
+        price_basis="split_dividend_adjusted",
+    )
+    actual_start = data.index.min().date().isoformat()
+    actual_end = data.index.max().date().isoformat()
+    exact_boundaries = actual_start == start_date and actual_end == end_date
+    coverage = PriceSeriesCoverageV1(
+        capability="adjusted_price_history",
+        source_id="yfinance.adjusted_ohlcv",
+        requested_start=start_date,
+        requested_end=end_date,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        item_count=len(data),
+        completeness="complete" if exact_boundaries else "unknown",
+        sources=("yfinance.adjusted_ohlcv",),
+        degradations=(
+            () if exact_boundaries else ("trading_calendar_boundaries_not_proven",)
+        ),
+        as_of=end_date,
+        price_basis="split_dividend_adjusted",
+        adjustment_source="yfinance.history(auto_adjust=True,actions=False)",
+        adjustment_verified=True,
+        granularity="daily",
+    )
+    numeric_columns = ["Open", "High", "Low", "Close"]
+    for column in numeric_columns:
+        if column in data.columns:
+            data[column] = data[column].round(4)
+    label = canonical if canonical == symbol.upper() else f"{canonical} (from {symbol})"
+    rendered = "\n".join(
+        [
+            f"# Adjusted stock data for {label} from {start_date} to {end_date}",
+            f"# Source: {source}",
+            "# Price basis: split_dividend_adjusted",
+            "# Adjustment source: yfinance.history(auto_adjust=True,actions=False)",
+            f"# Total records: {len(data)}",
+            "",
+            data.to_csv(),
+        ]
+    )
+    return CoveredText(rendered, coverage)
 
 def _build_indicators_window_report(
     symbol: Annotated[str, "ticker symbol of the company"],

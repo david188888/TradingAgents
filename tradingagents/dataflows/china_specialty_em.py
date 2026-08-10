@@ -23,6 +23,7 @@ import pandas as pd
 import requests
 
 from .china_data import ChinaDataUnavailableError
+from .coverage import CoveredText, SourceCoverageV1
 from .eastmoney import (
     EASTMONEY_DATACENTER_URL,
     _extract_records,
@@ -559,15 +560,23 @@ def get_a_share_research_reports(
     ticker: str,
     max_pages: int = 3,
     as_of: str | None = None,
-) -> str:
+    *,
+    start_date: str | None = None,
+) -> CoveredText:
     """A-share research reports (个股研报) via EastMoney reportapi direct.
 
     Returns published report list with org/title/rating/forecast-EPS fields.
     The ``predictThisYearEps``/``predictNextYearEps`` fields are analyst
     forecasts, distinct from tushare's reported fundamentals.
     """
+    if max_pages < 1:
+        raise ValueError("max_pages must be positive")
     code = _require_strict_a_share_code(ticker)
     all_records: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    page_count = 0
+    pagination_exhausted: bool | None = None
+    invalid_published_count = 0
     for page in range(1, max_pages + 1):
         payload = em_get(
             _REPORT_API_URL,
@@ -592,15 +601,51 @@ def get_a_share_research_reports(
             headers={"Referer": "https://data.eastmoney.com/"},
             timeout=30,
         )
+        page_count += 1
+        _capture_vendor_raw(
+            payload,
+            metadata={
+                "provider": "eastmoney",
+                "dataset": "research_reports",
+                "ticker": ticker,
+                "page": page,
+            },
+        )
         rows = payload.get("data") or []
         if not rows:
+            pagination_exhausted = True
             break
-        all_records.extend(
-            row for row in rows
-            if not as_of or str(row.get("publishDate", ""))[:10] <= as_of
-        )
-        if page >= (payload.get("TotalPage", 1) or 1):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            published = str(row.get("publishDate", ""))[:10]
+            try:
+                published = datetime.strptime(published, "%Y-%m-%d").strftime("%Y-%m-%d")
+            except ValueError:
+                invalid_published_count += 1
+                continue
+            if start_date and published < start_date:
+                continue
+            if as_of and published > as_of:
+                continue
+            dedupe_key = (
+                str(row.get("infoCode") or row.get("title") or ""),
+                str(row.get("orgSName") or ""),
+                published,
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            all_records.append(row)
+        try:
+            total_pages = int(payload.get("TotalPage"))
+        except (TypeError, ValueError):
+            total_pages = None
+        if total_pages is not None and page >= total_pages:
+            pagination_exhausted = True
             break
+    else:
+        pagination_exhausted = False
     if not all_records:
         raise ChinaDataUnavailableError(f"EastMoney returned no research reports for {code}.")
     rows_df = pd.DataFrame(
@@ -617,8 +662,7 @@ def get_a_share_research_reports(
             for r in all_records
         ]
     )
-    _capture_vendor_raw(all_records, metadata={"provider": "eastmoney", "dataset": "research_reports", "ticker": ticker})
-    return _format_report(
+    report = _format_report(
         rows_df,
         title=f"China A-share research reports for {normalize_ticker_symbol(ticker)}",
         caveat=(
@@ -627,6 +671,46 @@ def get_a_share_research_reports(
         ),
         as_of=as_of,
     )
+    observed_dates = sorted(
+        str(record.get("publishDate", ""))[:10]
+        for record in all_records
+        if str(record.get("publishDate", ""))[:10]
+    )
+    actual_start = observed_dates[0] if observed_dates else None
+    actual_end = observed_dates[-1] if observed_dates else None
+    degradations: list[str] = []
+    if invalid_published_count:
+        degradations.append("invalid_or_missing_published_at")
+    if pagination_exhausted is False:
+        completeness = "partial"
+        degradations.append("pagination_budget_exhausted")
+    elif not (start_date and as_of):
+        completeness = "unknown"
+        degradations.append("requested_window_unproven")
+    elif invalid_published_count:
+        completeness = "partial"
+    elif actual_start == start_date and actual_end == as_of:
+        completeness = "complete"
+    else:
+        completeness = "partial"
+        degradations.append("requested_window_not_fully_observed")
+    coverage = SourceCoverageV1(
+        capability="research_reports",
+        source_id="eastmoney.research_reports",
+        requested_start=start_date if start_date and as_of else None,
+        requested_end=as_of if start_date and as_of else None,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        item_count=len(all_records),
+        page_count=page_count,
+        pagination_exhausted=pagination_exhausted,
+        completeness=completeness,
+        sources=("eastmoney.research_reports",),
+        degradations=tuple(degradations),
+        as_of=as_of or datetime.now().strftime("%Y-%m-%d"),
+    )
+    return CoveredText(report, coverage)
+
 
 def get_a_share_eps_forecast(ticker: str, as_of: str | None = None) -> str:
     """A-share consensus EPS forecast (机构一致预期EPS) via THS (10jqka).

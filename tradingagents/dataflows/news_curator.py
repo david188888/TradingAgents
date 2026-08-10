@@ -20,6 +20,7 @@ from typing import Any
 
 from .config import get_config
 from .consistency import attach_cross_source_info, create_llm_from_config, cross_source_summary
+from .coverage import CoveredText, SourceCoverageV1
 from .credibility import attach_credibility, credibility_summary
 from .target_context import get_target_ticker
 from .ticker_utils import normalize_ticker_symbol, to_akshare_symbol
@@ -374,7 +375,7 @@ def _format_curated_news(
         sections.append("No parseable news items were found, but at least one source returned data.")
         for vendor, result in successes:
             sections.append(f"### Raw {vendor} result\n{str(result)[:2000]}")
-        return "\n\n".join(sections)
+        return _preserve_source_coverage("\n\n".join(sections), successes)
 
     sections.append(
         f"Curator retained {len(curated)} item(s) after source labeling, deduplication, and max item limiting."
@@ -399,4 +400,35 @@ def _format_curated_news(
             body.append(f"Link: {item['url']}")
         sections.append("\n".join(body))
 
-    return "\n\n".join(sections)
+    return _preserve_source_coverage("\n\n".join(sections), successes)
+
+
+def _preserve_source_coverage(
+    rendered: str,
+    successes: list[tuple[str, Any]],
+) -> str:
+    """Keep provider-owned pagination proof through curation.
+
+    Curation changes presentation, not what a provider fetched. When at least
+    one successful source carries typed coverage, retain the strongest record
+    on the curated string so deterministic prefetch can expose page counts and
+    exhaustion without parsing rendered news.
+    """
+    rank = {"complete": 0, "partial": 1, "unknown": 2, "unavailable": 3}
+    records: list[SourceCoverageV1] = []
+    for _vendor, result in successes:
+        if isinstance(result, CoveredText):
+            records.append(result.coverage)
+            continue
+        if isinstance(result, dict) and isinstance(result.get("coverage"), dict):
+            try:
+                records.append(SourceCoverageV1.model_validate(result["coverage"]))
+            except ValueError:
+                continue
+    if not records:
+        return rendered
+    strongest = min(
+        records,
+        key=lambda coverage: rank[coverage.completeness],
+    )
+    return CoveredText(rendered, strongest)

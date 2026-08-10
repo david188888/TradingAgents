@@ -25,6 +25,7 @@ from .alpha_vantage import (
     get_news as get_alpha_vantage_news,
     get_stock as get_alpha_vantage_stock,
 )
+from .alpha_vantage_stock import get_adjusted_stock as get_alpha_vantage_adjusted_stock
 from .china_capabilities import (
     get_a_share_interactive_answers,
     get_a_share_interactive_questions,
@@ -45,7 +46,9 @@ from .china_data import (
     get_fundamentals_tushare,
     get_income_statement_sina,
     get_income_statement_tushare,
+    get_stock_akshare_qfq,
     get_stock_tushare,
+    get_stock_tushare_qfq,
 )
 from .china_macro import get_china_macro_indicators
 from .china_specialty import (
@@ -99,13 +102,17 @@ from .y_finance import (
     get_insider_transactions as get_yfinance_insider_transactions,
     get_stock_stats_indicators_local,
     get_stock_stats_indicators_window,
+    get_YFin_adjusted_data_online,
     get_YFin_data_online,
 )
 from .yfinance_news import get_global_news_yfinance, get_news_yfinance
 
 # Tools organized by category
 TOOLS_CATEGORIES = {
-    "core_stock_apis": {"description": "OHLCV stock price data", "tools": ["get_stock_data"]},
+    "core_stock_apis": {
+        "description": "OHLCV stock price data",
+        "tools": ["get_stock_data", "get_adjusted_price_history"],
+    },
     "technical_indicators": {
         "description": "Technical analysis indicators",
         "tools": ["get_indicators"],
@@ -258,6 +265,14 @@ VENDOR_METHODS = {
         # only added import/install overhead on this path.
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
+    },
+    "get_adjusted_price_history": {
+        # Deliberately excludes mootdx and raw Tushare. An unavailable adjusted
+        # source must degrade explicitly instead of silently becoming raw.
+        "tushare": get_stock_tushare_qfq,
+        "akshare": get_stock_akshare_qfq,
+        "yfinance": get_YFin_adjusted_data_online,
+        "alpha_vantage": get_alpha_vantage_adjusted_stock,
     },
     # technical_indicators
     # ``local`` computes indicators locally from the A-share OHLCV chain
@@ -466,5 +481,3 @@ def validate_data_vendors(config: dict) -> list[str]:
             if vendor not in known:
                 problems.append(f"tool_vendors.{method} references unknown vendor {vendor!r}")
     return problems
-
-

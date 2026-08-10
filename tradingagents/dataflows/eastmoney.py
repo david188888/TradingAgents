@@ -14,12 +14,14 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 import pandas as pd
 import requests
 
 from .china_data import ChinaDataUnavailableError
+from .coverage import CoveredText, SourceCoverageV1
 from .errors import RateLimitError, VendorAccessDeniedError, VendorHTTPError
 from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare_symbol
 
@@ -178,6 +180,7 @@ def get_a_share_capital_flow(
     endpoint returns its recent day-kline window and may not guarantee an
     arbitrary historical range.  The report makes this limitation explicit.
     """
+    _require_complete_window(start_date, end_date)
     secid = _eastmoney_secid(ticker)
     payload = em_get(
         EASTMONEY_PUSH2_URL,
@@ -197,23 +200,76 @@ def get_a_share_capital_flow(
     rows = [row for row in rows if row]
     if not rows:
         raise ChinaDataUnavailableError(f"EastMoney returned unreadable capital-flow rows for {ticker}.")
-    _capture_vendor_raw(payload, metadata={"provider": "eastmoney", "dataset": "capital_flow", "ticker": ticker})
-    return _format_report(
+    retained, actual_start, actual_end = _filter_frame_date_window(
         pd.DataFrame(rows),
-        title=f"China A-share capital flow for {normalize_ticker_symbol(ticker)}",
-        caveat="EastMoney public endpoint; optional supplemental source, recent window only.",
+        date_columns=("Date",),
         start_date=start_date,
         end_date=end_date,
     )
+    if retained.empty:
+        raise ChinaDataUnavailableError(
+            f"EastMoney returned no capital-flow rows for {ticker} in the requested window."
+        )
+    coverage = _recent_window_coverage(
+        capability="capital_flow",
+        source_id="eastmoney.capital_flow",
+        item_count=len(retained),
+        requested_start=start_date,
+        requested_end=end_date,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        page_count=None,
+        pagination_exhausted=None,
+    )
+    _capture_vendor_raw(
+        payload,
+        metadata={
+            "provider": "eastmoney",
+            "dataset": "capital_flow",
+            "ticker": ticker,
+            "coverage": coverage.model_dump(mode="json"),
+        },
+    )
+    return CoveredText(
+        _format_report(
+            retained,
+            title=f"China A-share capital flow for {normalize_ticker_symbol(ticker)}",
+            caveat="EastMoney public endpoint; optional supplemental source, recent window only.",
+            coverage=coverage,
+        ),
+        coverage,
+    )
 
 
-def get_a_share_margin_financing(ticker: str, curr_date: str | None = None) -> str:
+def get_a_share_margin_financing(
+    ticker: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    *,
+    curr_date: str | None = None,
+) -> str:
     """Return keyless EastMoney margin-financing records for one A-share.
 
     EastMoney can change report schemas without notice, so the adapter keeps
     returned fields source-labeled instead of inventing a fixed financial
     interpretation.  Empty or changed responses degrade through the router.
     """
+    requested_as_of: str | None = None
+    if curr_date is not None:
+        if start_date is not None or end_date is not None:
+            raise ValueError("curr_date cannot be combined with start_date or end_date")
+        requested_as_of = curr_date
+        end_date = curr_date
+
+    # Backward compatibility: the historical two-positional-argument form
+    # used the second value as an as-of date, not a range start.
+    if start_date is not None and end_date is None:
+        requested_as_of = start_date
+        end_date = start_date
+        start_date = None
+    elif start_date is None and end_date is not None and requested_as_of is None:
+        raise ValueError("start_date and end_date must be supplied together")
+
     code = _require_a_share_code(ticker)
     payload = em_get(
         EASTMONEY_DATACENTER_URL,
@@ -235,12 +291,47 @@ def get_a_share_margin_financing(ticker: str, curr_date: str | None = None) -> s
     rows = _extract_records(payload)
     if not rows:
         raise ChinaDataUnavailableError(f"EastMoney returned no margin-financing records for {ticker}.")
-    _capture_vendor_raw(payload, metadata={"provider": "eastmoney", "dataset": "margin_financing", "ticker": ticker})
-    return _format_report(
+    retained, actual_start, actual_end = _filter_frame_date_window(
         pd.DataFrame(rows),
-        title=f"China A-share margin financing for {normalize_ticker_symbol(ticker)}",
-        caveat="EastMoney public endpoint; optional supplemental source.",
-        as_of=curr_date,
+        date_columns=("DATE", "TRADE_DATE", "日期"),
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if retained.empty:
+        raise ChinaDataUnavailableError(
+            f"EastMoney returned no margin-financing records for {ticker} in the requested window."
+        )
+    total_pages = _extract_total_pages(payload)
+    pagination_exhausted = None if total_pages is None else total_pages <= 1
+    coverage = _recent_window_coverage(
+        capability="margin_financing",
+        source_id="eastmoney.margin_financing",
+        item_count=len(retained),
+        requested_start=start_date,
+        requested_end=end_date,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        page_count=1,
+        pagination_exhausted=pagination_exhausted,
+    )
+    _capture_vendor_raw(
+        payload,
+        metadata={
+            "provider": "eastmoney",
+            "dataset": "margin_financing",
+            "ticker": ticker,
+            "coverage": coverage.model_dump(mode="json"),
+        },
+    )
+    return CoveredText(
+        _format_report(
+            retained,
+            title=f"China A-share margin financing for {normalize_ticker_symbol(ticker)}",
+            caveat="EastMoney public endpoint; optional supplemental source.",
+            as_of=requested_as_of,
+            coverage=coverage,
+        ),
+        coverage,
     )
 
 
@@ -258,6 +349,7 @@ def get_a_share_capital_flow_sina(
     breakdown, so the report labels the source explicitly rather than
     pretending the two are interchangeable.
     """
+    _require_complete_window(start_date, end_date)
     code = _require_a_share_code(ticker)
     prefix = _sina_prefix(ticker)
     url = (
@@ -292,14 +384,51 @@ def get_a_share_capital_flow_sina(
             for row in rows
         ]
     )
-    _capture_vendor_raw({"rows": rows}, metadata={"provider": "sina", "dataset": "capital_flow", "ticker": ticker})
-    return _format_report(
+    retained, actual_start, actual_end = _filter_frame_date_window(
         data,
-        title=f"China A-share capital flow for {normalize_ticker_symbol(ticker)} (Sina backup)",
-        caveat="Sina daily capital-flow backup source; field schema differs from EastMoney push2 (net inflow + turnover only).",
-        source="sina",
+        date_columns=("Date",),
         start_date=start_date,
         end_date=end_date,
+    )
+    if retained.empty:
+        raise ChinaDataUnavailableError(
+            f"Sina returned no capital-flow rows for {ticker} in the requested window."
+        )
+    coverage = _recent_window_coverage(
+        capability="capital_flow",
+        source_id="sina.capital_flow",
+        item_count=len(retained),
+        requested_start=start_date,
+        requested_end=end_date,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        page_count=1,
+        pagination_exhausted=None,
+    )
+    _capture_vendor_raw(
+        {"rows": rows},
+        metadata={
+            "provider": "sina",
+            "dataset": "capital_flow",
+            "ticker": ticker,
+            "coverage": coverage.model_dump(mode="json"),
+        },
+    )
+    return CoveredText(
+        _format_report(
+            retained,
+            title=(
+                f"China A-share capital flow for {normalize_ticker_symbol(ticker)} "
+                "(Sina backup)"
+            ),
+            caveat=(
+                "Sina daily capital-flow backup source; field schema differs from "
+                "EastMoney push2 (net inflow + turnover only)."
+            ),
+            source="sina",
+            coverage=coverage,
+        ),
+        coverage,
     )
 
 
@@ -349,6 +478,106 @@ def _extract_records(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _require_complete_window(start_date: str | None, end_date: str | None) -> None:
+    if (start_date is None) != (end_date is None):
+        raise ValueError("start_date and end_date must be supplied together")
+
+
+def _extract_total_pages(payload: Mapping[str, Any]) -> int | None:
+    candidates: list[Mapping[str, Any]] = [payload]
+    for key in ("result", "data"):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            candidates.append(value)
+    for candidate in candidates:
+        for key in ("pages", "totalPage", "TotalPage", "total_pages"):
+            value = candidate.get(key)
+            try:
+                pages = int(value)
+            except (TypeError, ValueError):
+                continue
+            if pages >= 1:
+                return pages
+    return None
+
+
+def _filter_frame_date_window(
+    data: pd.DataFrame,
+    *,
+    date_columns: tuple[str, ...],
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[pd.DataFrame, str | None, str | None]:
+    date_column = next((column for column in date_columns if column in data.columns), None)
+    if date_column is None:
+        return data.copy(), None, None
+
+    parsed = pd.to_datetime(data[date_column], errors="coerce")
+    mask = parsed.notna()
+    if start_date is not None:
+        mask &= parsed.dt.date >= date.fromisoformat(start_date[:10])
+    if end_date is not None:
+        mask &= parsed.dt.date <= date.fromisoformat(end_date[:10])
+    retained = data.loc[mask].copy()
+    retained_dates = parsed.loc[mask]
+    if retained.empty:
+        return retained, None, None
+    return (
+        retained,
+        retained_dates.min().date().isoformat(),
+        retained_dates.max().date().isoformat(),
+    )
+
+
+def _recent_window_coverage(
+    *,
+    capability: str,
+    source_id: str,
+    item_count: int,
+    requested_start: str | None,
+    requested_end: str | None,
+    actual_start: str | None,
+    actual_end: str | None,
+    page_count: int | None,
+    pagination_exhausted: bool | None,
+) -> SourceCoverageV1:
+    degradations: list[str] = []
+    if pagination_exhausted is False:
+        completeness = "partial"
+        degradations.append("pagination_not_exhausted")
+    elif requested_start and actual_start and actual_start > requested_start:
+        completeness = "partial"
+        degradations.append("requested_start_not_observed")
+    elif requested_end and actual_end and actual_end < requested_end:
+        completeness = "partial"
+        degradations.append("requested_end_not_observed")
+    elif (requested_start or requested_end) and (actual_start is None or actual_end is None):
+        completeness = "unknown"
+        degradations.append("actual_window_unavailable")
+    elif page_count is not None and pagination_exhausted is True:
+        completeness = "complete"
+    else:
+        completeness = "unknown"
+        degradations.append("coverage_not_proven")
+
+    as_of = requested_end or actual_end or date.today().isoformat()
+    return SourceCoverageV1(
+        capability=capability,
+        source_id=source_id,
+        requested_start=requested_start if requested_end is not None else None,
+        requested_end=requested_end if requested_start is not None else None,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        item_count=item_count,
+        page_count=page_count,
+        pagination_exhausted=pagination_exhausted,
+        completeness=completeness,
+        sources=(source_id,),
+        degradations=tuple(degradations),
+        as_of=as_of,
+    )
+
+
 def _format_report(
     data: pd.DataFrame,
     *,
@@ -358,27 +587,51 @@ def _format_report(
     start_date: str | None = None,
     end_date: str | None = None,
     as_of: str | None = None,
+    coverage: SourceCoverageV1 | None = None,
 ) -> str:
     if data.empty:
         raise ChinaDataUnavailableError(f"{source} returned no rows for {title}.")
-    window = ""
-    if start_date or end_date:
-        window = f"\n# Requested window: {start_date or '?'} to {end_date or '?'}"
-    if as_of:
-        window += f"\n# Requested as-of: {as_of}"
+    coverage_lines: list[str] = []
+    if coverage is not None:
+        if coverage.requested_start and coverage.requested_end:
+            coverage_lines.append(
+                f"# Requested window: {coverage.requested_start} to {coverage.requested_end}"
+            )
+        if coverage.actual_start and coverage.actual_end:
+            coverage_lines.append(
+                f"# Actual window: {coverage.actual_start} to {coverage.actual_end}"
+            )
+        coverage_lines.append(f"# Coverage completeness: {coverage.completeness}")
+        if as_of and not coverage.requested_start:
+            coverage_lines.append(f"# Requested as-of: {as_of}")
+        if coverage.page_count is not None:
+            exhausted = (
+                "unknown"
+                if coverage.pagination_exhausted is None
+                else str(coverage.pagination_exhausted).lower()
+            )
+            coverage_lines.append(
+                f"# Pagination: pages={coverage.page_count}; exhausted={exhausted}"
+            )
+    else:
+        if start_date or end_date:
+            coverage_lines.append(f"# Requested window: {start_date or '?'} to {end_date or '?'}")
+        if as_of:
+            coverage_lines.append(f"# Requested as-of: {as_of}")
     return "\n".join(
         [
             f"# {title}",
             f"# Source: {source}",
             f"# Note: {caveat}",
-            f"# Total records: {len(data)}" + window,
+            f"# Total records: {len(data)}",
+            *coverage_lines,
             "",
             data.to_csv(index=False),
         ]
     )
 
 
-def _capture_vendor_raw(payload: Any, *, metadata: Mapping[str, str]) -> None:
+def _capture_vendor_raw(payload: Any, *, metadata: Mapping[str, Any]) -> None:
     """Load observability after the provider has returned a usable payload."""
     from tradingagents.observability.provenance import capture_vendor_raw
 

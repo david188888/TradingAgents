@@ -7,10 +7,12 @@ import os
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 import requests
+
+from tradingagents.dataflows.coverage import CoveredText, PriceSeriesCoverageV1
 
 from .config import get_config
 from .ticker_utils import (
@@ -48,6 +50,49 @@ def get_stock_tushare(symbol: str, start_date: str, end_date: str) -> str:
     )
 
 
+def get_stock_tushare_qfq_df(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    """Retrieve explicitly forward-adjusted A-share OHLCV from Tushare."""
+    ts = _get_tushare_module()
+    ts_code = _require_a_share_tushare_symbol(symbol)
+    try:
+        df = ts.pro_bar(
+            ts_code=ts_code,
+            start_date=_date_to_api(start_date),
+            end_date=_date_to_api(end_date),
+            adj="qfq",
+            freq="D",
+        )
+    except Exception as exc:
+        raise ChinaDataUnavailableError(
+            f"Tushare qfq daily request failed for {ts_code}: {exc}"
+        ) from exc
+    _save_raw_data(symbol, end_date, "tushare_get_stock_qfq", df)
+    if df is None or df.empty:
+        raise ChinaDataUnavailableError(
+            f"Tushare returned no qfq daily data for {ts_code}."
+        )
+    return _format_tushare_daily(df)
+
+
+def get_stock_tushare_qfq(symbol: str, start_date: str, end_date: str) -> str:
+    """Legacy-compatible text carrying typed qfq price coverage."""
+    df = get_stock_tushare_qfq_df(symbol, start_date, end_date)
+    return _render_adjusted_price_history(
+        df,
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
+        source="tushare",
+        source_id="tushare.qfq_daily",
+        price_basis="qfq",
+        adjustment_source="tushare.pro_bar(adj=qfq)",
+    )
+
+
 def get_stock_akshare(symbol: str, start_date: str, end_date: str) -> str:
     """Retrieve A-share OHLCV data from AKShare historical quotes."""
     ak = _import_optional("akshare", "pip install akshare")
@@ -72,6 +117,49 @@ def get_stock_akshare(symbol: str, start_date: str, end_date: str) -> str:
         formatted,
         title=f"China A-share stock data for {ak_symbol} from {start_date} to {end_date}",
         source="akshare",
+    )
+
+
+def get_stock_akshare_qfq_df(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    """Retrieve A-share OHLCV with an explicit qfq request to AKShare."""
+    ak = _import_optional("akshare", "pip install akshare")
+    ak_symbol = _require_a_share_akshare_symbol(symbol)
+    try:
+        df = ak.stock_zh_a_hist(
+            symbol=ak_symbol,
+            period="daily",
+            start_date=_date_to_api(start_date),
+            end_date=_date_to_api(end_date),
+            adjust="qfq",
+        )
+    except Exception as exc:
+        raise ChinaDataUnavailableError(
+            f"AKShare qfq historical request failed for {ak_symbol}: {exc}"
+        ) from exc
+    _save_raw_data(symbol, end_date, "akshare_get_stock_qfq", df)
+    if df is None or df.empty:
+        raise ChinaDataUnavailableError(
+            f"AKShare returned no qfq historical data for {ak_symbol}."
+        )
+    return _format_akshare_daily(df)
+
+
+def get_stock_akshare_qfq(symbol: str, start_date: str, end_date: str) -> str:
+    """Legacy-compatible text carrying typed qfq price coverage."""
+    df = get_stock_akshare_qfq_df(symbol, start_date, end_date)
+    return _render_adjusted_price_history(
+        df,
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
+        source="akshare",
+        source_id="akshare.qfq_daily",
+        price_basis="qfq",
+        adjustment_source="akshare.stock_zh_a_hist(adjust=qfq)",
     )
 
 
@@ -527,6 +615,17 @@ def _get_tushare_pro():
     return ts.pro_api(token)
 
 
+def _get_tushare_module():
+    token = os.getenv("TUSHARE_TOKEN") or os.getenv("TUSHARE_API_KEY")
+    if not token:
+        raise ChinaDataUnavailableError(
+            "TUSHARE_TOKEN or TUSHARE_API_KEY environment variable is not set."
+        )
+    ts = _import_optional("tushare", "pip install tushare")
+    ts.set_token(token)
+    return ts
+
+
 def _import_optional(module_name: str, install_hint: str):
     try:
         return __import__(module_name)
@@ -626,6 +725,68 @@ def _format_dataframe_report(
             "# Raw CSV values are preserved; do not infer a different scale.",
         ])
     return "\n".join([*headers, "", clean.to_csv(index=False)])
+
+
+def _render_adjusted_price_history(
+    df: pd.DataFrame,
+    *,
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    source: str,
+    source_id: str,
+    price_basis: Literal["qfq", "split_dividend_adjusted"],
+    adjustment_source: str,
+) -> CoveredText:
+    clean = df.copy()
+    dates = pd.to_datetime(clean.get("Date"), errors="coerce")
+    clean = clean.loc[dates.notna()].copy()
+    clean["Date"] = dates.loc[dates.notna()].dt.strftime("%Y-%m-%d")
+    clean = clean[
+        (clean["Date"] >= start_date) & (clean["Date"] <= end_date)
+    ].sort_values("Date")
+    if clean.empty:
+        raise ChinaDataUnavailableError(
+            f"{source} returned no adjusted rows inside {start_date}..{end_date}."
+        )
+    actual_start = str(clean["Date"].iloc[0])
+    actual_end = str(clean["Date"].iloc[-1])
+    exact_boundaries = actual_start == start_date and actual_end == end_date
+    coverage = PriceSeriesCoverageV1(
+        capability="adjusted_price_history",
+        source_id=source_id,
+        requested_start=start_date,
+        requested_end=end_date,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        item_count=len(clean),
+        completeness="complete" if exact_boundaries else "unknown",
+        sources=(source_id,),
+        degradations=(
+            () if exact_boundaries else ("trading_calendar_boundaries_not_proven",)
+        ),
+        as_of=end_date,
+        price_basis=price_basis,
+        adjustment_source=adjustment_source,
+        adjustment_verified=True,
+        granularity="daily",
+    )
+    report = _format_dataframe_report(
+        clean,
+        title=f"Adjusted stock data for {symbol} from {start_date} to {end_date}",
+        source=source,
+        as_of=end_date,
+    )
+    rendered = "\n".join(
+        [
+            f"# Price basis: {price_basis}",
+            f"# Adjustment source: {adjustment_source}",
+            "# This series is for historical returns, trend, and indicators; "
+            "do not use it as an executable current-price quote.",
+            report,
+        ]
+    )
+    return CoveredText(rendered, coverage)
 
 
 def _date_to_api(date_value: str) -> str:

@@ -174,10 +174,16 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # A-share indicators are computed locally from the mootdx/tushare OHLCV
         # chain; non-A-share tickers skip "local" and use yfinance.
         "get_indicators": "local,yfinance",
+        # Historical trend analysis must never fall back to raw OHLCV.
+        "get_adjusted_price_history": "tushare,akshare,yfinance,alpha_vantage",
         # News uses one shared company-news chain; the router filters vendors
         # by market. Global news has its own method-compatible chain.
         "get_news": "tavily,eastmoney,yfinance,alpha_vantage",
         "get_global_news": "tavily,yfinance,alpha_vantage",
+        # Interactive Q&A is registered in the broad specialty category, whose
+        # default is EastMoney; pin these two AKShare-only methods explicitly.
+        "get_a_share_interactive_questions": "akshare",
+        "get_a_share_interactive_answers": "akshare",
     },
     # Tavily news search controls. Defaults intentionally keep API usage low.
     "halt_on_missing_data": True,

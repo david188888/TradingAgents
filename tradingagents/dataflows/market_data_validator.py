@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from math import isfinite
 
 import pandas as pd
 from stockstats import wrap
@@ -38,6 +39,14 @@ TENCENT_QUOTE_88_FIELD_INDEX: dict[str, int] = {
 
 class TencentQuoteContractError(ValueError):
     """The supplied Tencent quote vector cannot prove the documented fields."""
+
+
+@dataclass(frozen=True)
+class VerifiedCurrentQuote:
+    """A code-owned close and its actual observed trading date."""
+
+    close: float
+    observed_on: str
 
 
 @dataclass(frozen=True)
@@ -196,3 +205,48 @@ def build_verified_market_snapshot(
         "dates and prices.",
     ]
     return "\n".join(lines)
+
+
+def build_verified_current_market_snapshot(symbol: str, curr_date: str) -> str:
+    """Render only the latest available OHLCV row for current-price facts.
+
+    This deliberately omits historical rows and technical indicators. Those
+    claims belong to the separately prefetched, explicitly adjusted series.
+    """
+    df = _verified_rows(symbol, curr_date)
+    latest = df.iloc[-1]
+    lines = [
+        f"## Verified current market snapshot for {symbol.upper()}",
+        "",
+        f"- Requested analysis date: {curr_date}",
+        f"- Latest trading row used: {_fmt(latest['Date'])}",
+        "- Purpose: current/execution-price facts only.",
+        "- Historical rows and technical indicators are intentionally omitted.",
+        "- Use the adjusted-price bundle for returns, trends, drawdowns, and technical analysis.",
+        "",
+        "| Field | Value |",
+        "|---|---:|",
+    ]
+    for field in ("Open", "High", "Low", "Close", "Volume"):
+        lines.append(f"| {field} | {_fmt(latest.get(field))} |")
+    return "\n".join(lines)
+
+
+def get_verified_current_quote(symbol: str, curr_date: str) -> VerifiedCurrentQuote:
+    """Return a machine-readable current quote from the same verified OHLCV row.
+
+    The caller must still decide whether ``observed_on`` is sufficiently aligned
+    with its own facts. This helper never silently treats a prior trading day
+    as the requested analysis date.
+    """
+    latest = _verified_rows(symbol, curr_date).iloc[-1]
+    try:
+        close = float(latest["Close"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Verified OHLCV row has no numeric close.") from exc
+    if not isfinite(close) or close <= 0:
+        raise ValueError("Verified OHLCV close must be finite and positive.")
+    observed_on = _fmt(latest["Date"])
+    if len(observed_on) != 10:
+        raise ValueError("Verified OHLCV row has no usable observed date.")
+    return VerifiedCurrentQuote(close=close, observed_on=observed_on)

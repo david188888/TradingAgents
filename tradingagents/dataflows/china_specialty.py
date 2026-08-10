@@ -19,6 +19,7 @@ import pandas as pd
 import requests
 
 from .china_data import ChinaDataUnavailableError
+from .coverage import CoveredText, SourceCoverageV1
 from .eastmoney import EASTMONEY_DATACENTER_URL, em_get
 from .errors import VendorHTTPError
 from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare_symbol
@@ -170,67 +171,158 @@ def get_a_share_cninfo_announcements(
     start_date: str | None = None,
     end_date: str | None = None,
     page_size: int = 30,
-) -> str:
+    max_pages: int = 10,
+) -> CoveredText:
     """Fetch CNINFO company disclosures with dynamic orgId resolution.
 
     CNINFO is kept separate from exchange bulletin metadata because it exposes
     disclosure type, full-text detail URL, and (when present) the PDF attachment.
     """
+    if max_pages < 1:
+        raise ValueError("max_pages must be positive")
     code = _require_a_share_code(ticker)
     org_id = _cninfo_orgid(code)
-    response = requests.post(
-        CNINFO_ANNOUNCEMENT_URL,
-        data={
-            "stock": f"{code},{org_id}",
-            "tabName": "fulltext",
-            "pageSize": str(max(1, min(page_size, 100))),
-            "pageNum": "1",
-            "column": "",
-            "category": "",
-            "plate": "",
-            "seDate": f"{start_date or ''}~{end_date or ''}" if start_date or end_date else "",
-            "searchkey": "",
-            "secid": "",
-            "sortName": "",
-            "sortType": "",
-            "isHLtitle": "true",
-        },
-        headers={
-            "User-Agent": "TradingAgents/1.0",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": "https://www.cninfo.com.cn/new/disclosure",
-            "Origin": "https://www.cninfo.com.cn",
-        },
-        timeout=15,
-    )
-    if not 200 <= int(response.status_code) < 300:
-        raise ChinaDataUnavailableError(f"CNINFO returned HTTP {response.status_code} for {code}.")
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise ChinaDataUnavailableError(f"CNINFO returned invalid JSON for {code}.") from exc
-    records = []
-    for item in payload.get("announcements") or []:
-        if not isinstance(item, dict):
-            continue
-        published = _cninfo_ts_to_date(item.get("announcementTime"))
-        if start_date and published and published < start_date:
-            continue
-        if end_date and published and published > end_date:
-            continue
-        announcement_id = str(item.get("announcementId") or "")
-        records.append({
-            "Published": published,
-            "Type": item.get("announcementTypeName") or "",
-            "Title": item.get("announcementTitle") or "",
-            "Announcement ID": announcement_id,
-            "Detail URL": f"https://www.cninfo.com.cn/new/disclosure/detail?annoId={announcement_id}",
-            "PDF URL": item.get("adjunctUrl") or item.get("adjunctUrlName") or "",
-        })
+    bounded_page_size = max(1, min(page_size, 100))
+    records: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    invalid_published_count = 0
+    page_count = 0
+    pagination_exhausted: bool | None = None
+    for page in range(1, max_pages + 1):
+        response = requests.post(
+            CNINFO_ANNOUNCEMENT_URL,
+            data={
+                "stock": f"{code},{org_id}",
+                "tabName": "fulltext",
+                "pageSize": str(bounded_page_size),
+                "pageNum": str(page),
+                "column": "",
+                "category": "",
+                "plate": "",
+                "seDate": (
+                    f"{start_date or ''}~{end_date or ''}"
+                    if start_date or end_date
+                    else ""
+                ),
+                "searchkey": "",
+                "secid": "",
+                "sortName": "",
+                "sortType": "",
+                "isHLtitle": "true",
+            },
+            headers={
+                "User-Agent": "TradingAgents/1.0",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": "https://www.cninfo.com.cn/new/disclosure",
+                "Origin": "https://www.cninfo.com.cn",
+            },
+            timeout=15,
+        )
+        if not 200 <= int(response.status_code) < 300:
+            raise ChinaDataUnavailableError(
+                f"CNINFO returned HTTP {response.status_code} for {code}."
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ChinaDataUnavailableError(
+                f"CNINFO returned invalid JSON for {code}."
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ChinaDataUnavailableError(
+                f"CNINFO returned a non-object payload for {code}."
+            )
+        page_count += 1
+        _capture_cninfo_raw(payload, ticker=ticker)
+        announcements = payload.get("announcements") or []
+        if not isinstance(announcements, list):
+            raise ChinaDataUnavailableError(
+                f"CNINFO returned invalid announcements for {code}."
+            )
+        for item in announcements:
+            if not isinstance(item, dict):
+                continue
+            published = _cninfo_ts_to_date(item.get("announcementTime"))
+            if not published:
+                invalid_published_count += 1
+                continue
+            if start_date and published < start_date:
+                continue
+            if end_date and published > end_date:
+                continue
+            announcement_id = str(item.get("announcementId") or "")
+            dedupe_id = announcement_id or "|".join(
+                (published, str(item.get("announcementTitle") or ""))
+            )
+            if dedupe_id in seen_ids:
+                continue
+            seen_ids.add(dedupe_id)
+            records.append(
+                {
+                    "Published": published,
+                    "Type": item.get("announcementTypeName") or "",
+                    "Title": item.get("announcementTitle") or "",
+                    "Announcement ID": announcement_id,
+                    "Detail URL": (
+                        "https://www.cninfo.com.cn/new/disclosure/detail"
+                        f"?annoId={announcement_id}"
+                    ),
+                    "PDF URL": item.get("adjunctUrl")
+                    or item.get("adjunctUrlName")
+                    or "",
+                }
+            )
+
+        total_pages = _cninfo_total_pages(payload)
+        has_more = payload.get("hasMore")
+        if (
+            not announcements
+            or (total_pages is not None and page >= total_pages)
+            or has_more is False
+            or (total_pages is None and has_more is None and len(announcements) < bounded_page_size)
+        ):
+            pagination_exhausted = True
+            break
+    else:
+        pagination_exhausted = False
+
     if not records:
         raise ChinaDataUnavailableError(f"CNINFO returned no announcements for {code}.")
-    _capture_cninfo_raw(payload, ticker=ticker)
-    return "\n".join([
+    observed_dates = sorted(record["Published"] for record in records if record["Published"])
+    actual_start = observed_dates[0] if observed_dates else None
+    actual_end = observed_dates[-1] if observed_dates else None
+    degradations: list[str] = []
+    if invalid_published_count:
+        degradations.append("invalid_or_missing_published_at")
+    if pagination_exhausted is False:
+        completeness = "partial"
+        degradations.append("pagination_budget_exhausted")
+    elif not (start_date and end_date):
+        completeness = "unknown"
+        degradations.append("requested_window_unproven")
+    elif invalid_published_count:
+        completeness = "partial"
+    elif actual_start == start_date and actual_end == end_date:
+        completeness = "complete"
+    else:
+        completeness = "partial"
+        degradations.append("requested_window_not_fully_observed")
+    coverage = SourceCoverageV1(
+        capability="official_disclosures",
+        source_id="cninfo.announcements",
+        requested_start=start_date if start_date and end_date else None,
+        requested_end=end_date if start_date and end_date else None,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        item_count=len(records),
+        page_count=page_count,
+        pagination_exhausted=pagination_exhausted,
+        completeness=completeness,
+        sources=("cninfo.announcements",),
+        degradations=tuple(degradations),
+        as_of=end_date or datetime.now().strftime("%Y-%m-%d"),
+    )
+    report = "\n".join([
         f"# China A-share CNINFO disclosures for {normalize_ticker_symbol(ticker)}",
         "# Source: cninfo.com.cn",
         "# Evidence level: primary company disclosure",
@@ -239,12 +331,31 @@ def get_a_share_cninfo_announcements(
         "",
         pd.DataFrame(records).to_csv(index=False),
     ])
+    return CoveredText(report, coverage)
+
+
+def _cninfo_total_pages(payload: Mapping[str, Any]) -> int | None:
+    for key in ("totalpages", "totalPages", "pageCount"):
+        try:
+            parsed = int(payload.get(key))
+        except (TypeError, ValueError):
+            continue
+        if parsed >= 0:
+            return parsed
+    return None
 
 
 def _cninfo_ts_to_date(value: object) -> str:
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value) / 1000).strftime("%Y-%m-%d")
-    return str(value or "")[:10]
+        try:
+            return datetime.fromtimestamp(float(value) / 1000).strftime("%Y-%m-%d")
+        except (OSError, OverflowError, ValueError):
+            return ""
+    candidate = str(value or "")[:10].replace("/", "-")
+    try:
+        return date.fromisoformat(candidate).isoformat()
+    except ValueError:
+        return ""
 
 
 def _cninfo_orgid(code: str) -> str:

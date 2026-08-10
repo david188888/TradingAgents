@@ -14,6 +14,7 @@ from .ticker_utils import is_a_share_ticker
 
 _A_SHARE_TICKER_CAPABILITIES = {
     "get_stock_data",
+    "get_adjusted_price_history",
     "get_fundamentals",
     "get_balance_sheet",
     "get_cashflow",
