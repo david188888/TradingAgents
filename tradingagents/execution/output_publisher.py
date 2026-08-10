@@ -257,6 +257,90 @@ def _promote_report_revisions(
         promoted_reports.add(identity)
 
 
+def _extract_bundle_capabilities(state_key: str, bundle: dict[str, Any]) -> tuple[str, ...]:
+    """Return the capabilities covered by one persisted prefetch bundle."""
+    from tradingagents.research.evidence_registry import _CAPABILITY_BY_STATE_KEY
+
+    fixed = _CAPABILITY_BY_STATE_KEY.get(state_key)
+    if fixed is not None:
+        return fixed
+    results = bundle.get("results")
+    if not isinstance(results, list):
+        return ()
+    return tuple(
+        str(result["capability"])
+        for result in results
+        if isinstance(result, dict)
+        and result.get("status") == "ok"
+        and isinstance(result.get("capability"), str)
+    )
+
+
+def _promote_evidence_bundles(
+    observer: Any,
+    commit: Any,
+    delta: Mapping[str, Any],
+    checkpoint_event_id: str,
+    committed_sequence: int,
+    promoted_evidence: set[tuple[str, str]],
+) -> None:
+    """Persist deterministic prefetch bundles as durable evidence artifacts.
+
+    Only maintenance/prefetch tasks that wrote a non-empty bundle string are
+    considered.  Content is stored as canonical JSON so the persisted digest
+    equals the deterministic evidence ref_id.  Replays are idempotent by
+    ``(graph_task_id, state_key)``.
+    """
+    from tradingagents.observability.events import RunEventDraft
+    from tradingagents.research.evidence_registry import (
+        _EVIDENCE_BUNDLE_STATE_KEYS,
+        canonical_json_str,
+    )
+
+    for state_key in _EVIDENCE_BUNDLE_STATE_KEYS:
+        raw = delta.get(state_key)
+        if not isinstance(raw, str) or not raw:
+            continue
+        try:
+            bundle = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(bundle, dict):
+            continue
+        identity = (commit.graph_task_id, state_key)
+        if identity in promoted_evidence:
+            continue
+        canonical_value = canonical_json_str(bundle)
+        artifact = observer.store.store_artifact(
+            observer.run_id,
+            kind="evidence-bundle",
+            value=canonical_value,
+            media_type="application/json",
+        )
+        capabilities = _extract_bundle_capabilities(state_key, bundle)
+        observer.emit(
+            RunEventDraft(
+                observer.run_id,
+                "artifact.written",
+                {
+                    "artifact_id": artifact.artifact_id,
+                    "kind": artifact.kind,
+                    "media_type": artifact.media_type,
+                    "content_sha256": artifact.content_sha256,
+                    "byte_size": artifact.byte_size,
+                    "locator": artifact.locator,
+                    "graph_task_id": commit.graph_task_id,
+                    "state_key": state_key,
+                    "evidence_bundle_capabilities": list(capabilities),
+                    "committed_sequence": committed_sequence,
+                },
+                parent_event_id=checkpoint_event_id,
+                status="committed",
+            )
+        )
+        promoted_evidence.add(identity)
+
+
 def _ensure_role_completion(
     observer: Any,
     turn_id: str,

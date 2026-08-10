@@ -16,6 +16,7 @@ from tradingagents.execution.models import (
 )
 from tradingagents.execution.output_publisher import (
     _ensure_role_completion,
+    _promote_evidence_bundles,
     _promote_public_output,
     _promote_report_revisions,
     _read_candidate_delta,
@@ -688,6 +689,17 @@ class AnalysisRunner:
             for event in events
             if event.type == "artifact.written" and event.payload.get("public_output_kind")
         }
+        promoted_evidence = {
+            (
+                str(event.payload.get("graph_task_id")),
+                str(event.payload.get("state_key")),
+            )
+            for event in events
+            if event.type == "artifact.written"
+            and event.payload.get("evidence_bundle_capabilities") is not None
+            and event.payload.get("graph_task_id")
+            and event.payload.get("state_key")
+        }
         promoted_derived = {
             (str(event.payload.get("graph_task_id")), str(event.payload.get("public_contract")))
             for event in events
@@ -714,6 +726,14 @@ class AnalysisRunner:
                 marker.event_id,
                 marker.sequence,
                 promoted_public_outputs,
+            )
+            _promote_evidence_bundles(
+                observer,
+                commit,
+                delta,
+                marker.event_id,
+                marker.sequence,
+                promoted_evidence,
             )
             candidate_case = delta.get("research_case_candidate")
             if (
