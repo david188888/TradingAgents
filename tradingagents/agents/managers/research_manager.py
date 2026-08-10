@@ -245,37 +245,45 @@ claim_key 示例（严格遵守四段，每段必须以小写字母开头、只�
 - fundamentals.valuation.pe_ratio.elevated
 常见错误：market.000338_sz.price（以数字开头）、market.price.close（只有三段）、market.momentum（只有两段）。"""
 
-    def _invoke_draft(structured_prompt: str) -> LearningResearchCaseDraft | None:
-        try:
-            result = structured_llm.invoke(structured_prompt)
-        except Exception as exc:
-            logger.warning("Research Manager: structured draft call failed (%s)", exc)
-            return None
+    def _coerce(result: object) -> LearningResearchCaseDraft | None:
         if isinstance(result, LearningResearchCaseDraft):
             return result
         try:
             return LearningResearchCaseDraft.model_validate(result)
-        except ValidationError as exc:
-            logger.warning("Research Manager: draft validation failed: %s", exc)
-            correction = (
-                f"\n\n你上一次的输出未通过校验，请只修正下列问题后重新输出完整的 LearningResearchCaseDraft，不要改变其他字段：\n{exc}\n"
-                "重点检查：每个 claim_key 必须是四段 lens.topic.subject.predicate，每段以小写字母开头、只含 a-z 0-9 _，不要加入股票代码。"
-            )
-            try:
-                retried = structured_llm.invoke(structured_prompt + correction)
-            except Exception as retry_exc:
-                logger.warning("Research Manager: draft retry call failed (%s)", retry_exc)
-                return None
-            if isinstance(retried, LearningResearchCaseDraft):
-                return retried
-            try:
-                return LearningResearchCaseDraft.model_validate(retried)
-            except ValidationError as retry_exc:
-                logger.warning("Research Manager: draft retry still invalid (%s)", retry_exc)
-                return None
+        except ValidationError:
+            return None
 
-    draft = _invoke_draft(prompt)
+    def _invoke_once(one_prompt: str) -> tuple[LearningResearchCaseDraft | None, str | None]:
+        """Invoke once; return (draft, error_message). Never raises."""
+        try:
+            result = structured_llm.invoke(one_prompt)
+        except Exception as exc:
+            logger.warning("Research Manager: structured draft call failed (%s)", exc)
+            return None, str(exc)
+        draft = _coerce(result)
+        if draft is not None:
+            return draft, None
+        # The bound structured llm may have raised during parsing, but some
+        # backends return the raw object. Validate it to surface errors.
+        try:
+            LearningResearchCaseDraft.model_validate(result)
+        except ValidationError as exc:
+            return None, str(exc)
+        return None, "structured draft did not validate"
+
+    draft, error = _invoke_once(prompt)
+    if draft is None and error is not None:
+        # One self-correction turn carrying the concrete validation errors so a
+        # weak model can fix malformed keys without discarding the whole draft.
+        correction = (
+            "\n\n你上一次的输出未通过校验，请只修正下列问题后重新输出完整的 LearningResearchCaseDraft，不要改变其他字段：\n"
+            f"{error}\n"
+            "重点检查：每个 claim_key 必须是四段 lens.topic.subject.predicate，每段以小写字母开头、只含 a-z 0-9 _，不要加入股票代码或数字开头的段。"
+        )
+        draft, _ = _invoke_once(prompt + correction)
+
     if draft is None:
+        logger.warning("Research Manager: falling back; no valid structured draft produced")
         return _learning_research_fallback(evidence_status), None
     return render_learning_case_draft(draft), draft
 
