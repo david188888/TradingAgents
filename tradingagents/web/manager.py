@@ -525,6 +525,15 @@ class SingleRunManager:
         request: AnalysisRequest,
         result: AnalysisResult,
     ) -> None:
+        # Learning/holding-review runs skip nodes such as trader/risk, leaving
+        # their roles pending. Terminalize open lifecycles on success too so
+        # skipped roles are recorded as not_reached instead of looking like a
+        # role that never finished.
+        self._terminalize_open_lifecycles(
+            run_id,
+            mode="completed",
+            reason="analysis_completed",
+        )
         invalid_roles = {
             actor_id: status
             for actor_id, (status, _event) in _reduce_open_lifecycles(
