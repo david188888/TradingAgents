@@ -40,6 +40,7 @@ from .manager import (
 from .market_layer2 import build_market_event_layer2_view
 from .market_view import build_market_view
 from .projections import InvalidCursor, RunProjectionPublisher, recent_runs_page
+from .reader_projection import project_reader
 from .schemas import (
     RESEARCH_DEPTHS,
     SUPPORTED_OUTPUT_LANGUAGES,
@@ -383,6 +384,12 @@ def create_app(
         # A projection problem is represented inside the envelope. The raw run
         # and audit artifacts remain reachable through their existing routes.
         return RunProjectionPublisher(selected_store).read_or_rebuild_view(run_id)
+
+    @app.get("/api/runs/{run_id}/reader")
+    def get_reader(run_id: str) -> dict[str, Any]:
+        # Read-only learning reader; missing runs surface as 404 via the global
+        # RunNotFound handler. Projection problems become an "unavailable" body.
+        return project_reader(selected_store, run_id)
 
     @app.get("/api/runs/{run_id}/evidence-refs/{ref_id}")
     def get_evidence_ref(run_id: str, ref_id: str) -> dict[str, Any]:
