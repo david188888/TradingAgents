@@ -5,6 +5,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_language_instruction,
     get_verified_current_market_snapshot,
 )
+from tradingagents.research.price_coverage import bundle_for_analyst
 from tradingagents.skills import (
     build_role_report_contract,
     build_role_skill_prompt,
@@ -25,6 +26,9 @@ def create_market_analyst(llm):
             '{"adjusted":{"status":"unavailable",'
             '"degradations":["adjusted_price_prefetch_missing"]}}'
         )
+        # The raw audit series is audit metadata only; never feed raw price rows
+        # to the model as a trend basis.
+        adjusted_price_bundle = bundle_for_analyst(adjusted_price_bundle)
         a_share_supplement_bundle = state.get("a_share_supplement_bundle") or (
             '{"status":"not_applicable","results":[]}'
         )

@@ -14,6 +14,7 @@ from tradingagents.dataflows.market_data_validator import (
 )
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
 from tradingagents.research.horizon_policy import InvestmentHorizon
+from tradingagents.research.price_coverage import adjusted_price_capability_dict
 from tradingagents.research.price_prefetch import build_price_prefetch_plan
 
 MAX_PRICE_BUNDLE_CHARS = 24_000
@@ -134,24 +135,24 @@ def run_adjusted_price_prefetch(
             "degradations": ["raw_price_audit_unavailable"],
             "error_type": type(exc).__name__,
         }
-    return json.dumps(
-        {
-            "schema_version": 1,
-            "policy_version": plan.policy_version,
-            "ticker": symbol,
-            "market": market,
-            "horizon": horizon,
-            "as_of": curr_date,
-            "start_date": plan.start_date,
-            "requested_windows": plan.requested_windows,
-            "granularities": plan.granularities,
-            "required_trading_days": plan.required_trading_days,
-            "adjusted": adjusted,
-            "current_quote": quote_snapshot,
-            "raw_audit": raw_audit,
-        },
-        ensure_ascii=False,
-    )
+    bundle = {
+        "schema_version": 1,
+        "policy_version": plan.policy_version,
+        "ticker": symbol,
+        "market": market,
+        "horizon": horizon,
+        "as_of": curr_date,
+        "start_date": plan.start_date,
+        "requested_windows": plan.requested_windows,
+        "granularities": plan.granularities,
+        "required_trading_days": plan.required_trading_days,
+        "adjusted": adjusted,
+        "current_quote": quote_snapshot,
+        "raw_audit": raw_audit,
+    }
+    # Expose a stable capability-level status for eligibility / DataQuality.
+    bundle["adjusted"]["capability_status"] = adjusted_price_capability_dict(bundle)
+    return json.dumps(bundle, ensure_ascii=False)
 
 
 def create_adjusted_price_prefetch_node():
