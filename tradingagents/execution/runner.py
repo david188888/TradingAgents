@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
 from tradingagents.dataflows.target_context import clear_target_ticker
+from tradingagents.dataflows.ticker_utils import is_a_share_ticker
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
     AnalysisRequest,
@@ -24,9 +25,72 @@ from tradingagents.execution.output_publisher import (
     _step_applied_draft,
     promote_derived_public_artifact,
 )
-from tradingagents.research.case_assembly import assemble_partial_research_case
+from tradingagents.research.case_assembly import (
+    assemble_partial_research_case,
+    assemble_research_case,
+)
+from tradingagents.research.evidence_registry import build_evidence_registry
+from tradingagents.research.horizon_policy import build_data_window_plan
 
 logger = logging.getLogger(__name__)
+
+
+def _assemble_research_case_or_fallback(
+    observer: Any,
+    snapshot: Any,
+    candidate_case: Mapping[str, Any],
+    source_sequence: int,
+) -> Any:
+    """Assemble a full ResearchCaseV2 when a draft is present, else fall back.
+
+    When ``candidate_case`` carries a ``draft`` mapping we build the evidence
+    registry and data-window plan for the run and attempt the full assembler.
+    Any failure (unresolvable draft, schema validation error, etc.) falls back
+    to the honest partial case so the durable contract still emits a valid
+    artifact.  Without a draft we always return the partial fallback.
+    """
+    from tradingagents.agents.schemas._research_case_draft import (
+        LearningResearchCaseDraft,
+    )
+
+    draft_value = candidate_case.get("draft")
+    evidence_verdict = str(candidate_case.get("evidence_verdict") or "GATE_ERROR")
+    if not isinstance(draft_value, Mapping):
+        return assemble_partial_research_case(
+            snapshot,
+            source_sequence=source_sequence,
+            evidence_verdict=evidence_verdict,
+        )
+    try:
+        registry = build_evidence_registry(observer.store, observer.run_id)
+        market = (
+            "a_share" if is_a_share_ticker(snapshot.ticker) else "global"
+        )
+        plan = build_data_window_plan(
+            snapshot.horizon or "medium",
+            snapshot.analysis_date,
+            market=market,
+        )
+        draft = LearningResearchCaseDraft.model_validate(draft_value)
+        return assemble_research_case(
+            snapshot,
+            draft=draft,
+            registry=registry,
+            plan=plan,
+            source_sequence=source_sequence,
+            evidence_verdict=evidence_verdict,
+        )
+    except Exception:
+        logger.warning(
+            "research case assembly failed for run %s; falling back to partial",
+            snapshot.run_id,
+            exc_info=True,
+        )
+        return assemble_partial_research_case(
+            snapshot,
+            source_sequence=source_sequence,
+            evidence_verdict=evidence_verdict,
+        )
 
 
 def _serialize_portfolio_context(context: Any | None) -> dict[str, Any] | None:
@@ -736,15 +800,16 @@ class AnalysisRunner:
                 promoted_evidence,
             )
             candidate_case = delta.get("research_case_candidate")
+            snapshot = observer.store.read_snapshot(observer.run_id)
             if (
                 isinstance(candidate_case, Mapping)
-                and observer.store.read_snapshot(observer.run_id).mode
-                in {"company_research", "holding_review"}
+                and snapshot.mode in {"company_research", "holding_review"}
             ):
-                research_case = assemble_partial_research_case(
-                    observer.store.read_snapshot(observer.run_id),
-                    source_sequence=marker.sequence,
-                    evidence_verdict=str(candidate_case.get("evidence_verdict") or "GATE_ERROR"),
+                research_case = _assemble_research_case_or_fallback(
+                    observer,
+                    snapshot,
+                    candidate_case,
+                    marker.sequence,
                 )
                 promote_derived_public_artifact(
                     observer,

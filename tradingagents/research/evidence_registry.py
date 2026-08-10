@@ -250,12 +250,49 @@ class EvidenceRegistry:
     coverage_by_capability: Mapping[str, tuple[CoverageRefV1, ...]] = field(
         default_factory=dict
     )
+    # First evidence ref registered for each prefetch state_key (e.g.
+    # ``adjusted_price_bundle``), so short ``evidence:`` keys can be resolved.
+    evidence_by_state_key: Mapping[str, EvidenceRefV2] = field(default_factory=dict)
+    # One evidence ref per recognised analyst report lens (market/fundamentals/
+    # news/sentiment), so ``evidence:<lens>_report`` keys can be resolved.
+    report_evidence_by_lens: Mapping[str, EvidenceRefV2] = field(default_factory=dict)
+
+    #: Map a short ``evidence:<label>`` key to a real EvidenceRefV2, or None.
+    _EVIDENCE_KEY_TO_STATE_KEY = {
+        "evidence:price_bundle": "adjusted_price_bundle",
+        "evidence:news_bundle": "news_window_bundle",
+        "evidence:supplement_bundle": "a_share_supplement_bundle",
+    }
+    _EVIDENCE_KEY_TO_LENS = {
+        "evidence:market_report": "market",
+        "evidence:fundamentals_report": "fundamentals",
+        "evidence:news_report": "news",
+        "evidence:sentiment_report": "sentiment",
+    }
 
     def get_evidence(self, ref_id: str) -> EvidenceRefV2 | None:
         return self.by_ref_id.get(ref_id)
 
     def get_coverage(self, capability: str) -> tuple[CoverageRefV1, ...]:
         return self.coverage_by_capability.get(capability, ())
+
+    def resolve_evidence_key(self, key: str) -> EvidenceRefV2 | None:
+        """Resolve a short ``evidence:<label>`` key to a durable evidence ref."""
+        state_key = self._EVIDENCE_KEY_TO_STATE_KEY.get(key)
+        if state_key is not None:
+            return self.evidence_by_state_key.get(state_key)
+        lens = self._EVIDENCE_KEY_TO_LENS.get(key)
+        if lens is not None:
+            return self.report_evidence_by_lens.get(lens)
+        return None
+
+    def resolve_coverage_key(self, key: str) -> CoverageRefV1 | None:
+        """Resolve a short ``coverage:<capability>`` key to a coverage ref."""
+        if not isinstance(key, str) or not key.startswith("coverage:"):
+            return None
+        capability = key[len("coverage:"):]
+        refs = self.coverage_by_capability.get(capability, ())
+        return refs[0] if refs else None
 
 
 def build_evidence_registry(
@@ -287,12 +324,9 @@ def build_evidence_registry(
         locator: str,
         source_observed_at: datetime | None,
         captured_at: datetime,
-    ) -> None:
+    ) -> EvidenceRefV2:
         if ref_id in seen_ref_ids:
-            return
-        seen_ref_ids.add(ref_id)
-        evidence_refs.append(
-            EvidenceRefV2(
+            return EvidenceRefV2(
                 ref_id=ref_id,
                 run_id=run_id,
                 artifact_id=artifact_id,
@@ -302,9 +336,22 @@ def build_evidence_registry(
                 captured_at=captured_at,
                 resolution_status="available",
             )
+        seen_ref_ids.add(ref_id)
+        ref = EvidenceRefV2(
+            ref_id=ref_id,
+            run_id=run_id,
+            artifact_id=artifact_id,
+            media_type=media_type,
+            locator=locator,
+            source_observed_at=source_observed_at,
+            captured_at=captured_at,
+            resolution_status="available",
         )
+        evidence_refs.append(ref)
+        return ref
 
     # 1. Persisted evidence bundles.
+    evidence_by_state_key: dict[str, EvidenceRefV2] = {}
     for event in events:
         if event.type != "artifact.written":
             continue
@@ -319,7 +366,7 @@ def build_evidence_registry(
                 raise ValueError("evidence bundle must be a JSON object")
         except Exception:
             continue
-        register_evidence(
+        ref = register_evidence(
             canonical_json_sha256(bundle),
             artifact_id,
             str(payload.get("media_type") or "application/json"),
@@ -327,9 +374,15 @@ def build_evidence_registry(
             _bundle_source_observed_at(bundle),
             _parse_event_time(event.timestamp),
         )
+        state_key = payload.get("state_key")
+        if isinstance(state_key, str) and state_key:
+            # First registered bundle wins for each state_key so a re-run
+            # cannot silently replace an already-durable evidence reference.
+            evidence_by_state_key.setdefault(state_key, ref)
         coverage_refs.extend(_bundle_coverage(bundle, artifact_id))
 
     # 2. Committed analyst report revisions.
+    report_evidence_by_lens: dict[str, EvidenceRefV2] = {}
     for event in events:
         if event.type != "report.updated":
             continue
@@ -346,7 +399,7 @@ def build_evidence_registry(
             continue
         media_type = str(written.payload.get("media_type") or "text/markdown")
         locator = str(written.payload.get("locator") or "")
-        register_evidence(
+        ref = register_evidence(
             canonical_json_sha256({"media_type": media_type, "content": content}),
             artifact_id,
             media_type,
@@ -354,6 +407,7 @@ def build_evidence_registry(
             None,
             _parse_event_time(written.timestamp),
         )
+        report_evidence_by_lens.setdefault(report_kind, ref)
 
     by_ref_id = {ref.ref_id: ref for ref in evidence_refs}
     by_artifact_id: dict[str, list[EvidenceRefV2]] = {}
@@ -371,4 +425,6 @@ def build_evidence_registry(
         coverage_by_capability={
             k: tuple(v) for k, v in coverage_by_capability.items()
         },
+        evidence_by_state_key=evidence_by_state_key,
+        report_evidence_by_lens=report_evidence_by_lens,
     )
