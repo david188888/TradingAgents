@@ -25,6 +25,7 @@ export const API = {
   runs: "/api/runs",
   run: (run_id: string) => `/api/runs/${run_id}`,
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
+  reader: (run_id: string) => `/api/runs/${run_id}/reader`,
   cancel: (run_id: string) => `/api/runs/${run_id}/cancel`,
   retry: (run_id: string) => `/api/runs/${run_id}/retry`,
   resume: (run_id: string) => `/api/runs/${run_id}/resume`,
@@ -980,3 +981,184 @@ export interface UnknownEventType extends EventEnvelopeCore {
   type: string;
   payload: Record<string, unknown>;
 }
+
+// ---------------------------------------------------------------------------
+// Learning Reader v2 (/api/runs/{run_id}/reader)
+//
+// Read-only discriminated projection of the evidence-bound research case
+// (ResearchCase v2). The `kind` field discriminates the union:
+//   - "typed": evidence-bound learning conclusion (no trading semantics)
+//   - "legacy": pre-learning historical run, raw conclusion only
+//   - "unavailable": no reader projection could be produced
+// Field names are snake_case-matched to the backend wire format.
+// ---------------------------------------------------------------------------
+
+export type ReaderKind = "typed" | "legacy" | "unavailable";
+
+export type ResearchTiltDTO = "favorable" | "neutral" | "cautious" | "insufficient_evidence";
+
+export type ClaimTypeDTO = "fact" | "inference" | "unknown";
+
+export type ClaimLifecycleDTO = "active" | "superseded" | "invalidated";
+
+export interface ActionImpactDTO {
+  severity: "low" | "medium" | "high";
+  direction: "positive" | "negative" | "neutral";
+  reason: string;
+}
+
+export interface PublicClaimV2DTO {
+  claim_key: string;
+  claim_type: ClaimTypeDTO;
+  text: string;
+  evidence_ref_ids: string[];
+  source_dates: string[];
+  supporting_claim_keys: string[];
+  coverage_ref_ids: string[];
+  confidence: number | null;
+  action_impact: ActionImpactDTO;
+  lifecycle_status: ClaimLifecycleDTO;
+}
+
+export interface ResearchScenarioDTO {
+  scenario_id: "upside" | "base" | "downside";
+  title: string;
+  condition_claim_keys: string[];
+  research_implication: string;
+  trigger_claim_keys: string[];
+  invalidation_claim_keys: string[];
+  confidence: number;
+}
+
+export interface ScenarioSetDTO {
+  upside: ResearchScenarioDTO;
+  base: ResearchScenarioDTO;
+  downside: ResearchScenarioDTO;
+}
+
+export interface ReviewItemDTO {
+  item_id: string;
+  text: string;
+  claim_keys: string[];
+  trigger_kind: "date" | "event" | "price" | "filing";
+  trigger_value: string;
+  due_at: string | null;
+  status: "pending" | "met" | "invalidated";
+  evidence_ref_ids: string[];
+}
+
+export interface ReviewPlanDTO {
+  next_review_at: string | null;
+  item_ids: string[];
+  reason: string;
+}
+
+export interface CapabilityStatusDTO {
+  capability: string;
+  status: "ok" | "degraded" | "unavailable";
+  coverage_ref_ids: string[];
+}
+
+export interface AnalystCardDTO {
+  lens: "market" | "fundamentals" | "news" | "sentiment";
+  availability: "ready" | "limited" | "unavailable";
+  summary: string;
+  confidence: number | null;
+  finding_claim_keys: string[];
+  capability_statuses: CapabilityStatusDTO[];
+}
+
+export interface ConflictRecordDTO {
+  conflict_id: string;
+  severity: "minor" | "material" | "critical";
+  capability: string;
+  evidence_ref_ids: string[];
+  reason_code: string;
+}
+
+export interface DataQualityV2DTO {
+  level: "healthy" | "limited" | "conflicted" | "blocked";
+  degraded_capabilities: string[];
+  unavailable_capabilities: string[];
+  conflicts: ConflictRecordDTO[];
+  coverage_ref_ids: string[];
+}
+
+export interface ReaderEvidenceRefDTO {
+  ref_id: string;
+  source_label: string;
+  resolution_status: "available" | "target_missing";
+}
+
+/**
+ * The backend emits a nested BundleCoverageV1 blob here. This thin slice does
+ * not parse its internals, so it is modelled as an opaque record. No `any`.
+ */
+export interface CoverageRefV1DTO {
+  coverage_ref_id: string;
+  capability: string;
+  envelope: Record<string, unknown>;
+}
+
+export interface ReaderAuditEntryDTO {
+  route: string;
+  artifact_count: number;
+  tool_call_count: number;
+  degradation_count: number;
+  audit_refs: string[];
+}
+
+export interface LearningReaderV2DTO {
+  kind: "typed";
+  schema_version: 2;
+  run_id: string;
+  mode: "company_research" | "holding_review";
+  ticker: string;
+  horizon: "short" | "medium" | "long";
+  as_of: string;
+  availability: "full" | "partial";
+  decision_eligibility: "full" | "limited" | "none";
+  evidence_verdict: "PASS" | "LOW_CONFIDENCE" | "FAIL_STOP" | "GATE_ERROR";
+  research_tilt: ResearchTiltDTO | null;
+  rating_confidence: number | null;
+  claims: PublicClaimV2DTO[];
+  scenarios: ScenarioSetDTO | null;
+  catalysts: ReviewItemDTO[];
+  invalidation_conditions: ReviewItemDTO[];
+  review_plan: ReviewPlanDTO | null;
+  analyst_cards: AnalystCardDTO[];
+  data_quality: DataQualityV2DTO;
+  evidence_refs: ReaderEvidenceRefDTO[];
+  coverage_refs: CoverageRefV1DTO[];
+  omissions: string[];
+  thesis_diff: null;
+  audit_entry: ReaderAuditEntryDTO;
+}
+
+export interface LegacyReaderV1DTO {
+  kind: "legacy";
+  schema_version: 1;
+  run_id: string;
+  ticker: string;
+  as_of: string;
+  final_signal: string | null;
+  portfolio_report_markdown: string | null;
+  data_quality: { level: "available" | "limited" | "unknown"; summary: string; degradation_count: number; };
+  stage_refs: string[];
+  audit_entry: ReaderAuditEntryDTO;
+  reason_codes: string[];
+}
+
+export interface ReaderUnavailableV1DTO {
+  kind: "unavailable";
+  schema_version: 1;
+  run_id: string;
+  ticker: string | null;
+  reason_code: "research_case_unavailable" | "reader_projection_failed" | "unsupported_research_case_major";
+  audit_entry: ReaderAuditEntryDTO;
+}
+
+export type ReaderResponseDTO =
+  | LearningReaderV2DTO
+  | LegacyReaderV1DTO
+  | ReaderUnavailableV1DTO;

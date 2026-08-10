@@ -18,6 +18,7 @@ import type {
   MarketViewDTO,
   RecentRunsPageDTO,
   RunViewEnvelopeDTO,
+  ReaderResponseDTO,
   RunCreateRequestDTO,
   RunSnapshotDTO,
   RunSummaryDTO,
@@ -158,6 +159,15 @@ export function getRunView(
 ): Promise<RunViewEnvelopeDTO> {
   assertRunId(run_id);
   return request<RunViewEnvelopeDTO>("GET", API.runView(run_id), undefined, signal);
+}
+
+/** GET /api/runs/{run_id}/reader */
+export function getReader(
+  run_id: string,
+  signal?: AbortSignal,
+): Promise<ReaderResponseDTO> {
+  assertRunId(run_id);
+  return request<ReaderResponseDTO>("GET", API.reader(run_id), undefined, signal);
 }
 
 /** GET /api/runs/{run_id} */

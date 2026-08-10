@@ -6,6 +6,7 @@ import { SwarmStatusCard } from "../status/SwarmStatusCard";
 import { WorkflowMap } from "../workflow/WorkflowMap";
 import { AuditReader } from "../reader/AuditReader";
 import { DecisionBrief } from "../reader/DecisionBrief";
+import { ReaderSurface } from "../reader/ReaderSurface";
 import { FailedRunView } from "../reader/FailedRunView";
 import { RunDisclosure } from "./RunDisclosure";
 import { DebateTimeline } from "../timeline/DebateTimeline";
@@ -203,6 +204,7 @@ export function WorkbenchLayout(): JSX.Element {
             ) : view.view.view.run.status === "completed" ? (
               <>
                 <DecisionBrief envelope={view.view} onOpenAudit={() => setAuditOpen(true)} />
+                <ReaderSurface runId={run_id} />
                 <DebateTimeline
                   journey={view.view.view.debate_journey}
                   selectedStage={expandedStage}
