@@ -21,7 +21,9 @@ from tradingagents.execution.output_publisher import (
     _read_candidate_delta,
     _state_updated_draft,
     _step_applied_draft,
+    promote_derived_public_artifact,
 )
+from tradingagents.research.case_assembly import assemble_partial_research_case
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +172,7 @@ class AnalysisRunner:
                     owner.config["data_cache_dir"],
                     request.ticker,
                     request.analysis_date,
-                    owner._run_signature(request.asset_type),
+                    owner._run_signature(request.asset_type, request.horizon),
                     run_id=checkpoint_run_id,
                 )
                 assert checkpoint_guard is not None
@@ -242,7 +244,7 @@ class AnalysisRunner:
             **({"callbacks": callbacks} if callbacks else {})
         )
         if owner.config.get("checkpoint_enabled"):
-            run_shape = owner._run_signature(request.asset_type)
+            run_shape = owner._run_signature(request.asset_type, request.horizon)
             configurable = graph_args.setdefault("config", {}).setdefault(
                 "configurable",
                 {},
@@ -296,11 +298,15 @@ class AnalysisRunner:
                 owner.config["data_cache_dir"],
                 request.ticker,
                 request.analysis_date,
-                owner._run_signature(request.asset_type),
+                owner._run_signature(request.asset_type, request.horizon),
                 **_run_id_kwargs(checkpoint_run_id),
             )
 
-        signal = self._process_signal(final_state["final_trade_decision"])
+        signal = (
+            "research_only"
+            if request.mode in {"company_research", "holding_review"}
+            else self._process_signal(final_state["final_trade_decision"])
+        )
         return AnalysisResult(final_state=final_state, final_signal=signal)
 
     def _resolve_initial_context(
@@ -332,11 +338,15 @@ class AnalysisRunner:
         owner = self.owner
         initial_kwargs: dict[str, Any] = {
             "asset_type": request.asset_type,
+            "mode": request.mode,
+            "horizon": request.horizon,
+            "holding_context": _serialize_portfolio_context(request.holding_context),
             "past_context": initial_context.values["past_context"],
             "instrument_context": initial_context.values["instrument_context"],
         }
-        if request.portfolio is not None:
-            initial_kwargs["portfolio_context"] = _serialize_portfolio_context(request.portfolio)
+        # Both public modes are research-only.  Legacy PortfolioContext is
+        # normalized at the HTTP/snapshot boundary into HoldingContext and
+        # must never enter AgentState as an execution constraint.
         if observation_context is not None:
             initial_kwargs["observation_context"] = observation_context
         initial_state = owner.propagator.create_initial_state(
@@ -678,6 +688,11 @@ class AnalysisRunner:
             for event in events
             if event.type == "artifact.written" and event.payload.get("public_output_kind")
         }
+        promoted_derived = {
+            (str(event.payload.get("graph_task_id")), str(event.payload.get("public_contract")))
+            for event in events
+            if event.type == "artifact.written" and event.payload.get("public_contract")
+        }
         observer.refresh_from_events()
         for commit in commits:
             candidate = candidates[commit.graph_task_id]
@@ -700,6 +715,26 @@ class AnalysisRunner:
                 marker.sequence,
                 promoted_public_outputs,
             )
+            candidate_case = delta.get("research_case_candidate")
+            if (
+                isinstance(candidate_case, Mapping)
+                and observer.store.read_snapshot(observer.run_id).mode
+                in {"company_research", "holding_review"}
+            ):
+                research_case = assemble_partial_research_case(
+                    observer.store.read_snapshot(observer.run_id),
+                    source_sequence=marker.sequence,
+                    evidence_verdict=str(candidate_case.get("evidence_verdict") or "GATE_ERROR"),
+                )
+                promote_derived_public_artifact(
+                    observer,
+                    contract="research-case-v2",
+                    value=research_case,
+                    graph_task_id=commit.graph_task_id,
+                    checkpoint_event_id=marker.event_id,
+                    committed_sequence=marker.sequence,
+                    promoted=promoted_derived,
+                )
             _promote_report_revisions(
                 observer,
                 commit,
@@ -752,14 +787,14 @@ class AnalysisRunner:
         self._active_thread_id = thread_id(
             request.ticker,
             request.analysis_date,
-            owner._run_signature(request.asset_type),
+            owner._run_signature(request.asset_type, request.horizon),
             **_run_id_kwargs(run_id),
         )
         step = checkpoint_step(
             owner.config["data_cache_dir"],
             request.ticker,
             request.analysis_date,
-            owner._run_signature(request.asset_type),
+            owner._run_signature(request.asset_type, request.horizon),
             **_run_id_kwargs(run_id),
         )
         if step is None:
@@ -913,5 +948,3 @@ def _latest_checkpoint_id(saver: Any, thread_identity: str | None) -> str | None
     return _checkpoint_id(
         saver.get_tuple({"configurable": {"thread_id": thread_identity}})
     )
-
-

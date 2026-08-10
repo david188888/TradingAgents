@@ -25,6 +25,11 @@ from ._common import (  # noqa: F401  - facade re-export
     TraderAction,
     _coerce_optional_float,
 )
+from ._learning_research import (
+    HoldingThesisAssessment,
+    LearningResearchSummary,
+    render_learning_research_summary,
+)
 from ._portfolio import (  # noqa: F401  - facade re-export
     DecisionDriver,
     PortfolioDecision,
@@ -37,6 +42,21 @@ from ._research import (  # noqa: F401  - facade re-export
     ResearchPublicDigest,
     ResearchStrategySignal,
     render_research_plan,
+)
+from ._research_case import (  # noqa: F401 - facade re-export
+    AnalystCard,
+    CapabilityStatus,
+    ConflictRecord,
+    CoverageRefV1,
+    DataQuality,
+    DebateDigest,
+    EvidenceRefV2,
+    PublicClaim,
+    ResearchCaseV2,
+    ResearchScenario,
+    ReviewItem,
+    ReviewPlan,
+    ScenarioSet,
 )
 from ._risk import (  # noqa: F401  - facade re-export
     RiskDebateSignal,

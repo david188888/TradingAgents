@@ -38,6 +38,7 @@ from tradingagents.portfolio import (
     portfolio_context_from_dict,
     rank_feature_contributions,
 )
+from tradingagents.research import build_holding_review_summary, holding_review_quote_from_bundle
 from tradingagents.skills import (
     build_role_skill_prompt,
     build_skill_trigger_context,
@@ -49,6 +50,8 @@ def create_portfolio_manager(llm):
     structured_llm = bind_structured(llm, PortfolioDecision, "Portfolio Manager")
 
     def portfolio_manager_node(state) -> dict:
+        if state.get("mode") in {"company_research", "holding_review"}:
+            return _learning_review_result(state)
         instrument_context = get_instrument_context_from_state(state)
 
         history = state["risk_debate_state"]["history"]
@@ -177,6 +180,70 @@ Be decisive and ground every conclusion in specific evidence from the analysts.
         return result
 
     return portfolio_manager_node
+
+
+def _learning_review_result(state: Mapping[str, object]) -> dict:
+    """Close the legacy execution path for the learning-only public modes."""
+    mode = state.get("mode")
+    evidence_status = str(state.get("evidence_status") or "unknown")
+    holding = state.get("holding_context")
+    analysis_date = str(
+        state.get("trade_date")
+        or (holding.get("facts_as_of") if isinstance(holding, Mapping) else "")
+    )
+    holding_summary = (
+        build_holding_review_summary(
+            holding,
+            analysis_date=analysis_date,
+            **holding_review_quote_from_bundle(state.get("adjusted_price_bundle")),
+        )
+        if mode == "holding_review" and isinstance(holding, Mapping)
+        else None
+    )
+    holding_line = (
+        "\n\n持仓复盘输入已记录；请结合证据复查原始逻辑、风险暴露、失效条件与下一次验证。"
+        if mode == "holding_review" and isinstance(holding, Mapping)
+        else ""
+    )
+    final_review = (
+        "## 研究结论\n\n"
+        "本次输出仅用于公司研究与学习复盘，不构成交易指令；系统不生成订单、"
+        "买卖数量、目标仓位或执行时间。\n\n"
+        f"证据状态：{evidence_status}。请结合分析师报告、风险讨论和后续验证条件持续复核。"
+        f"{holding_line}"
+    )
+    risk_state = state["risk_debate_state"]
+    updated_risk_state = {
+        "judge_decision": final_review,
+        "history": risk_state["history"],
+        "aggressive_history": risk_state["aggressive_history"],
+        "conservative_history": risk_state["conservative_history"],
+        "neutral_history": risk_state["neutral_history"],
+        "latest_speaker": "Judge",
+        "current_aggressive_response": risk_state["current_aggressive_response"],
+        "current_conservative_response": risk_state["current_conservative_response"],
+        "current_neutral_response": risk_state["current_neutral_response"],
+        "risk_signals": risk_state.get("risk_signals", []),
+        "count": risk_state["count"],
+    }
+    result = {
+        "risk_debate_state": updated_risk_state,
+        "final_trade_decision": final_review,
+        "evidence_status": evidence_status,
+        "allowed_actions": [],
+        "clamp_events": [],
+        "execution_outcome": None,
+        "holding_review_summary": holding_summary,
+    }
+    if holding_summary is not None:
+        result["reader_public_output"] = {
+            "kind": "portfolio",
+            "value": {
+                "kind": "learning_holding_review",
+                "holding_review": holding_summary,
+            },
+        }
+    return result
 
 
 def _public_allowed_action(action: AllowedAction) -> dict[str, object]:

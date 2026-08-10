@@ -19,6 +19,7 @@ from typing import Any
 from tradingagents.observability.events import PersistedEvent
 from tradingagents.observability.roles import ROLE_REGISTRY
 from tradingagents.portfolio import ConvictionSignal, aggregate_risk_convictions
+from tradingagents.research import build_holding_review_summary
 
 from .debate_summary import DEBATE_SUMMARY_LOCATOR, ensure_debate_summary
 from .market_view import build_market_view
@@ -26,7 +27,7 @@ from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
 from .store import RunNotFound, RunStore, RunStoreCorruption, RunStoreError
 
 SCHEMA_VERSION = 1
-VIEW_CACHE_VERSION = 2
+VIEW_CACHE_VERSION = 3
 RUN_VIEW_LOCATOR = "projections/run-view-v1.json"
 READER_BRIEF_LOCATOR = "projections/reader-brief-v1.json"
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
@@ -49,6 +50,8 @@ def run_summary_v1(snapshot: RunSnapshot, *, data_quality_level: str) -> dict[st
         "run_id": snapshot.run_id,
         "ticker": snapshot.ticker,
         "status": snapshot.status,
+        "mode": snapshot.mode or "company_research",
+        "horizon": snapshot.horizon or "medium",
         "created_at": snapshot.created_at,
         "completed_at": snapshot.completed_at,
         "latest_sequence": snapshot.latest_sequence,
@@ -356,6 +359,8 @@ def _build_reader_brief(
     quality: Mapping[str, Any],
 ) -> dict[str, Any] | None:
     """Build the L1 view from committed public JSON, never from report prose."""
+    if snapshot.mode in {"company_research", "holding_review"}:
+        return _build_learning_reader_brief(store, snapshot, events, quality)
     outputs: dict[str, Mapping[str, Any]] = {}
     risk_outputs: dict[str, Mapping[str, Any]] = {}
     for event in events:
@@ -538,6 +543,161 @@ def _build_reader_brief(
         "data_quality": dict(quality),
         "evidence_refs": list(evidence_refs.values()),
     }
+
+
+def _build_learning_reader_brief(
+    store: RunStore,
+    snapshot: RunSnapshot,
+    events: list[PersistedEvent],
+    quality: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project the committed learning summary without parsing report Markdown.
+
+    The initial learning summary is a public, validated synthesis.  It is not
+    yet a full ResearchCase: the latter additionally binds every fact to an
+    evidence reference.  That limitation stays visible in ``omissions``.
+    """
+    learning_summary = _read_learning_summary(store, snapshot, events)
+    omissions = (
+        ["research_case.typed_output_missing"]
+        if learning_summary is None
+        else ["research_case.evidence_refs_unavailable"]
+    )
+    holding_review = _read_learning_holding_review(store, snapshot, events)
+    if snapshot.mode == "holding_review":
+        if holding_review is not None:
+            pass
+        elif snapshot.holding_context is None:
+            omissions.append("holding_review.context_missing")
+        else:
+            holding_review = build_holding_review_summary(
+                snapshot.holding_context,
+                analysis_date=snapshot.analysis_date,
+            )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": snapshot.run_id,
+        "ticker": snapshot.ticker,
+        "source_sequence": snapshot.latest_sequence,
+        "generated_at": utc_timestamp(),
+        "availability": "partial",
+        "omissions": omissions,
+        "research_rating": learning_summary.get("research_tilt") if learning_summary else None,
+        "execution": {
+            "availability": "unavailable",
+            "requested_action": None,
+            "requested_quantity": None,
+            "effective_action": None,
+            "effective_quantity": None,
+            "reason_code": "learning_mode_no_execution",
+        },
+        "executive_summary": None,
+        "price_target": None,
+        "time_horizon": snapshot.horizon or "medium",
+        "drivers": [],
+        "risks": [],
+        "catalysts": [],
+        "invalidation_conditions": [],
+        "analyst_cards": [],
+        "debate_digest": {
+            "agreed_facts": [],
+            "key_disagreements": [],
+            "changed_views": [],
+            "remaining_uncertainties": [],
+        },
+        "risk_consensus": {
+            "conviction": None,
+            "disagreement": "unavailable",
+            "abstained_roles": [],
+        },
+        "data_quality": dict(quality),
+        "evidence_refs": [],
+        "holding_review": holding_review,
+        "learning_summary": learning_summary,
+    }
+
+
+def _read_learning_holding_review(
+    store: RunStore,
+    snapshot: RunSnapshot,
+    events: Iterable[PersistedEvent],
+) -> dict[str, Any] | None:
+    """Use a committed holding review instead of recalculating it in Reader."""
+    for event in reversed(list(events)):
+        if event.type != "artifact.written" or event.payload.get("public_output_kind") != "portfolio":
+            continue
+        artifact_id = event.payload.get("artifact_id")
+        if not isinstance(artifact_id, str):
+            continue
+        try:
+            output = json.loads(store.read_artifact(snapshot.run_id, artifact_id).decode("utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError, RunStoreError):
+            continue
+        review = output.get("holding_review") if isinstance(output, Mapping) and output.get("kind") == "learning_holding_review" else None
+        if isinstance(review, Mapping) and review.get("mode") == "holding_review":
+            return dict(review)
+    return None
+
+
+def _read_learning_summary(
+    store: RunStore,
+    snapshot: RunSnapshot,
+    events: Iterable[PersistedEvent],
+) -> dict[str, Any] | None:
+    """Read the latest committed learning summary with a deliberately closed shape."""
+    for event in reversed(list(events)):
+        if event.type != "artifact.written" or event.payload.get("public_output_kind") != "research":
+            continue
+        artifact_id = event.payload.get("artifact_id")
+        if not isinstance(artifact_id, str):
+            continue
+        try:
+            output = json.loads(store.read_artifact(snapshot.run_id, artifact_id).decode("utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError, RunStoreError):
+            continue
+        if not isinstance(output, Mapping) or output.get("run_id") != snapshot.run_id:
+            continue
+        if output.get("kind") != "learning_research_summary":
+            continue
+        summary = output.get("summary")
+        if not isinstance(summary, Mapping) or not _valid_learning_summary(summary):
+            continue
+        return dict(summary)
+    return None
+
+
+def _valid_learning_summary(value: Mapping[str, Any]) -> bool:
+    """Keep malformed public artifacts out of Reader without hidden coercion."""
+    if value.get("research_tilt") not in {"favorable", "neutral", "cautious", "insufficient_evidence"}:
+        return False
+    confidence = value.get("confidence")
+    if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not 0 <= confidence <= 1:
+        return False
+    text_lists = ("facts", "inferences", "unknowns", "catalysts", "invalidation_conditions")
+    if any(
+        not isinstance(value.get(field), list)
+        or any(not isinstance(item, str) or not item for item in value[field])
+        for field in text_lists
+    ):
+        return False
+    for field in ("upside", "base", "downside"):
+        scenario = value.get(field)
+        if not isinstance(scenario, Mapping) or any(
+            not isinstance(scenario.get(key), str) or not scenario[key]
+            for key in ("title", "condition", "implication")
+        ):
+            return False
+    assessment = value.get("holding_thesis_assessment")
+    if assessment is not None and (
+        not isinstance(assessment, Mapping)
+        or assessment.get("status") not in {"supported", "challenged", "not_assessable"}
+        or any(
+            not isinstance(assessment.get(field), str) or not assessment[field]
+            for field in ("rationale", "current_research_hypothesis")
+        )
+    ):
+        return False
+    return isinstance(value.get("next_review"), str) and bool(value["next_review"])
 
 
 def _evidence_ref_index(run_id: str, events: Iterable[PersistedEvent]) -> dict[str, dict[str, Any]]:

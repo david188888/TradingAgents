@@ -23,7 +23,14 @@ from tradingagents.agents import (
     create_sentiment_analyst,
     create_trader,
 )
+from tradingagents.agents.utils.a_share_supplement_tools import (
+    create_a_share_supplement_prefetch_node,
+)
 from tradingagents.agents.utils.agent_states import AgentState
+from tradingagents.agents.utils.market_data_validation_tools import (
+    create_adjusted_price_prefetch_node,
+)
+from tradingagents.agents.utils.news_data_tools import create_news_window_prefetch_node
 from tradingagents.analysts import ANALYST_WIRE_KEYS
 from tradingagents.dataflows.config import get_config
 from tradingagents.observability.roles import ROLES_BY_NODE_ID
@@ -51,6 +58,10 @@ RISK_ANALYSIS_PATH_MAP = {
     "Aggressive Analyst": "Aggressive Analyst",
     "Conservative Analyst": "Conservative Analyst",
     "Neutral Analyst": "Neutral Analyst",
+    "Portfolio Manager": "Portfolio Manager",
+}
+POST_RESEARCH_PATH_MAP = {
+    "Trader": "Trader",
     "Portfolio Manager": "Portfolio Manager",
 }
 
@@ -82,6 +93,13 @@ def _public_debate_summary(llm: Any, older_turns: str) -> str:
     )
     content = getattr(response, "content", response)
     return content if isinstance(content, str) else ""
+
+
+def _route_after_research(state: AgentState) -> str:
+    """Keep learning runs out of the legacy transaction-decision subgraph."""
+    if state.get("mode") in {"company_research", "holding_review"}:
+        return "Portfolio Manager"
+    return "Trader"
 
 
 def _compact_debate_node(node_name: str, node: Any, llm: Any):
@@ -230,6 +248,14 @@ class GraphSetup:
         configurable by a v1 preset.
         """
         plan = build_analyst_execution_plan(selected_analysts)
+        market_spec = next((spec for spec in plan.specs if spec.key == "market"), None)
+        news_spec = next((spec for spec in plan.specs if spec.key == "news"), None)
+        supplement_enabled = any(
+            spec.key in {"market", "social", "news"} for spec in plan.specs
+        )
+        a_share_prefetch_node_id = "A-share Supplement Prefetch"
+        price_prefetch_node_id = "Adjusted Price Prefetch"
+        news_prefetch_node_id = "News Window Prefetch"
 
         analyst_factories = {
             "market": lambda: create_market_analyst(self.quick_thinking_llm),
@@ -305,6 +331,41 @@ class GraphSetup:
             workflow.add_node(spec.clear_node, clear_node)
             workflow.add_node(spec.tool_node, tool_node)
 
+        if news_spec is not None:
+            prefetch_node = create_news_window_prefetch_node()
+            if observation_enabled:
+                assert ObservedGraphTask is not None
+                prefetch_node = ObservedGraphTask(
+                    news_prefetch_node_id,
+                    "maintenance",
+                    prefetch_node,
+                )
+            workflow.add_node(news_prefetch_node_id, prefetch_node)
+            workflow.add_edge(news_prefetch_node_id, news_spec.agent_node)
+
+        if market_spec is not None:
+            price_prefetch_node = create_adjusted_price_prefetch_node()
+            if observation_enabled:
+                assert ObservedGraphTask is not None
+                price_prefetch_node = ObservedGraphTask(
+                    price_prefetch_node_id,
+                    "maintenance",
+                    price_prefetch_node,
+                )
+            workflow.add_node(price_prefetch_node_id, price_prefetch_node)
+            workflow.add_edge(price_prefetch_node_id, market_spec.agent_node)
+
+        if supplement_enabled:
+            supplement_prefetch_node = create_a_share_supplement_prefetch_node()
+            if observation_enabled:
+                assert ObservedGraphTask is not None
+                supplement_prefetch_node = ObservedGraphTask(
+                    a_share_prefetch_node_id,
+                    "maintenance",
+                    supplement_prefetch_node,
+                )
+            workflow.add_node(a_share_prefetch_node_id, supplement_prefetch_node)
+
         # Add other nodes
         workflow.add_node(
             "Evidence Steward", role_node("Evidence Steward", evidence_steward_node)
@@ -328,7 +389,19 @@ class GraphSetup:
 
         # Define edges
         # Start with the first analyst
-        workflow.add_edge(START, plan.specs[0].agent_node)
+        def analyst_entry_node(spec):
+            if spec.key == "market":
+                return price_prefetch_node_id
+            if spec.key == "news":
+                return news_prefetch_node_id
+            return spec.agent_node
+
+        first_node = analyst_entry_node(plan.specs[0])
+        if supplement_enabled:
+            workflow.add_edge(START, a_share_prefetch_node_id)
+            workflow.add_edge(a_share_prefetch_node_id, first_node)
+        else:
+            workflow.add_edge(START, first_node)
 
         # Connect analysts in sequence
         for i, spec in enumerate(plan.specs):
@@ -346,7 +419,9 @@ class GraphSetup:
 
             # Connect to next analyst or to Evidence Steward if this is the last analyst
             if i < len(plan.specs) - 1:
-                workflow.add_edge(current_clear, plan.specs[i + 1].agent_node)
+                next_spec = plan.specs[i + 1]
+                next_node = analyst_entry_node(next_spec)
+                workflow.add_edge(current_clear, next_node)
             else:
                 workflow.add_edge(current_clear, "Evidence Steward")
 
@@ -363,7 +438,11 @@ class GraphSetup:
                 self.conditional_logic.should_continue_debate,
                 DEBATE_PATH_MAP,
             )
-        workflow.add_edge("Research Manager", "Trader")
+        workflow.add_conditional_edges(
+            "Research Manager",
+            _route_after_research,
+            POST_RESEARCH_PATH_MAP,
+        )
         workflow.add_edge("Trader", "Aggressive Analyst")
         # All three risk edges share the complete RISK_ANALYSIS_PATH_MAP (#1088).
         for risk_node in ("Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"):

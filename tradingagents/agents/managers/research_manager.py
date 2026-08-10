@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from tradingagents.agents.schemas import ResearchPlan, render_research_plan
+from tradingagents.agents.schemas import (
+    LearningResearchSummary,
+    ResearchPlan,
+    render_learning_research_summary,
+    render_research_plan,
+)
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
@@ -42,6 +47,8 @@ def create_research_manager(
     structured_llm = bind_structured(llm, ResearchPlan, "Research Manager")
 
     def research_manager_node(state) -> dict:
+        if state.get("mode") in {"company_research", "holding_review"}:
+            return _learning_research_result(state, llm)
         instrument_context = get_instrument_context_from_state(state)
         history = state["investment_debate_state"].get("history", "")
         report_lens_context = (
@@ -131,6 +138,86 @@ Rules: unknown/not_assessed is not bear evidence; industry/comparable evidence c
         return result
 
     return research_manager_node
+
+
+def _learning_research_result(state, llm) -> dict:
+    """Keep the legacy research judge from emitting a transaction proposal."""
+    debate_state = state["investment_debate_state"]
+    evidence_status = str(state.get("evidence_status") or "unknown")
+    research_summary, public_summary = _render_learning_research(state, llm, evidence_status)
+    result = {
+        "investment_debate_state": {
+            "judge_decision": research_summary,
+            "history": debate_state.get("history", ""),
+            "bear_history": debate_state.get("bear_history", ""),
+            "bull_history": debate_state.get("bull_history", ""),
+            "current_response": research_summary,
+            "count": debate_state["count"],
+        },
+        "investment_plan": research_summary,
+        "research_case_candidate": {"evidence_verdict": evidence_status},
+    }
+    # The rendered report remains available to downstream graph nodes, while
+    # the same validated object is promoted only after the graph checkpoint
+    # commits.  Reader never has to infer a conclusion from Markdown.
+    if public_summary is not None:
+        result["reader_public_output"] = {
+            "kind": "research",
+            "value": {
+                "kind": "learning_research_summary",
+                "summary": public_summary.model_dump(mode="json"),
+            },
+        }
+    return result
+
+
+def _render_learning_research(
+    state, llm, evidence_status: str
+) -> tuple[str, LearningResearchSummary | None]:
+    """Use one bounded synthesis turn; fall back to an explicit abstention."""
+    structured_llm = bind_structured(llm, LearningResearchSummary, "Research Manager")
+    if structured_llm is None:
+        return _learning_research_fallback(evidence_status), None
+    mode = state.get("mode")
+    holding_context = state.get("holding_context") if mode == "holding_review" else None
+    prompt = f"""你是学习型公司研究的 Research Manager。请只根据下方已给出的分析师报告和辩论，生成结构化研究摘要。
+
+硬性边界：这不是交易系统。不得建议或描述买入、卖出、持有、仓位比例、目标仓位、数量、订单、价格指令或执行时间。只输出研究倾向、事实、推论、未知、三种情景、催化剂、失效条件与下一次复核。
+
+证据状态：{evidence_status}
+持仓复盘上下文（若有）：{holding_context!r}
+
+市场报告：{state.get("market_report", "")}
+基本面报告：{state.get("fundamentals_report", "")}
+新闻报告：{state.get("news_report", "")}
+情绪报告：{state.get("sentiment_report", "")}
+研究辩论：{state.get("investment_debate_state", {}).get("history", "")}
+
+持仓复盘规则：只有在持仓上下文中存在 original_thesis 时才填写 holding_thesis_assessment；
+assessment 必须说明当前证据是 supported、challenged 还是 not_assessable，并给出可观察的当前研究假设。
+若 original_thesis 缺失，绝不推测用户买入理由，也不要填写该字段。
+
+没有证据时明确列入 unknowns，并将 research_tilt 设为 insufficient_evidence。"""
+    try:
+        result = structured_llm.invoke(prompt)
+        if not isinstance(result, LearningResearchSummary):
+            result = LearningResearchSummary.model_validate(result)
+        return render_learning_research_summary(result), result
+    except Exception:
+        return _learning_research_fallback(evidence_status), None
+
+
+def _learning_research_fallback(evidence_status: str) -> str:
+    return (
+        "## 研究倾向\n\n"
+        "- 倾向：insufficient_evidence\n"
+        "- 置信度：0%\n"
+        "- 本报告用于学习与复盘，不构成交易指令；不包含仓位、数量、订单或执行时间。\n\n"
+        "## 未知与待验证\n\n"
+        f"- 证据状态：{evidence_status}。需要等待可验证的市场、基本面、新闻或情绪事实。\n\n"
+        "## 下次复核\n\n"
+        "在新的公告、业绩或风险证据出现后重新进行研究复核。"
+    )
 
 
 def _render_plan_with_delegation(

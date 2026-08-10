@@ -6,6 +6,7 @@ the model that described the underlying evidence.
 """
 
 from .dossier import ResearchDossier, build_research_dossier, render_research_dossier
+from .holding_review import build_holding_review_summary, holding_review_quote_from_bundle
 from .strategy import (
     StrategyConsensus,
     StrategySignal,
@@ -16,6 +17,8 @@ __all__ = [
     "ResearchDossier",
     "build_research_dossier",
     "render_research_dossier",
+    "build_holding_review_summary",
+    "holding_review_quote_from_bundle",
     "StrategyConsensus",
     "StrategySignal",
     "aggregate_strategy_signals",

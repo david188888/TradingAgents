@@ -24,6 +24,9 @@ class Propagator:
         instrument_context: str = "",
         portfolio_context: dict[str, Any] | None = None,
         observation_context=None,
+        horizon: str = "medium",
+        mode: str = "company_research",
+        holding_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create the initial state for the agent graph.
 
@@ -37,6 +40,9 @@ class Propagator:
             "messages": [("human", company_name)],
             "company_of_interest": company_name,
             "asset_type": asset_type,
+            "mode": mode,
+            "horizon": horizon,
+            "holding_context": holding_context,
             "portfolio_context": portfolio_context,
             "instrument_context": instrument_context,
             "trade_date": str(trade_date),
@@ -67,9 +73,12 @@ class Propagator:
                 }
             ),
             "market_report": "",
+            "adjusted_price_bundle": "",
             "fundamentals_report": "",
             "sentiment_report": "",
+            "a_share_supplement_bundle": "",
             "news_report": "",
+            "news_window_bundle": "",
             "methodology_reports": {},
             "canonical_company_profile": {},
             "evidence_status": "",
@@ -80,6 +89,7 @@ class Propagator:
             "research_dossier": {},
             "clamp_events": [],
             "execution_outcome": None,
+            "holding_review_summary": None,
             "feature_contributions": [],
             "context_compaction_facts": [],
         }

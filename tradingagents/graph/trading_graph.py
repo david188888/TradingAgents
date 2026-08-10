@@ -19,15 +19,9 @@ from tradingagents.agents.utils.agent_utils import (
     get_fundamentals_research_bundle,
     get_global_news,
     get_income_statement,
-    get_indicators,
-    get_insider_transactions,
     get_macro_indicators,
-    get_market_research_bundle,
     get_news,
-    get_news_research_bundle,
-    get_news_windows,
-    get_stock_data,
-    get_verified_market_snapshot,
+    get_verified_current_market_snapshot,
     resolve_instrument_identity,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
@@ -225,18 +219,9 @@ class TradingAgentsGraph:
         return {
             "market": ToolNode(
                 [
-                    # Core stock data tools
-                    get_stock_data,
-                    # Technical indicators
-                    get_indicators,
-                    # Deterministic verification snapshot (bound to the analyst
-                    # LLM and required by its prompt; must be executable here or
-                    # the call fails and the model reports it "unavailable").
-                    get_verified_market_snapshot,
-                    # Bounded, allowlisted bundle for cross-view market
-                    # questions.  It is bound by the analyst, so register it
-                    # here as well or an LLM call would fail at ToolNode.
-                    get_market_research_bundle,
+                    # Historical analysis is a deterministic adjusted-price
+                    # prefetch; the role can request only a current-price row.
+                    get_verified_current_market_snapshot,
                 ]
             ),
             "social": ToolNode(
@@ -247,13 +232,10 @@ class TradingAgentsGraph:
             ),
             "news": ToolNode(
                 [
-                    # News and insider information
-                    get_news,
+                    # Company-specific evidence is prefetched by a deterministic
+                    # graph task. The analyst can request macro supplements only.
                     get_global_news,
-                    get_insider_transactions,
                     get_macro_indicators,
-                    get_news_research_bundle,
-                    get_news_windows,
                 ]
             ),
             "fundamentals": ToolNode(
@@ -414,7 +396,7 @@ class TradingAgentsGraph:
         set_target_ticker(ticker, identity.get("company_name") or identity.get("name"))
         return build_instrument_context(ticker, asset_type, identity)
 
-    def _run_signature(self, asset_type: str) -> str:
+    def _run_signature(self, asset_type: str, horizon: str = "medium") -> str:
         """Graph-shape inputs that must invalidate a checkpoint if changed.
 
         Keyed into the checkpoint thread ID so a resume under a different analyst
@@ -426,6 +408,7 @@ class TradingAgentsGraph:
             f"debate={self.config['max_debate_rounds']}",
             f"risk={self.config['max_risk_discuss_rounds']}",
             f"asset={asset_type}",
+            f"horizon={horizon}",
         ])
 
     def propagate(self, company_name, trade_date, asset_type: str = "stock"):

@@ -8,11 +8,14 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
+from math import isfinite
 from typing import Any, Protocol
 
 from tradingagents.dataflows.config import config_scope
 from tradingagents.dataflows.interface import news_cache_scope
 from tradingagents.dataflows.progress import DataProgressEvent, progress_sink
+from tradingagents.dataflows.symbol_utils import normalize_symbol
+from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
@@ -20,6 +23,8 @@ from tradingagents.execution.models import (
     AnalysisRequest,
     AnalysisResult,
     CancellationToken,
+    HoldingContext,
+    holding_context_from_dict,
 )
 from tradingagents.observability.events import PersistedEvent, RunEventDraft
 from tradingagents.observability.graph_tasks import GraphObservationRunContext
@@ -88,6 +93,12 @@ class ResumeRunConflict(RunManagerError):
 
 
 class RunNotResumable(ResumeRunConflict):
+    pass
+
+
+class LegacyResumeNormalizationFailed(RunNotResumable):
+    """A stored pre-P1 snapshot cannot truthfully become a holding review."""
+
     pass
 
 
@@ -329,6 +340,13 @@ class SingleRunManager:
             quick_think_llm=str(config.get("quick_think_llm") or ""),
             deep_think_llm=str(config.get("deep_think_llm") or ""),
             configured_keys=dict(configured_keys or {}),
+            mode=request.mode,
+            horizon=request.horizon,
+            holding_context=(
+                asdict(request.holding_context)
+                if request.holding_context is not None
+                else None
+            ),
             retry_of=retry_of,
             metadata={
                 "effective_config": safe_config,
@@ -348,6 +366,9 @@ class SingleRunManager:
                     "analysis_date": snapshot.analysis_date,
                     "selected_analysts": list(snapshot.selected_analysts),
                     "research_depth": snapshot.max_debate_rounds,
+                    "mode": request.mode,
+                    "horizon": request.horizon,
+                    "holding_summary": _holding_summary(request.holding_context),
                     "max_debate_rounds": snapshot.max_debate_rounds,
                     "max_risk_discuss_rounds": snapshot.max_risk_discuss_rounds,
                     "output_language": snapshot.output_language,
@@ -987,14 +1008,18 @@ def _request_from_snapshot(snapshot: RunSnapshot) -> AnalysisRequest:
             "output_language": snapshot.output_language,
         }
     )
-    from tradingagents.portfolio import portfolio_context_from_dict
-
-    portfolio_payload = snapshot.metadata.get("portfolio")
-    portfolio = (
-        portfolio_context_from_dict(portfolio_payload)
-        if isinstance(portfolio_payload, Mapping)
-        else None
-    )
+    holding_context = _holding_context_from_snapshot(snapshot)
+    mode = snapshot.mode
+    if mode is None:
+        mode = "holding_review" if holding_context is not None else "company_research"
+    if mode == "holding_review" and holding_context is None:
+        raise LegacyResumeNormalizationFailed(
+            "holding review snapshot has no normalized holding context"
+        )
+    if mode == "company_research" and holding_context is not None:
+        raise LegacyResumeNormalizationFailed(
+            "company research snapshot unexpectedly includes holding context"
+        )
     return AnalysisRequest(
         ticker=snapshot.ticker,
         analysis_date=snapshot.analysis_date,
@@ -1002,9 +1027,97 @@ def _request_from_snapshot(snapshot: RunSnapshot) -> AnalysisRequest:
         selected_analysts=snapshot.selected_analysts,
         max_debate_rounds=snapshot.max_debate_rounds,
         max_risk_discuss_rounds=snapshot.max_risk_discuss_rounds,
-        portfolio=portfolio,
+        horizon=snapshot.horizon or "medium",
+        mode=mode,
+        holding_context=holding_context,
         effective_config=config,
     )
+
+
+def _holding_context_from_snapshot(snapshot: RunSnapshot) -> HoldingContext | None:
+    if snapshot.holding_context is not None:
+        try:
+            return holding_context_from_dict(snapshot.holding_context)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise LegacyResumeNormalizationFailed(
+                "stored holding context cannot be normalized"
+            ) from exc
+    portfolio_payload = snapshot.metadata.get("portfolio")
+    if portfolio_payload is None:
+        return None
+    if not isinstance(portfolio_payload, Mapping):
+        raise LegacyResumeNormalizationFailed("stored legacy portfolio has invalid shape")
+    return _legacy_portfolio_holding_context(
+        portfolio_payload,
+        snapshot.ticker,
+        snapshot.analysis_date,
+    )
+
+
+def _legacy_portfolio_holding_context(
+    portfolio: Mapping[str, Any],
+    ticker: str,
+    analysis_date: str,
+) -> HoldingContext:
+    positions = portfolio.get("positions")
+    if not isinstance(positions, (list, tuple)):
+        raise LegacyResumeNormalizationFailed("stored legacy portfolio has invalid positions")
+    canonical_ticker = normalize_symbol(normalize_ticker_symbol(ticker))
+    matches = [
+        position
+        for position in positions
+        if isinstance(position, Mapping)
+        and normalize_symbol(normalize_ticker_symbol(str(position.get("ticker", ""))))
+        == canonical_ticker
+    ]
+    if len(matches) != 1:
+        raise LegacyResumeNormalizationFailed("stored legacy target position is unavailable")
+    target = matches[0]
+    quantity = _finite_float(target.get("quantity"))
+    average_cost = _finite_float(target.get("average_cost"))
+    if quantity is None or quantity <= 0 or average_cost is None or average_cost <= 0:
+        raise LegacyResumeNormalizationFailed("stored legacy target position is invalid")
+    cash = _finite_float(portfolio.get("cash"))
+    if cash is None or cash < 0:
+        raise LegacyResumeNormalizationFailed("stored legacy portfolio cash is invalid")
+    currency = portfolio.get("currency")
+    if not isinstance(currency, str) or len(currency) != 3 or not currency.isalpha():
+        raise LegacyResumeNormalizationFailed("stored legacy portfolio currency is invalid")
+    return HoldingContext(
+        ticker=canonical_ticker,
+        quantity=quantity,
+        average_cost=average_cost,
+        cash=cash,
+        total_account_value=None,
+        currency=currency.upper(),
+        facts_as_of=analysis_date,
+        original_thesis=None,
+        source="legacy_portfolio",
+    )
+
+
+def _finite_float(value: Any) -> float | None:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if isfinite(normalized) else None
+
+
+def _holding_summary(context: HoldingContext | None) -> dict[str, Any] | None:
+    if context is None:
+        return None
+    return {
+        "ticker": context.ticker,
+        "quantity": context.quantity,
+        "average_cost": context.average_cost,
+        "currency": context.currency,
+        "facts_as_of": context.facts_as_of,
+        "source": context.source,
+        "has_cash": context.cash is not None,
+        "has_total_account_value": context.total_account_value is not None,
+        "has_original_thesis": context.original_thesis is not None,
+    }
 
 
 def _endpoint_from_identity(value: Mapping[str, Any]) -> str | None:
@@ -1085,7 +1198,7 @@ def _default_resume_preflight(
             owner.config["data_cache_dir"],
             request.ticker,
             request.analysis_date,
-            owner._run_signature(request.asset_type),
+            owner._run_signature(request.asset_type, request.horizon),
             run_id=snapshot.run_id,
         )
         guard = guard_factory(

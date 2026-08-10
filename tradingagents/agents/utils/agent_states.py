@@ -71,17 +71,35 @@ class AgentState(MessagesState):
     company_of_interest: Annotated[str, "Company that we are interested in trading"]
     instrument_context: Annotated[str, "Deterministic ticker identity resolved at run start"]
     trade_date: Annotated[str, "What date we are trading at"]
+    mode: Annotated[str, "Research mode: company_research or holding_review"]
+    horizon: Annotated[str, "Investment horizon: short, medium, or long"]
     asset_type: Annotated[str, "Asset type: stock (default) or crypto"]
     portfolio_context: Annotated[
         dict[str, Any] | None, "Non-secret portfolio facts for PM constraints"
+    ]
+    holding_context: Annotated[
+        dict[str, Any] | None,
+        "Normalized target holding facts for learning-oriented holding review",
     ]
 
     sender: Annotated[str, "Agent that sent this message"]
 
     # research step
     market_report: Annotated[str, "Report from the Market Analyst"]
+    adjusted_price_bundle: Annotated[
+        str,
+        "Deterministically prefetched adjusted history plus separately labelled raw audit",
+    ]
     sentiment_report: Annotated[str, "Report from the Sentiment Analyst"]
+    a_share_supplement_bundle: Annotated[
+        str,
+        "Deterministically prefetched horizon-budgeted A-share supplements",
+    ]
     news_report: Annotated[str, "Report from the News Researcher of current world affairs"]
+    news_window_bundle: Annotated[
+        str,
+        "Deterministically prefetched horizon-specific news and disclosure bundle",
+    ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
     methodology_reports: Annotated[
         dict[str, dict[str, Any]],
@@ -124,6 +142,10 @@ class AgentState(MessagesState):
         ReaderPublicOutput,
         "Typed public output promoted to a Reader artifact after commit",
     ]
+    research_case_candidate: Annotated[
+        dict[str, str],
+        "Public, non-prose inputs for ResearchCase assembly after a durable commit",
+    ]
 
     # risk management team discussion step
     risk_debate_state: Annotated[RiskDebateState, "Current state of the debate on evaluating risk"]
@@ -133,6 +155,10 @@ class AgentState(MessagesState):
     execution_outcome: Annotated[
         dict[str, Any] | None,
         "Single source of truth for requested versus effective execution",
+    ]
+    holding_review_summary: Annotated[
+        dict[str, Any] | None,
+        "Deterministic holding-review metrics and explicit unavailable reasons",
     ]
     feature_contributions: Annotated[
         list[dict[str, Any]],

@@ -86,6 +86,7 @@ _INSTRUMENT_FIELDS = (
     "company_of_interest",
     "instrument_context",
     "asset_type",
+    "horizon",
 )
 _FOUR_REPORTS = (
     "market_report",
@@ -96,9 +97,26 @@ _FOUR_REPORTS = (
 
 
 ROLE_STATE_FIELDS: dict[str, tuple[str, ...]] = {
-    "analyst.market": (*_INSTRUMENT_FIELDS, "trade_date", "messages"),
-    "analyst.sentiment": (*_INSTRUMENT_FIELDS, "trade_date", "messages"),
-    "analyst.news": (*_INSTRUMENT_FIELDS, "trade_date", "messages"),
+    "analyst.market": (
+        *_INSTRUMENT_FIELDS,
+        "trade_date",
+        "adjusted_price_bundle",
+        "a_share_supplement_bundle",
+        "messages",
+    ),
+    "analyst.sentiment": (
+        *_INSTRUMENT_FIELDS,
+        "trade_date",
+        "a_share_supplement_bundle",
+        "messages",
+    ),
+    "analyst.news": (
+        *_INSTRUMENT_FIELDS,
+        "trade_date",
+        "news_window_bundle",
+        "a_share_supplement_bundle",
+        "messages",
+    ),
     "analyst.fundamentals": (*_INSTRUMENT_FIELDS, "trade_date", "messages"),
     "evidence.steward": (
         "company_of_interest",
@@ -256,6 +274,19 @@ def _project_state_fields(actor_id: str, state: Mapping[str, Any]) -> dict[str, 
             projected["company_of_interest"] = state.get("company_of_interest")
         if actor_id == "analyst.news":
             projected["asset_type"] = state.get("asset_type", "stock")
+            projected["news_window_bundle"] = state.get("news_window_bundle")
+            projected["a_share_supplement_bundle"] = state.get(
+                "a_share_supplement_bundle"
+            )
+        if actor_id == "analyst.market":
+            projected["adjusted_price_bundle"] = state.get("adjusted_price_bundle")
+            projected["a_share_supplement_bundle"] = state.get(
+                "a_share_supplement_bundle"
+            )
+        if actor_id == "analyst.sentiment":
+            projected["a_share_supplement_bundle"] = state.get(
+                "a_share_supplement_bundle"
+            )
         projected["trade_date"] = state.get("trade_date")
         projected["messages"] = state.get("messages")
         return projected
@@ -313,7 +344,10 @@ def _project_instrument_context(
     asset_required: bool,
 ) -> dict[str, Any]:
     instrument_context = state.get("instrument_context")
-    projected = {"instrument_context": instrument_context}
+    projected = {
+        "instrument_context": instrument_context,
+        "horizon": state.get("horizon", "medium"),
+    }
     if not instrument_context:
         if not company_required:
             projected["company_of_interest"] = state.get("company_of_interest")

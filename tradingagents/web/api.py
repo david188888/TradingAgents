@@ -7,8 +7,10 @@ import os
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import date
+from math import isfinite
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -19,16 +21,16 @@ from tradingagents.analysts import ANALYST_CONFIG
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.execution.models import AnalysisRequest
+from tradingagents.execution.models import AnalysisRequest, HoldingContext
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
-from tradingagents.portfolio import PortfolioContext, Position
 from tradingagents.presets import load_preset_catalog
 
 from .broker import EventBroker, Keepalive, SubscriptionClosed
 from .connectivity import YahooUnavailableError
 from .manager import (
     ActiveRunConflict,
+    LegacyResumeNormalizationFailed,
     ResumeRunConflict,
     RunNotActive,
     RunNotResumable,
@@ -38,7 +40,13 @@ from .manager import (
 from .market_layer2 import build_market_event_layer2_view
 from .market_view import build_market_view
 from .projections import InvalidCursor, RunProjectionPublisher, recent_runs_page
-from .schemas import RESEARCH_DEPTHS, SUPPORTED_OUTPUT_LANGUAGES, RunCreateRequest
+from .schemas import (
+    RESEARCH_DEPTHS,
+    SUPPORTED_OUTPUT_LANGUAGES,
+    HoldingInputRequest,
+    PortfolioRequest,
+    RunCreateRequest,
+)
 from .store import (
     InvalidStorePath,
     RunNotFound,
@@ -292,6 +300,17 @@ def create_app(
     @app.exception_handler(RunNotResumable)
     async def handle_not_resumable(_request: Request, _exc: RunNotResumable):
         return _error_response(409, "run_not_resumable", "The run cannot be resumed.")
+
+    @app.exception_handler(LegacyResumeNormalizationFailed)
+    async def handle_legacy_resume_normalization(
+        _request: Request,
+        _exc: LegacyResumeNormalizationFailed,
+    ):
+        return _error_response(
+            409,
+            "legacy_resume_normalization_failed",
+            "The stored legacy run cannot be safely resumed; create a new analysis.",
+        )
 
     @app.exception_handler(YahooUnavailableError)
     async def handle_yahoo_unavailable(_request: Request, exc: YahooUnavailableError):
@@ -612,11 +631,7 @@ def _analysis_request(
         "max_risk_discuss_rounds": body.research_depth,
     }
     configured_keys = _configured_keys(environment)
-    portfolio = (
-        _normalize_portfolio(body.portfolio.to_domain())
-        if body.portfolio is not None
-        else None
-    )
+    mode, holding_context = _normalize_research_context(body, canonical_ticker)
     return (
         AnalysisRequest(
             ticker=canonical_ticker,
@@ -625,53 +640,253 @@ def _analysis_request(
             selected_analysts=body.selected_analysts,
             max_debate_rounds=body.research_depth,
             max_risk_discuss_rounds=body.research_depth,
-            portfolio=portfolio,
+            horizon=body.horizon,
+            mode=mode,
+            holding_context=holding_context,
             effective_config=effective_config,
         ),
         configured_keys,
     )
 
 
-def _normalize_portfolio(context: PortfolioContext) -> PortfolioContext:
-    """Use the same canonical symbols for analysis and portfolio constraints."""
-    def canonical(raw_ticker: str) -> str:
-        return normalize_symbol(normalize_ticker_symbol(raw_ticker))
-
-    positions = tuple(
-        Position(
-            ticker=canonical(position.ticker),
-            quantity=position.quantity,
-            average_cost=position.average_cost,
-            sellable_quantity=position.sellable_quantity,
+def _normalize_research_context(
+    body: RunCreateRequest,
+    canonical_ticker: str,
+) -> tuple[Literal["company_research", "holding_review"], HoldingContext | None]:
+    """Resolve new and legacy holding input without inventing account facts."""
+    holding = body.holding
+    portfolio = body.portfolio
+    if holding is not None and portfolio is not None:
+        raise ApiBoundaryError(
+            422,
+            "holding_legacy_conflict",
+            "Provide either holding or legacy portfolio, not both.",
+            fields=("portfolio",),
         )
-        for position in context.positions
-    )
-    marks: dict[str, float] = {}
-    for ticker, price in context.mark_prices.items():
-        normalized = canonical(ticker)
-        if normalized in marks and marks[normalized] != price:
+
+    mode = body.mode
+    if mode is None:
+        mode = "holding_review" if holding is not None or portfolio is not None else "company_research"
+
+    if mode == "company_research":
+        if holding is not None:
             raise ApiBoundaryError(
                 422,
-                "portfolio_symbol_conflict",
-                "Portfolio prices conflict after ticker normalization.",
-                fields=("portfolio.mark_prices",),
+                "holding_not_allowed",
+                "Company research cannot include holding facts.",
+                fields=("holding",),
             )
-        marks[normalized] = price
+        if portfolio is not None:
+            raise ApiBoundaryError(
+                422,
+                "legacy_portfolio_not_allowed",
+                "Company research cannot include a legacy portfolio.",
+                fields=("portfolio",),
+            )
+        return mode, None
+
+    if holding is not None:
+        return mode, _normalize_holding_input(holding, canonical_ticker, body.analysis_date)
+    if portfolio is not None:
+        return mode, _normalize_legacy_portfolio(portfolio, canonical_ticker, body.analysis_date)
+    raise ApiBoundaryError(
+        422,
+        "holding_required",
+        "Holding review requires target holding facts.",
+        fields=("holding",),
+    )
+
+
+def _normalize_holding_input(
+    holding: HoldingInputRequest,
+    canonical_ticker: str,
+    analysis_date: str,
+) -> HoldingContext:
     try:
-        return PortfolioContext(
-            cash=context.cash,
-            positions=positions,
-            mark_prices=marks,
-            currency=context.currency,
-            limits=context.limits,
+        holding_ticker = normalize_symbol(normalize_ticker_symbol(holding.ticker))
+    except (TypeError, ValueError):
+        holding_ticker = ""
+    if holding_ticker != canonical_ticker:
+        raise ApiBoundaryError(
+            422,
+            "holding_ticker_mismatch",
+            "The holding ticker must match the analysis ticker.",
+            fields=("holding.ticker",),
         )
+    return _build_holding_context(
+        ticker=canonical_ticker,
+        quantity=holding.quantity,
+        average_cost=holding.average_cost,
+        cash=holding.cash,
+        total_account_value=holding.total_account_value,
+        currency=holding.currency,
+        facts_as_of=holding.facts_as_of,
+        original_thesis=holding.original_thesis,
+        analysis_date=analysis_date,
+        source="user_provided",
+    )
+
+
+def _normalize_legacy_portfolio(
+    portfolio: PortfolioRequest,
+    canonical_ticker: str,
+    analysis_date: str,
+) -> HoldingContext:
+    matches = tuple(
+        position
+        for position in portfolio.positions
+        if normalize_symbol(normalize_ticker_symbol(position.ticker)) == canonical_ticker
+    )
+    if not matches:
+        raise ApiBoundaryError(
+            422,
+            "legacy_target_position_missing",
+            "The legacy portfolio has no position for the analysis ticker.",
+            fields=("portfolio.positions",),
+        )
+    if len(matches) > 1:
+        raise ApiBoundaryError(
+            422,
+            "legacy_target_position_ambiguous",
+            "The legacy portfolio has multiple target positions after normalization.",
+            fields=("portfolio.positions",),
+        )
+    target = matches[0]
+    if not _positive_finite(target.quantity) or not _positive_finite(target.average_cost):
+        raise ApiBoundaryError(
+            422,
+            "legacy_target_position_invalid",
+            "The legacy target position needs positive quantity and average cost.",
+            fields=("portfolio.positions",),
+        )
+    return _build_holding_context(
+        ticker=canonical_ticker,
+        quantity=target.quantity,
+        average_cost=target.average_cost,
+        cash=portfolio.cash,
+        total_account_value=None,
+        currency=portfolio.currency,
+        facts_as_of=None,
+        original_thesis=None,
+        analysis_date=analysis_date,
+        source="legacy_portfolio",
+    )
+
+
+def _build_holding_context(
+    *,
+    ticker: str,
+    quantity: object | None,
+    average_cost: object | None,
+    cash: object | None,
+    total_account_value: object | None,
+    currency: object | None,
+    facts_as_of: object | None,
+    original_thesis: object | None,
+    analysis_date: str,
+    source: Literal["user_provided", "legacy_portfolio"],
+) -> HoldingContext:
+    if not _positive_finite(quantity):
+        raise ApiBoundaryError(
+            422,
+            "holding_quantity_invalid",
+            "Holding quantity must be a finite positive number.",
+            fields=("holding.quantity",),
+        )
+    if not _positive_finite(average_cost):
+        raise ApiBoundaryError(
+            422,
+            "holding_average_cost_invalid",
+            "Holding average cost must be a finite positive number.",
+            fields=("holding.average_cost",),
+        )
+    if cash is not None and not _nonnegative_finite(cash):
+        raise ApiBoundaryError(
+            422,
+            "holding_cash_invalid",
+            "Holding cash must be a finite non-negative number.",
+            fields=("holding.cash",),
+        )
+    if total_account_value is not None and not _positive_finite(total_account_value):
+        raise ApiBoundaryError(
+            422,
+            "holding_nav_invalid",
+            "Total account value must be a finite positive number.",
+            fields=("holding.total_account_value",),
+        )
+    normalized_currency: str | None = None
+    if currency is not None:
+        normalized_currency = currency.upper() if isinstance(currency, str) else ""
+        if len(normalized_currency) != 3 or not normalized_currency.isalpha():
+            raise ApiBoundaryError(
+                422,
+                "holding_currency_invalid",
+                "Holding currency must be a three-letter ISO-4217 code.",
+                fields=("holding.currency",),
+            )
+    normalized_as_of = analysis_date if facts_as_of is None else facts_as_of
+    if not isinstance(normalized_as_of, str):
+        raise ApiBoundaryError(
+            422,
+            "holding_as_of_invalid",
+            "Holding facts date must use YYYY-MM-DD.",
+            fields=("holding.facts_as_of",),
+        )
+    try:
+        date.fromisoformat(normalized_as_of)
     except ValueError as exc:
         raise ApiBoundaryError(
             422,
-            "invalid_portfolio",
-            "Portfolio positions conflict after ticker normalization.",
-            fields=("portfolio.positions",),
+            "holding_as_of_invalid",
+            "Holding facts date must use YYYY-MM-DD.",
+            fields=("holding.facts_as_of",),
         ) from exc
+    if normalized_as_of != analysis_date:
+        raise ApiBoundaryError(
+            422,
+            "holding_as_of_mismatch",
+            "Holding facts date must match the analysis date.",
+            fields=("holding.facts_as_of",),
+        )
+    try:
+        return HoldingContext(
+            ticker=ticker,
+            quantity=float(quantity),
+            average_cost=float(average_cost),
+            cash=float(cash) if cash is not None else None,
+            total_account_value=(
+                float(total_account_value) if total_account_value is not None else None
+            ),
+            currency=normalized_currency,
+            facts_as_of=normalized_as_of,
+            original_thesis=original_thesis if isinstance(original_thesis, str) and original_thesis else None,
+            source=source,
+        )
+    except ValueError as exc:  # Defensive: public validation above owns known failures.
+        raise ApiBoundaryError(
+            422,
+            "validation_error",
+            "The request contains invalid holding facts.",
+            fields=("holding",),
+        ) from exc
+
+
+def _positive_finite(value: object | None) -> bool:
+    if value is None or isinstance(value, bool):
+        return False
+    try:
+        return isfinite(float(value)) and float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _nonnegative_finite(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    try:
+        return isfinite(float(value)) and float(value) >= 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _validate_model(provider: str, model: str, field: str, mode: str) -> None:

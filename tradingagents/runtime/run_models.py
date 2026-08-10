@@ -55,6 +55,10 @@ class RunSnapshot:
     configured_keys: dict[str, bool]
     created_at: str
     updated_at: str
+    # Explicit on new snapshots; None is reserved for legacy deserialization.
+    mode: Literal["company_research", "holding_review"] | None = None
+    horizon: Literal["short", "medium", "long"] | None = None
+    holding_context: dict[str, Any] | None = None
     latest_sequence: int = 0
     final_signal: str | None = None
     # Explicit canonical report locator for new completed runs.  Older runs
@@ -90,6 +94,14 @@ class RunSnapshot:
             raise ValueError("latest_sequence must be non-negative")
         if self.max_debate_rounds < 1 or self.max_risk_discuss_rounds < 1:
             raise ValueError("debate and risk rounds must be positive")
+        if self.mode is not None and self.mode not in {"company_research", "holding_review"}:
+            raise ValueError("unsupported research mode")
+        if self.horizon is not None and self.horizon not in {"short", "medium", "long"}:
+            raise ValueError("unsupported investment horizon")
+        if self.mode == "company_research" and self.holding_context is not None:
+            raise ValueError("company_research cannot include holding_context")
+        if self.mode == "holding_review" and self.holding_context is None:
+            raise ValueError("holding_review requires holding_context")
         if self.event_schema_version != EVENT_SCHEMA_VERSION:
             raise ValueError("unsupported event schema version")
 
@@ -108,6 +120,9 @@ class RunSnapshot:
         quick_think_llm: str = "",
         deep_think_llm: str = "",
         configured_keys: dict[str, bool] | None = None,
+        mode: Literal["company_research", "holding_review"] = "company_research",
+        horizon: Literal["short", "medium", "long"] = "medium",
+        holding_context: dict[str, Any] | None = None,
         run_id: str | None = None,
         **kwargs: Any,
     ) -> RunSnapshot:
@@ -128,6 +143,9 @@ class RunSnapshot:
             configured_keys=configured_keys or {},
             created_at=captured,
             updated_at=captured,
+            mode=mode,
+            horizon=horizon,
+            holding_context=holding_context,
             **kwargs,
         )
 
