@@ -300,6 +300,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-4 独立 Audit Center | Branch Ready | summary/detail 安全投影、终态入口、桌面浏览器验收 |
 | P2-5 视觉、响应式、可访问性与 golden QA | Branch Ready | 11 张 golden、21 项 Playwright QA、WCAG 目标与隐私/焦点回归通过 |
+| 合入 CI 合同 | Design Approved | 方案 A：`web-tests` 覆盖已跟踪 Reader 后端、Vitest 和 Playwright 语义门禁 |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
 
@@ -782,7 +783,8 @@ Playwright webServer 下仍有 12 项既有失败，与基于确定性路由 fix
 
 ### 6.3 提交边界
 
-- `CLAUDE.md` 存在用户本地修改，不得纳入本任务提交。
+- `CLAUDE.md` 已由用户明确授权删除，仓库不创建替代 Agent 规则文件；README
+  同步移除对该文件的引用，不得保留死链接。
 - `tests/` 默认保持本地忽略；`.gitignore` 只显式允许 P1-7 的
   `tests/test_thesis_diff.py`、P2-3a 的 `tests/test_reader_companion.py` 和 P2-4 的
   `tests/test_reader_audit.py`。新增其他测试必须单独评估，不能用 `git add -f`
@@ -796,6 +798,27 @@ Playwright webServer 下仍有 12 项既有失败，与基于确定性路由 fix
 - 修改 `frontend/src/` 后必须 rebuild，并检查 `tradingagents/web/static/`。
 - 单个 story 超过 8 points 时先拆分；默认同时只推进一个 story。
 - 不再创建 dated spec、plan、status、report 或 handoff Markdown。
+
+### 6.4 合入 CI 合同（Design Approved）
+
+- 仓库删除且不再维护 `CLAUDE.md`；README 移除对它的引用，只保留当前使用和
+  产品文档列表，不创建替代 Agent 规则文件；验收时要求 `CLAUDE.md` 不存在且
+  README 无死引用；
+- GitHub Actions 的 `web-tests` 在干净 checkout 中安装 `.[web,dev]`，运行已跟踪的
+  Thesis Diff、Companion 和 Audit 后端契约测试，命令固定为
+  `python -m pytest -q tests/test_thesis_diff.py tests/test_reader_companion.py tests/test_reader_audit.py`；
+- CI 从仓库根运行 `npm --prefix frontend ci`、`npm --prefix frontend run test -- --run`、
+  `npm --prefix frontend run typecheck` 和 `npm --prefix frontend run build`，随后用
+  `git diff --exit-code -- tradingagents/web/static/` 检查 production build 漂移；
+- Chromium 安装 step 在 `frontend/` 工作目录运行
+  `npx playwright install --with-deps chromium`；随后回到仓库根执行
+  `npm --prefix frontend run test:e2e -- e2e/reader-golden.spec.ts e2e/reader-quality.spec.ts`；
+  Linux 预期 `reader-quality` 10 passed、`reader-golden` 11 skipped，只强制隐私、WCAG 目标、
+  键盘/焦点、响应式和 reduced-motion 语义断言；11 张像素基线仍只在 macOS
+  arm64 生成和比较；
+- 现有 Ruff、安装/导入、wheel 静态产物和 CLI smoke 门禁保留。CI 配置本地验证后
+  状态才从 `Design Approved` 改为 `Branch Ready`；远端结果必须等分支推送或 PR
+  后单独确认。
 
 ## 7. 关键代码入口
 
