@@ -1385,7 +1385,7 @@ aside.inspector {
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .timeline-head,
   .round-separator {
     align-items: flex-start;
@@ -2542,7 +2542,7 @@ td.input-ref {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .analysts-grid,
   .two-up {
     grid-template-columns: 1fr;
@@ -3247,7 +3247,7 @@ td.input-ref {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .decision-result-grid { grid-template-columns: 1fr; }
   .decision-brief-head { flex-direction: column; }
   .brief-statuses { justify-content: flex-start; }
@@ -3306,6 +3306,7 @@ td.input-ref {
   max-width: 920px;
   margin: 0 auto;
   padding: 2px 0 36px;
+  overflow-wrap: anywhere;
 }
 
 .reader-surface--loading,
@@ -4611,7 +4612,7 @@ td.input-ref {
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .reader-surface-head { flex-direction: column; }
   .reader-badges { justify-content: flex-start; }
   .reader-scenarios { grid-template-columns: 1fr; }

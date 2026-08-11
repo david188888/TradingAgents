@@ -56,7 +56,7 @@ Controls
   → best-effort thesis-diff-v1 artifact
   → GET /api/runs/{run_id}/reader
   → Reader surface
-  → on-demand Companion / Audit Center (planned)
+  → on-demand Companion / Audit Center
 ```
 
 ### 2.1 数据层
@@ -265,7 +265,9 @@ Companion 已提供只读端点
 未知、跨 run、legacy 或不可公开 ID 统一返回 typed 404；端点没有 raw fallback。
 DTO 只返回 selection、摘要、实际覆盖、结论影响和下一验证。
 
-Audit Center 尚未独立完成。它必须在用户主动进入后才加载角色、能力、工具和 artifact 摘要；单项 raw 内容还需要第二次显式选择。大型内容只返回元数据和下载入口。
+Audit Center 已作为独立终态工作区完成。它仅在用户主动进入后加载角色、
+能力、工具和 artifact 安全摘要；单项详情需要第二次显式选择，大型内容只返回
+元数据和下载入口。运行期间的 Inspector 仍是独立的实时审计栏。
 
 默认 Reader 已移除 `audit_entry.audit_refs` 以及 ThesisDiff 的当前/上一 Research
 Case artifact ID，只保留审计计数和安全公开引用。递归契约测试同时检查序列化
@@ -297,7 +299,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-4 独立 Audit Center | Branch Ready | summary/detail 安全投影、终态入口、桌面浏览器验收 |
-| P2-5 视觉、响应式、可访问性与 golden QA | Design Approved | 分层 golden、WCAG 2.2 AA 目标与隐私边界已确认 |
+| P2-5 视觉、响应式、可访问性与 golden QA | Branch Ready | 11 张 golden、21 项 Playwright QA、WCAG 目标与隐私/焦点回归通过 |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
 
@@ -627,7 +629,7 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
 `Escape` 与入口回焦；最终浏览器控制台 0 error、0 warning。完整套件中的既有失败
 继续按 6.1 的基线记录，不归入 P2-4。
 
-### 5.6 P2-5：视觉与 golden QA（5 points）
+### 5.6 P2-5：视觉与 golden QA（5 points，Branch Ready）
 
 **目标：** 在不重做已确认 Reader、Companion 和 Audit Center 交互的前提下，
 建立可重复、可提交的桌面视觉基线，并把隐私、键盘和可访问性从人工检查收敛为
@@ -667,8 +669,9 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
 - golden 的唯一生成/比较环境为 macOS arm64，使用 `npm ci` 安装 lockfile 中固定的
   Playwright 与 Chromium revision，并使用 macOS 系统字体栈；其他 OS 只运行语义、
   隐私和交互断言，不比较像素基线；
-- 所有截图固定 DPR 1、`zh-CN`、`Asia/Shanghai`、light color scheme、页面滚动位置 0，
-  等待 `document.fonts.ready` 和当前场景所需的 mocked 请求全部完成后再截图；截图根
+- 所有截图固定 DPR 1、`zh-CN`、`Asia/Shanghai`、light color scheme，并按下表
+  固定页面滚动锚点；等待 `document.fonts.ready` 和当前场景所需的 mocked
+  请求全部完成后再截图；截图根
   为 `page` 的当前 viewport，不使用 locator screenshot 或 `fullPage`；pixelmatch
   `threshold=0.15`，且
   `maxDiffPixelRatio=0.002`，超过即失败，不允许用放宽容差替代缺陷修复；
@@ -678,16 +681,16 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
 
 | 基线 | 视口 | 截图前状态 | 固定 selection | 滚动 / 根 |
 |---|---:|---|---|---|
-| typed-wide-companion | 1512×982 | Reader 顶部，Companion pinned | `claim:claim-growth` | 0 / page viewport |
+| typed-wide-companion | 1512×982 | Reader 顶部，Companion pinned | `claim:claim-growth` | Reader 锚点 / page viewport |
 | typed-wide-audit | 1440×900 | Audit Center artifacts 分区 + inline detail | `artifact:artifact-report` | 0 / page viewport |
-| typed-companion-drawer | 1280×832 | Reader 顶部，Companion drawer | `evidence:evidence-filing` | 0 / page viewport |
+| typed-companion-drawer | 1280×832 | Reader 顶部，Companion drawer | `evidence:evidence-filing` | selection 锚点 / page viewport |
 | typed-audit-overlay | 1200×800 | Audit Center tools 分区 + detail overlay | `tool:tool-market` | 0 / page viewport |
-| typed-narrow-reader | 768×900 | Reader 顶部，无 overlay | 无 | 0 / page viewport |
-| partial-reader | 1440×900 | Reader 顶部，无 overlay | 无 | 0 / page viewport |
+| typed-narrow-reader | 768×900 | Reader 顶部，无 overlay | 无 | Reader 锚点 / page viewport |
+| partial-reader | 1440×900 | Reader 顶部，无 overlay | 无 | Reader 锚点 / page viewport |
 | partial-narrow-audit | 768×900 | Audit Center partial overview | 无 | 0 / page viewport |
 | failed-reader | 1440×900 | FailedRunView 顶部 | 无 | 0 / page viewport |
 | failed-narrow-audit | 768×900 | FailedRunView 的 Audit overview | 无 | 0 / page viewport |
-| legacy-reader | 1440×900 | legacy 降级页顶部 | 无 | 0 / page viewport |
+| legacy-reader | 1440×900 | legacy 降级页顶部 | 无 | Reader 锚点 / page viewport |
 | legacy-narrow-audit | 768×900 | legacy Audit overview | 无 | 0 / page viewport |
 
 - 1512/1440 验证宽屏 Companion 和 Audit inline detail，1280/1200 验证抽屉与
@@ -719,8 +722,15 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
 - 既有全量测试失败继续作为基线单独记录，不扩大 P2-5 修复范围；
 - 规格、命令和最终验收只更新本文；仅当用户入口确有变化时才更新 README，不新增
   进度、验收或 handoff Markdown；
-- 设计提交后状态为 `Design Approved`；生产实现、静态产物和全部验收完成后才更新为
+- 设计提交后状态为 `Design Approved`；生产实现、静态产物和全部验收完成后更新为
   `Branch Ready`，且不自动推送远端。
+
+实现与验收：已建立固定时间、视口和脱敏 fixture 的 Playwright/axe 测试架构，
+并提交 11 张 macOS arm64 golden。验收驱动的修复仅涉及颜色对比度、
+768/769px 单列边界、长标识换行，以及 Companion/Audit 的 inert、分层
+`Escape` 和回焦。P2-5 专项 Playwright 21/21、Reader 定向 Vitest 25/25、
+相关后端回归 34/34、Ruff 和 typecheck 通过；11 张基线已人工检查，
+代表性宽屏、1200px、768px 与异常态结果已由用户确认。
 
 ## 6. 开发与验收约定
 
@@ -733,6 +743,7 @@ PYTHONPATH="$(pwd)" conda run -n tradingagents python -m pytest -q tests
 conda run -n tradingagents ruff check tradingagents tests
 npm --prefix frontend run typecheck
 npm --prefix frontend run build
+npm --prefix frontend run test:e2e -- e2e/reader-golden.spec.ts e2e/reader-quality.spec.ts
 git diff --check
 ```
 
@@ -741,13 +752,17 @@ P1-7 现在允许并跟踪唯一的 `tests/test_thesis_diff.py`，覆盖五态�
 和取消终态方法边界。P2-2 另外跟踪一个 Reader 组件 fixture 及最小 Vitest
 配置；其余本地测试资产继续被忽略。
 
-当前验证：P2-4 后端契约及 Reader 相关回归 34 passed；审计前端 client、Hook、
-组件和 Workbench 集成 13 passed；Ruff、前端 typecheck 与 production build 通过。
+当前验证：P2-5 Playwright 专项 21 passed，包含 11 个 golden 和 10 个
+隐私、WCAG 目标、键盘/焦点、响应式与 reduced-motion 断言；Reader 定向
+Vitest 25 passed，相关后端契约回归 34 passed；Ruff、前端 typecheck 和 production
+build 通过。
 完整后端本地套件为 1566 passed、17 failed、68 subtests passed；17 项中 4 项来自
 受限环境（1 项 live-network、3 项用户日志目录权限），其余 13 项是 P2-4 前已存在的
 legacy 默认行为/旧投影契约断言。完整前端本地套件仍有 2 项既有失败：Controls 的
 旧组合约束入口断言与 App 的旧常驻审计栏文案断言；两项测试文件均为本地忽略资产，
-不触及 P2-4 目标路径。不能把完整套件误报为全绿。
+不触及 P2-5 目标路径。本地旧 `workbench.spec.ts` 在未启动运行 API 的
+Playwright webServer 下仍有 12 项既有失败，与基于确定性路由 fixture 的 P2-5
+专项分开记录。不能把完整套件误报为全绿。
 
 ### 6.2 Definition of Done
 
@@ -802,6 +817,7 @@ legacy 默认行为/旧投影契约断言。完整前端本地套件仍有 2 项
 | 前端 Reader 请求 | `frontend/src/hooks/useReader.ts`, `frontend/src/api/contracts.ts` |
 | Audit DTO 与投影 | `tradingagents/web/audit_models.py`, `tradingagents/web/audit_projection.py` |
 | 前端 Audit Center | `frontend/src/components/reader/AuditCenter.tsx`, `frontend/src/hooks/useAudit.ts` |
+| P2-5 Reader QA | `frontend/playwright.config.ts`, `frontend/e2e/reader-*.spec.ts` |
 
 ## 8. 维护规则
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type {
   CompanionSelectionDTO,
   LearningReaderV2DTO,
@@ -45,6 +45,41 @@ function useWideCompanion(): boolean {
   }, []);
 
   return wide;
+}
+
+function useDrawerBackgroundInert(
+  active: boolean,
+  layoutRef: RefObject<HTMLDivElement>,
+): void {
+  useEffect(() => {
+    if (!active) return;
+    const layout = layoutRef.current;
+    if (layout === null) return;
+    const main = layout.closest("main");
+    const targets = [
+      document.querySelector<HTMLElement>(".topbar"),
+      document.querySelector<HTMLElement>(".sidebar"),
+      ...Array.from(main?.children ?? []).filter(
+        (item): item is HTMLElement => item instanceof HTMLElement && item !== layout,
+      ),
+    ].filter((item): item is HTMLElement => item !== null);
+    const previous = targets.map((item) => ({
+      item: item as HTMLElement & { inert: boolean },
+      inert: (item as HTMLElement & { inert: boolean }).inert,
+      ariaHidden: item.getAttribute("aria-hidden"),
+    }));
+    for (const { item } of previous) {
+      item.inert = true;
+      item.setAttribute("aria-hidden", "true");
+    }
+    return () => {
+      for (const state of previous) {
+        state.item.inert = state.inert;
+        if (state.ariaHidden === null) state.item.removeAttribute("aria-hidden");
+        else state.item.setAttribute("aria-hidden", state.ariaHidden);
+      }
+    };
+  }, [active, layoutRef]);
 }
 
 function modeLabel(mode: "company_research" | "holding_review"): string {
@@ -269,8 +304,18 @@ function TypedSurface({
   const [selection, setSelection] = useState<CompanionSelectionDTO | null>(null);
   const [companionMode, setCompanionMode] = useState<CompanionMode>("closed");
   const triggerRef = useRef<HTMLElement | null>(null);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLElement>(null);
   const wideCompanion = useWideCompanion();
   const companion = useCompanion(reader.run_id, selection);
+  useDrawerBackgroundInert(companionMode === "drawer", layoutRef);
+  useEffect(() => {
+    const surface = surfaceRef.current as (HTMLElement & { inert: boolean }) | null;
+    if (surface !== null) surface.inert = companionMode === "drawer";
+    return () => {
+      if (surface !== null) surface.inert = false;
+    };
+  }, [companionMode]);
   const evidenceRefs = useMemo(
     () => new Map(reader.evidence_refs.map((ref) => [ref.ref_id, ref])),
     [reader.evidence_refs],
@@ -290,7 +335,14 @@ function TypedSurface({
     setCompanionMode("closed");
     setSelection(null);
     const trigger = triggerRef.current;
-    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    if (trigger?.isConnected) {
+      const surface = trigger.closest(".reader-surface") as (HTMLElement & { inert: boolean }) | null;
+      if (surface !== null) {
+        surface.inert = false;
+        surface.removeAttribute("aria-hidden");
+      }
+      trigger.focus({ preventScroll: true });
+    }
   }, []);
 
   const openCompanion = useCallback<CompanionSelectHandler>((next, trigger) => {
@@ -322,8 +374,12 @@ function TypedSurface({
   }, [closeCompanion, companionMode]);
 
   return (
-    <div className={`reader-companion-layout reader-companion-layout--${companionMode}`}>
-    <section className="reader-surface">
+    <div ref={layoutRef} className={`reader-companion-layout reader-companion-layout--${companionMode}`}>
+    <section
+      ref={surfaceRef}
+      className="reader-surface"
+      aria-hidden={companionMode === "drawer" ? true : undefined}
+    >
       <header className="reader-surface-head">
         <div>
           <span className="eyebrow">证据化研究结论 · ResearchCase v2</span>

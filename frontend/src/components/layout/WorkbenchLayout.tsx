@@ -47,6 +47,7 @@ export function WorkbenchLayout(): JSX.Element {
   const [auditContext, setAuditContext] = useState<AuditEntryContext | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [expandedStage, setExpandedStage] = useState<JourneyStageId | null>(null);
+  const topbarRef = useRef<HTMLElement | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const inspectorWidthRef = useRef(DEFAULT_INSPECTOR_WIDTH);
   const resizeFrameRef = useRef<number | null>(null);
@@ -115,6 +116,16 @@ export function WorkbenchLayout(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    const targets = [topbarRef.current, layoutRef.current].filter(
+      (item): item is HTMLElement => item !== null,
+    ) as Array<HTMLElement & { inert: boolean }>;
+    for (const target of targets) target.inert = auditOpen;
+    return () => {
+      for (const target of targets) target.inert = false;
+    };
+  }, [auditOpen]);
+
+  useEffect(() => {
     setAuditOpen(false);
     setAuditContext(null);
     auditReturnFocusRef.current = null;
@@ -167,7 +178,11 @@ export function WorkbenchLayout(): JSX.Element {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header
+        ref={topbarRef}
+        className="topbar"
+        aria-hidden={auditOpen ? true : undefined}
+      >
         <div className="brand">
           <span className="brand-mark">TA</span>
           TradingAgents <span className="brand-sub">Research Console</span>
@@ -183,7 +198,11 @@ export function WorkbenchLayout(): JSX.Element {
         </div>
       </header>
 
-      <div className={`layout${inspectorOpen ? " with-inspector" : ""}`} ref={layoutRef}>
+      <div
+        className={`layout${inspectorOpen ? " with-inspector" : ""}`}
+        ref={layoutRef}
+        aria-hidden={auditOpen ? true : undefined}
+      >
         <aside className="sidebar">
           <Controls refreshHistory={history.refresh} />
           <RunHistory

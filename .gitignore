@@ -246,6 +246,8 @@ tmp_run_*.py
 
 # Playwright / e2e artifacts
 frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
 .playwright-cli/
 .playwright-mcp/
 
@@ -279,8 +281,20 @@ output/
 !/frontend/src/test/
 !/frontend/src/test/setup.ts
 !/frontend/vitest.config.ts
-/frontend/playwright.config.ts
-/frontend/e2e/
+!/frontend/playwright.config.ts
+!/frontend/e2e/
+/frontend/e2e/*
+!/frontend/e2e/reader-golden.spec.ts
+!/frontend/e2e/reader-quality.spec.ts
+!/frontend/e2e/fixtures/
+/frontend/e2e/fixtures/*
+!/frontend/e2e/fixtures/reader-fixtures.ts
+!/frontend/e2e/support/
+/frontend/e2e/support/*
+!/frontend/e2e/support/reader-harness.ts
+!/frontend/e2e/__screenshots__/
+/frontend/e2e/__screenshots__/*
+!/frontend/e2e/__screenshots__/*.png
 /scripts/e2e_server.py
 
 # Local planning / docs (kept local-only, not pushed)

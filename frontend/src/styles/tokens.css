@@ -19,8 +19,8 @@
 
   /* ---- Text ---- */
   --text: #23262b;          /* near-black, faintly cool to balance the warm bg */
-  --muted: #6b7280;
-  --faint: #9aa0a8;         /* placeholders, tertiary labels */
+  --muted: #555d68;
+  --faint: #626872;         /* tertiary hierarchy that still meets AA at text sizes */
 
   /* ---- Single accent: ink blue ---- */
   --accent: #3e5a78;
@@ -30,13 +30,13 @@
   --accent-contrast: #ffffff;
 
   /* ---- Semantic (desaturated "natural" tones; only where meaning is real) ---- */
-  --green: #4a8f6d;         /* bull */
+  --green: #2b6f51;         /* bull */
   --green-soft: #e7f0ea;
-  --red: #be5a4c;           /* bear */
+  --red: #a34539;           /* bear */
   --red-soft: #f6e9e5;
-  --amber: #b9881f;         /* running / interrupted / verified */
+  --amber: #7a5a14;         /* running / interrupted / verified */
   --amber-soft: #f6eeda;
-  --gold: #b9881f;          /* alias of --amber (legacy var(--gold) refs) */
+  --gold: #7a5a14;          /* alias of --amber (legacy var(--gold) refs) */
 
   /* ---- Radius ---- */
   --radius: 10px;

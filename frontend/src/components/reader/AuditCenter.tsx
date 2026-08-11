@@ -88,6 +88,11 @@ function statusLabel(value: string): string {
 
 function restoreFocus(target: HTMLElement | null): void {
   if (target?.isConnected) {
+    const inertAncestor = target.closest("[inert]") as (HTMLElement & { inert: boolean }) | null;
+    if (inertAncestor !== null) {
+      inertAncestor.inert = false;
+      inertAncestor.removeAttribute("aria-hidden");
+    }
     target.focus({ preventScroll: true });
     return;
   }
