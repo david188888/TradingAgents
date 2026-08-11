@@ -26,6 +26,7 @@ export const API = {
   run: (run_id: string) => `/api/runs/${run_id}`,
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
   reader: (run_id: string) => `/api/runs/${run_id}/reader`,
+  readerCompanion: (run_id: string) => `/api/runs/${run_id}/reader/companion`,
   cancel: (run_id: string) => `/api/runs/${run_id}/cancel`,
   retry: (run_id: string) => `/api/runs/${run_id}/retry`,
   resume: (run_id: string) => `/api/runs/${run_id}/resume`,
@@ -995,6 +996,23 @@ export interface UnknownEventType extends EventEnvelopeCore {
 
 export type ReaderKind = "typed" | "legacy" | "unavailable";
 
+export type CompanionKindDTO = "role" | "claim" | "evidence" | "risk";
+
+export interface CompanionSelectionDTO {
+  kind: CompanionKindDTO;
+  id: string;
+}
+
+export interface CompanionDTO {
+  schema_version: 1;
+  run_id: string;
+  selection: CompanionSelectionDTO;
+  summary: string;
+  actual_coverage: string[];
+  conclusion_impact: string;
+  next_validation: string;
+}
+
 export type ResearchTiltDTO = "favorable" | "neutral" | "cautious" | "insufficient_evidence";
 
 export type ClaimTypeDTO = "fact" | "inference" | "unknown";
@@ -1105,7 +1123,6 @@ export interface ReaderAuditEntryDTO {
   artifact_count: number;
   tool_call_count: number;
   degradation_count: number;
-  audit_refs: string[];
 }
 
 export type ThesisDiffKindDTO =
@@ -1141,8 +1158,6 @@ export interface ThesisDiffDTO {
   run_id: string;
   ticker: string;
   horizon: "short" | "medium" | "long";
-  current_research_case_artifact_id: string;
-  previous_research_case_artifact_id: string | null;
   previous_run_id: string | null;
   baseline_completed_at: string | null;
   entries: ThesisDiffEntryDTO[];

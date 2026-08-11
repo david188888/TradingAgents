@@ -260,12 +260,14 @@ output/
 # the public fork stays clean and only ships runnable code + key docs (2026-08)
 /tests/*
 !/tests/test_thesis_diff.py
+!/tests/test_reader_companion.py
 /assets/
 /frontend/src/**/*.test.ts
 /frontend/src/**/*.test.tsx
 /frontend/src/test/
 /frontend/vitest.config.ts
 !/frontend/src/components/reader/ThesisDiffSection.test.tsx
+!/frontend/src/components/reader/ReaderSurface.privacy.test.tsx
 !/frontend/src/test/
 !/frontend/src/test/setup.ts
 !/frontend/vitest.config.ts

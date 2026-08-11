@@ -40,7 +40,8 @@ from .manager import (
 from .market_layer2 import build_market_event_layer2_view
 from .market_view import build_market_view
 from .projections import InvalidCursor, RunProjectionPublisher, recent_runs_page
-from .reader_projection import project_reader
+from .reader_models import CompanionSelection
+from .reader_projection import CompanionNotFound, project_companion, project_reader
 from .schemas import (
     RESEARCH_DEPTHS,
     SUPPORTED_OUTPUT_LANGUAGES,
@@ -390,6 +391,22 @@ def create_app(
         # Read-only learning reader; missing runs surface as 404 via the global
         # RunNotFound handler. Projection problems become an "unavailable" body.
         return project_reader(selected_store, run_id)
+
+    @app.get("/api/runs/{run_id}/reader/companion")
+    def get_reader_companion(
+        run_id: str,
+        kind: Literal["role", "claim", "evidence", "risk"] = Query(),
+        selection_id: str = Query(alias="id", min_length=1, max_length=512),
+    ) -> dict[str, Any]:
+        selection = CompanionSelection(kind=kind, id=selection_id)
+        try:
+            return project_companion(selected_store, run_id, selection)
+        except CompanionNotFound as exc:
+            raise ApiBoundaryError(
+                404,
+                "companion_not_found",
+                "The requested companion selection is not available for this run.",
+            ) from exc
 
     @app.get("/api/runs/{run_id}/evidence-refs/{ref_id}")
     def get_evidence_ref(run_id: str, ref_id: str) -> dict[str, Any]:

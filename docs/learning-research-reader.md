@@ -259,20 +259,18 @@ ThesisDiff 在稳定 `run.completed` 之后 best-effort 生成，失败不得改
 
 ### 3.5 Companion 与 Audit 边界
 
-Companion 尚未实现。后续契约只允许 `role / claim / evidence / risk` 四类公开 selection，并校验选择属于当前 run。未知、跨 run 或不可公开 ID 返回 typed 404；前端不得回退到 raw artifact。
+Companion 已提供只读端点
+`GET /api/runs/{run_id}/reader/companion?kind=...&id=...`。契约只允许
+`role / claim / evidence / risk` 四类公开 selection，并校验选择属于当前 run。
+未知、跨 run、legacy 或不可公开 ID 统一返回 typed 404；端点没有 raw fallback。
+DTO 只返回 selection、摘要、实际覆盖、结论影响和下一验证。
 
 Audit Center 尚未独立完成。它必须在用户主动进入后才加载角色、能力、工具和 artifact 摘要；单项 raw 内容还需要第二次显式选择。大型内容只返回元数据和下载入口。
 
-当前 Reader Core 有两条已知的 content-addressed ID 暴露路径：
-
-- `audit_entry.audit_refs`；
-- `thesis_diff.current_research_case_artifact_id` 与
-  `previous_research_case_artifact_id`。
-
-这些 artifact ID 使用 `kind:sha256` 形式。它们必须在 Companion API 实现前
-从默认 Reader DTO 中移除或替换为非内容寻址的 public ID；默认 Reader 只应
-保留审计计数和安全入口。验收必须递归检查序列化 Reader 与初始 DOM，禁止
-content-addressed ID、locator、hash 和 raw content，而不只检查顶层字段名。
+默认 Reader 已移除 `audit_entry.audit_refs` 以及 ThesisDiff 的当前/上一 Research
+Case artifact ID，只保留审计计数和安全公开引用。递归契约测试同时检查序列化
+Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw content，
+而不只检查顶层字段名。
 
 ## 4. 当前实现状态
 
@@ -295,7 +293,7 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 | Reader 第一屏 | Merged | `1bfa560` |
 | ThesisDiffV1、发布幂等、provenance 与可复现测试 | Branch Ready | `2f818bf` + `codex/reader-roadmap-docs` |
 | P2-2 学习报告与论点变化 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-3a Companion DTO/API 与 Reader 隐私收口 | Planned | Reader Core 后续契约 |
+| P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3b 自适应伴读栏 | Planned | 依赖 P2-3a |
 | P2-4 独立 Audit Center | Planned | 依赖安全审计入口 |
 | P2-5 视觉、响应式、可访问性与 golden QA | Planned | 依赖 P2-2～P2-4 |
@@ -345,13 +343,13 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 本轮改动前的旧 Controls/App 文案与入口断言。Playwright 已检查桌面和 720px
 窄屏，五态概览、前后文本对照及单栏降级均可读。
 
-### 5.3 P2-3a：Companion 公共契约与 API（3 points）
+### 5.3 P2-3a：Companion 公共契约与 API（3 points，Branch Ready）
 
 **As a** Reader 用户  
 **I want** 按需查看选中论点、角色、证据或风险的伴读摘要  
 **So that** 我无需打开 raw 审计数据也能继续理解结论。
 
-验收：
+已完成：
 
 - 新增封闭 `CompanionSelection` 与 `CompanionDTO`；
 - selection 只接受 role/claim/evidence/risk；
@@ -361,6 +359,11 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 - Reader 默认响应移除 audit refs 和 ThesisDiff 中的 Research Case artifact IDs；
 - 对序列化 Reader 和初始 DOM 做递归隐私断言；
 - 跨 run、未知 ID、不可公开 ID 和正常选择有契约测试。
+
+验证：Companion + Reader 隐私 + ThesisDiff 相关回归 8/8 通过，Ruff、前端
+typecheck 和 production build 通过并同步静态产物；后端完整本地套件为
+1540 passed、17 failed，失败集合与 P1-7 基线一致。初始 DOM 隐私 fixture
+通过；前端完整本地套件为 106 passed、2 failed，仍是既有 Controls/App 断言。
 
 ### 5.4 P2-3b：自适应伴读栏（5 points）
 
@@ -441,8 +444,8 @@ P1-7 的改动文件，继续作为独立基线债务处理，不能误报为本
 
 - `CLAUDE.md` 存在用户本地修改，不得纳入本任务提交。
 - `tests/` 默认保持本地忽略；`.gitignore` 只显式允许 P1-7 的
-  `tests/test_thesis_diff.py`。新增其他测试必须单独评估，不能用 `git add -f`
-  临时绕过。
+  `tests/test_thesis_diff.py` 和 P2-3a 的 `tests/test_reader_companion.py`。新增其他
+  测试必须单独评估，不能用 `git add -f` 临时绕过。
 - 前端测试默认保持本地忽略；P2-2 只显式允许 `ThesisDiffSection.test.tsx`、
   Vitest 配置和共享 cleanup setup，以保证新 checkout 可直接复现该 story。
 - 修改 `frontend/src/` 后必须 rebuild，并检查 `tradingagents/web/static/`。

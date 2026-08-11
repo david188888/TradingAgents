@@ -67,8 +67,6 @@ class ThesisDiffDTO(_ReaderModel):
     run_id: str
     ticker: str
     horizon: Literal["short", "medium", "long"]
-    current_research_case_artifact_id: str
-    previous_research_case_artifact_id: str | None = None
     previous_run_id: str | None = None
     baseline_completed_at: str | None = None
     entries: tuple[ThesisDiffEntryDTO, ...] = ()
@@ -87,7 +85,21 @@ class AuditEntryDTO(_ReaderModel):
     artifact_count: int = 0
     tool_call_count: int = 0
     degradation_count: int = 0
-    audit_refs: tuple[str, ...] = ()
+
+
+class CompanionSelection(_ReaderModel):
+    kind: Literal["role", "claim", "evidence", "risk"]
+    id: str = Field(min_length=1, max_length=512)
+
+
+class CompanionDTO(_ReaderModel):
+    schema_version: Literal[1] = 1
+    run_id: str
+    selection: CompanionSelection
+    summary: str = Field(min_length=1, max_length=1600)
+    actual_coverage: tuple[str, ...] = Field(min_length=1)
+    conclusion_impact: str = Field(min_length=1, max_length=1200)
+    next_validation: str = Field(min_length=1, max_length=1200)
 
 
 class LearningReaderV2(_ReaderModel):

@@ -17,8 +17,6 @@ function diffFixture(overrides: Partial<ThesisDiffDTO> = {}): ThesisDiffDTO {
     run_id: "run-current",
     ticker: "000338.SZ",
     horizon: "medium",
-    current_research_case_artifact_id: "private-current-artifact-id",
-    previous_research_case_artifact_id: "private-previous-artifact-id",
     previous_run_id: "run-previous",
     baseline_completed_at: "2026-07-28T08:30:00Z",
     entries: [
@@ -99,7 +97,12 @@ function diffFixture(overrides: Partial<ThesisDiffDTO> = {}): ThesisDiffDTO {
 
 describe("ThesisDiffSection", () => {
   it("renders five explicit states, change dimensions, and only public counter-evidence labels", () => {
-    render(<ThesisDiffSection diff={diffFixture()} evidenceRefs={evidenceRefs} />);
+    const wireDiff = {
+      ...diffFixture(),
+      current_research_case_artifact_id: "private-current-artifact-id",
+      previous_research_case_artifact_id: "private-previous-artifact-id",
+    } as ThesisDiffDTO;
+    render(<ThesisDiffSection diff={wireDiff} evidenceRefs={evidenceRefs} />);
 
     const section = screen.getByRole("region", { name: "论点变化" });
     for (const label of ["新增", "延续", "已被反证", "仍待确认", "本轮未复核"]) {
