@@ -24,6 +24,7 @@ from .reader_models import (
     ReaderEvidenceRef,
     ReaderUnavailableV1,
     ResearchMode,
+    ThesisDiffDTO,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,12 @@ def project_reader(store: RunStore, run_id: str) -> dict:
                 audit_entry=audit,
             )
             return model.model_dump(mode="json")
-        model = _project_typed(snapshot.mode, case, audit)
+        model = _project_typed(
+            snapshot.mode,
+            case,
+            audit,
+            _load_thesis_diff(store, run_id, events),
+        )
         return model.model_dump(mode="json")
 
     model = _project_legacy(snapshot.run_id, snapshot.ticker, snapshot.analysis_date, snapshot.final_signal, audit)
@@ -111,10 +117,39 @@ def _audit_entry(events, run_id: str) -> AuditEntryDTO:
     )
 
 
+def _load_thesis_diff(store, run_id: str, events) -> dict | None:
+    """Return the highest-sequence thesis-diff-v1 artifact, if any."""
+    best: tuple[int, str] | None = None
+    for event in events:
+        if event.type != "artifact.written":
+            continue
+        payload = event.payload
+        if payload.get("public_contract") != "thesis-diff-v1":
+            continue
+        sequence = payload.get("committed_sequence")
+        artifact_id = payload.get("artifact_id")
+        if (
+            isinstance(sequence, int)
+            and isinstance(artifact_id, str)
+            and (best is None or sequence > best[0])
+        ):
+            best = (sequence, artifact_id)
+    if best is None:
+        return None
+    try:
+        raw = store.read_artifact(run_id, best[1])
+        value = json.loads(raw)
+        return ThesisDiffDTO.model_validate(value)
+    except Exception as exc:  # noqa: BLE001 - reader stays available without diff
+        logger.warning("failed to read thesis diff %s: %s", best[1], exc)
+        return None
+
+
 def _project_typed(
     mode: str,
     case: ResearchCaseV2,
     audit: AuditEntryDTO,
+    thesis_diff: ThesisDiffDTO | None,
 ) -> LearningReaderV2:
     evidence_refs = tuple(
         ReaderEvidenceRef(
@@ -145,7 +180,7 @@ def _project_typed(
         evidence_refs=evidence_refs,
         coverage_refs=case.coverage_refs,
         omissions=case.omissions,
-        thesis_diff=None,
+        thesis_diff=thesis_diff,
         audit_entry=audit,
     )
 

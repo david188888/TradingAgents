@@ -33,6 +33,47 @@ class _ReaderModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class ThesisDiffEntryDTO(_ReaderModel):
+    claim_key: str
+    diff_kind: Literal[
+        "new", "maintained", "invalidated", "unresolved", "not_reassessed"
+    ]
+    previous_claim_type: Literal["fact", "inference", "unknown"] | None = None
+    current_claim_type: Literal["fact", "inference", "unknown"] | None = None
+    previous_text: str | None = None
+    current_text: str | None = None
+    previous_confidence: float | None = Field(default=None, ge=0, le=1)
+    current_confidence: float | None = Field(default=None, ge=0, le=1)
+    previous_lifecycle_status: Literal[
+        "active", "resolved", "invalidated"
+    ] | None = None
+    current_lifecycle_status: Literal[
+        "active", "resolved", "invalidated"
+    ] | None = None
+    change_flags: tuple[
+        Literal[
+            "text_changed",
+            "evidence_changed",
+            "confidence_changed",
+            "status_changed",
+        ],
+        ...,
+    ] = ()
+    counter_evidence_ref_ids: tuple[str, ...] = ()
+
+
+class ThesisDiffDTO(_ReaderModel):
+    schema_version: Literal[1] = 1
+    run_id: str
+    ticker: str
+    horizon: Literal["short", "medium", "long"]
+    current_research_case_artifact_id: str
+    previous_research_case_artifact_id: str | None = None
+    previous_run_id: str | None = None
+    baseline_completed_at: str | None = None
+    entries: tuple[ThesisDiffEntryDTO, ...] = ()
+
+
 class ReaderEvidenceRef(_ReaderModel):
     """Slim public evidence metadata; deliberately omits raw payload/locator/hashes."""
 
@@ -74,8 +115,8 @@ class LearningReaderV2(_ReaderModel):
     evidence_refs: tuple[ReaderEvidenceRef, ...] = ()
     coverage_refs: tuple[CoverageRefV1, ...] = ()
     omissions: tuple[str, ...] = ()
-    # M3 placeholder; fixed to None in this milestone.
-    thesis_diff: None = None
+    # M3: cross-run thesis diff against the previous same-ticker/horizon case.
+    thesis_diff: ThesisDiffDTO | None = None
     audit_entry: AuditEntryDTO
 
 

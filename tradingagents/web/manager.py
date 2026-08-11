@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import threading
 from collections.abc import Callable, Mapping
 from copy import deepcopy
@@ -11,6 +12,7 @@ from datetime import datetime
 from math import isfinite
 from typing import Any, Protocol
 
+from tradingagents.agents.schemas import ResearchCaseV2
 from tradingagents.dataflows.config import config_scope
 from tradingagents.dataflows.interface import news_cache_scope
 from tradingagents.dataflows.progress import DataProgressEvent, progress_sink
@@ -612,6 +614,11 @@ class SingleRunManager:
         with contextlib.suppress(Exception):
             # A derived cache must never change an already-committed run outcome.
             RunProjectionPublisher(self.store).publish_view(run_id)
+        with contextlib.suppress(Exception):
+            # Cross-run thesis diff is a best-effort derived reading aid. It must
+            # read only committed artifacts and must never change the run's
+            # completed terminal state.
+            self._publish_thesis_diff(run_id, completed_at)
         try:
             from .debate_summary import schedule_debate_summary
 
@@ -620,7 +627,69 @@ class SingleRunManager:
             # Summary generation is a best-effort reading aid; never terminal.
             pass
 
-    def _finish_cancelled(self, run_id: str) -> None:
+    def _publish_thesis_diff(self, run_id: str, completed_at: str) -> None:
+        """Build and persist the cross-run thesis diff after run completion.
+
+        Best effort: it reads only the committed research-case-v2 artifact and
+        previously completed runs. Any failure is logged and swallowed so it can
+        never alter the already-committed terminal run state.
+        """
+        from tradingagents.research.thesis_diff import (
+            THESIS_DIFF_CONTRACT,
+            build_thesis_diff_for_run,
+        )
+
+        events = self.store.read_events(run_id)
+        case_artifact_id = None
+        case_sequence = -1
+        for event in events:
+            if event.type != "artifact.written":
+                continue
+            payload = event.payload
+            if payload.get("public_contract") != "research-case-v2":
+                continue
+            sequence = payload.get("committed_sequence")
+            artifact_id = payload.get("artifact_id")
+            if (
+                isinstance(sequence, int)
+                and isinstance(artifact_id, str)
+                and sequence > case_sequence
+            ):
+                case_sequence, case_artifact_id = sequence, artifact_id
+        if not case_artifact_id:
+            return
+        raw = self.store.read_artifact(run_id, case_artifact_id)
+        current_case = ResearchCaseV2.model_validate(json.loads(raw))
+        diff = build_thesis_diff_for_run(
+            self.store,
+            run_id=run_id,
+            current_case=current_case,
+            current_case_artifact_id=case_artifact_id,
+            current_completed_at=completed_at,
+        )
+        artifact = self.store.store_artifact(
+            run_id,
+            kind=THESIS_DIFF_CONTRACT,
+            value=diff.model_dump(mode="json"),
+        )
+        self.broker.publish(
+            RunEventDraft(
+                run_id,
+                "artifact.written",
+                {
+                    "artifact_id": artifact.artifact_id,
+                    "kind": artifact.kind,
+                    "media_type": artifact.media_type,
+                    "content_sha256": artifact.content_sha256,
+                    "byte_size": artifact.byte_size,
+                    "locator": artifact.locator,
+                    "public_contract": THESIS_DIFF_CONTRACT,
+                    "committed_sequence": case_sequence,
+                },
+                status="committed",
+            )
+        )
+
         snapshot = self.store.read_snapshot(run_id)
         if snapshot.status == "running":
             self.broker.publish(
