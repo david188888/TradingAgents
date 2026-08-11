@@ -279,7 +279,7 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 状态只使用：
 
 - `Merged`：已经进入 `main`；
-- `Branch Ready`：已完成并推送，但尚未合并；
+- `Branch Ready`：已完成并提交至当前分支，但尚未合并；
 - `Planned`：尚未完成。
 
 | 能力 | 状态 | 依据 |
@@ -294,7 +294,7 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 | Reader Core API：typed/legacy/unavailable | Merged | `154d5ef` |
 | Reader 第一屏 | Merged | `1bfa560` |
 | ThesisDiffV1、发布幂等、provenance 与可复现测试 | Branch Ready | `2f818bf` + `codex/reader-roadmap-docs` |
-| P2-2 学习报告与论点变化 | Planned | 依赖 ThesisDiff 合入 |
+| P2-2 学习报告与论点变化 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Planned | Reader Core 后续契约 |
 | P2-3b 自适应伴读栏 | Planned | 依赖 P2-3a |
 | P2-4 独立 Audit Center | Planned | 依赖安全审计入口 |
@@ -322,15 +322,16 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 - 本文进入 Git，旧重复文档删除；
 - README 只指向本文，不再描述学习路径为 Buy/Sell 管线；
 - `CLAUDE.md` 不进入提交；
-- 后端全量测试、Ruff、前端 typecheck/build 和 `git diff --check` 通过。
+- P1-7 目标回归、Ruff、前端 typecheck/build 和 `git diff --check` 通过；后端
+  完整本地套件的既有失败已在第 6 节单独记录。
 
-### 5.2 P2-2：学习报告与论点变化（5 points）
+### 5.2 P2-2：学习报告与论点变化（5 points，Branch Ready）
 
 **As a** 重复研究同一公司的读者  
 **I want** 在研究正文中看到本轮论点相对上一基线的变化  
 **So that** 我能区分新信息、持续假设、反证和未复核内容。
 
-验收：
+已完成：
 
 - 前端契约不再把 `thesis_diff` 固定为 null；
 - 五种 diff kind 使用独立中文标签和图标，不只依赖颜色；
@@ -338,6 +339,11 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 - change flags 分别表达文本、证据、置信度和状态变化；
 - counter-evidence 只走安全 public ref，不显示 locator/hash/raw；
 - fixture 覆盖有基线、无基线和 diff 不可用。
+
+验证：受跟踪的组件 fixture 2/2 通过，前端 typecheck 与 production build
+通过并同步静态产物；完整本地 Vitest 为 105 passed、2 failed，两项失败均为
+本轮改动前的旧 Controls/App 文案与入口断言。Playwright 已检查桌面和 720px
+窄屏，五态概览、前后文本对照及单栏降级均可读。
 
 ### 5.3 P2-3a：Companion 公共契约与 API（3 points）
 
@@ -406,7 +412,8 @@ git diff --check
 
 P1-7 现在允许并跟踪唯一的 `tests/test_thesis_diff.py`，覆盖五态、反证守卫、
 同时间戳 tuple 基线排序、post-completion provenance/幂等、Reader HTTP 投影
-和取消终态方法边界。其余本地测试资产继续被忽略。
+和取消终态方法边界。P2-2 另外跟踪一个 Reader 组件 fixture 及最小 Vitest
+配置；其余本地测试资产继续被忽略。
 
 当前验证：P1-7 + RunManager 生命周期 20 passed；Ruff、前端 typecheck 与
 production build 通过。完整本地套件为 1536 passed、17 failed、68 subtests
@@ -436,6 +443,8 @@ P1-7 的改动文件，继续作为独立基线债务处理，不能误报为本
 - `tests/` 默认保持本地忽略；`.gitignore` 只显式允许 P1-7 的
   `tests/test_thesis_diff.py`。新增其他测试必须单独评估，不能用 `git add -f`
   临时绕过。
+- 前端测试默认保持本地忽略；P2-2 只显式允许 `ThesisDiffSection.test.tsx`、
+  Vitest 配置和共享 cleanup setup，以保证新 checkout 可直接复现该 story。
 - 修改 `frontend/src/` 后必须 rebuild，并检查 `tradingagents/web/static/`。
 - 单个 story 超过 8 points 时先拆分；默认同时只推进一个 story。
 - 不再创建 dated spec、plan、status、report 或 handoff Markdown。

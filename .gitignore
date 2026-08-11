@@ -265,6 +265,10 @@ output/
 /frontend/src/**/*.test.tsx
 /frontend/src/test/
 /frontend/vitest.config.ts
+!/frontend/src/components/reader/ThesisDiffSection.test.tsx
+!/frontend/src/test/
+!/frontend/src/test/setup.ts
+!/frontend/vitest.config.ts
 /frontend/playwright.config.ts
 /frontend/e2e/
 /scripts/e2e_server.py

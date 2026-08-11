@@ -1108,6 +1108,46 @@ export interface ReaderAuditEntryDTO {
   audit_refs: string[];
 }
 
+export type ThesisDiffKindDTO =
+  | "new"
+  | "maintained"
+  | "invalidated"
+  | "unresolved"
+  | "not_reassessed";
+
+export type ThesisChangeFlagDTO =
+  | "text_changed"
+  | "evidence_changed"
+  | "confidence_changed"
+  | "status_changed";
+
+export interface ThesisDiffEntryDTO {
+  claim_key: string;
+  diff_kind: ThesisDiffKindDTO;
+  previous_claim_type: ClaimTypeDTO | null;
+  current_claim_type: ClaimTypeDTO | null;
+  previous_text: string | null;
+  current_text: string | null;
+  previous_confidence: number | null;
+  current_confidence: number | null;
+  previous_lifecycle_status: "active" | "resolved" | "invalidated" | null;
+  current_lifecycle_status: "active" | "resolved" | "invalidated" | null;
+  change_flags: ThesisChangeFlagDTO[];
+  counter_evidence_ref_ids: string[];
+}
+
+export interface ThesisDiffDTO {
+  schema_version: 1;
+  run_id: string;
+  ticker: string;
+  horizon: "short" | "medium" | "long";
+  current_research_case_artifact_id: string;
+  previous_research_case_artifact_id: string | null;
+  previous_run_id: string | null;
+  baseline_completed_at: string | null;
+  entries: ThesisDiffEntryDTO[];
+}
+
 export interface LearningReaderV2DTO {
   kind: "typed";
   schema_version: 2;
@@ -1131,7 +1171,7 @@ export interface LearningReaderV2DTO {
   evidence_refs: ReaderEvidenceRefDTO[];
   coverage_refs: CoverageRefV1DTO[];
   omissions: string[];
-  thesis_diff: null;
+  thesis_diff: ThesisDiffDTO | null;
   audit_entry: ReaderAuditEntryDTO;
 }
 

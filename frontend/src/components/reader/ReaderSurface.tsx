@@ -6,6 +6,7 @@ import type {
   ReviewItemDTO,
 } from "../../api/contracts";
 import { useReader } from "../../hooks/useReader";
+import { ThesisDiffSection } from "./ThesisDiffSection";
 
 export interface ReaderSurfaceProps {
   runId: string;
@@ -195,6 +196,8 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
         </div>
       ) : null}
 
+      <ThesisDiffSection diff={reader.thesis_diff} evidenceRefs={reader.evidence_refs} />
+
       <section className="reader-section reader-section--claims">
         <h3>事实</h3>
         {claimsByType.fact.length ? <ul className="reader-claims">{claimsByType.fact.map((claim) => <ClaimRow key={claim.claim_key} claim={claim} />)}</ul> : <p className="placeholder">暂无事实结论。</p>}
@@ -252,7 +255,6 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
         <p>
           {reader.evidence_refs.length} 条证据引用 · {reader.coverage_refs.length} 处覆盖记录
         </p>
-        {reader.thesis_diff === null ? <p>主题对比将在下一阶段提供</p> : null}
       </footer>
     </section>
   );
