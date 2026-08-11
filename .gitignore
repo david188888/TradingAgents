@@ -268,6 +268,9 @@ output/
 /frontend/vitest.config.ts
 !/frontend/src/components/reader/ThesisDiffSection.test.tsx
 !/frontend/src/components/reader/ReaderSurface.privacy.test.tsx
+!/frontend/src/components/reader/ReaderSurface.companion.test.tsx
+!/frontend/src/api/client.companion.test.ts
+!/frontend/src/hooks/useCompanion.test.tsx
 !/frontend/src/test/
 !/frontend/src/test/setup.ts
 !/frontend/vitest.config.ts

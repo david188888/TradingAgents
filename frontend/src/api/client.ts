@@ -12,6 +12,8 @@
 import type {
   ApiErrorResponse,
   ArtifactMetadataDTO,
+  CompanionDTO,
+  CompanionSelectionDTO,
   ConfigResponseDTO,
   MarketEventDTO,
   MarketEventLayer2DTO,
@@ -168,6 +170,25 @@ export function getReader(
 ): Promise<ReaderResponseDTO> {
   assertRunId(run_id);
   return request<ReaderResponseDTO>("GET", API.reader(run_id), undefined, signal);
+}
+
+/** GET /api/runs/{run_id}/reader/companion?kind=...&id=... */
+export function getCompanion(
+  run_id: string,
+  selection: CompanionSelectionDTO,
+  signal?: AbortSignal,
+): Promise<CompanionDTO> {
+  assertRunId(run_id);
+  const query = new URLSearchParams({
+    kind: selection.kind,
+    id: selection.id,
+  });
+  return request<CompanionDTO>(
+    "GET",
+    `${API.readerCompanion(run_id)}?${query.toString()}`,
+    undefined,
+    signal,
+  );
 }
 
 /** GET /api/runs/{run_id} */

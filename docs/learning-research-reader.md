@@ -294,7 +294,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | ThesisDiffV1、发布幂等、provenance 与可复现测试 | Branch Ready | `2f818bf` + `codex/reader-roadmap-docs` |
 | P2-2 学习报告与论点变化 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-3b 自适应伴读栏 | Design Approved | 依赖 P2-3a |
+| P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-4 独立 Audit Center | Planned | 依赖安全审计入口 |
 | P2-5 视觉、响应式、可访问性与 golden QA | Planned | 依赖 P2-2～P2-4 |
 
@@ -365,11 +365,20 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
 1540 passed、17 failed，失败集合与 P1-7 基线一致。初始 DOM 隐私 fixture
 通过；前端完整本地套件为 106 passed、2 failed，仍是既有 Controls/App 断言。
 
-### 5.4 P2-3b：自适应伴读栏（5 points，Design Approved）
+### 5.4 P2-3b：自适应伴读栏（5 points，Branch Ready）
 
 **As a** Reader 用户
 **I want** 从正文中的角色、论点、证据或风险按需打开伴读内容
 **So that** 我能继续理解结论，同时保留当前阅读位置和研究上下文。
+
+已完成：
+
+- typed client 与 `useCompanion` 实现成功缓存、请求取消、旧响应隔离和显式重试；
+- 角色、论点、证据与风险四类正文入口按公开 ID 映射，催化剂没有误映射为风险；
+- `CompanionPanel` 完成临时浮层、固定双列和 modal drawer 三种呈现，并由
+  Reader 本地四态状态机编排；
+- 桌面键盘、焦点返回、跨 1400px 缩放、滚动位置保持和 reduced-motion 已收口；
+- 初始页面和空 selection 零预取，typed 404 与普通错误都不回退 raw 数据。
 
 #### 组件与状态边界
 
@@ -431,6 +440,14 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
   drawer 和无固定按钮，并验证滚动位置与 reduced-motion；
 - 前端定向 Vitest、typecheck、production build 与静态产物同步通过；P2-3a
   后端契约回归保持通过。
+
+验证：Companion API client、Hook、Reader 交互、隐私与 ThesisDiff 定向回归
+12/12 通过，P2-3a/P2-2 后端回归 8/8 通过，前端 typecheck、production build
+和 `git diff --check` 通过并同步静态产物。Playwright 在 1512×982 验证临时浮层
+与固定双列，在 1200×900 验证 modal drawer、焦点约束、`Escape` 返回入口和无固定
+按钮；打开、固定和关闭前后正文滚动位置不变，reduced-motion 下无动画，相同
+selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为 115 passed、
+2 failed，仍是既有 Controls/App 文案与入口断言。
 
 ### 5.5 P2-4：独立 Audit Center（5 points）
 
