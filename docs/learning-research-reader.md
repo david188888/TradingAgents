@@ -381,6 +381,9 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
   触发入口；切换 run 时整体清空；
 - 论点、失效条件和分析视角通过显式“查看伴读”按钮提交统一 selection；证据
   通过安全 `source_label` 标签提交，不显示内部 `ref_id`；催化剂不映射为 risk；
+- selection ID 显式映射为 `role → AnalystCard.lens`、
+  `claim → PublicClaim.claim_key`、`evidence → ReaderEvidenceRef.ref_id` 和
+  `risk → invalidation_conditions[].item_id`；不得使用显示文案或数组下标代替；
 - typed client 新增 `getCompanion`，只调用 Companion API，不访问 artifact/raw
   接口。
 
@@ -393,26 +396,37 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
   单独的手机底部 sheet；
 - 临时打开、固定、替换 selection 和关闭都不改变正文滚动位置；关闭后焦点
   返回最近一次触发入口，切换 run 时不把焦点送回旧 run；
-- 覆盖式 drawer 打开后焦点进入面板，`Escape` 可关闭并启用焦点约束；固定
-  模式不锁定正文焦点；
+- 显示状态显式建模为 `closed | temporary | pinned | drawer`：宽屏选择从
+  `closed` 进入 `temporary`，固定后进入 `pinned`；窄屏选择直接进入 `drawer`；
+- `temporary` 和 `pinned` 使用非模态 `aside`，不抢走入口焦点、不约束正文
+  焦点；固定操作后焦点保留在固定控制上；两种状态下 `Escape` 都关闭面板并
+  把焦点返回最近一次触发入口；
+- `drawer` 使用 modal dialog 语义，打开后焦点进入关闭控制并约束在面板内；
+  `Escape` 关闭并返回触发入口；
+- 打开状态从不小于 1400px 缩至小于 1400px 时统一转换为 `drawer` 并清除固定
+  偏好；再次放宽只转换为 `temporary`，不自动恢复固定；转换过程保留 selection、
+  正文滚动位置和有效焦点；`closed` 在缩放时保持关闭；
 - 动画只使用短距离透明度/位移，`prefers-reduced-motion` 下禁用位移和过渡。
 
 #### 数据与错误边界
 
 - 初始 Reader 和空 selection 都不得请求 Companion 或 raw 数据；
-- 相同 selection 在当前 run 的页面会话中命中内存缓存；刷新或切换 run 不恢复
-  selection、缓存或固定状态；
+- 只有成功校验的 `CompanionDTO` 写入内存缓存；失败和已取消请求不得缓存；
+  相同 selection 在当前 run 的页面会话中命中缓存；刷新不恢复 selection、缓存
+  或固定状态；
+- selection 改变、面板关闭或 run 切换都取消当前进行中的请求；取消不显示错误；
+  run 切换同时清空 selection、缓存、错误和固定状态；
 - 加载状态保留稳定面板骨架；typed 404 显示安全的不可用文案且不回退 raw；
-  其他网络错误提供只针对当前 selection 的重试；
+  其他网络错误提供只针对当前 selection key 的重试，且每次重试创建新请求；
 - 成功面板只展示 selection、摘要、实际覆盖、结论影响和下一验证，不扩展
   P2-3a 的封闭 DTO。
 
 #### 验收
 
-- Hook 测试覆盖零预取、缓存命中、取消过时请求、旧响应隔离、run 切换清理
-  和重试；
+- Hook 测试覆盖零预取、只缓存成功结果、取消不报错、旧响应隔离、关闭/run
+  切换取消与清理，以及当前 key 的全新重试；
 - 组件测试覆盖四类入口、加载/成功/typed 404/普通错误、固定、关闭、
-  `Escape`、焦点返回和初始 DOM 隐私；
+  `Escape`、四态转换、跨 1400px 缩放、焦点返回和初始 DOM 隐私；
 - 浏览器验收使用 1512px 检查临时浮层与固定双列，使用 1200px 检查覆盖式
   drawer 和无固定按钮，并验证滚动位置与 reduced-motion；
 - 前端定向 Vitest、typecheck、production build 与静态产物同步通过；P2-3a
