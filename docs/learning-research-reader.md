@@ -296,12 +296,12 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | P2-2 学习报告与论点变化 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-4 独立 Audit Center | Design Approved | 依赖安全审计入口 |
+| P2-4 独立 Audit Center | Branch Ready | summary/detail 安全投影、终态入口、桌面浏览器验收 |
 | P2-5 视觉、响应式、可访问性与 golden QA | Planned | 依赖 P2-2～P2-4 |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
 
-## 5. 剩余路线
+## 5. Story 实施与剩余路线
 
 ### 5.1 P1-7 合入前硬化与文档整合（Branch Ready）
 
@@ -450,7 +450,7 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
 selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为 115 passed、
 2 failed，仍是既有 Controls/App 文案与入口断言。
 
-### 5.5 P2-4：独立 Audit Center（5 points，Design Approved）
+### 5.5 P2-4：独立 Audit Center（5 points，Branch Ready）
 
 **As a** 需要核验研究过程的 Reader 用户
 **I want** 在独立工作区中按需检查运行、角色、能力、工具和持久化材料
@@ -617,6 +617,16 @@ selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为
 - 前端定向 Vitest、typecheck、production build、静态产物同步、后端契约回归与
   `git diff --check` 通过，并记录既有全量测试基线。
 
+实现与验收：终态 `AuditReader` 已由常驻但关闭时零请求的 `AuditCenter` 替换，
+Decision Brief、Reader 审计计数、Stage Detail 与失败运行均传递明确入口上下文；
+运行中的 `Inspector` 独立保留为“实时审计栏”。服务端新增封闭 DTO、summary/detail
+投影和两个只读 API，强制 terminal、同 run membership、source sequence、256 KiB
+阈值与 prompt/config/tool/artifact 脱敏策略。审计专项后端 34/34、前端 13/13 通过，
+Ruff、typecheck、production build 和静态产物同步通过。Playwright 使用真实历史运行
+在 1512×982 验证三栏，在 1280×832 验证内层详情 modal、inert/`aria-hidden`、双层
+`Escape` 与入口回焦；最终浏览器控制台 0 error、0 warning。完整套件中的既有失败
+继续按 6.1 的基线记录，不归入 P2-4。
+
 ### 5.6 P2-5：视觉与 golden QA（5 points）
 
 验收：
@@ -647,11 +657,13 @@ P1-7 现在允许并跟踪唯一的 `tests/test_thesis_diff.py`，覆盖五态�
 和取消终态方法边界。P2-2 另外跟踪一个 Reader 组件 fixture 及最小 Vitest
 配置；其余本地测试资产继续被忽略。
 
-当前验证：P1-7 + RunManager 生命周期 20 passed；Ruff、前端 typecheck 与
-production build 通过。完整本地套件为 1536 passed、17 failed、68 subtests
-passed；17 项中 4 项来自受限环境（1 项 live-network、3 项用户日志目录权限），
-其余 13 项是本轮改动前已存在的 legacy 默认行为/旧投影契约断言。它们不触及
-P1-7 的改动文件，继续作为独立基线债务处理，不能误报为本轮全绿。
+当前验证：P2-4 后端契约及 Reader 相关回归 34 passed；审计前端 client、Hook、
+组件和 Workbench 集成 13 passed；Ruff、前端 typecheck 与 production build 通过。
+完整后端本地套件为 1566 passed、17 failed、68 subtests passed；17 项中 4 项来自
+受限环境（1 项 live-network、3 项用户日志目录权限），其余 13 项是 P2-4 前已存在的
+legacy 默认行为/旧投影契约断言。完整前端本地套件仍有 2 项既有失败：Controls 的
+旧组合约束入口断言与 App 的旧常驻审计栏文案断言；两项测试文件均为本地忽略资产，
+不触及 P2-4 目标路径。不能把完整套件误报为全绿。
 
 ### 6.2 Definition of Done
 
@@ -673,10 +685,12 @@ P1-7 的改动文件，继续作为独立基线债务处理，不能误报为本
 
 - `CLAUDE.md` 存在用户本地修改，不得纳入本任务提交。
 - `tests/` 默认保持本地忽略；`.gitignore` 只显式允许 P1-7 的
-  `tests/test_thesis_diff.py` 和 P2-3a 的 `tests/test_reader_companion.py`。新增其他
-  测试必须单独评估，不能用 `git add -f` 临时绕过。
-- 前端测试默认保持本地忽略；P2-2 只显式允许 `ThesisDiffSection.test.tsx`、
-  Vitest 配置和共享 cleanup setup，以保证新 checkout 可直接复现该 story。
+  `tests/test_thesis_diff.py`、P2-3a 的 `tests/test_reader_companion.py` 和 P2-4 的
+  `tests/test_reader_audit.py`。新增其他测试必须单独评估，不能用 `git add -f`
+  临时绕过。
+- 前端测试默认保持本地忽略；当前只显式允许 P2-2、P2-3 和 P2-4 的 Reader 请求、
+  Hook、组件、隐私与 Workbench 集成回归，以及 Vitest 配置和共享 cleanup setup，
+  以保证新 checkout 可直接复现这些 story。
 - 修改 `frontend/src/` 后必须 rebuild，并检查 `tradingagents/web/static/`。
 - 单个 story 超过 8 points 时先拆分；默认同时只推进一个 story。
 - 不再创建 dated spec、plan、status、report 或 handoff Markdown。
@@ -699,6 +713,8 @@ P1-7 的改动文件，继续作为独立基线债务处理，不能误报为本
 | Reader API | `tradingagents/web/api.py` |
 | 前端 Reader | `frontend/src/components/reader/ReaderSurface.tsx` |
 | 前端 Reader 请求 | `frontend/src/hooks/useReader.ts`, `frontend/src/api/contracts.ts` |
+| Audit DTO 与投影 | `tradingagents/web/audit_models.py`, `tradingagents/web/audit_projection.py` |
+| 前端 Audit Center | `frontend/src/components/reader/AuditCenter.tsx`, `frontend/src/hooks/useAudit.ts` |
 
 ## 8. 维护规则
 

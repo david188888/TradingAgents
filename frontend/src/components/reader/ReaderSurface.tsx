@@ -13,9 +13,11 @@ import { useReader } from "../../hooks/useReader";
 import { CompanionPanel } from "./CompanionPanel";
 import type { CompanionPanelMode } from "./CompanionPanel";
 import { ThesisDiffSection } from "./ThesisDiffSection";
+import type { AuditOpenHandler } from "./AuditCenter";
 
 export interface ReaderSurfaceProps {
   runId: string;
+  onOpenAudit?: AuditOpenHandler;
 }
 
 type CompanionMode = "closed" | CompanionPanelMode;
@@ -257,7 +259,13 @@ function ReviewItemList({
   );
 }
 
-function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element {
+function TypedSurface({
+  reader,
+  onOpenAudit,
+}: {
+  reader: LearningReaderV2DTO;
+  onOpenAudit?: AuditOpenHandler;
+}): JSX.Element {
   const [selection, setSelection] = useState<CompanionSelectionDTO | null>(null);
   const [companionMode, setCompanionMode] = useState<CompanionMode>("closed");
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -402,9 +410,20 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
       ) : null}
 
       <footer className="reader-surface-foot">
-        <p>
-          {reader.audit_entry.artifact_count} 个产物 · {reader.audit_entry.tool_call_count} 次工具调用 · 数据降级 {reader.audit_entry.degradation_count} 处
-        </p>
+        {onOpenAudit ? (
+          <button
+            type="button"
+            className="reader-audit-entry"
+            onClick={(event) => onOpenAudit({ section: "overview" }, event.currentTarget)}
+          >
+            {reader.audit_entry.artifact_count} 个产物 · {reader.audit_entry.tool_call_count} 次工具调用 · 数据降级 {reader.audit_entry.degradation_count} 处
+            <span>进入审计中心 →</span>
+          </button>
+        ) : (
+          <p>
+            {reader.audit_entry.artifact_count} 个产物 · {reader.audit_entry.tool_call_count} 次工具调用 · 数据降级 {reader.audit_entry.degradation_count} 处
+          </p>
+        )}
         <p>
           {reader.evidence_refs.length} 条证据引用 · {reader.coverage_refs.length} 处覆盖记录
         </p>
@@ -499,7 +518,7 @@ function LegacySurface({ reader }: { reader: ReaderResponseDTO & { kind: "legacy
   );
 }
 
-export function ReaderSurface({ runId }: ReaderSurfaceProps): JSX.Element {
+export function ReaderSurface({ runId, onOpenAudit }: ReaderSurfaceProps): JSX.Element {
   const { reader, loading, error } = useReader(runId);
 
   if (loading) {
@@ -540,5 +559,5 @@ export function ReaderSurface({ runId }: ReaderSurfaceProps): JSX.Element {
     return <LegacySurface reader={reader} />;
   }
 
-  return <TypedSurface key={reader.run_id} reader={reader} />;
+  return <TypedSurface key={reader.run_id} reader={reader} onOpenAudit={onOpenAudit} />;
 }

@@ -12,6 +12,9 @@
 import type {
   ApiErrorResponse,
   ArtifactMetadataDTO,
+  AuditDetailDTO,
+  AuditSelectionDTO,
+  AuditSummaryDTO,
   CompanionDTO,
   CompanionSelectionDTO,
   ConfigResponseDTO,
@@ -186,6 +189,39 @@ export function getCompanion(
   return request<CompanionDTO>(
     "GET",
     `${API.readerCompanion(run_id)}?${query.toString()}`,
+    undefined,
+    signal,
+  );
+}
+
+/** GET /api/runs/{run_id}/audit */
+export function getAuditSummary(
+  run_id: string,
+  signal?: AbortSignal,
+): Promise<AuditSummaryDTO> {
+  assertRunId(run_id);
+  return request<AuditSummaryDTO>("GET", API.audit(run_id), undefined, signal);
+}
+
+/** GET /api/runs/{run_id}/audit/detail?kind=...&id=...&v=... */
+export function getAuditDetail(
+  run_id: string,
+  source_sequence: number,
+  selection: AuditSelectionDTO,
+  signal?: AbortSignal,
+): Promise<AuditDetailDTO> {
+  assertRunId(run_id);
+  if (!Number.isInteger(source_sequence) || source_sequence < 0) {
+    throw new RangeError("source_sequence must be a non-negative integer");
+  }
+  const query = new URLSearchParams({
+    kind: selection.kind,
+    id: selection.id,
+    v: String(source_sequence),
+  });
+  return request<AuditDetailDTO>(
+    "GET",
+    `${API.auditDetail(run_id)}?${query.toString()}`,
     undefined,
     signal,
   );

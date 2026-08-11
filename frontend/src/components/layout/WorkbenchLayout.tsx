@@ -4,7 +4,11 @@ import { RunHistory } from "../history/RunHistory";
 import { Inspector } from "../inspector/Inspector";
 import { SwarmStatusCard } from "../status/SwarmStatusCard";
 import { WorkflowMap } from "../workflow/WorkflowMap";
-import { AuditReader } from "../reader/AuditReader";
+import {
+  AuditCenter,
+  type AuditEntryContext,
+  type AuditOpenHandler,
+} from "../reader/AuditCenter";
 import { DecisionBrief } from "../reader/DecisionBrief";
 import { ReaderSurface } from "../reader/ReaderSurface";
 import { FailedRunView } from "../reader/FailedRunView";
@@ -40,6 +44,7 @@ export function WorkbenchLayout(): JSX.Element {
   const history = useRunHistory();
   const [selectedTurn, setSelectedTurn] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
+  const [auditContext, setAuditContext] = useState<AuditEntryContext | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [expandedStage, setExpandedStage] = useState<JourneyStageId | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
@@ -47,6 +52,7 @@ export function WorkbenchLayout(): JSX.Element {
   const resizeFrameRef = useRef<number | null>(null);
   const isResizingRef = useRef(false);
   const previousStatus = useRef<string | null>(null);
+  const auditReturnFocusRef = useRef<HTMLElement | null>(null);
   const state = stream.state;
 
   useEffect(() => {
@@ -110,6 +116,8 @@ export function WorkbenchLayout(): JSX.Element {
 
   useEffect(() => {
     setAuditOpen(false);
+    setAuditContext(null);
+    auditReturnFocusRef.current = null;
     setInspectorOpen(false);
     setSelectedTurn(null);
     setExpandedStage(null);
@@ -128,7 +136,21 @@ export function WorkbenchLayout(): JSX.Element {
     previousStatus.current = current;
   }, [history.refresh, state?.meta.status]);
 
+  const openAudit: AuditOpenHandler = (context, trigger): void => {
+    auditReturnFocusRef.current = trigger;
+    setAuditContext(context);
+    setAuditOpen(true);
+  };
+
   const handleRoleSelected = (actorId: string): void => {
+    if (view.view?.terminal) {
+      const active = document.activeElement;
+      openAudit(
+        { section: "roles", itemId: actorId },
+        active instanceof HTMLElement ? active : document.body,
+      );
+      return;
+    }
     const turnId = state?.roles[actorId]?.latest_turn_id;
     if (turnId) {
       setSelectedTurn(turnId);
@@ -143,9 +165,6 @@ export function WorkbenchLayout(): JSX.Element {
     }
   };
 
-  const completeReportArtifactId = view.view?.view.legacy_fallback?.complete_report_artifact_id ??
-    view.view?.view.section_index.find((section) => section.section_id === "complete_report")?.artifact_ids[0] ?? null;
-
   return (
     <div className="app">
       <header className="topbar">
@@ -156,9 +175,11 @@ export function WorkbenchLayout(): JSX.Element {
         <div className="top-meta">
           <span className="local-pill">● localhost</span>
           <span>仅用于研究，不构成投资建议</span>
-          <button type="button" className="audit-toggle" onClick={() => setInspectorOpen((open) => !open)}>
-            {inspectorOpen ? "收起审计栏" : "审计栏"}
-          </button>
+          {run_id !== null && state && !view.view?.terminal ? (
+            <button type="button" className="audit-toggle" onClick={() => setInspectorOpen((open) => !open)}>
+              {inspectorOpen ? "收起实时审计栏" : "实时审计栏"}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -200,11 +221,11 @@ export function WorkbenchLayout(): JSX.Element {
             </>
           ) : view.view ? (
             view.view.view.run.status === "failed" ? (
-              <FailedRunView envelope={view.view} />
+              <FailedRunView envelope={view.view} onOpenAudit={openAudit} />
             ) : view.view.view.run.status === "completed" ? (
               <>
-                <DecisionBrief envelope={view.view} onOpenAudit={() => setAuditOpen(true)} />
-                <ReaderSurface runId={run_id} />
+                <DecisionBrief envelope={view.view} onOpenAudit={openAudit} />
+                <ReaderSurface runId={run_id} onOpenAudit={openAudit} />
                 <DebateTimeline
                   journey={view.view.view.debate_journey}
                   selectedStage={expandedStage}
@@ -215,15 +236,8 @@ export function WorkbenchLayout(): JSX.Element {
                     stageId={expandedStage}
                     envelope={view.view}
                     runId={run_id}
-                    onOpenAudit={() => setAuditOpen(true)}
+                    onOpenAudit={openAudit}
                     onRoleSelected={handleRoleSelected}
-                  />
-                ) : null}
-                {auditOpen ? (
-                  <AuditReader
-                    runId={run_id}
-                    completeReportArtifactId={completeReportArtifactId}
-                    onClose={() => setAuditOpen(false)}
                   />
                 ) : null}
               </>
@@ -231,14 +245,7 @@ export function WorkbenchLayout(): JSX.Element {
               /* Terminal but neither completed nor failed (cancelled /
                  interrupted historical run): the honest fallback. */
               <>
-                <DecisionBrief envelope={view.view} onOpenAudit={() => setAuditOpen(true)} />
-                {auditOpen ? (
-                  <AuditReader
-                    runId={run_id}
-                    completeReportArtifactId={completeReportArtifactId}
-                    onClose={() => setAuditOpen(false)}
-                  />
-                ) : null}
+                <DecisionBrief envelope={view.view} onOpenAudit={openAudit} />
               </>
             )
           ) : null}
@@ -269,6 +276,16 @@ export function WorkbenchLayout(): JSX.Element {
           <Inspector selectedTurnId={selectedTurn} />
         </aside> : null}
       </div>
+      {run_id !== null ? (
+        <AuditCenter
+          key={run_id}
+          runId={run_id}
+          open={auditOpen}
+          context={auditContext}
+          returnFocus={auditReturnFocusRef.current}
+          onClose={() => setAuditOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

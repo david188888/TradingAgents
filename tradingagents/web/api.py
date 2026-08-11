@@ -26,6 +26,14 @@ from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
 from tradingagents.presets import load_preset_catalog
 
+from .audit_models import AuditSelection
+from .audit_projection import (
+    AuditItemNotFound,
+    AuditSummaryStale,
+    AuditTerminalRequired,
+    project_audit_detail,
+    project_audit_summary,
+)
 from .broker import EventBroker, Keepalive, SubscriptionClosed
 from .connectivity import YahooUnavailableError
 from .manager import (
@@ -406,6 +414,59 @@ def create_app(
                 404,
                 "companion_not_found",
                 "The requested companion selection is not available for this run.",
+            ) from exc
+
+    @app.get("/api/runs/{run_id}/audit")
+    def get_audit_summary(run_id: str) -> dict[str, Any]:
+        try:
+            return project_audit_summary(selected_store, run_id)
+        except AuditTerminalRequired as exc:
+            raise ApiBoundaryError(
+                409,
+                "audit_terminal_required",
+                "Audit Center is available only for terminal runs.",
+            ) from exc
+
+    @app.get("/api/runs/{run_id}/audit/detail")
+    def get_audit_detail(
+        run_id: str,
+        kind: Literal[
+            "run",
+            "role",
+            "capability",
+            "tool",
+            "artifact",
+            "prompt",
+            "config",
+            "report",
+        ] = Query(),
+        selection_id: str = Query(alias="id", min_length=1, max_length=512),
+        source_sequence: int = Query(alias="v", ge=0),
+    ) -> dict[str, Any]:
+        try:
+            return project_audit_detail(
+                selected_store,
+                run_id,
+                AuditSelection(kind=kind, id=selection_id),
+                source_sequence,
+            )
+        except AuditTerminalRequired as exc:
+            raise ApiBoundaryError(
+                409,
+                "audit_terminal_required",
+                "Audit Center is available only for terminal runs.",
+            ) from exc
+        except AuditSummaryStale as exc:
+            raise ApiBoundaryError(
+                409,
+                "audit_summary_stale",
+                "The Audit summary changed; refresh it before reading details.",
+            ) from exc
+        except AuditItemNotFound as exc:
+            raise ApiBoundaryError(
+                404,
+                "audit_item_not_found",
+                "The requested Audit item is not available for this run.",
             ) from exc
 
     @app.get("/api/runs/{run_id}/evidence-refs/{ref_id}")

@@ -6,9 +6,9 @@
  * artifact; expanding a card lazy-mounts L3 (RoundDetail) which loads the
  * exact turn output artifacts for each lane and renders them through the same
  * extractResponse() path as the live timeline. The verdict/other stages point
- * at the audit reader. When the summary is still generating or generation
+ * at the audit center. When the summary is still generating or generation
  * failed, the panel says so plainly — full text remains available via the
- * audit reader.
+ * audit center.
  */
 import type {
   JourneyStageId,
@@ -22,6 +22,7 @@ import { useArtifact } from "../../hooks/useArtifact";
 import { extractResponse } from "../../domain/responseExtractor";
 import { ROLE_LABELS_ZH } from "../../domain/roles";
 import { SafeMarkdown } from "../shared/SafeMarkdown";
+import type { AuditOpenHandler } from "../reader/AuditCenter";
 import { RoundCard, researchLanes, riskLanes } from "./RoundCard";
 import { RoundDetail, type LaneSpec } from "./RoundDetail";
 
@@ -29,7 +30,7 @@ export interface StageDetailProps {
   stageId: JourneyStageId;
   envelope: RunViewEnvelopeDTO;
   runId: string;
-  onOpenAudit(): void;
+  onOpenAudit: AuditOpenHandler;
   onRoleSelected?: (actorId: string) => void;
 }
 
@@ -162,10 +163,10 @@ function SummaryState({
   hasValue: boolean;
 }): JSX.Element | null {
   if (availability === "pending") {
-    return <p className="placeholder stage-detail-pending">摘要生成中，可在审计阅读器中查看完整发言。</p>;
+    return <p className="placeholder stage-detail-pending">摘要生成中，可在审计中心查看完整发言。</p>;
   }
   if (availability === "unavailable" || !hasValue) {
-    return <p className="placeholder stage-detail-pending">暂无辩论摘要，可在审计阅读器中查看完整发言。</p>;
+    return <p className="placeholder stage-detail-pending">暂无辩论摘要，可在审计中心查看完整发言。</p>;
   }
   return null;
 }
@@ -275,8 +276,15 @@ export function StageDetail({
     <section className="stage-detail" aria-label={`${STAGE_TITLES[stageId]}详情`}>
       <header className="stage-detail-head">
         <h3>{STAGE_TITLES[stageId]}</h3>
-        <button type="button" className="stage-detail-audit" onClick={onOpenAudit}>
-          查看完整审计记录 →
+        <button
+          type="button"
+          className="stage-detail-audit"
+          onClick={(event) => onOpenAudit(
+            { section: "overview", stageId },
+            event.currentTarget,
+          )}
+        >
+          在审计中心查看 →
         </button>
       </header>
       {body}
