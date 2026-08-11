@@ -278,6 +278,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 
 - `Merged`：已经进入 `main`；
 - `Branch Ready`：已完成并提交至当前分支，但尚未合并；
+- `Design Approved`：设计已由用户确认并通过规格审查，但尚未实施；
 - `Planned`：尚未完成。
 
 | 能力 | 状态 | 依据 |
@@ -475,19 +476,66 @@ selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为
 - 新增 `GET /api/runs/{run_id}/audit/detail?kind=...&id=...`，selection 封闭为
   `run | role | capability | tool | artifact | prompt | config | report`；只有用户明确
   选择单项后才调用；
-- 摘要固定包含 run、roles、capabilities、tools、artifacts 和 prompt/config 分区，
-  以及分区级 availability、reason code 和安全计数；列表项只返回显示字段与当前
-  run 内可解析的 `item_id`，不返回 locator、文件路径或 raw 内容；
+- `AuditSummaryDTO` 固定字段为 `schema_version=1`、`run_id`、`source_sequence`、
+  `availability`、`reason_code`、`run`、`counts`、`sections`、`stage_navigation`、
+  `roles`、`capabilities`、`tools`、`artifacts`、`prompts` 和 `configs`；不得增加任意
+  后端字段袋；
+- summary availability 封闭为 `ready | partial | legacy | unavailable`；每个 section
+  的 availability 封闭为 `ready | partial | unavailable | not_recorded`；v1 reason code
+  只允许 `projection_failed | terminal_data_incomplete | legacy_event_gap | not_recorded`
+  或 null；
+- `sections` 固定为 overview、roles、capabilities、tools、artifacts、prompt_config 六项，
+  每项只含 `section_id`、`availability`、`reason_code` 与 `item_count`；`counts` 只含
+  `stages`、`roles`、`turns`、`model_calls`、`tool_calls`、`artifacts`、`prompts`、
+  `configs` 和 `reports`；
+- `run` 只含状态、ticker、模式、周期、开始/结束时间、耗时、模型名和数据质量；
+  role item 含 `item_id/actor_id/label/status/turn_count/model_call_count/duration_ms`；
+  capability item 含 `item_id/label/status/reason_codes/affected_sections`；tool item 含
+  `item_id/tool_name/status/execution_count/cache_status/failure_code`；
+- artifact item 含 `item_id/label/artifact_kind/media_type/byte_size/producer_stage/`
+  `content_exposure/is_report`；prompt/config item 含 `item_id/label/actor_id/model_call_id/`
+  `redaction_status/byte_size` 中适用字段；列表项不返回 locator、文件路径、hash、参数、
+  配置值或 raw 内容；
+- `stage_navigation` 是 overview 内的导航数据，每项只含 `stage_id/label/status` 和
+  `related_selections`；每个 related selection 必须指向同一 summary 中已经存在的
+  role/tool/artifact/prompt/config item。legacy 缺少映射时保留阶段条目并标记
+  `not_recorded`，不生成虚假 selection；
 - detail ID 必须从当前 run 的摘要索引解析；未知、跨 run、伪造或不可公开 ID 统一
   返回 typed `audit_item_not_found` 404，不接受 locator、路径或任意 raw URL；
-- 投影只读取当前 run 已持久化的 snapshot、events 与 artifact metadata，不调用模型、
-  数据供应商或其他 run；投影失败返回 `availability=unavailable` 的安全 envelope，
-  partial/legacy 使用分区级降级而不是伪装成执行失败；
+- v1 item ID 映射固定为 `run → "run"`、`role → actor_id`、`capability → capability`
+  slug、`tool → tool_call_id`、`artifact/prompt/config/report → artifact_id`；ID 对前端
+  视为 opaque，只能从 summary 取得，report 必须同时是 summary 中 `is_report=true`
+  的 artifact；
+- `AuditDetailDTO` 公共字段固定为 `schema_version=1/run_id/source_sequence/selection/`
+  `availability/reason_code/title/facts/related_selections/content`；availability 封闭为
+  `ready | unavailable`，reason code 只允许 `not_recorded | unsupported_artifact |`
+  `content_too_large | content_sensitive | detail_not_available` 或 null；
+- `facts` 是经过各 kind allowlist 生成的 label/value 对；`content.mode` 封闭为
+  `none | inline | download`，并按 mode 只允许 `text` 或 `download_url`，同时携带
+  `media_type/byte_size/redaction_status`；非法 kind、缺失或超长 id 走现有
+  `validation_error` 422，合法但不可解析的 selection 才是 typed 404；
+- summary 投影只读取当前 run 已持久化的 snapshot、events 与 artifact metadata；
+  detail 投影才允许在 selection 通过当前 summary 索引、kind 和敏感度校验后，从同一
+  run 的 artifact store 读取被选中的单项内容；两者都不得调用模型、数据供应商或
+  其他 run；
+- API 只接受 terminal run；pending/running/cancel_requested 统一返回 typed
+  `audit_terminal_required` 409，避免与实时 `Inspector` 重叠；summary 投影失败返回
+  `availability=unavailable` 的安全 envelope，partial/legacy 使用分区级降级；
 - prompt 详情只返回已持久化且已脱敏的 snapshot，不生成或推断模型私有思维链；
   config 使用允许字段清单，密钥只返回“已配置/未配置”；tool 返回工具名、参数摘要、
-  状态与错误分类，默认不展开供应商原始响应；
-- artifact/report 仅在文本或 JSON 且不超过固定 256 KiB 时内联；超阈值、二进制或
-  不支持类型只返回媒体类型、大小和经验证的下载入口，二进制内容不注入 DOM。
+  状态与错误分类，永不返回工具或供应商 raw response；tool 参数摘要必须经过密钥、
+  token、cookie、路径、locator 和长值 redactor；
+- artifact summary 的 `content_exposure` 由服务端 kind allowlist 判定为
+  `safe_inline | metadata_only`，未知 kind 默认 `metadata_only`；只有 allowlist 中已
+  脱敏的 report/public research text 或 JSON 且不超过固定 256 KiB 才能内联；prompt
+  与 config 必须走各自 detail kind 的专用 redactor，不能通过 artifact kind 绕过；
+- 超阈值、安全分类不允许、二进制或不支持类型只返回元数据；其中允许用户下载的
+  artifact/report 才返回当前 run 已验证的既有 artifact read URL，其他内容返回
+  `content_sensitive` 且没有 URL；二进制内容不注入 DOM；
+- 本项目当前是 localhost 单用户应用，没有账户级授权层；P2-4 沿用现有本机信任边界，
+  并强制 run/item 归属校验。多用户身份、远程部署和可转移下载授权不在本 story
+  范围内；若未来引入远程访问，必须先在所有 run/artifact API 上统一增加授权，不能
+  把 Audit 的 membership check 当作账户授权。
 
 #### 前端组件与状态
 
@@ -500,7 +548,9 @@ selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为
 - 分区组件只渲染 summary DTO；`AuditDetailPanel` 统一展示详情、下载入口以及加载、
   typed 404、普通错误和重试状态，不直接访问 API；
 - 打开状态显式建模为
-  `closed → summary-loading → browsing → detail-loading/detail-ready/detail-error`；
+  `closed → summary-loading → summary-ready/summary-unavailable/summary-error →`
+  `browsing → detail-loading/detail-ready/detail-unavailable/detail-error`；summary 的
+  partial/legacy 是 `summary-ready` 内的数据可用性，不是网络错误；
   切换分区清空 selection 并取消进行中的详情请求，但保留当前 run 的成功缓存；
 - 切换 run 清空摘要、详情、过滤与入口上下文；状态不写 URL 或 localStorage，刷新不
   恢复 Audit Center。
@@ -510,21 +560,29 @@ selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为
 - Audit Center 是覆盖应用内容的全屏 modal 工作区：顶部运行信息与关闭操作，左侧
   分区导航，中间摘要列表，右侧单项详情；背景 Reader 保持挂载；
 - 入口带角色或阶段上下文时只切换到相关分区并高亮摘要项，不自动读取详情；没有
-  上下文时默认进入概览；
-- 打开时焦点进入标题或关闭控制并约束在 modal 内；关闭后使用 `preventScroll`
-  返回原触发入口，不改变 Reader 滚动位置；
+  上下文时默认进入概览；角色上下文映射 roles item，阶段上下文映射 overview 的
+  `stage_navigation`；找不到映射时保留目标分区并显示安全提示，不创建 detail selection；
+- modal 使用 `role=dialog`、`aria-modal=true` 和稳定标题关联；打开时焦点进入关闭控制
+  并约束在 modal 内；关闭后使用 `preventScroll` 返回原触发入口；若入口已卸载，则
+  返回当前 Reader 标题；两者都不可用时返回应用主内容容器，不改变 Reader 滚动位置；
 - 有详情 selection 时第一次 `Escape` 只清空详情，第二次才关闭工作区；没有详情时
   第一次 `Escape` 直接关闭；
-- 14 英寸 Mac 和外接显示器使用三栏；空间不足时右侧详情变为工作区内覆盖层，分区
-  和摘要列表保持可操作，不增加手机底部 sheet；
+- 视口不小于 1400px 时使用左导航 + 摘要 + 非模态详情三栏，详情更新不抢走摘要入口
+  焦点；小于 1400px 时，选择详情打开 Audit modal 内的右侧覆盖层，焦点进入返回/关闭
+  详情控制，并将底层导航与摘要设为 inert/`aria-hidden`，焦点只约束在详情层；
+  `Escape`、返回控制或关闭详情后焦点回到摘要触发项。分区和摘要列表在详情关闭后
+  保持可操作，不增加手机底部 sheet；
 - 动画只使用短距离透明度/位移，`prefers-reduced-motion` 下禁用非必要动画。
 
 #### 数据与错误边界
 
-- 初始 Reader、关闭状态和只有入口上下文时都不得读取 Audit detail；摘要只在首次
-  打开时读取；
-- summary 和 detail 都只缓存成功结果；关闭、selection 改变或 run 切换取消进行中
-  的对应请求，取消不显示错误；失败重试只作用于当前 run 或 selection key；
+- 初始 Reader 和关闭状态不得发起 Audit 请求；入口上下文只影响打开后的摘要分区，
+  不得触发 detail；每次重新打开可以立即显示成功缓存，但必须后台重新验证 summary；
+- summary 和 detail 都只缓存成功结果；summary 响应携带 `source_sequence`，关闭后
+  可保留最后成功结果以便立即恢复，但每次重新打开都在后台重新验证；工作区顶部另有
+  显式刷新操作，用新响应原子替换 summary，并清除已不在索引中的 detail cache；
+  selection 改变或 run 切换取消进行中的对应请求，取消不显示错误；失败重试只作用于
+  当前 run 或 selection key；
 - run 不存在沿用 `run_not_found` 404；summary unavailable、分区 partial/legacy、
   detail typed 404 和普通网络错误使用不同状态文案；
 - Audit Summary 或 Detail 的加载和失败不清空、不重载、不降级 Reader，也不回退
@@ -536,8 +594,8 @@ selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为
   八种 detail selection 的当前 run 归属、跨 run/伪造 ID、脱敏和 typed 404；
 - 测试 256 KiB 边界、二进制/不支持媒体类型、下载描述，并证明投影不调用模型或
   外部数据供应商；
-- Hook 测试覆盖零预取、打开后单次 summary、二次选择 detail、请求取消、旧响应
-  隔离、成功缓存、失败重试和 run 切换清理；
+- Hook 测试覆盖关闭时零请求、每次打开只发起一次 summary 重新验证、二次选择 detail、
+  请求取消、旧响应隔离、成功缓存、显式刷新、失败重试和 run 切换清理；
 - 组件测试覆盖所有终态入口、六分区、入口上下文预选、分层 `Escape`、焦点约束、
   关闭后焦点/滚动恢复、partial/legacy 空态和大型内容下载模式；
 - Reader 初始响应与 DOM 继续不包含 Audit raw 数据，旧 `AuditReader` 不再挂载；
