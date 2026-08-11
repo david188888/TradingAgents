@@ -297,7 +297,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-4 独立 Audit Center | Branch Ready | summary/detail 安全投影、终态入口、桌面浏览器验收 |
-| P2-5 视觉、响应式、可访问性与 golden QA | Planned | 依赖 P2-2～P2-4 |
+| P2-5 视觉、响应式、可访问性与 golden QA | Design Approved | 分层 golden、WCAG 2.2 AA 目标与隐私边界已确认 |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
 
@@ -629,14 +629,69 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
 
 ### 5.6 P2-5：视觉与 golden QA（5 points）
 
-验收：
+**目标：** 在不重做已确认 Reader、Companion 和 Audit Center 交互的前提下，
+建立可重复、可提交的桌面视觉基线，并把隐私、键盘和可访问性从人工检查收敛为
+可执行回归。P2-5 只允许验收驱动的间距、断行、焦点、对比度和窄屏布局修复，
+不改变数据契约或交互语义。
 
-- 复用现有 tokens、卡片、RoleIcon、SafeMarkdown 和研究终端视觉；
-- typed、partial、failed、legacy 四类脱敏 fixture；
-- 1440、1200、768、390px 视觉回归；
-- 键盘、ARIA、焦点、对比度、中文断行和 reduced-motion；
-- 初始 Reader 响应及 DOM 不含 Prompt、locator、hash、完整 CSV/raw；
-- 前端源码与 `tradingagents/web/static/` 构建产物一致。
+#### 测试架构
+
+- 在 `frontend/` 内建立正式 Playwright 配置和 Reader golden 测试入口，继续使用
+  `npm --prefix frontend run test:e2e`；浏览器固定为 Chromium，并固定时区、语言、
+  颜色模式、动画和截图参数；
+- Playwright 路由拦截返回本地脱敏 fixture，不连接模型、供应商或用户历史数据，
+  但页面仍从真实 React 应用启动；
+- 11 张批准后的截图基线进入 Git，临时报告、失败截图和 trace 不进入 Git；默认
+  测试只比较基线，只有显式 `--update-snapshots` 才能更新图片；
+- 新增 `@axe-core/playwright` 作为唯一测试依赖，用于自动化 WCAG 规则扫描；键盘、
+  焦点、`Escape` 和回焦使用明确的 Playwright 操作断言；
+- production build 继续直接写入 `tradingagents/web/static/`，提交后再次 build 不得
+  产生新的静态产物差异。
+
+#### Fixture 与隐私边界
+
+- `typed`：完整 Reader、论点变化、Companion 入口和 Audit 入口均可用；
+- `partial`：Reader 可读，但证据覆盖和部分审计分区明确缺失；
+- `failed`：运行失败，只展示安全失败摘要、已有阶段信息和审计入口；
+- `legacy`：旧运行没有 typed Reader，不伪造新结构，显示明确的 legacy 降级说明；
+- 四类 fixture 均使用虚构公司、虚构论点和固定时间，不复制真实历史 run；fixture
+  与生产契约共享 TypeScript 类型，使破坏性 DTO 变化在编译期失败；
+- 私有延迟接口使用合成敏感哨兵。初始 Reader 响应与 DOM 递归禁止 Prompt、locator、
+  hash、完整 CSV、raw 内容和 content-addressed ID；Audit summary/detail 与 Companion
+  detail 在主动操作前请求数必须为零，操作后也只能出现相应公开 DTO 允许的内容。
+
+#### Golden 矩阵与视觉边界
+
+- typed 覆盖 1512、1440、1280、1200、768px；partial、failed、legacy 各覆盖
+  1440 和 768px，共 11 组；删除 390px 手机基线；
+- 1512/1440 验证 Reader 与固定 Companion 的宽屏布局，1280/1200 验证抽屉与
+  Audit 详情覆盖，768 验证单列 Reader、中文断行和极窄桌面窗口，不承诺手机体验；
+- golden 截取固定浏览器视口内的完整工作区，不截取无限延伸的整页；另用尺寸断言
+  检查横向溢出、列宽、抽屉和 modal 边界；
+- 关闭动画、隐藏光标并固定时间与 locale；允许极少量抗锯齿差异，不允许布局级变化；
+- 继续复用现有 tokens、卡片、`RoleIcon`、`SafeMarkdown` 和研究终端视觉，不引入
+  第二套视觉语言。
+
+#### 可访问性与交互验收
+
+- 以 WCAG 2.2 AA 为目标，但不宣称整站认证；对页面和主要 overlay 执行自动扫描；
+- 覆盖 Tab 顺序、可见焦点、Companion 开关/回焦、Audit Center 焦点约束、分层
+  `Escape` 和关闭后回焦；
+- 验证 modal/drawer 的 `aria-modal`、`aria-hidden`/`inert` 语义；
+- 验证中文、长英文标识和链接不造成横向溢出；
+- `prefers-reduced-motion` 下动画和过渡必须关闭。
+
+#### 验收与交付
+
+- 首次生成基线后逐张检查，并向用户集中展示有代表性的宽屏、1200px、768px 和
+  异常态结果；测试失败不得被直接解释为需要更新 golden；
+- 依次通过 Reader 定向 Vitest、typecheck、production build、11 组 golden、WCAG、
+  键盘/焦点/隐私/reduced-motion、Ruff、相关后端契约回归与 `git diff --check`；
+- 既有全量测试失败继续作为基线单独记录，不扩大 P2-5 修复范围；
+- 规格、命令和最终验收只更新本文；仅当用户入口确有变化时才更新 README，不新增
+  进度、验收或 handoff Markdown；
+- 设计提交后状态为 `Design Approved`；生产实现、静态产物和全部验收完成后才更新为
+  `Branch Ready`，且不自动推送远端。
 
 ## 6. 开发与验收约定
 
