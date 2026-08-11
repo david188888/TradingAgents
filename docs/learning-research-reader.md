@@ -294,7 +294,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | ThesisDiffV1、发布幂等、provenance 与可复现测试 | Branch Ready | `2f818bf` + `codex/reader-roadmap-docs` |
 | P2-2 学习报告与论点变化 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-3b 自适应伴读栏 | Planned | 依赖 P2-3a |
+| P2-3b 自适应伴读栏 | Design Approved | 依赖 P2-3a |
 | P2-4 独立 Audit Center | Planned | 依赖安全审计入口 |
 | P2-5 视觉、响应式、可访问性与 golden QA | Planned | 依赖 P2-2～P2-4 |
 
@@ -365,16 +365,58 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
 1540 passed、17 failed，失败集合与 P1-7 基线一致。初始 DOM 隐私 fixture
 通过；前端完整本地套件为 106 passed、2 failed，仍是既有 Controls/App 断言。
 
-### 5.4 P2-3b：自适应伴读栏（5 points）
+### 5.4 P2-3b：自适应伴读栏（5 points，Design Approved）
 
-验收：
+**As a** Reader 用户
+**I want** 从正文中的角色、论点、证据或风险按需打开伴读内容
+**So that** 我能继续理解结论，同时保留当前阅读位置和研究上下文。
 
-- `useCompanion` 按 `(run_id, kind, id)` 缓存并取消过时请求；
-- role/claim/evidence/risk 共用 selection；
-- 临时打开、固定和关闭不丢失正文滚动位置；
-- 1400px 以下使用覆盖式 drawer，正文不足 720px 时禁止固定；
-- 键盘、焦点管理和 reduced-motion 正常；
-- 初始 Reader 不预取 Companion 或 raw 数据。
+#### 组件与状态边界
+
+- `useCompanion(runId, selection)` 负责按 `(run_id, kind, id)` 缓存、取消过时
+  请求、阻止旧响应覆盖新 selection，并提供当前 selection 的重试；
+- `CompanionPanel` 只展示 selection、加载/错误状态和 `CompanionDTO`，不直接
+  访问 API；
+- `TypedSurface` 是唯一交互编排者，持有当前 selection、固定状态和最近一次
+  触发入口；切换 run 时整体清空；
+- 论点、失效条件和分析视角通过显式“查看伴读”按钮提交统一 selection；证据
+  通过安全 `source_label` 标签提交，不显示内部 `ref_id`；催化剂不映射为 risk；
+- typed client 新增 `getCompanion`，只调用 Companion API，不访问 artifact/raw
+  接口。
+
+#### 交互与布局
+
+- 视口宽度不小于 1400px 时，首次选择打开不挤压正文的右侧临时浮层；用户
+  主动固定后才切换为正文 + 伴读栏双列布局；固定栏位不锁定内容；
+- 1400px 以下统一使用右侧覆盖式 drawer，不显示固定操作；本阶段主要适配
+  14 英寸 Mac 和外接显示器，极窄宽度只保证不溢出和基本可操作性，不增加
+  单独的手机底部 sheet；
+- 临时打开、固定、替换 selection 和关闭都不改变正文滚动位置；关闭后焦点
+  返回最近一次触发入口，切换 run 时不把焦点送回旧 run；
+- 覆盖式 drawer 打开后焦点进入面板，`Escape` 可关闭并启用焦点约束；固定
+  模式不锁定正文焦点；
+- 动画只使用短距离透明度/位移，`prefers-reduced-motion` 下禁用位移和过渡。
+
+#### 数据与错误边界
+
+- 初始 Reader 和空 selection 都不得请求 Companion 或 raw 数据；
+- 相同 selection 在当前 run 的页面会话中命中内存缓存；刷新或切换 run 不恢复
+  selection、缓存或固定状态；
+- 加载状态保留稳定面板骨架；typed 404 显示安全的不可用文案且不回退 raw；
+  其他网络错误提供只针对当前 selection 的重试；
+- 成功面板只展示 selection、摘要、实际覆盖、结论影响和下一验证，不扩展
+  P2-3a 的封闭 DTO。
+
+#### 验收
+
+- Hook 测试覆盖零预取、缓存命中、取消过时请求、旧响应隔离、run 切换清理
+  和重试；
+- 组件测试覆盖四类入口、加载/成功/typed 404/普通错误、固定、关闭、
+  `Escape`、焦点返回和初始 DOM 隐私；
+- 浏览器验收使用 1512px 检查临时浮层与固定双列，使用 1200px 检查覆盖式
+  drawer 和无固定按钮，并验证滚动位置与 reduced-motion；
+- 前端定向 Vitest、typecheck、production build 与静态产物同步通过；P2-3a
+  后端契约回归保持通过。
 
 ### 5.5 P2-4：独立 Audit Center（5 points）
 
