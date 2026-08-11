@@ -300,7 +300,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-4 独立 Audit Center | Branch Ready | summary/detail 安全投影、终态入口、桌面浏览器验收 |
 | P2-5 视觉、响应式、可访问性与 golden QA | Branch Ready | 11 张 golden、21 项 Playwright QA、WCAG 目标与隐私/焦点回归通过 |
-| 合入 CI 合同 | Design Approved | 方案 A：`web-tests` 覆盖已跟踪 Reader 后端、Vitest 和 Playwright 语义门禁 |
+| 合入 CI 合同 | Branch Ready | `web-tests` 覆盖已跟踪 Reader 后端、Vitest 和 Playwright 语义门禁 |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
 
@@ -323,7 +323,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
   只终结 pending/skipped roles，不掩盖真正 running 的角色；
 - 本文进入 Git，旧重复文档删除；
 - README 只指向本文，不再描述学习路径为 Buy/Sell 管线；
-- `CLAUDE.md` 不进入提交；
+- 仓库不再维护 `CLAUDE.md`，README 不保留对它的引用；
 - P1-7 目标回归、Ruff、前端 typecheck/build 和 `git diff --check` 通过；后端
   完整本地套件的既有失败已在第 6 节单独记录。
 
@@ -799,7 +799,7 @@ Playwright webServer 下仍有 12 项既有失败，与基于确定性路由 fix
 - 单个 story 超过 8 points 时先拆分；默认同时只推进一个 story。
 - 不再创建 dated spec、plan、status、report 或 handoff Markdown。
 
-### 6.4 合入 CI 合同（Design Approved）
+### 6.4 合入 CI 合同（Branch Ready）
 
 - 仓库删除且不再维护 `CLAUDE.md`；README 移除对它的引用，只保留当前使用和
   产品文档列表，不创建替代 Agent 规则文件；验收时要求 `CLAUDE.md` 不存在且
@@ -816,9 +816,14 @@ Playwright webServer 下仍有 12 项既有失败，与基于确定性路由 fix
   Linux 预期 `reader-quality` 10 passed、`reader-golden` 11 skipped，只强制隐私、WCAG 目标、
   键盘/焦点、响应式和 reduced-motion 语义断言；11 张像素基线仍只在 macOS
   arm64 生成和比较；
-- 现有 Ruff、安装/导入、wheel 静态产物和 CLI smoke 门禁保留。CI 配置本地验证后
-  状态才从 `Design Approved` 改为 `Branch Ready`；远端结果必须等分支推送或 PR
-  后单独确认。
+- 现有 Ruff、安装/导入、wheel 静态产物和 CLI smoke 门禁保留；远端结果必须等
+  分支推送或 PR 后单独确认。
+
+实现与验收：`web-tests` 已安装 `.[web,dev]` 并接入精选后端契约、全部已跟踪
+Vitest 和 Reader Playwright specs；过时的 local-only 测试注释已删除。本地等价门禁为
+后端 34 passed、Vitest 25 passed、macOS Playwright 21 passed，Ruff、CI YAML 解析、
+typecheck、production build 及静态产物幂等均通过。Ubuntu 上的 10 passed / 11 skipped
+只能在分支推送后由 GitHub Actions 最终确认。
 
 ## 7. 关键代码入口
 

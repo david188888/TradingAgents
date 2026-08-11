@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Note: tests/ is kept local-only (not tracked on GitHub); the pytest suite
-  # runs locally. CI keeps install / lint / frontend build-integrity checks only.
+  # The public repository tracks only the reproducibility-critical Reader tests.
+  # Broader local suites remain outside CI until their historical baseline is clean.
   smoke-install:
     name: clean-install smoke
     runs-on: ubuntu-latest
@@ -56,12 +56,20 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Install python with [web] extras
+      - name: Install python with [web,dev] extras
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[web]"
+          pip install -e ".[web,dev]"
+      - name: Reader backend contracts
+        run: >-
+          python -m pytest -q
+          tests/test_thesis_diff.py
+          tests/test_reader_companion.py
+          tests/test_reader_audit.py
       - name: Install frontend dependencies
         run: npm --prefix frontend ci
+      - name: Tracked frontend unit tests
+        run: npm --prefix frontend run test -- --run
       - name: Frontend typecheck
         run: npm --prefix frontend run typecheck
       - name: Rebuild frontend and verify no committed-asset drift
@@ -75,6 +83,16 @@ jobs:
             git diff --stat -- tradingagents/web/static/
             exit 1
           fi
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Reader semantic and golden contracts
+        # Linux runs the 10 semantic quality checks; the 11 pixel baselines are
+        # intentionally skipped outside their canonical macOS arm64 environment.
+        run: >-
+          npm --prefix frontend run test:e2e --
+          e2e/reader-golden.spec.ts
+          e2e/reader-quality.spec.ts
       - name: Build wheel and verify SPA is packaged
         # A clean wheel must ship index.html + hashed assets so `tradingagents web`
         # serves the SPA without Node at runtime.

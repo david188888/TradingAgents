@@ -106,9 +106,9 @@ Persistent data lives under `~/.tradingagents/`:
 
 ## Documentation
 
-See [CLAUDE.md](CLAUDE.md) for repository-wide development rules and data fallback
-chains. The current product contract, implementation status, and remaining Reader
-roadmap live in one maintained document:
+The current product contract, implementation status, and remaining Reader roadmap
+live in one maintained document. Supporting operational references remain focused
+on their respective data, replay, and preset contracts:
 
 - [Learning research and Reader](docs/learning-research-reader.md)
 - [A-share data capabilities](docs/a-share-data-capabilities.md)
