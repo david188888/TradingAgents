@@ -672,14 +672,16 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
   为 `page` 的当前 viewport，不使用 locator screenshot 或 `fullPage`；pixelmatch
   `threshold=0.15`，且
   `maxDiffPixelRatio=0.002`，超过即失败，不允许用放宽容差替代缺陷修复；
-- 关闭动画、隐藏光标并固定 fixture 时间；以下 11 项是唯一基线场景：
+- 在应用脚本执行前使用 Playwright Clock 把浏览器时间固定为
+  `2026-08-11T08:00:00+08:00`，并断言 Controls 的分析日期为 `2026-08-11`；同时
+  关闭动画、隐藏光标并固定 fixture 时间；以下 11 项是唯一基线场景：
 
 | 基线 | 视口 | 截图前状态 | 固定 selection | 滚动 / 根 |
 |---|---:|---|---|---|
 | typed-wide-companion | 1512×982 | Reader 顶部，Companion pinned | `claim:claim-growth` | 0 / page viewport |
-| typed-wide-audit | 1440×900 | Audit Center overview + inline detail | `artifact:artifact-report` | 0 / page viewport |
+| typed-wide-audit | 1440×900 | Audit Center artifacts 分区 + inline detail | `artifact:artifact-report` | 0 / page viewport |
 | typed-companion-drawer | 1280×832 | Reader 顶部，Companion drawer | `evidence:evidence-filing` | 0 / page viewport |
-| typed-audit-overlay | 1200×800 | Audit Center overview + detail overlay | `tool_call:tool-market` | 0 / page viewport |
+| typed-audit-overlay | 1200×800 | Audit Center tools 分区 + detail overlay | `tool:tool-market` | 0 / page viewport |
 | typed-narrow-reader | 768×900 | Reader 顶部，无 overlay | 无 | 0 / page viewport |
 | partial-reader | 1440×900 | Reader 顶部，无 overlay | 无 | 0 / page viewport |
 | partial-narrow-audit | 768×900 | Audit Center partial overview | 无 | 0 / page viewport |
