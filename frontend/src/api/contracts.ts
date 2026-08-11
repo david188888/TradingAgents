@@ -26,6 +26,9 @@ export const API = {
   run: (run_id: string) => `/api/runs/${run_id}`,
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
   reader: (run_id: string) => `/api/runs/${run_id}/reader`,
+  readerCompanion: (run_id: string) => `/api/runs/${run_id}/reader/companion`,
+  audit: (run_id: string) => `/api/runs/${run_id}/audit`,
+  auditDetail: (run_id: string) => `/api/runs/${run_id}/audit/detail`,
   cancel: (run_id: string) => `/api/runs/${run_id}/cancel`,
   retry: (run_id: string) => `/api/runs/${run_id}/retry`,
   resume: (run_id: string) => `/api/runs/${run_id}/resume`,
@@ -995,6 +998,23 @@ export interface UnknownEventType extends EventEnvelopeCore {
 
 export type ReaderKind = "typed" | "legacy" | "unavailable";
 
+export type CompanionKindDTO = "role" | "claim" | "evidence" | "risk";
+
+export interface CompanionSelectionDTO {
+  kind: CompanionKindDTO;
+  id: string;
+}
+
+export interface CompanionDTO {
+  schema_version: 1;
+  run_id: string;
+  selection: CompanionSelectionDTO;
+  summary: string;
+  actual_coverage: string[];
+  conclusion_impact: string;
+  next_validation: string;
+}
+
 export type ResearchTiltDTO = "favorable" | "neutral" | "cautious" | "insufficient_evidence";
 
 export type ClaimTypeDTO = "fact" | "inference" | "unknown";
@@ -1105,7 +1125,44 @@ export interface ReaderAuditEntryDTO {
   artifact_count: number;
   tool_call_count: number;
   degradation_count: number;
-  audit_refs: string[];
+}
+
+export type ThesisDiffKindDTO =
+  | "new"
+  | "maintained"
+  | "invalidated"
+  | "unresolved"
+  | "not_reassessed";
+
+export type ThesisChangeFlagDTO =
+  | "text_changed"
+  | "evidence_changed"
+  | "confidence_changed"
+  | "status_changed";
+
+export interface ThesisDiffEntryDTO {
+  claim_key: string;
+  diff_kind: ThesisDiffKindDTO;
+  previous_claim_type: ClaimTypeDTO | null;
+  current_claim_type: ClaimTypeDTO | null;
+  previous_text: string | null;
+  current_text: string | null;
+  previous_confidence: number | null;
+  current_confidence: number | null;
+  previous_lifecycle_status: "active" | "resolved" | "invalidated" | null;
+  current_lifecycle_status: "active" | "resolved" | "invalidated" | null;
+  change_flags: ThesisChangeFlagDTO[];
+  counter_evidence_ref_ids: string[];
+}
+
+export interface ThesisDiffDTO {
+  schema_version: 1;
+  run_id: string;
+  ticker: string;
+  horizon: "short" | "medium" | "long";
+  previous_run_id: string | null;
+  baseline_completed_at: string | null;
+  entries: ThesisDiffEntryDTO[];
 }
 
 export interface LearningReaderV2DTO {
@@ -1131,7 +1188,7 @@ export interface LearningReaderV2DTO {
   evidence_refs: ReaderEvidenceRefDTO[];
   coverage_refs: CoverageRefV1DTO[];
   omissions: string[];
-  thesis_diff: null;
+  thesis_diff: ThesisDiffDTO | null;
   audit_entry: ReaderAuditEntryDTO;
 }
 
@@ -1162,3 +1219,170 @@ export type ReaderResponseDTO =
   | LearningReaderV2DTO
   | LegacyReaderV1DTO
   | ReaderUnavailableV1DTO;
+
+// ---------------------------------------------------------------------------
+// Terminal Audit Center summary/detail contracts
+// ---------------------------------------------------------------------------
+
+export type AuditKindDTO =
+  | "run"
+  | "role"
+  | "capability"
+  | "tool"
+  | "artifact"
+  | "prompt"
+  | "config"
+  | "report";
+
+export interface AuditSelectionDTO {
+  kind: AuditKindDTO;
+  id: string;
+}
+
+export type AuditSummaryReasonDTO =
+  | "projection_failed"
+  | "terminal_data_incomplete"
+  | "legacy_event_gap"
+  | "not_recorded";
+
+export type AuditDetailReasonDTO =
+  | "not_recorded"
+  | "unsupported_artifact"
+  | "content_too_large"
+  | "content_sensitive"
+  | "detail_not_available";
+
+export interface AuditSectionSummaryDTO {
+  section_id: "overview" | "roles" | "capabilities" | "tools" | "artifacts" | "prompt_config";
+  availability: "ready" | "partial" | "unavailable" | "not_recorded";
+  reason_code: AuditSummaryReasonDTO | null;
+  item_count: number;
+}
+
+export interface AuditRunSummaryDTO {
+  item_id: "run";
+  status: "completed" | "failed" | "cancelled" | "interrupted";
+  ticker: string;
+  mode: "company_research" | "holding_review" | null;
+  horizon: "short" | "medium" | "long" | null;
+  created_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  llm_provider: string;
+  quick_think_llm: string;
+  deep_think_llm: string;
+  data_quality: "healthy" | "limited" | "conflicted" | "unknown";
+}
+
+export interface AuditCountsDTO {
+  stages: number;
+  roles: number;
+  turns: number;
+  model_calls: number;
+  tool_calls: number;
+  artifacts: number;
+  prompts: number;
+  configs: number;
+  reports: number;
+}
+
+export interface AuditStageSummaryDTO {
+  stage_id: string;
+  label: string;
+  status: "not_started" | "running" | "completed" | "failed" | "cancelled" | "interrupted" | "unknown";
+  availability: "ready" | "not_recorded";
+  reason_code: "legacy_event_gap" | "not_recorded" | null;
+  related_selections: AuditSelectionDTO[];
+}
+
+export interface AuditRoleSummaryDTO {
+  item_id: string;
+  actor_id: string;
+  label: string;
+  status: string;
+  turn_count: number;
+  model_call_count: number;
+  duration_ms: number | null;
+}
+
+export interface AuditCapabilitySummaryDTO {
+  item_id: string;
+  label: string;
+  status: string;
+  reason_codes: string[];
+  affected_sections: string[];
+}
+
+export interface AuditToolSummaryDTO {
+  item_id: string;
+  tool_name: string;
+  status: string;
+  execution_count: number;
+  cache_status: string;
+  failure_code: string | null;
+}
+
+export interface AuditArtifactSummaryDTO {
+  item_id: string;
+  label: string;
+  artifact_kind: string;
+  media_type: string;
+  byte_size: number;
+  producer_stage: string | null;
+  content_exposure: "safe_inline" | "download_only" | "prohibited";
+  is_report: boolean;
+}
+
+export interface AuditPromptConfigSummaryDTO {
+  item_id: string;
+  label: string;
+  actor_id: string | null;
+  model_call_id: string | null;
+  redaction_status: "clean" | "redacted" | "metadata_only";
+  byte_size: number;
+}
+
+export interface AuditSummaryDTO {
+  schema_version: 1;
+  run_id: string;
+  source_sequence: number;
+  availability: "ready" | "partial" | "legacy" | "unavailable";
+  reason_code: AuditSummaryReasonDTO | null;
+  run: AuditRunSummaryDTO;
+  counts: AuditCountsDTO;
+  sections: AuditSectionSummaryDTO[];
+  stage_navigation: AuditStageSummaryDTO[];
+  roles: AuditRoleSummaryDTO[];
+  capabilities: AuditCapabilitySummaryDTO[];
+  tools: AuditToolSummaryDTO[];
+  artifacts: AuditArtifactSummaryDTO[];
+  prompts: AuditPromptConfigSummaryDTO[];
+  configs: AuditPromptConfigSummaryDTO[];
+}
+
+export interface AuditFactDTO {
+  label: string;
+  value: string | number | boolean | null;
+}
+
+export interface AuditContentDTO {
+  mode: "none" | "inline" | "download";
+  media_type: string | null;
+  byte_size: number | null;
+  redaction_status: "clean" | "redacted" | "metadata_only";
+  text: string | null;
+  download_url: string | null;
+}
+
+export interface AuditDetailDTO {
+  schema_version: 1;
+  run_id: string;
+  source_sequence: number;
+  selection: AuditSelectionDTO;
+  availability: "ready" | "unavailable";
+  reason_code: AuditDetailReasonDTO | null;
+  title: string;
+  facts: AuditFactDTO[];
+  related_selections: AuditSelectionDTO[];
+  content: AuditContentDTO;
+}

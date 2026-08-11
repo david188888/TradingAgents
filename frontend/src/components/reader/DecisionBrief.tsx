@@ -1,8 +1,9 @@
 import type { ReaderBriefDTO, RunViewEnvelopeDTO } from "../../api/contracts";
+import type { AuditOpenHandler } from "./AuditCenter";
 
 export interface DecisionBriefProps {
   envelope: RunViewEnvelopeDTO;
-  onOpenAudit(): void;
+  onOpenAudit: AuditOpenHandler;
 }
 
 function qualityLabel(level: string): string {
@@ -68,7 +69,7 @@ export function DecisionBrief({ envelope, onOpenAudit }: DecisionBriefProps): JS
           <h3>此运行尚无结构化研究摘要</h3>
           <p>
             该运行保留了完整审计事实，但没有已提交的类型化研究结论。
-            为避免从 Markdown 猜测结论，系统不会把它伪装成可验证摘要；可在审计阅读器中按需查看报告与证据。
+            为避免从 Markdown 猜测结论，系统不会把它伪装成可验证摘要；可在审计中心按需查看报告与证据。
           </p>
           {legacy_fallback?.final_signal ? <p>运行结果：<strong>{legacy_fallback.final_signal}</strong></p> : null}
         </div>
@@ -81,8 +82,12 @@ export function DecisionBrief({ envelope, onOpenAudit }: DecisionBriefProps): JS
         </div>
       ) : null}
 
-      <button type="button" className="brief-audit-command" onClick={onOpenAudit}>
-        打开审计阅读器
+      <button
+        type="button"
+        className="brief-audit-command"
+        onClick={(event) => onOpenAudit({ section: "overview" }, event.currentTarget)}
+      >
+        进入审计中心
       </button>
     </section>
   );

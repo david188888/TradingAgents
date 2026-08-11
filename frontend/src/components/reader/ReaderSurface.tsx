@@ -1,14 +1,85 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type {
+  CompanionSelectionDTO,
   LearningReaderV2DTO,
   PublicClaimV2DTO,
+  ReaderEvidenceRefDTO,
   ReaderResponseDTO,
   ResearchScenarioDTO,
   ReviewItemDTO,
 } from "../../api/contracts";
+import { useCompanion } from "../../hooks/useCompanion";
 import { useReader } from "../../hooks/useReader";
+import { CompanionPanel } from "./CompanionPanel";
+import type { CompanionPanelMode } from "./CompanionPanel";
+import { ThesisDiffSection } from "./ThesisDiffSection";
+import type { AuditOpenHandler } from "./AuditCenter";
 
 export interface ReaderSurfaceProps {
   runId: string;
+  onOpenAudit?: AuditOpenHandler;
+}
+
+type CompanionMode = "closed" | CompanionPanelMode;
+type CompanionSelectHandler = (
+  selection: CompanionSelectionDTO,
+  trigger: HTMLElement,
+) => void;
+
+const WIDE_COMPANION_QUERY = "(min-width: 1400px)";
+
+function useWideCompanion(): boolean {
+  const [wide, setWide] = useState(() => (
+    typeof window === "undefined" || typeof window.matchMedia !== "function"
+      ? true
+      : window.matchMedia(WIDE_COMPANION_QUERY).matches
+  ));
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(WIDE_COMPANION_QUERY);
+    const handleChange = (event: MediaQueryListEvent): void => setWide(event.matches);
+    setWide(query.matches);
+    query.addEventListener("change", handleChange);
+    return () => query.removeEventListener("change", handleChange);
+  }, []);
+
+  return wide;
+}
+
+function useDrawerBackgroundInert(
+  active: boolean,
+  layoutRef: RefObject<HTMLDivElement>,
+): void {
+  useEffect(() => {
+    if (!active) return;
+    const layout = layoutRef.current;
+    if (layout === null) return;
+    const main = layout.closest("main");
+    const targets = [
+      document.querySelector<HTMLElement>(".topbar"),
+      document.querySelector<HTMLElement>(".sidebar"),
+      ...Array.from(main?.children ?? []).filter(
+        (item): item is HTMLElement => item instanceof HTMLElement && item !== layout,
+      ),
+    ].filter((item): item is HTMLElement => item !== null);
+    const previous = targets.map((item) => ({
+      item: item as HTMLElement & { inert: boolean },
+      inert: (item as HTMLElement & { inert: boolean }).inert,
+      ariaHidden: item.getAttribute("aria-hidden"),
+    }));
+    for (const { item } of previous) {
+      item.inert = true;
+      item.setAttribute("aria-hidden", "true");
+    }
+    return () => {
+      for (const state of previous) {
+        state.item.inert = state.inert;
+        if (state.ariaHidden === null) state.item.removeAttribute("aria-hidden");
+        else state.item.setAttribute("aria-hidden", state.ariaHidden);
+      }
+    };
+  }, [active, layoutRef]);
 }
 
 function modeLabel(mode: "company_research" | "holding_review"): string {
@@ -110,11 +181,36 @@ function availabilityLabel(
   }[availability];
 }
 
-function ClaimRow({ claim }: { claim: PublicClaimV2DTO }): JSX.Element {
+function ClaimRow({
+  claim,
+  evidenceRefs,
+  onCompanionSelect,
+}: {
+  claim: PublicClaimV2DTO;
+  evidenceRefs: Map<string, ReaderEvidenceRefDTO>;
+  onCompanionSelect: CompanionSelectHandler;
+}): JSX.Element {
   const confidence = pct(claim.confidence);
+  const publicEvidence = claim.evidence_ref_ids.flatMap((refId) => {
+    const ref = evidenceRefs.get(refId);
+    return ref === undefined ? [] : [ref];
+  });
   return (
     <li className="reader-claim">
-      <p className="reader-claim-text">{claim.text}</p>
+      <div className="reader-claim-head">
+        <p className="reader-claim-text">{claim.text}</p>
+        <button
+          type="button"
+          className="reader-companion-trigger"
+          aria-label={`查看论点伴读：${claim.text}`}
+          onClick={(event) => onCompanionSelect(
+            { kind: "claim", id: claim.claim_key },
+            event.currentTarget,
+          )}
+        >
+          查看伴读 <span aria-hidden="true">↗</span>
+        </button>
+      </div>
       <div className="reader-claim-meta">
         {confidence ? <span className="reader-claim-confidence">{confidence} 置信</span> : null}
         <span className="reader-claim-evidence">{claim.evidence_ref_ids.length} 份证据</span>
@@ -126,6 +222,24 @@ function ClaimRow({ claim }: { claim: PublicClaimV2DTO }): JSX.Element {
           </span>
         ) : null}
       </div>
+      {publicEvidence.length ? (
+        <div className="reader-evidence-links" aria-label="公开证据来源">
+          {publicEvidence.map((ref) => (
+            <button
+              type="button"
+              key={ref.ref_id}
+              className="reader-evidence-link"
+              aria-label={`查看证据伴读：${ref.source_label}`}
+              onClick={(event) => onCompanionSelect(
+                { kind: "evidence", id: ref.ref_id },
+                event.currentTarget,
+              )}
+            >
+              {ref.source_label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -141,7 +255,15 @@ function ScenarioBlock({ scenario }: { scenario: ResearchScenarioDTO }): JSX.Ele
   );
 }
 
-function ReviewItemList({ title, items }: { title: string; items: ReviewItemDTO[] }): JSX.Element | null {
+function ReviewItemList({
+  title,
+  items,
+  onCompanionSelect,
+}: {
+  title: string;
+  items: ReviewItemDTO[];
+  onCompanionSelect?: CompanionSelectHandler;
+}): JSX.Element | null {
   if (!items.length) return null;
   return (
     <section className="reader-section reader-section--list">
@@ -152,6 +274,19 @@ function ReviewItemList({ title, items }: { title: string; items: ReviewItemDTO[
             <span className="reader-tag reader-tag--muted">{statusLabel(item.status)}</span>
             <p>{item.text}</p>
             <span className="reader-trigger">{triggerLabel(item)}</span>
+            {onCompanionSelect ? (
+              <button
+                type="button"
+                className="reader-companion-trigger"
+                aria-label={`查看风险伴读：${item.text}`}
+                onClick={(event) => onCompanionSelect(
+                  { kind: "risk", id: item.item_id },
+                  event.currentTarget,
+                )}
+              >
+                查看伴读 <span aria-hidden="true">↗</span>
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -159,7 +294,32 @@ function ReviewItemList({ title, items }: { title: string; items: ReviewItemDTO[
   );
 }
 
-function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element {
+function TypedSurface({
+  reader,
+  onOpenAudit,
+}: {
+  reader: LearningReaderV2DTO;
+  onOpenAudit?: AuditOpenHandler;
+}): JSX.Element {
+  const [selection, setSelection] = useState<CompanionSelectionDTO | null>(null);
+  const [companionMode, setCompanionMode] = useState<CompanionMode>("closed");
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLElement>(null);
+  const wideCompanion = useWideCompanion();
+  const companion = useCompanion(reader.run_id, selection);
+  useDrawerBackgroundInert(companionMode === "drawer", layoutRef);
+  useEffect(() => {
+    const surface = surfaceRef.current as (HTMLElement & { inert: boolean }) | null;
+    if (surface !== null) surface.inert = companionMode === "drawer";
+    return () => {
+      if (surface !== null) surface.inert = false;
+    };
+  }, [companionMode]);
+  const evidenceRefs = useMemo(
+    () => new Map(reader.evidence_refs.map((ref) => [ref.ref_id, ref])),
+    [reader.evidence_refs],
+  );
   const claimsByType = {
     fact: reader.claims.filter((c) => c.claim_type === "fact"),
     inference: reader.claims.filter((c) => c.claim_type === "inference"),
@@ -171,8 +331,55 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
 
   const tiltConfidence = pct(reader.rating_confidence);
 
+  const closeCompanion = useCallback((): void => {
+    setCompanionMode("closed");
+    setSelection(null);
+    const trigger = triggerRef.current;
+    if (trigger?.isConnected) {
+      const surface = trigger.closest(".reader-surface") as (HTMLElement & { inert: boolean }) | null;
+      if (surface !== null) {
+        surface.inert = false;
+        surface.removeAttribute("aria-hidden");
+      }
+      trigger.focus({ preventScroll: true });
+    }
+  }, []);
+
+  const openCompanion = useCallback<CompanionSelectHandler>((next, trigger) => {
+    triggerRef.current = trigger;
+    setSelection(next);
+    setCompanionMode((current) => {
+      if (!wideCompanion) return "drawer";
+      return current === "pinned" ? "pinned" : "temporary";
+    });
+  }, [wideCompanion]);
+
+  useEffect(() => {
+    setCompanionMode((current) => {
+      if (current === "closed") return current;
+      if (!wideCompanion) return "drawer";
+      return current === "drawer" ? "temporary" : current;
+    });
+  }, [wideCompanion]);
+
+  useEffect(() => {
+    if (companionMode === "closed") return;
+    const handleEscape = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeCompanion();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [closeCompanion, companionMode]);
+
   return (
-    <section className="reader-surface">
+    <div ref={layoutRef} className={`reader-companion-layout reader-companion-layout--${companionMode}`}>
+    <section
+      ref={surfaceRef}
+      className="reader-surface"
+      aria-hidden={companionMode === "drawer" ? true : undefined}
+    >
       <header className="reader-surface-head">
         <div>
           <span className="eyebrow">证据化研究结论 · ResearchCase v2</span>
@@ -195,17 +402,19 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
         </div>
       ) : null}
 
+      <ThesisDiffSection diff={reader.thesis_diff} evidenceRefs={reader.evidence_refs} />
+
       <section className="reader-section reader-section--claims">
         <h3>事实</h3>
-        {claimsByType.fact.length ? <ul className="reader-claims">{claimsByType.fact.map((claim) => <ClaimRow key={claim.claim_key} claim={claim} />)}</ul> : <p className="placeholder">暂无事实结论。</p>}
+        {claimsByType.fact.length ? <ul className="reader-claims">{claimsByType.fact.map((claim) => <ClaimRow key={claim.claim_key} claim={claim} evidenceRefs={evidenceRefs} onCompanionSelect={openCompanion} />)}</ul> : <p className="placeholder">暂无事实结论。</p>}
       </section>
       <section className="reader-section reader-section--claims">
         <h3>推断</h3>
-        {claimsByType.inference.length ? <ul className="reader-claims">{claimsByType.inference.map((claim) => <ClaimRow key={claim.claim_key} claim={claim} />)}</ul> : <p className="placeholder">暂无推断结论。</p>}
+        {claimsByType.inference.length ? <ul className="reader-claims">{claimsByType.inference.map((claim) => <ClaimRow key={claim.claim_key} claim={claim} evidenceRefs={evidenceRefs} onCompanionSelect={openCompanion} />)}</ul> : <p className="placeholder">暂无推断结论。</p>}
       </section>
       <section className="reader-section reader-section--claims">
         <h3>待查</h3>
-        {claimsByType.unknown.length ? <ul className="reader-claims">{claimsByType.unknown.map((claim) => <ClaimRow key={claim.claim_key} claim={claim} />)}</ul> : <p className="placeholder">暂无待查结论。</p>}
+        {claimsByType.unknown.length ? <ul className="reader-claims">{claimsByType.unknown.map((claim) => <ClaimRow key={claim.claim_key} claim={claim} evidenceRefs={evidenceRefs} onCompanionSelect={openCompanion} />)}</ul> : <p className="placeholder">暂无待查结论。</p>}
       </section>
 
       {!reader.claims.length ? (
@@ -224,7 +433,7 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
       ) : null}
 
       <ReviewItemList title="催化剂" items={reader.catalysts} />
-      <ReviewItemList title="失效条件" items={reader.invalidation_conditions} />
+      <ReviewItemList title="失效条件" items={reader.invalidation_conditions} onCompanionSelect={openCompanion} />
 
       {reader.analyst_cards.length ? (
         <section className="reader-section reader-section--analysts">
@@ -239,6 +448,17 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
                   {confidence ? <span className="reader-tag">{confidence} 置信</span> : null}
                 </div>
                 <p>{card.summary}</p>
+                <button
+                  type="button"
+                  className="reader-companion-trigger"
+                  aria-label={`查看${lensLabel(card.lens)}视角伴读`}
+                  onClick={(event) => openCompanion(
+                    { kind: "role", id: card.lens },
+                    event.currentTarget,
+                  )}
+                >
+                  查看伴读 <span aria-hidden="true">↗</span>
+                </button>
               </div>
             );
           })}
@@ -246,15 +466,43 @@ function TypedSurface({ reader }: { reader: LearningReaderV2DTO }): JSX.Element 
       ) : null}
 
       <footer className="reader-surface-foot">
-        <p>
-          {reader.audit_entry.artifact_count} 个产物 · {reader.audit_entry.tool_call_count} 次工具调用 · 数据降级 {reader.audit_entry.degradation_count} 处
-        </p>
+        {onOpenAudit ? (
+          <button
+            type="button"
+            className="reader-audit-entry"
+            onClick={(event) => onOpenAudit({ section: "overview" }, event.currentTarget)}
+          >
+            {reader.audit_entry.artifact_count} 个产物 · {reader.audit_entry.tool_call_count} 次工具调用 · 数据降级 {reader.audit_entry.degradation_count} 处
+            <span>进入审计中心 →</span>
+          </button>
+        ) : (
+          <p>
+            {reader.audit_entry.artifact_count} 个产物 · {reader.audit_entry.tool_call_count} 次工具调用 · 数据降级 {reader.audit_entry.degradation_count} 处
+          </p>
+        )}
         <p>
           {reader.evidence_refs.length} 条证据引用 · {reader.coverage_refs.length} 处覆盖记录
         </p>
-        {reader.thesis_diff === null ? <p>主题对比将在下一阶段提供</p> : null}
       </footer>
     </section>
+      {companionMode === "drawer" ? (
+        <div className="companion-backdrop" aria-hidden="true" />
+      ) : null}
+      {companionMode !== "closed" && selection !== null ? (
+        <CompanionPanel
+          mode={companionMode}
+          selection={selection}
+          companion={companion.companion}
+          loading={companion.loading}
+          error={companion.error}
+          onClose={closeCompanion}
+          onPinToggle={() => setCompanionMode((current) => (
+            current === "pinned" ? "temporary" : "pinned"
+          ))}
+          onRetry={companion.retry}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -326,7 +574,7 @@ function LegacySurface({ reader }: { reader: ReaderResponseDTO & { kind: "legacy
   );
 }
 
-export function ReaderSurface({ runId }: ReaderSurfaceProps): JSX.Element {
+export function ReaderSurface({ runId, onOpenAudit }: ReaderSurfaceProps): JSX.Element {
   const { reader, loading, error } = useReader(runId);
 
   if (loading) {
@@ -367,5 +615,5 @@ export function ReaderSurface({ runId }: ReaderSurfaceProps): JSX.Element {
     return <LegacySurface reader={reader} />;
   }
 
-  return <TypedSurface reader={reader} />;
+  return <TypedSurface key={reader.run_id} reader={reader} onOpenAudit={onOpenAudit} />;
 }

@@ -26,6 +26,14 @@ from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
 from tradingagents.presets import load_preset_catalog
 
+from .audit_models import AuditSelection
+from .audit_projection import (
+    AuditItemNotFound,
+    AuditSummaryStale,
+    AuditTerminalRequired,
+    project_audit_detail,
+    project_audit_summary,
+)
 from .broker import EventBroker, Keepalive, SubscriptionClosed
 from .connectivity import YahooUnavailableError
 from .manager import (
@@ -40,7 +48,8 @@ from .manager import (
 from .market_layer2 import build_market_event_layer2_view
 from .market_view import build_market_view
 from .projections import InvalidCursor, RunProjectionPublisher, recent_runs_page
-from .reader_projection import project_reader
+from .reader_models import CompanionSelection
+from .reader_projection import CompanionNotFound, project_companion, project_reader
 from .schemas import (
     RESEARCH_DEPTHS,
     SUPPORTED_OUTPUT_LANGUAGES,
@@ -390,6 +399,75 @@ def create_app(
         # Read-only learning reader; missing runs surface as 404 via the global
         # RunNotFound handler. Projection problems become an "unavailable" body.
         return project_reader(selected_store, run_id)
+
+    @app.get("/api/runs/{run_id}/reader/companion")
+    def get_reader_companion(
+        run_id: str,
+        kind: Literal["role", "claim", "evidence", "risk"] = Query(),
+        selection_id: str = Query(alias="id", min_length=1, max_length=512),
+    ) -> dict[str, Any]:
+        selection = CompanionSelection(kind=kind, id=selection_id)
+        try:
+            return project_companion(selected_store, run_id, selection)
+        except CompanionNotFound as exc:
+            raise ApiBoundaryError(
+                404,
+                "companion_not_found",
+                "The requested companion selection is not available for this run.",
+            ) from exc
+
+    @app.get("/api/runs/{run_id}/audit")
+    def get_audit_summary(run_id: str) -> dict[str, Any]:
+        try:
+            return project_audit_summary(selected_store, run_id)
+        except AuditTerminalRequired as exc:
+            raise ApiBoundaryError(
+                409,
+                "audit_terminal_required",
+                "Audit Center is available only for terminal runs.",
+            ) from exc
+
+    @app.get("/api/runs/{run_id}/audit/detail")
+    def get_audit_detail(
+        run_id: str,
+        kind: Literal[
+            "run",
+            "role",
+            "capability",
+            "tool",
+            "artifact",
+            "prompt",
+            "config",
+            "report",
+        ] = Query(),
+        selection_id: str = Query(alias="id", min_length=1, max_length=512),
+        source_sequence: int = Query(alias="v", ge=0),
+    ) -> dict[str, Any]:
+        try:
+            return project_audit_detail(
+                selected_store,
+                run_id,
+                AuditSelection(kind=kind, id=selection_id),
+                source_sequence,
+            )
+        except AuditTerminalRequired as exc:
+            raise ApiBoundaryError(
+                409,
+                "audit_terminal_required",
+                "Audit Center is available only for terminal runs.",
+            ) from exc
+        except AuditSummaryStale as exc:
+            raise ApiBoundaryError(
+                409,
+                "audit_summary_stale",
+                "The Audit summary changed; refresh it before reading details.",
+            ) from exc
+        except AuditItemNotFound as exc:
+            raise ApiBoundaryError(
+                404,
+                "audit_item_not_found",
+                "The requested Audit item is not available for this run.",
+            ) from exc
 
     @app.get("/api/runs/{run_id}/evidence-refs/{ref_id}")
     def get_evidence_ref(run_id: str, ref_id: str) -> dict[str, Any]:

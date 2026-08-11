@@ -4,7 +4,27 @@ TradingAgents is a **LangGraph-based multi-agent LLM financial trading analysis 
 
 It is a research tool, not a broker, portfolio accounting system, or source of investment advice.
 
-## Pipeline
+## Pipelines
+
+The learning-research path is the default product direction for the local workbench:
+
+```
+Market / Social / News / Fundamentals Analysts
+                    ↓
+             Evidence Steward
+                    ↓
+          Bull ↔ Bear Research Debate
+                    ↓
+             Research Manager
+                    ↓
+              ResearchCaseV2
+                    ↓
+          Thesis Diff + Reader Surface
+```
+
+It supports company research and holding review without producing orders, target
+positions, or Buy/Hold/Sell instructions. The upstream-compatible legacy path is
+still available for older runs and CLI workflows:
 
 ```
 Market / Social / News / Fundamentals Analysts
@@ -22,7 +42,11 @@ Market / Social / News / Fundamentals Analysts
              Portfolio Manager
 ```
 
-Four analysts gather complementary evidence. The Evidence Steward validates the research package before the Bull and Bear researchers debate it. The Research Manager produces an investment plan, the Trader proposes an action, three risk roles challenge that proposal, and the Portfolio Manager returns the final decision (Buy / Overweight / Hold / Underweight / Sell).
+Four analysts gather complementary evidence. The Evidence Steward validates the
+research package before the Bull and Bear researchers debate it. In learning modes,
+the Research Manager produces evidence-bound claims that are assembled into a
+typed Research Case and projected into the Reader. Trader and risk/portfolio roles
+remain part of the legacy pipeline only.
 
 ## Quick Start
 
@@ -52,7 +76,7 @@ tradingagents web                          # serve at http://127.0.0.1:8000
 tradingagents web --port 8765 --open       # custom port + open browser
 ```
 
-The workbench binds only to `127.0.0.1` and runs the real TradingAgents graph via a React/TypeScript frontend with a FastAPI + SSE backend. It groups all 13 roles into six workflow stages with typed edges and renders narrative artifacts as sanitized Markdown. The reading surface is **progressive**: a completed run defaults to a **DecisionBrief** (rating / conclusion / drivers / risks) above a six-stage **debate journey** timeline — click a stage to expand **round cards** (LLM-generated topic, summary, keywords, bull/bear conviction bars), then expand a card to the full two/three-lane debate text. Run history groups active / completed / failed runs (recent failures keep their error category), and the opt-in **AuditReader** still exposes the complete report. The bundled frontend does not require Node.js at runtime.
+The workbench binds only to `127.0.0.1` and runs the real TradingAgents graph via a React/TypeScript frontend with a FastAPI + SSE backend. It groups all 13 roles into six workflow stages with typed edges and renders narrative artifacts as sanitized Markdown. The reading surface is **progressive**: a completed run defaults to a **DecisionBrief** (rating / conclusion / drivers / risks) above a six-stage **debate journey** timeline — click a stage to expand **round cards** (LLM-generated topic, summary, keywords, bull/bear conviction bars), then expand a card to the full two/three-lane debate text. Run history groups active / completed / failed runs (recent failures keep their error category). Terminal runs use an opt-in **Audit Center** with summary-first, single-record detail loading; live runs keep a separate **real-time inspector**. The bundled frontend does not require Node.js at runtime.
 
 Rebuild the frontend from source when changing `frontend/src/`:
 ```bash
@@ -82,8 +106,11 @@ Persistent data lives under `~/.tradingagents/`:
 
 ## Documentation
 
-See [CLAUDE.md](CLAUDE.md) for the authoritative reference on architecture, data fallback chains, and design principles.
+The current product contract, implementation status, and remaining Reader roadmap
+live in one maintained document. Supporting operational references remain focused
+on their respective data, replay, and preset contracts:
 
+- [Learning research and Reader](docs/learning-research-reader.md)
 - [A-share data capabilities](docs/a-share-data-capabilities.md)
 - [Observability and replay](docs/observability-replay.md)
 - [Workbench presets](docs/workbench-presets.md)

@@ -246,6 +246,8 @@ tmp_run_*.py
 
 # Playwright / e2e artifacts
 frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
 .playwright-cli/
 .playwright-mcp/
 
@@ -258,14 +260,41 @@ output/
 
 # Tests, dev-only assets, and e2e scaffolding are kept local-only;
 # the public fork stays clean and only ships runnable code + key docs (2026-08)
-/tests/
+/tests/*
+!/tests/test_thesis_diff.py
+!/tests/test_reader_companion.py
+!/tests/test_reader_audit.py
 /assets/
 /frontend/src/**/*.test.ts
 /frontend/src/**/*.test.tsx
 /frontend/src/test/
 /frontend/vitest.config.ts
-/frontend/playwright.config.ts
-/frontend/e2e/
+!/frontend/src/components/reader/ThesisDiffSection.test.tsx
+!/frontend/src/components/reader/ReaderSurface.privacy.test.tsx
+!/frontend/src/components/reader/ReaderSurface.companion.test.tsx
+!/frontend/src/components/reader/AuditCenter.test.tsx
+!/frontend/src/components/layout/WorkbenchLayout.audit.test.tsx
+!/frontend/src/api/client.companion.test.ts
+!/frontend/src/api/client.audit.test.ts
+!/frontend/src/hooks/useCompanion.test.tsx
+!/frontend/src/hooks/useAudit.test.tsx
+!/frontend/src/test/
+!/frontend/src/test/setup.ts
+!/frontend/vitest.config.ts
+!/frontend/playwright.config.ts
+!/frontend/e2e/
+/frontend/e2e/*
+!/frontend/e2e/reader-golden.spec.ts
+!/frontend/e2e/reader-quality.spec.ts
+!/frontend/e2e/fixtures/
+/frontend/e2e/fixtures/*
+!/frontend/e2e/fixtures/reader-fixtures.ts
+!/frontend/e2e/support/
+/frontend/e2e/support/*
+!/frontend/e2e/support/reader-harness.ts
+!/frontend/e2e/__screenshots__/
+/frontend/e2e/__screenshots__/*
+!/frontend/e2e/__screenshots__/*.png
 /scripts/e2e_server.py
 
 # Local planning / docs (kept local-only, not pushed)

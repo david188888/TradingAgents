@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import threading
 from collections.abc import Callable, Mapping
 from copy import deepcopy
@@ -11,6 +12,7 @@ from datetime import datetime
 from math import isfinite
 from typing import Any, Protocol
 
+from tradingagents.agents.schemas import ResearchCaseV2
 from tradingagents.dataflows.config import config_scope
 from tradingagents.dataflows.interface import news_cache_scope
 from tradingagents.dataflows.progress import DataProgressEvent, progress_sink
@@ -525,15 +527,10 @@ class SingleRunManager:
         request: AnalysisRequest,
         result: AnalysisResult,
     ) -> None:
-        # Learning/holding-review runs skip nodes such as trader/risk, leaving
-        # their roles pending. Terminalize open lifecycles on success too so
-        # skipped roles are recorded as not_reached instead of looking like a
-        # role that never finished.
-        self._terminalize_open_lifecycles(
-            run_id,
-            mode="completed",
-            reason="analysis_completed",
-        )
+        # Learning/holding-review runs leave skipped roles pending. Only those
+        # roles are expected on success; a running role still indicates an
+        # incomplete lifecycle and must fail the invariant below.
+        self._terminalize_pending_roles(run_id, reason="analysis_completed")
         invalid_roles = {
             actor_id: status
             for actor_id, (status, _event) in _reduce_open_lifecycles(
@@ -612,6 +609,11 @@ class SingleRunManager:
         with contextlib.suppress(Exception):
             # A derived cache must never change an already-committed run outcome.
             RunProjectionPublisher(self.store).publish_view(run_id)
+        with contextlib.suppress(Exception):
+            # Cross-run thesis diff is a best-effort derived reading aid. It must
+            # read only committed artifacts and must never change the run's
+            # completed terminal state.
+            self._publish_thesis_diff(run_id, completed_at)
         try:
             from .debate_summary import schedule_debate_summary
 
@@ -619,6 +621,104 @@ class SingleRunManager:
         except Exception:
             # Summary generation is a best-effort reading aid; never terminal.
             pass
+
+    def _publish_thesis_diff(self, run_id: str, completed_at: str) -> str | None:
+        """Build and persist the cross-run thesis diff after run completion.
+
+        Best effort: it reads only the committed research-case-v2 artifact and
+        previously completed runs. The caller suppresses failures so publication
+        can never alter the already-committed terminal run state.
+        """
+        from tradingagents.research.thesis_diff import (
+            THESIS_DIFF_CONTRACT,
+            build_thesis_diff_for_run,
+        )
+
+        events = self.store.read_events(run_id)
+        case_artifact_id = None
+        case_sequence = -1
+        completed_event = None
+        for event in events:
+            if (
+                event.type == "run.completed"
+                and event.payload.get("completed_at") == completed_at
+            ):
+                completed_event = event
+                continue
+            if event.type != "artifact.written":
+                continue
+            payload = event.payload
+            if payload.get("public_contract") != "research-case-v2":
+                continue
+            sequence = payload.get("committed_sequence")
+            artifact_id = payload.get("artifact_id")
+            if (
+                isinstance(sequence, int)
+                and isinstance(artifact_id, str)
+                and sequence > case_sequence
+            ):
+                case_sequence, case_artifact_id = sequence, artifact_id
+        if not case_artifact_id or completed_event is None:
+            return None
+
+        def existing_publication_id(current_events: list[PersistedEvent]) -> str | None:
+            for event in current_events:
+                if (
+                    event.type == "artifact.written"
+                    and event.payload.get("public_contract") == THESIS_DIFF_CONTRACT
+                    and event.payload.get("source_artifact_id") == case_artifact_id
+                    and event.payload.get("source_event_id")
+                    == completed_event.event_id
+                ):
+                    artifact_id = event.payload.get("artifact_id")
+                    if isinstance(artifact_id, str):
+                        return artifact_id
+            return None
+
+        existing = existing_publication_id(events)
+        if existing is not None:
+            return existing
+
+        raw = self.store.read_artifact(run_id, case_artifact_id)
+        current_case = ResearchCaseV2.model_validate(json.loads(raw))
+        diff = build_thesis_diff_for_run(
+            self.store,
+            run_id=run_id,
+            current_case=current_case,
+            current_case_artifact_id=case_artifact_id,
+            current_completed_at=completed_at,
+        )
+        with self.store.lock_for(run_id):
+            existing = existing_publication_id(self.store.read_events(run_id))
+            if existing is not None:
+                return existing
+            artifact = self.store.store_artifact(
+                run_id,
+                kind=THESIS_DIFF_CONTRACT,
+                value=diff.model_dump(mode="json"),
+            )
+            self.broker.publish(
+                RunEventDraft(
+                    run_id,
+                    "artifact.written",
+                    {
+                        "artifact_id": artifact.artifact_id,
+                        "kind": artifact.kind,
+                        "media_type": artifact.media_type,
+                        "content_sha256": artifact.content_sha256,
+                        "byte_size": artifact.byte_size,
+                        "locator": artifact.locator,
+                        "public_contract": THESIS_DIFF_CONTRACT,
+                        "committed_sequence": case_sequence,
+                        "source_artifact_id": case_artifact_id,
+                        "source_event_id": completed_event.event_id,
+                        "publication_phase": "post_completion",
+                    },
+                    parent_event_id=completed_event.event_id,
+                    status="committed",
+                )
+            )
+            return artifact.artifact_id
 
     def _finish_cancelled(self, run_id: str) -> None:
         snapshot = self.store.read_snapshot(run_id)

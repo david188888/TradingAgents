@@ -1,8 +1,10 @@
 import type { RunViewEnvelopeDTO } from "../../api/contracts";
 import { errorCategoryLabel } from "../../domain/errorCategory";
+import type { AuditOpenHandler } from "./AuditCenter";
 
 export interface FailedRunViewProps {
   envelope: RunViewEnvelopeDTO;
+  onOpenAudit: AuditOpenHandler;
 }
 
 /**
@@ -10,7 +12,7 @@ export interface FailedRunViewProps {
  * browsable via the workflow map below, but no DecisionBrief exists. We show
  * the categorized failure reason instead of pretending a conclusion exists.
  */
-export function FailedRunView({ envelope }: FailedRunViewProps): JSX.Element {
+export function FailedRunView({ envelope, onOpenAudit }: FailedRunViewProps): JSX.Element {
   const { run } = envelope.view;
   const category = run.error_category;
   const message = run.error_message;
@@ -34,6 +36,13 @@ export function FailedRunView({ envelope }: FailedRunViewProps): JSX.Element {
       <p className="failed-run-hint">
         开始时间：{new Date(run.created_at).toLocaleString()}。完整事件记录保留在运行目录中，可通过工作流图回顾失败前的进度。
       </p>
+      <button
+        type="button"
+        className="brief-audit-command"
+        onClick={(event) => onOpenAudit({ section: "overview" }, event.currentTarget)}
+      >
+        进入审计中心
+      </button>
     </section>
   );
 }
