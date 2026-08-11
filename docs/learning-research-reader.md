@@ -89,11 +89,12 @@ Reader 只消费已经 durable commit 的公开产物。目前受控的派生契
 run、来源 graph task、checkpoint event 和 committed sequence。跨 run、
 未知契约或没有提交身份的输入必须失败；重放必须幂等。
 
-`thesis-diff-v1` 当前走另一条 post-completion best-effort 通道：它在
-`run.completed` 之后直接写入 content-addressed artifact，并沿用 Research
-Case 的 committed sequence，但尚未携带 graph task/checkpoint 身份，也没有
-事件级幂等守卫。该差异是 P1-7 合入前必须关闭的已知缺口，不能把
-Research Case 的提交保证直接套用到 Thesis Diff。
+`thesis-diff-v1` 走独立的 post-completion best-effort 通道：它在
+`run.completed` 之后写入 content-addressed artifact，沿用 Research Case 的
+committed sequence，并记录来源 Research Case artifact、来源 completed event
+和 `publication_phase=post_completion`。artifact 事件以 `run.completed` 为父
+事件，并在当前 run 锁内按来源 artifact + event 幂等发布。它不伪装成 graph
+task/checkpoint 产物，也不能直接套用 Research Case 的 graph commit 语义。
 
 ### 2.4 阅读与审计层
 
@@ -292,8 +293,7 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 | 真实 LLM 结构化输出与终态修复 | Merged | `d09dae5`, `28ac8d5`, `24af92b` |
 | Reader Core API：typed/legacy/unavailable | Merged | `154d5ef` |
 | Reader 第一屏 | Merged | `1bfa560` |
-| ThesisDiff 生产实现 | Branch Ready | `2f818bf`, `codex/thesis-ledger-reader-companion`；测试尚未进入 Git |
-| P1-7 发布幂等、provenance 与可复现测试 | Planned | 合入前硬化门槛 |
+| ThesisDiffV1、发布幂等、provenance 与可复现测试 | Branch Ready | `2f818bf` + `codex/reader-roadmap-docs` |
 | P2-2 学习报告与论点变化 | Planned | 依赖 ThesisDiff 合入 |
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Planned | Reader Core 后续契约 |
 | P2-3b 自适应伴读栏 | Planned | 依赖 P2-3a |
@@ -304,12 +304,12 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 
 ## 5. 剩余路线
 
-### 5.1 P1-7 合入前硬化与文档整合
+### 5.1 P1-7 合入前硬化与文档整合（Branch Ready）
 
 **目标：** 先补齐可复现验证与发布边界，再让 `main` 拥有稳定的跨 Run
 论点比较和唯一文档入口。
 
-验收：
+已完成：
 
 - `2f818bf` 的生产实现完整保留；
 - 为基线选择、五态转移、invalidated 反证守卫、Reader 投影和 HTTP 响应
@@ -317,6 +317,8 @@ content-addressed ID、locator、hash 和 raw content，而不只检查顶层字
 - 明确调整 `/tests/` ignore 策略或采用受 Git 跟踪的测试位置，不再把
   local-only tests 当作合入证明；
 - post-completion 发布具备稳定 provenance 和事件级幂等测试；
+- 恢复 `2f818bf` 误覆盖的 `_finish_cancelled` 方法边界，并把成功收尾收窄为
+  只终结 pending/skipped roles，不掩盖真正 running 的角色；
 - 本文进入 Git，旧重复文档删除；
 - README 只指向本文，不再描述学习路径为 Buy/Sell 管线；
 - `CLAUDE.md` 不进入提交；
@@ -402,14 +404,15 @@ npm --prefix frontend run build
 git diff --check
 ```
 
-当前可复现的仓库基线必须以新 checkout 的实际收集结果为准。此前 handoff
-worktree 的 local-only suite 曾报告 133 passed，以及 ThesisDiff + Reader API
-22 passed；但 `/tests/` 被整体忽略，这些新增测试未进入 `2f818bf`，因此这两
-个数字只作为验收线索，不是 branch 合入证明。
+P1-7 现在允许并跟踪唯一的 `tests/test_thesis_diff.py`，覆盖五态、反证守卫、
+同时间戳 tuple 基线排序、post-completion provenance/幂等、Reader HTTP 投影
+和取消终态方法边界。其余本地测试资产继续被忽略。
 
-本次文档审计在当前 checkout 观察到约 1,549 个 local tests；P1-7 硬化时
-必须记录最终的准确命令、收集数量和结果。Ruff、前端 typecheck 与 production
-build 已通过，但合入前仍需在最终 diff 上重跑。
+当前验证：P1-7 + RunManager 生命周期 20 passed；Ruff、前端 typecheck 与
+production build 通过。完整本地套件为 1536 passed、17 failed、68 subtests
+passed；17 项中 4 项来自受限环境（1 项 live-network、3 项用户日志目录权限），
+其余 13 项是本轮改动前已存在的 legacy 默认行为/旧投影契约断言。它们不触及
+P1-7 的改动文件，继续作为独立基线债务处理，不能误报为本轮全绿。
 
 ### 6.2 Definition of Done
 
@@ -430,8 +433,9 @@ build 已通过，但合入前仍需在最终 diff 上重跑。
 ### 6.3 提交边界
 
 - `CLAUDE.md` 存在用户本地修改，不得纳入本任务提交。
-- `tests/` 当前被仓库规则整体忽略。P1-7 合入前必须显式决定可复现测试的
-  受跟踪位置或调整 ignore 规则；未作决定前不得用 `git add -f` 临时绕过。
+- `tests/` 默认保持本地忽略；`.gitignore` 只显式允许 P1-7 的
+  `tests/test_thesis_diff.py`。新增其他测试必须单独评估，不能用 `git add -f`
+  临时绕过。
 - 修改 `frontend/src/` 后必须 rebuild，并检查 `tradingagents/web/static/`。
 - 单个 story 超过 8 points 时先拆分；默认同时只推进一个 story。
 - 不再创建 dated spec、plan、status、report 或 handoff Markdown。

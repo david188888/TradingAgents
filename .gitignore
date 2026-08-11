@@ -258,7 +258,8 @@ output/
 
 # Tests, dev-only assets, and e2e scaffolding are kept local-only;
 # the public fork stays clean and only ships runnable code + key docs (2026-08)
-/tests/
+/tests/*
+!/tests/test_thesis_diff.py
 /assets/
 /frontend/src/**/*.test.ts
 /frontend/src/**/*.test.tsx
