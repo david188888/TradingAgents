@@ -295,7 +295,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | P2-2 学习报告与论点变化 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
 | P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-4 独立 Audit Center | Planned | 依赖安全审计入口 |
+| P2-4 独立 Audit Center | Design Approved | 依赖安全审计入口 |
 | P2-5 视觉、响应式、可访问性与 golden QA | Planned | 依赖 P2-2～P2-4 |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
@@ -449,17 +449,102 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
 selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为 115 passed、
 2 failed，仍是既有 Controls/App 文案与入口断言。
 
-### 5.5 P2-4：独立 Audit Center（5 points）
+### 5.5 P2-4：独立 Audit Center（5 points，Design Approved）
 
-验收：
+**As a** 需要核验研究过程的 Reader 用户
+**I want** 在独立工作区中按需检查运行、角色、能力、工具和持久化材料
+**So that** 我能追溯结论依据，又不会在默认阅读路径中提前加载 raw 审计数据。
 
-- 运行、角色、能力、工具、artifact、prompt/config 分区；
-- Reader 到 Audit Center 不超过两步；
-- 打开 Audit Center 后才加载摘要；
-- 用户选择单项后才加载 raw；
-- 超阈值内容只显示元数据和下载入口；
-- legacy run 保留完整阶段导航；
-- Audit 失败不清空或降级 Reader 正文。
+#### 产品边界
+
+- 新 Audit Center 替换终态运行中的旧 `AuditReader`，覆盖 completed、failed、
+  cancelled、interrupted 和 legacy；实时运行的 `Inspector` 保留，并将入口文案
+  明确为“实时审计栏”；
+- Decision Brief、Reader 审计计数摘要和 Stage Detail 的既有入口统一打开同一个
+  Audit Center；从 Reader 到中心不超过两步；
+- legacy 继续使用同一工作区并保留阶段导航；缺少结构化事件或关联关系时明确显示
+  “历史运行未记录”，不伪造数据，也不自动回退完整 raw 报告；
+- 完整报告作为 artifact 列表中的“已发布报告”进入统一详情流程，不再拥有自动加载
+  的特殊通道；
+- P2-4 不重构实时执行监控、事件流、Companion 或 Reader 公共 DTO。
+
+#### 服务端契约与投影
+
+- 新增 `GET /api/runs/{run_id}/audit`，返回封闭 `AuditSummaryDTO`；只在用户打开
+  Audit Center 后由前端调用；
+- 新增 `GET /api/runs/{run_id}/audit/detail?kind=...&id=...`，selection 封闭为
+  `run | role | capability | tool | artifact | prompt | config | report`；只有用户明确
+  选择单项后才调用；
+- 摘要固定包含 run、roles、capabilities、tools、artifacts 和 prompt/config 分区，
+  以及分区级 availability、reason code 和安全计数；列表项只返回显示字段与当前
+  run 内可解析的 `item_id`，不返回 locator、文件路径或 raw 内容；
+- detail ID 必须从当前 run 的摘要索引解析；未知、跨 run、伪造或不可公开 ID 统一
+  返回 typed `audit_item_not_found` 404，不接受 locator、路径或任意 raw URL；
+- 投影只读取当前 run 已持久化的 snapshot、events 与 artifact metadata，不调用模型、
+  数据供应商或其他 run；投影失败返回 `availability=unavailable` 的安全 envelope，
+  partial/legacy 使用分区级降级而不是伪装成执行失败；
+- prompt 详情只返回已持久化且已脱敏的 snapshot，不生成或推断模型私有思维链；
+  config 使用允许字段清单，密钥只返回“已配置/未配置”；tool 返回工具名、参数摘要、
+  状态与错误分类，默认不展开供应商原始响应；
+- artifact/report 仅在文本或 JSON 且不超过固定 256 KiB 时内联；超阈值、二进制或
+  不支持类型只返回媒体类型、大小和经验证的下载入口，二进制内容不注入 DOM。
+
+#### 前端组件与状态
+
+- `useAuditSummary(runId, open)` 只在 `open=true` 时请求摘要，负责取消、成功缓存和
+  当前请求重试；
+- `useAuditDetail(runId, selection)` 只在非空 selection 时请求详情，按
+  `(run_id, kind, id)` 缓存成功结果，取消旧请求并阻止旧响应覆盖当前 selection；
+- `AuditCenter` 管理全屏 modal、入口上下文、当前分区、selection、焦点和关闭恢复；
+  `WorkbenchLayout` 只负责打开/关闭并传递可选角色或阶段上下文，不读取审计数据；
+- 分区组件只渲染 summary DTO；`AuditDetailPanel` 统一展示详情、下载入口以及加载、
+  typed 404、普通错误和重试状态，不直接访问 API；
+- 打开状态显式建模为
+  `closed → summary-loading → browsing → detail-loading/detail-ready/detail-error`；
+  切换分区清空 selection 并取消进行中的详情请求，但保留当前 run 的成功缓存；
+- 切换 run 清空摘要、详情、过滤与入口上下文；状态不写 URL 或 localStorage，刷新不
+  恢复 Audit Center。
+
+#### 布局、焦点与入口上下文
+
+- Audit Center 是覆盖应用内容的全屏 modal 工作区：顶部运行信息与关闭操作，左侧
+  分区导航，中间摘要列表，右侧单项详情；背景 Reader 保持挂载；
+- 入口带角色或阶段上下文时只切换到相关分区并高亮摘要项，不自动读取详情；没有
+  上下文时默认进入概览；
+- 打开时焦点进入标题或关闭控制并约束在 modal 内；关闭后使用 `preventScroll`
+  返回原触发入口，不改变 Reader 滚动位置；
+- 有详情 selection 时第一次 `Escape` 只清空详情，第二次才关闭工作区；没有详情时
+  第一次 `Escape` 直接关闭；
+- 14 英寸 Mac 和外接显示器使用三栏；空间不足时右侧详情变为工作区内覆盖层，分区
+  和摘要列表保持可操作，不增加手机底部 sheet；
+- 动画只使用短距离透明度/位移，`prefers-reduced-motion` 下禁用非必要动画。
+
+#### 数据与错误边界
+
+- 初始 Reader、关闭状态和只有入口上下文时都不得读取 Audit detail；摘要只在首次
+  打开时读取；
+- summary 和 detail 都只缓存成功结果；关闭、selection 改变或 run 切换取消进行中
+  的对应请求，取消不显示错误；失败重试只作用于当前 run 或 selection key；
+- run 不存在沿用 `run_not_found` 404；summary unavailable、分区 partial/legacy、
+  detail typed 404 和普通网络错误使用不同状态文案；
+- Audit Summary 或 Detail 的加载和失败不清空、不重载、不降级 Reader，也不回退
+  旧 `AuditReader` 或任意 raw artifact 接口。
+
+#### 验收
+
+- 后端契约覆盖 completed、failed、cancelled/interrupted、partial 与 legacy，以及
+  八种 detail selection 的当前 run 归属、跨 run/伪造 ID、脱敏和 typed 404；
+- 测试 256 KiB 边界、二进制/不支持媒体类型、下载描述，并证明投影不调用模型或
+  外部数据供应商；
+- Hook 测试覆盖零预取、打开后单次 summary、二次选择 detail、请求取消、旧响应
+  隔离、成功缓存、失败重试和 run 切换清理；
+- 组件测试覆盖所有终态入口、六分区、入口上下文预选、分层 `Escape`、焦点约束、
+  关闭后焦点/滚动恢复、partial/legacy 空态和大型内容下载模式；
+- Reader 初始响应与 DOM 继续不包含 Audit raw 数据，旧 `AuditReader` 不再挂载；
+- Playwright 使用 1512px 检查三栏、长 Prompt/JSON 与关闭恢复，使用 1200px 检查
+  工作区内详情覆盖；键盘全流程和 reduced-motion 通过；
+- 前端定向 Vitest、typecheck、production build、静态产物同步、后端契约回归与
+  `git diff --check` 通过，并记录既有全量测试基线。
 
 ### 5.6 P2-5：视觉与 golden QA（5 points）
 
