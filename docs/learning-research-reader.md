@@ -641,10 +641,12 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
   颜色模式、动画和截图参数；
 - Playwright 路由拦截返回本地脱敏 fixture，不连接模型、供应商或用户历史数据，
   但页面仍从真实 React 应用启动；
-- 11 张批准后的截图基线进入 Git，临时报告、失败截图和 trace 不进入 Git；默认
-  测试只比较基线，只有显式 `--update-snapshots` 才能更新图片；
-- 新增 `@axe-core/playwright` 作为唯一测试依赖，用于自动化 WCAG 规则扫描；键盘、
-  焦点、`Escape` 和回焦使用明确的 Playwright 操作断言；
+- 11 张批准后的截图基线进入 Git，临时报告、失败截图和 trace 不进入 Git；实现时
+  必须同步调整 `.gitignore`，只放行 P2-5 的 Playwright 配置、用例、fixture 和
+  snapshot 目录，禁止用 `git add -f` 绕过提交边界；默认测试只比较基线，只有显式
+  `--update-snapshots` 才能更新图片；
+- 新增 `@axe-core/playwright`，它是 P2-5 唯一新增的 devDependency，用于自动化
+  WCAG 规则扫描；键盘、焦点、`Escape` 和回焦使用明确的 Playwright 操作断言；
 - production build 继续直接写入 `tradingagents/web/static/`，提交后再次 build 不得
   产生新的静态产物差异。
 
@@ -662,19 +664,44 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
 
 #### Golden 矩阵与视觉边界
 
-- typed 覆盖 1512、1440、1280、1200、768px；partial、failed、legacy 各覆盖
-  1440 和 768px，共 11 组；删除 390px 手机基线；
-- 1512/1440 验证 Reader 与固定 Companion 的宽屏布局，1280/1200 验证抽屉与
-  Audit 详情覆盖，768 验证单列 Reader、中文断行和极窄桌面窗口，不承诺手机体验；
-- golden 截取固定浏览器视口内的完整工作区，不截取无限延伸的整页；另用尺寸断言
-  检查横向溢出、列宽、抽屉和 modal 边界；
-- 关闭动画、隐藏光标并固定时间与 locale；允许极少量抗锯齿差异，不允许布局级变化；
+- golden 的唯一生成/比较环境为 macOS arm64，使用 `npm ci` 安装 lockfile 中固定的
+  Playwright 与 Chromium revision，并使用 macOS 系统字体栈；其他 OS 只运行语义、
+  隐私和交互断言，不比较像素基线；
+- 所有截图固定 DPR 1、`zh-CN`、`Asia/Shanghai`、light color scheme、页面滚动位置 0，
+  等待 `document.fonts.ready` 和当前场景所需的 mocked 请求全部完成后再截图；截图根
+  为 `page` 的当前 viewport，不使用 locator screenshot 或 `fullPage`；pixelmatch
+  `threshold=0.15`，且
+  `maxDiffPixelRatio=0.002`，超过即失败，不允许用放宽容差替代缺陷修复；
+- 关闭动画、隐藏光标并固定 fixture 时间；以下 11 项是唯一基线场景：
+
+| 基线 | 视口 | 截图前状态 | 固定 selection | 滚动 / 根 |
+|---|---:|---|---|---|
+| typed-wide-companion | 1512×982 | Reader 顶部，Companion pinned | `claim:claim-growth` | 0 / page viewport |
+| typed-wide-audit | 1440×900 | Audit Center overview + inline detail | `artifact:artifact-report` | 0 / page viewport |
+| typed-companion-drawer | 1280×832 | Reader 顶部，Companion drawer | `evidence:evidence-filing` | 0 / page viewport |
+| typed-audit-overlay | 1200×800 | Audit Center overview + detail overlay | `tool_call:tool-market` | 0 / page viewport |
+| typed-narrow-reader | 768×900 | Reader 顶部，无 overlay | 无 | 0 / page viewport |
+| partial-reader | 1440×900 | Reader 顶部，无 overlay | 无 | 0 / page viewport |
+| partial-narrow-audit | 768×900 | Audit Center partial overview | 无 | 0 / page viewport |
+| failed-reader | 1440×900 | FailedRunView 顶部 | 无 | 0 / page viewport |
+| failed-narrow-audit | 768×900 | FailedRunView 的 Audit overview | 无 | 0 / page viewport |
+| legacy-reader | 1440×900 | legacy 降级页顶部 | 无 | 0 / page viewport |
+| legacy-narrow-audit | 768×900 | legacy Audit overview | 无 | 0 / page viewport |
+
+- 1512/1440 验证宽屏 Companion 和 Audit inline detail，1280/1200 验证抽屉与
+  Audit detail overlay，768 验证单列 Reader、中文断行和极窄桌面窗口，不承诺
+  手机体验；当前 760/720px 相关规则必须对齐到 768px，并用 768/769px 断言锁定
+  单列边界；
+- 另用尺寸断言检查横向溢出、列宽、抽屉和 modal 边界；
 - 继续复用现有 tokens、卡片、`RoleIcon`、`SafeMarkdown` 和研究终端视觉，不引入
   第二套视觉语言。
 
 #### 可访问性与交互验收
 
-- 以 WCAG 2.2 AA 为目标，但不宣称整站认证；对页面和主要 overlay 执行自动扫描；
+- 以 WCAG 2.2 AA 为目标，但不宣称整站认证；axe 固定启用 `wcag2a`、`wcag2aa`、
+  `wcag21aa`、`wcag22aa` tags，对 typed/partial/failed/legacy Reader、Companion
+  pinned/drawer、Audit modal 与 inner detail overlay 分别要求零 violation；不得使用
+  全局 exclude 或 disable，单节点例外必须先在本文说明理由并由用户确认；
 - 覆盖 Tab 顺序、可见焦点、Companion 开关/回焦、Audit Center 焦点约束、分层
   `Escape` 和关闭后回焦；
 - 验证 modal/drawer 的 `aria-modal`、`aria-hidden`/`inert` 语义；
@@ -746,6 +773,9 @@ legacy 默认行为/旧投影契约断言。完整前端本地套件仍有 2 项
 - 前端测试默认保持本地忽略；当前只显式允许 P2-2、P2-3 和 P2-4 的 Reader 请求、
   Hook、组件、隐私与 Workbench 集成回归，以及 Vitest 配置和共享 cleanup setup，
   以保证新 checkout 可直接复现这些 story。
+- P2-5 实现必须同步修改 `.gitignore`，只额外放行 `frontend/playwright.config.ts`、
+  P2-5 的 `frontend/e2e/` 用例、四类脱敏 fixture 与 snapshot 基线；Playwright
+  report、trace、失败截图和 test-results 继续忽略，禁止用 `git add -f` 临时绕过。
 - 修改 `frontend/src/` 后必须 rebuild，并检查 `tradingagents/web/static/`。
 - 单个 story 超过 8 points 时先拆分；默认同时只推进一个 story。
 - 不再创建 dated spec、plan、status、report 或 handoff Markdown。
