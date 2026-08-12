@@ -32,6 +32,10 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_NEWS_LAYER1_ENABLED":     "news_layer1_enabled",
     "TRADINGAGENTS_NEWS_LAYER2_ENABLED":     "news_layer2_enabled",
     "TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR":   "news_layer2_cache_dir",
+    "TRADINGAGENTS_WIND_ENABLED":            "wind_enabled",
+    "TRADINGAGENTS_WIND_MAX_CONCURRENCY":    "wind_max_concurrency",
+    "TRADINGAGENTS_WIND_REQUEST_TIMEOUT_SECONDS": "wind_request_timeout_seconds",
+    "TRADINGAGENTS_WIND_STRICT_EDB_ALLOWLIST": "wind_strict_edb_allowlist",
 }
 
 
@@ -161,6 +165,13 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "a_share_specialty_data": "eastmoney",
         "a_share_query_data": "iwencai",
         "a_share_telegraph": "cls",
+        # Wind AIFin Market premium data (requires WIND_API_KEY).
+        # These categories only have wind as a vendor; when wind_enabled is
+        # False or the key is missing, these capabilities degrade to
+        # unavailable without affecting core A-share paths.
+        "wind_index_data": "wind",
+        "wind_macro_data": "wind",
+        "wind_risk_data": "wind",
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
@@ -274,6 +285,15 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR",
         os.path.join(_TRADINGAGENTS_HOME, "cache", "news-layer2"),
     ),
+    # Wind AIFin Market (https://aifinmarket.wind.com.cn) premium data.
+    # Enabled by default for this local research workspace. Set
+    # wind_enabled=False to disable Wind capabilities without affecting core
+    # A-share OHLCV/fundamentals/news paths.
+    "wind_enabled": True,
+    "wind_max_concurrency": 1,
+    "wind_request_timeout_seconds": 120,
+    "wind_strict_edb_allowlist": False,
+    "wind_pinned_skill_version": "2.0.1",
     # Methodology scorecards deliberately keep subjective cutoffs in config,
     # rather than burying them in a skill prompt. They are interpretation aids,
     # not trading rules: missing inputs must remain unavailable.

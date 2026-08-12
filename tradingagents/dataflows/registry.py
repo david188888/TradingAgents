@@ -92,6 +92,15 @@ from .tavily_news import (
     get_news_tavily,
 )
 from .tencent_provider import get_a_share_valuation
+from .wind_provider import (
+    get_equity_risk_metrics as get_wind_equity_risk_metrics,
+    get_index_fundamentals as get_wind_index_fundamentals,
+    get_index_history as get_wind_index_history,
+    get_index_profile as get_wind_index_profile,
+    get_index_snapshot as get_wind_index_snapshot,
+    get_macro_series as get_wind_macro_series,
+    search_macro_series as search_wind_macro_series,
+)
 
 # Import from vendor-specific modules
 from .y_finance import (
@@ -175,6 +184,23 @@ TOOLS_CATEGORIES = {
         "description": "Optional China macro and economic-cycle source series",
         "tools": ["get_china_macro_indicators"],
     },
+    "wind_index_data": {
+        "description": "Wind A-share index snapshot, history, profile, and fundamentals (PE/PB/yield)",
+        "tools": [
+            "get_index_snapshot",
+            "get_index_history",
+            "get_index_profile",
+            "get_index_fundamentals",
+        ],
+    },
+    "wind_macro_data": {
+        "description": "Wind EDB macro/industry indicator search and time-series fetch",
+        "tools": ["search_macro_series", "get_macro_series"],
+    },
+    "wind_risk_data": {
+        "description": "Wind A-share equity risk metrics (Beta, volatility, drawdown, Sharpe)",
+        "tools": ["get_equity_risk_metrics"],
+    },
     "a_share_specialty_data": {
         "description": "A-share public specialty datasets (bulk trades, holders, lockups, dragon-tiger, limit-up, and Interactive Q&A)",
         "tools": [
@@ -224,6 +250,7 @@ VENDOR_LIST = [
     "cninfo",
     "iwencai",
     "cls",
+    "wind",
 ]
 
 # Vendor market capability matrix.
@@ -242,6 +269,7 @@ VENDOR_MARKETS: dict[str, frozenset[str]] = {
     "cninfo": frozenset({"a_share"}),
     "iwencai": frozenset({"a_share"}),
     "cls": frozenset({"a_share"}),
+    "wind": frozenset({"a_share"}),
     "sina": frozenset({"a_share"}),
     "local": frozenset({"a_share"}),
     "yfinance": frozenset({"global"}),
@@ -395,6 +423,15 @@ VENDOR_METHODS = {
     "get_a_share_price_anomaly_count": {"eastmoney": get_a_share_price_anomaly_count_em},
     "search_a_share_iwencai": {"iwencai": search_a_share_iwencai},
     "get_cls_telegraph": {"cls": get_cls_telegraph},
+    # Wind AIFin Market capabilities (premium index/macro/risk data).
+    # Wind-only capabilities: no public fallback for equivalent quality.
+    "get_index_snapshot": {"wind": get_wind_index_snapshot},
+    "get_index_history": {"wind": get_wind_index_history},
+    "get_index_profile": {"wind": get_wind_index_profile},
+    "get_index_fundamentals": {"wind": get_wind_index_fundamentals},
+    "search_macro_series": {"wind": search_wind_macro_series},
+    "get_macro_series": {"wind": get_wind_macro_series},
+    "get_equity_risk_metrics": {"wind": get_wind_equity_risk_metrics},
 }
 
 

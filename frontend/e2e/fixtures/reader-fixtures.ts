@@ -71,6 +71,11 @@ export const configFixture: ConfigResponseDTO = {
   depths: [1, 3, 5],
   output_languages: ["Chinese"],
   checkpoint_available: false,
+  wind: {
+    enabled: false,
+    configured: false,
+    capabilities: [],
+  },
   defaults: {
     llm_provider: "local-fixture",
     quick_think_llm: "fixture-quick",

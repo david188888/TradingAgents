@@ -191,6 +191,22 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         </div>
       </div>
 
+      <div className="input-group wind-status" aria-label="Wind 数据状态">
+        <label>Wind 数据</label>
+        <div className="key-status">
+          {cfg.config?.wind.enabled === true && cfg.config.wind.configured === true ? (
+            <span className="ok">已启用</span>
+          ) : cfg.config?.wind.enabled === true ? (
+            <span style={{ color: "var(--red)" }}>已启用，但未配置 Key</span>
+          ) : (
+            <span>未启用</span>
+          )}
+        </div>
+        {cfg.config?.wind.enabled === true && (
+          <small>{cfg.config.wind.capabilities.join(" · ")}</small>
+        )}
+      </div>
+
       <div className="input-group">
         <label htmlFor="ctrl-provider">LLM Provider</label>
         <select

@@ -15,6 +15,12 @@ from dataclasses import dataclass
 RATE_LIMIT_COOLDOWN_SECONDS = 60.0
 TRANSIENT_FAILURE_COOLDOWN_SECONDS = 20.0
 
+# Long cooldowns for conditions that require human intervention or quota reset.
+MANUAL_RECOVERY_COOLDOWN_SECONDS = 86400.0  # 24h; cleared by record_success/clear
+DAILY_QUOTA_COOLDOWN_SECONDS = 86400.0  # 24h; cleared by record_success/clear
+
+RecoveryType = str  # "timed" | "manual" | "quota"
+
 
 @dataclass(frozen=True)
 class VendorHealthKey:
@@ -28,8 +34,11 @@ class Cooldown:
     key: VendorHealthKey
     reason: str
     retry_at: float
+    recovery: RecoveryType = "timed"
 
     def remaining_seconds(self, now: float) -> float:
+        if self.recovery in ("manual", "quota"):
+            return float("inf")
         return max(0.0, self.retry_at - now)
 
 
@@ -51,6 +60,9 @@ class VendorHealthRegistry:
         cooldown = self._cooldowns.get(key)
         if cooldown is None:
             return None
+        # Manual/quota locks never auto-expire; only record_success/clear clears them.
+        if cooldown.recovery in ("manual", "quota"):
+            return cooldown
         if cooldown.retry_at <= self._clock():
             self._cooldowns.pop(key, None)
             return None
@@ -64,14 +76,43 @@ class VendorHealthRegistry:
         capability: str,
         cooldown_seconds: float,
         reason: str,
+        recovery: str = "timed",
     ) -> None:
-        if cooldown_seconds <= 0:
+        if cooldown_seconds <= 0 and recovery == "timed":
             return
         key = VendorHealthKey(vendor, market, capability)
+        if recovery in ("manual", "quota"):
+            retry_at = float("inf")
+        else:
+            retry_at = self._clock() + cooldown_seconds
         self._cooldowns[key] = Cooldown(
             key=key,
             reason=reason,
-            retry_at=self._clock() + cooldown_seconds,
+            retry_at=retry_at,
+            recovery=recovery,
+        )
+
+    def record_lock(
+        self,
+        *,
+        vendor: str,
+        market: str,
+        capability: str,
+        reason: str,
+        recovery: str = "manual",
+    ) -> None:
+        """Lock a vendor capability until explicit record_success/clear.
+
+        Used for AUTH_ERROR (manual key rotation), BALANCE_ERROR (manual top-up),
+        and DAILY_LIMIT_ERROR (quota reset) where short retries are pointless.
+        """
+        self.record_failure(
+            vendor=vendor,
+            market=market,
+            capability=capability,
+            cooldown_seconds=0,
+            reason=reason,
+            recovery=recovery,
         )
 
     def record_success(self, *, vendor: str, market: str, capability: str) -> None:

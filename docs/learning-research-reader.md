@@ -1,10 +1,10 @@
 # TradingAgents 学习型研究与 Reader
 
 **状态：** 持续维护  
-**最近核验：** 2026-08-11  
+**最近核验：** 2026-08-12（`main` / `fad5620`）  
 **适用范围：** 学习型公司研究、持仓复盘、Research Case、Thesis Diff、Reader、Companion 与 Audit Center
 
-本文是上述范围的唯一长期事实来源。它记录当前有效的产品边界、系统流程、稳定契约、真实实现状态和剩余路线，不记录逐日开发日志。历史方案、废弃设计和完成过程通过 Git 历史查看。
+本文是上述范围的唯一长期事实来源。它记录当前有效的产品边界、系统流程、稳定契约和真实实现状态，不记录逐日开发日志。历史方案、废弃设计和完成过程通过 Git 历史查看。
 
 如果本文与代码不一致，以已经合入 `main` 且通过测试的代码为准，并在同一修复中更新本文。分支上的功能只能标记为 `Branch Ready`，不能提前标记为 `Merged`。
 
@@ -276,12 +276,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 
 ## 4. 当前实现状态
 
-状态只使用：
-
-- `Merged`：已经进入 `main`；
-- `Branch Ready`：已完成并提交至当前分支，但尚未合并；
-- `Design Approved`：设计已由用户确认并通过规格审查，但尚未实施；
-- `Planned`：尚未完成。
+下表列出的能力均已进入 `main`；本轮没有开放的 Reader 实施路线。
 
 | 能力 | 状态 | 依据 |
 |---|---|---|
@@ -294,19 +289,23 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | 真实 LLM 结构化输出与终态修复 | Merged | `d09dae5`, `28ac8d5`, `24af92b` |
 | Reader Core API：typed/legacy/unavailable | Merged | `154d5ef` |
 | Reader 第一屏 | Merged | `1bfa560` |
-| ThesisDiffV1、发布幂等、provenance 与可复现测试 | Branch Ready | `2f818bf` + `codex/reader-roadmap-docs` |
-| P2-2 学习报告与论点变化 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-3a Companion DTO/API 与 Reader 隐私收口 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-3b 自适应伴读栏 | Branch Ready | `codex/reader-roadmap-docs` |
-| P2-4 独立 Audit Center | Branch Ready | summary/detail 安全投影、终态入口、桌面浏览器验收 |
-| P2-5 视觉、响应式、可访问性与 golden QA | Branch Ready | 11 张 golden、21 项 Playwright QA、WCAG 目标与隐私/焦点回归通过 |
-| 合入 CI 合同 | Branch Ready | `web-tests` 覆盖已跟踪 Reader 后端、Vitest 和 Playwright 语义门禁 |
+| ThesisDiffV1、发布幂等、provenance 与可复现测试 | Merged | `2f818bf`，经 PR #5 合入 `main`（`1f7b258`） |
+| P2-2 学习报告与论点变化 | Merged | PR #5 / `1f7b258` |
+| P2-3a Companion DTO/API 与 Reader 隐私收口 | Merged | PR #5 / `1f7b258` |
+| P2-3b 自适应伴读栏 | Merged | PR #5 / `1f7b258` |
+| P2-4 独立 Audit Center | Merged | PR #5 / `1f7b258` |
+| P2-5 视觉、响应式、可访问性与 golden QA | Merged | PR #5 / `1f7b258` |
+| 合入 CI 合同 | Merged | `88e3681`，经 PR #5 合入 `main` |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
 
-## 5. Story 实施与剩余路线
+## 5. 已合入功能的验收记录
 
-### 5.1 P1-7 合入前硬化与文档整合（Branch Ready）
+本节保留已合入能力的验收边界，便于后续改动定位回归；它不是待办列表或
+Reader 路线图。新的能力应以独立变更说明和对应测试进入，而不是在这里追加
+过程日志。
+
+### 5.1 P1-7 合入前硬化与文档整合（Merged）
 
 **目标：** 先补齐可复现验证与发布边界，再让 `main` 拥有稳定的跨 Run
 论点比较和唯一文档入口。
@@ -327,7 +326,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 - P1-7 目标回归、Ruff、前端 typecheck/build 和 `git diff --check` 通过；后端
   完整本地套件的既有失败已在第 6 节单独记录。
 
-### 5.2 P2-2：学习报告与论点变化（5 points，Branch Ready）
+### 5.2 P2-2：学习报告与论点变化（5 points，Merged）
 
 **As a** 重复研究同一公司的读者  
 **I want** 在研究正文中看到本轮论点相对上一基线的变化  
@@ -347,7 +346,7 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 本轮改动前的旧 Controls/App 文案与入口断言。Playwright 已检查桌面和 720px
 窄屏，五态概览、前后文本对照及单栏降级均可读。
 
-### 5.3 P2-3a：Companion 公共契约与 API（3 points，Branch Ready）
+### 5.3 P2-3a：Companion 公共契约与 API（3 points，Merged）
 
 **As a** Reader 用户  
 **I want** 按需查看选中论点、角色、证据或风险的伴读摘要  
@@ -369,7 +368,7 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
 1540 passed、17 failed，失败集合与 P1-7 基线一致。初始 DOM 隐私 fixture
 通过；前端完整本地套件为 106 passed、2 failed，仍是既有 Controls/App 断言。
 
-### 5.4 P2-3b：自适应伴读栏（5 points，Branch Ready）
+### 5.4 P2-3b：自适应伴读栏（5 points，Merged）
 
 **As a** Reader 用户
 **I want** 从正文中的角色、论点、证据或风险按需打开伴读内容
@@ -453,7 +452,7 @@ typecheck 和 production build 通过并同步静态产物；后端完整本地�
 selection 重复打开只产生一次 Companion 请求。完整本地 Vitest 为 115 passed、
 2 failed，仍是既有 Controls/App 文案与入口断言。
 
-### 5.5 P2-4：独立 Audit Center（5 points，Branch Ready）
+### 5.5 P2-4：独立 Audit Center（5 points，Merged）
 
 **As a** 需要核验研究过程的 Reader 用户
 **I want** 在独立工作区中按需检查运行、角色、能力、工具和持久化材料
@@ -630,7 +629,7 @@ Ruff、typecheck、production build 和静态产物同步通过。Playwright 使
 `Escape` 与入口回焦；最终浏览器控制台 0 error、0 warning。完整套件中的既有失败
 继续按 6.1 的基线记录，不归入 P2-4。
 
-### 5.6 P2-5：视觉与 golden QA（5 points，Branch Ready）
+### 5.6 P2-5：视觉与 golden QA（5 points，Merged）
 
 **目标：** 在不重做已确认 Reader、Companion 和 Audit Center 交互的前提下，
 建立可重复、可提交的桌面视觉基线，并把隐私、键盘和可访问性从人工检查收敛为
@@ -799,7 +798,7 @@ Playwright webServer 下仍有 12 项既有失败，与基于确定性路由 fix
 - 单个 story 超过 8 points 时先拆分；默认同时只推进一个 story。
 - 不再创建 dated spec、plan、status、report 或 handoff Markdown。
 
-### 6.4 合入 CI 合同（Branch Ready）
+### 6.4 合入 CI 合同（Merged）
 
 - 仓库删除且不再维护 `CLAUDE.md`；README 移除对它的引用，只保留当前使用和
   产品文档列表，不创建替代 Agent 规则文件；验收时要求 `CLAUDE.md` 不存在且
@@ -817,7 +816,8 @@ Playwright webServer 下仍有 12 项既有失败，与基于确定性路由 fix
   键盘/焦点、响应式和 reduced-motion 语义断言；11 张像素基线仍只在 macOS
   arm64 生成和比较；
 - 现有 Ruff、安装/导入、wheel 静态产物和 CLI smoke 门禁保留；远端结果必须等
-  分支推送或 PR 后单独确认。
+  推送或 PR 的当前执行结果仍须在对应远端运行中单独确认，不能由本文的
+  历史验收记录替代。
 
 实现与验收：`web-tests` 已安装 `.[web,dev]` 并接入精选后端契约、全部已跟踪
 Vitest 和 Reader Playwright specs；过时的 local-only 测试注释已删除。本地等价门禁为
@@ -850,7 +850,7 @@ typecheck、production build 及静态产物幂等均通过。Ubuntu 上的 10 p
 ## 8. 维护规则
 
 - 本文只描述当前有效状态，不追加日期型开发日志。
-- 完成 story 时，在相同 commit 或 PR 中更新状态表。
+- 改变本文范围内的现役行为时，在同一 commit 或 PR 中更新状态表。
 - 详细实现历史通过 commit、PR 和 blame 查询。
 - 临时交接文档可以存在于个人工作区，但不能成为仓库事实来源。
 - 废弃设计由 Git 历史保留，不额外建立 archive 文档。

@@ -109,6 +109,12 @@ export interface ConfigDefaultsDTO {
   checkpoint_enabled: boolean;
 }
 
+export interface WindStatusDTO {
+  enabled: boolean;
+  configured: boolean;
+  capabilities: string[];
+}
+
 export interface ConfigResponseDTO {
   providers: ProviderDTO[];
   configured_keys: Record<string, boolean>;
@@ -117,6 +123,7 @@ export interface ConfigResponseDTO {
   depths: number[];
   output_languages: string[];
   checkpoint_available: boolean;
+  wind: WindStatusDTO;
   defaults: ConfigDefaultsDTO;
 }
 

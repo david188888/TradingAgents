@@ -29,10 +29,19 @@ from .errors import (
 )
 from .fred import FredNotConfiguredError
 from .health import (
+    DAILY_QUOTA_COOLDOWN_SECONDS,
+    MANUAL_RECOVERY_COOLDOWN_SECONDS,
     RATE_LIMIT_COOLDOWN_SECONDS,
     TRANSIENT_FAILURE_COOLDOWN_SECONDS,
 )
 from .tavily_news import TavilyUnavailableError
+from .wind_provider import (
+    WindAuthError,
+    WindError,
+    WindNetworkError,
+    WindQuotaError,
+    WindRateLimitError,
+)
 
 try:
     from curl_cffi.requests.exceptions import RequestException as CurlCffiRequestException
@@ -55,6 +64,27 @@ def _record_vendor_success(vendor: str, method: str, args: tuple[Any, ...]) -> N
 def _record_vendor_failure(vendor: str, method: str, args: tuple[Any, ...], exc: Exception) -> None:
     from .interface import _market_for_request, _vendor_health
 
+    # Wind auth/quota errors require manual recovery or quota reset; lock the
+    # capability instead of setting a short cooldown.
+    if isinstance(exc, WindAuthError):
+        _vendor_health.record_lock(
+            vendor=vendor,
+            market=_market_for_request(args, method),
+            capability=method,
+            reason="wind_auth",
+            recovery="manual",
+        )
+        return
+    if isinstance(exc, WindQuotaError):
+        _vendor_health.record_lock(
+            vendor=vendor,
+            market=_market_for_request(args, method),
+            capability=method,
+            reason="wind_quota",
+            recovery="quota",
+        )
+        return
+
     cooldown_seconds, reason = _cooldown_for_exception(exc)
     _vendor_health.record_failure(
         vendor=vendor,
@@ -73,8 +103,14 @@ def _cooldown_for_exception(exc: Exception) -> tuple[float, str]:
     provider forever.  Other non-transient errors also remain uncooled.
     """
     status_code = _http_status_code(exc)
-    if isinstance(exc, (VendorRateLimitError, YFRateLimitError)) or status_code == 429:
+    if isinstance(exc, (VendorRateLimitError, YFRateLimitError, WindRateLimitError)) or status_code == 429:
         return RATE_LIMIT_COOLDOWN_SECONDS, "rate_limit"
+    if isinstance(exc, WindAuthError):
+        return MANUAL_RECOVERY_COOLDOWN_SECONDS, "wind_auth"
+    if isinstance(exc, WindQuotaError):
+        return DAILY_QUOTA_COOLDOWN_SECONDS, "wind_quota"
+    if isinstance(exc, WindNetworkError):
+        return TRANSIENT_FAILURE_COOLDOWN_SECONDS, "network"
     if status_code == 403:
         return 0.0, "forbidden"
     if status_code == 0:
@@ -169,6 +205,7 @@ def _is_recoverable_vendor_error(vendor: str, exc: Exception) -> bool:
             TavilyUnavailableError,
             YFRateLimitError,
             ChinaDataUnavailableError,
+            WindError,
         ),
     ):
         return True
@@ -188,7 +225,10 @@ def _is_transient_vendor_error(exc: Exception) -> bool:
     if CurlCffiRequestException:
         request_errors = (*request_errors, CurlCffiRequestException)
     if _cooldown_for_exception(exc)[0] > 0:
-        return True
+        # Wind auth/quota errors have long cooldowns but are NOT transient:
+        # they require manual intervention and must not trigger implicit
+        # fallback to vendors outside the configured chain.
+        return not isinstance(exc, (WindAuthError, WindQuotaError))
     return isinstance(
         exc,
         (
@@ -196,6 +236,8 @@ def _is_transient_vendor_error(exc: Exception) -> bool:
             AlphaVantageRateLimitError,
             YFRateLimitError,
             TavilyUnavailableError,
+            WindRateLimitError,
+            WindNetworkError,
             *request_errors,
         ),
     )

@@ -35,6 +35,7 @@ _A_SHARE_TICKER_CAPABILITIES = {
     "get_a_share_dragon_tiger",
     "get_a_share_interactive_questions",
     "get_news",
+    "get_equity_risk_metrics",
 }
 
 
@@ -56,6 +57,15 @@ _A_SHARE_NON_TICKER_CAPABILITIES = {
     "get_a_share_interactive_answers",
     "search_a_share_iwencai",
     "get_cls_telegraph",
+    # Wind index/macro capabilities: first arg is an index code/name or EDB
+    # codes, not a stock ticker, so they bypass the ticker market filter but
+    # are still bucketed as a_share for health/circuit-breaker isolation.
+    "get_index_snapshot",
+    "get_index_history",
+    "get_index_profile",
+    "get_index_fundamentals",
+    "search_macro_series",
+    "get_macro_series",
 }
 
 

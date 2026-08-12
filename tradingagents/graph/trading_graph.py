@@ -15,14 +15,20 @@ from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
     get_balance_sheet,
     get_cashflow,
+    get_equity_risk_metrics,
     get_fundamentals,
     get_fundamentals_research_bundle,
     get_global_news,
     get_income_statement,
+    get_index_fundamentals,
+    get_index_history,
+    get_index_snapshot,
     get_macro_indicators,
+    get_macro_series,
     get_news,
     get_verified_current_market_snapshot,
     resolve_instrument_identity,
+    search_macro_series,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.analysts import ANALYST_WIRE_KEYS
@@ -215,29 +221,31 @@ class TradingAgentsGraph:
         return kwargs
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
-        """Create tool nodes for different data sources using abstract methods."""
-        return {
-            "market": ToolNode(
+        """Create tool nodes, adding premium Wind tools only when enabled."""
+        config = getattr(self, "config", DEFAULT_CONFIG)
+        wind_enabled = bool(config.get("wind_enabled", False))
+        market_tools = [get_verified_current_market_snapshot]
+        news_tools = [get_global_news, get_macro_indicators]
+        if wind_enabled:
+            market_tools.extend(
                 [
-                    # Historical analysis is a deterministic adjusted-price
-                    # prefetch; the role can request only a current-price row.
-                    get_verified_current_market_snapshot,
+                    get_index_snapshot,
+                    get_index_history,
+                    get_index_fundamentals,
+                    get_equity_risk_metrics,
                 ]
-            ),
+            )
+            news_tools.extend([search_macro_series, get_macro_series])
+
+        return {
+            "market": ToolNode(market_tools),
             "social": ToolNode(
                 [
                     # News tools for social media analysis
                     get_news,
                 ]
             ),
-            "news": ToolNode(
-                [
-                    # Company-specific evidence is prefetched by a deterministic
-                    # graph task. The analyst can request macro supplements only.
-                    get_global_news,
-                    get_macro_indicators,
-                ]
-            ),
+            "news": ToolNode(news_tools),
             "fundamentals": ToolNode(
                 [
                     # Fundamental analysis tools

@@ -1,10 +1,16 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from tradingagents.agents.utils.agent_utils import (
+    get_equity_risk_metrics,
+    get_index_fundamentals,
+    get_index_history,
+    get_index_snapshot,
     get_instrument_context_from_state,
     get_language_instruction,
     get_verified_current_market_snapshot,
 )
+from tradingagents.dataflows.config import get_config
+from tradingagents.dataflows.ticker_utils import is_a_share_ticker
 from tradingagents.research.price_coverage import bundle_for_analyst
 from tradingagents.skills import (
     build_role_report_contract,
@@ -33,7 +39,28 @@ def create_market_analyst(llm):
             '{"status":"not_applicable","results":[]}'
         )
 
+        wind_available = bool(get_config().get("wind_enabled", False)) and is_a_share_ticker(
+            state.get("company_of_interest", "")
+        )
         tools = [get_verified_current_market_snapshot]
+        if wind_available:
+            tools.extend(
+                [
+                    get_index_snapshot,
+                    get_index_history,
+                    get_index_fundamentals,
+                    get_equity_risk_metrics,
+                ]
+            )
+        wind_instruction = (
+            " For A-share market context, you may use Wind's index snapshot, index "
+            "history, index valuation, and equity risk-metric tools. They supplement "
+            "the deterministic adjusted-price bundle; never replace company-level "
+            "historical price evidence with an index series."
+            if wind_available
+            else ""
+        )
+
         system_message = (
             f"You are the market analyst for a {horizon}-horizon investment review. "
             "Historical return, trend, drawdown, support/resistance, and technical "
@@ -51,6 +78,7 @@ def create_market_analyst(llm):
             "unavailable statuses, and never use it as replacement price history. Write "
             "a detailed evidence-linked report "
             "and append a compact Markdown table."
+            + wind_instruction
             + get_language_instruction()
         )
         system_message += build_role_skill_prompt(

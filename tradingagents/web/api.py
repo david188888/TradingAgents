@@ -76,6 +76,12 @@ DATA_CREDENTIAL_ENV = {
     "tavily": ("TAVILY_API_KEY",),
     "tushare": ("TUSHARE_TOKEN", "TUSHARE_API_KEY"),
 }
+WIND_CAPABILITIES = (
+    "指数快照与历史",
+    "指数估值",
+    "个股风险指标",
+    "宏观 EDB",
+)
 AZURE_REQUIRED_ENV = ("AZURE_OPENAI_ENDPOINT", "OPENAI_API_VERSION")
 SAFE_RESUME_MISMATCH_FIELDS = frozenset(
     {
@@ -1056,6 +1062,11 @@ def _configuration_payload(
         "depths": list(RESEARCH_DEPTHS),
         "output_languages": list(SUPPORTED_OUTPUT_LANGUAGES),
         "checkpoint_available": checkpoint_available,
+        "wind": {
+            "enabled": bool(DEFAULT_CONFIG.get("wind_enabled", False)),
+            "configured": bool(environment.get("WIND_API_KEY")),
+            "capabilities": list(WIND_CAPABILITIES),
+        },
         "defaults": {
             "llm_provider": DEFAULT_CONFIG.get("llm_provider"),
             "quick_think_llm": DEFAULT_CONFIG.get("quick_think_llm"),

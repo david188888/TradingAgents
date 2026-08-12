@@ -106,8 +106,8 @@ Persistent data lives under `~/.tradingagents/`:
 
 ## Documentation
 
-The current product contract, implementation status, and remaining Reader roadmap
-live in one maintained document. Supporting operational references remain focused
+The current product contract and implementation status live in one maintained
+document. Supporting operational references remain focused
 on their respective data, replay, and preset contracts:
 
 - [Learning research and Reader](docs/learning-research-reader.md)

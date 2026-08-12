@@ -31,6 +31,15 @@ from tradingagents.agents.utils.news_data_tools import (
     get_news_windows,
 )
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
+from tradingagents.agents.utils.wind_data_tools import (
+    get_equity_risk_metrics,
+    get_index_fundamentals,
+    get_index_history,
+    get_index_profile,
+    get_index_snapshot,
+    get_macro_series,
+    search_macro_series,
+)
 
 # Public surface: the data tools are imported here so agents and the graph
 # import them from one place, plus the instrument/language helpers defined below.
@@ -51,6 +60,14 @@ __all__ = [
     "get_market_research_bundle",
     "get_fundamentals_research_bundle",
     "get_news_research_bundle",
+    # Wind AIFin Market premium data tools (require wind_enabled + WIND_API_KEY)
+    "get_index_snapshot",
+    "get_index_history",
+    "get_index_profile",
+    "get_index_fundamentals",
+    "search_macro_series",
+    "get_macro_series",
+    "get_equity_risk_metrics",
     "build_instrument_context",
     "resolve_instrument_identity",
     "get_instrument_context_from_state",
