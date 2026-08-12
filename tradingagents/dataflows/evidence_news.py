@@ -113,52 +113,28 @@ def _annotate_entity_roles(items: list[dict[str, Any]], profile: dict[str, Any])
 
 
 def _is_primary_identity_binding(text: str, profile: dict[str, Any]) -> bool:
-    """Return true only when text presents a code as the document subject."""
-    codes = _explicit_stock_codes(text) - _profile_code_aliases(profile)
-    if not codes:
-        return False
-    return bool(re.search(
-        r"(?:证券代码|股票代码|证券简称|股票简称|公告主体|公司名称|stock\\s+code|ticker)",
-        text,
-        flags=re.IGNORECASE,
-    ))
+    """Return true only when a labeled identity pair names another code."""
+    return bool(_explicit_identity_codes(text) - _profile_code_aliases(profile))
+
+
+def _explicit_identity_codes(text: str) -> set[str]:
+    """Return codes that occur in a complete labeled code/name pair."""
+    return {code for code, _name in _explicit_identity_bindings(text)}
 
 
 def _find_wrong_identity_hits(items: list[dict[str, Any]], profile: dict[str, Any]) -> set[str]:
     profile_names = _profile_name_aliases(profile)
     profile_codes = _profile_code_aliases(profile)
-    hints = _get_wrong_identity_hints()
     hits: set[str] = set()
 
-    # When the profile has no resolved name, name-based identity comparison has
-    # no basis — skip name conflict checks rather than trivially flagging every
-    # candidate as unrelated (which would reject correct evidence).
-    profile_has_name = bool(profile_names)
-
+    # A FAIL_STOP must be supported by a source-level identity assertion. A
+    # report that merely names a peer, publisher, or data-status note is not
+    # evidence of target misidentification.
     for item in items:
         text = _item_text(item)
-        item_role = str(item.get("entity_role") or "").lower()
-        if item_role in {"comparable", "noise"} and not (
-            _is_primary_identity_binding(text, profile)
-            or any(name in text for name in hints)
-        ):
-            continue
-        item_codes = _explicit_stock_codes(text)
-        wrong_codes = {code for code in item_codes if code not in profile_codes}
-        item_source = str(item.get("source") or "")
-        if item_source == "report" and _is_primary_identity_binding(text, profile):
-            hits.update(wrong_codes)
-
-        binds_profile_code = bool(item_codes & profile_codes)
-        for name in hints:
-            if (
-                name in text
-                and not _is_profile_alias(name, profile_names)
-                and (item_source == "report" or binds_profile_code)
-            ):
-                hits.add(name)
-
-        if profile_has_name:
+        identity_codes = _explicit_identity_codes(text)
+        hits.update(code for code in identity_codes if code not in profile_codes)
+        if profile_names:
             hits.update(_wrong_names_bound_to_profile_code(text, profile, profile_names))
     return hits
 
@@ -189,32 +165,49 @@ def _explicit_stock_codes(text: str) -> set[str]:
     return hits
 
 
+def _explicit_identity_bindings(text: str) -> list[tuple[str, str]]:
+    """Extract code/name pairs only from labeled security identity fields.
+
+    A hard stop discards an entire research run, so a ticker adjacent to prose,
+    a parenthetical note, or an analyst's interpretation must never be treated
+    as a company-name assertion. The pair must be explicitly labeled as a
+    security code followed by a security short name, company name, or issuer.
+    """
+    code_pattern = r"(?<!\w)([0-9]{6}(?:\.(?:SZ|SH|SS|BJ))?)(?!\w)"
+    code_label = r"(?:证券代码|股票代码|stock\s+code|ticker)"
+    name_label = r"(?:证券简称|股票简称|公司名称|公告主体|security\s+name|company\s+name)"
+    bindings: list[tuple[str, str]] = []
+    pattern = re.compile(
+        rf"{code_label}\s*[：:]?\s*{code_pattern}"
+        rf"[\s,，;；|/]*{name_label}\s*[：:]?\s*"
+        rf"([^\n，,;；。()（）]{{2,80}})",
+        flags=re.IGNORECASE,
+    )
+    for match in pattern.finditer(text):
+        bindings.append((match.group(1).upper(), match.group(2).strip()))
+    return bindings
+
+
 def _wrong_names_bound_to_profile_code(
     text: str,
     profile: dict[str, Any],
     profile_names: set[str],
 ) -> set[str]:
+    """Return conflicting names from explicit security identity bindings only."""
     hits: set[str] = set()
-    code_tokens = [re.escape(code) for code in _profile_code_aliases(profile)]
-    if not code_tokens:
-        return hits
-    code_pattern = "|".join(sorted(code_tokens, key=len, reverse=True))
-    for match in re.finditer(
-        rf"(?:{code_pattern})\s*[（(]\s*([\u4e00-\u9fffA-Za-z0-9&·-]{{2,24}})\s*[）)]", text
-    ):
-        candidate = match.group(1).strip()
-        if not candidate or _is_profile_alias(candidate, profile_names):
+    profile_codes = _profile_code_aliases(profile)
+    for code, candidate in _explicit_identity_bindings(text):
+        if code not in profile_codes or _is_profile_alias(candidate, profile_names):
             continue
-        # Always flag known confusion names
-        hints = set(_get_wrong_identity_hints())
-        if candidate in hints:
+        # Hints identify known cross-company collisions, but only after the
+        # source has made an explicit code/name identity assertion.
+        if candidate in _get_wrong_identity_hints():
             hits.add(candidate)
             continue
-        # For yfinance profiles (English names): skip non-hint candidates
-        # since Chinese names are likely valid translations, not wrong identity
+        # A Chinese alias may be correct when the canonical profile came from
+        # yfinance in English. Without a local name mapping, abstain.
         if profile.get("profile_source") == "yfinance":
             continue
-        # For other profiles: flag if the name is unrelated to any profile name
         if not _names_are_related(candidate, profile_names):
             hits.add(candidate)
     return hits
