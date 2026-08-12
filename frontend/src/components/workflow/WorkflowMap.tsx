@@ -31,6 +31,7 @@ interface EdgeGeometry {
   y1: number;
   x2: number;
   y2: number;
+  route: "horizontal" | "right-rail";
 }
 
 const MIN_MAP_WIDTH = 480;
@@ -223,16 +224,39 @@ function _edgeGeometry(
   const clampX = (value: number): number => Math.min(maxX, Math.max(inset, value));
   const clampY = (value: number): number => Math.min(maxY, Math.max(inset, value));
 
-  // Anchor points: center-right of source, center-left of target.
-  const x1 = clampX(from.left + from.width);
-  const y1 = clampY(from.top + from.height / 2);
-  const x2 = clampX(to.left);
-  const y2 = clampY(to.top + to.height / 2);
-  return { x1, y1, x2, y2 };
+  const sourceCenterX = from.left + from.width / 2;
+  const targetCenterX = to.left + to.width / 2;
+  const sameColumn = Math.abs(sourceCenterX - targetCenterX) < Math.min(from.width, to.width) / 2;
+
+  if (edge.kind === "convergence" && sameColumn) {
+    // Debate roles and their judge share a column. Keep the vertical segment
+    // in the stage's right-side gutter so it does not cross sibling cards or
+    // detour past the workflow border.
+    return {
+      x1: clampX(from.left + from.width),
+      y1: clampY(from.top + from.height / 2),
+      x2: clampX(to.left + to.width),
+      y2: clampY(to.top + to.height / 2),
+      route: "right-rail",
+    };
+  }
+
+  // Cross-stage handoffs connect center-right to center-left.
+  return {
+    x1: clampX(from.left + from.width),
+    y1: clampY(from.top + from.height / 2),
+    x2: clampX(to.left),
+    y2: clampY(to.top + to.height / 2),
+    route: "horizontal",
+  };
 }
 
 function _curvedPath(geom: EdgeGeometry, kind: EdgeKind, mapWidth: number): string {
   const { x1, y1, x2, y2 } = geom;
+  if (geom.route === "right-rail") {
+    const railX = Math.min(mapWidth - 2, Math.max(x1, x2) + 8);
+    return `M ${x1} ${y1} L ${railX} ${y1} L ${railX} ${y2} L ${x2} ${y2}`;
+  }
   const midX = Math.min(
     Math.max(2, mapWidth - 2),
     x1 + Math.max(18, (x2 - x1) / 2),
