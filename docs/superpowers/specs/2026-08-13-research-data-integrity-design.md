@@ -43,8 +43,10 @@ The following decisions were explicitly approved:
 ## 4. Target architecture
 
 ```text
-Horizon Policy
-  -> deterministic provider attempts
+Initial Horizon Policy and cutoff-resolution policy
+  -> deterministic verified-identity preflight
+  -> frozen analysis_cutoff_at
+  -> time-sensitive deterministic provider attempts
   -> typed capability result
   -> durable evidence bundle
   -> Evidence Registry coverage
@@ -69,6 +71,7 @@ CapabilityResultV1
   symbol
   market
   analysis_date
+  analysis_cutoff_at
   availability
   freshness
   coverage
@@ -79,12 +82,11 @@ CapabilityResultV1
   published_at_or_filing_at?
   source_observed_at?
   fetched_at
-  captured_at
   degradation_codes[]
   limitations[]
 ```
 
-`capability_result_id` is the SHA-256 of canonical JSON over all semantic fields shown above; the ID itself is excluded from its hash input. Artifact ID, checkpoint committed sequence, event sequence, and run identity belong to the durable publication envelope created after prefetch, not to the semantic result, which avoids circular content addressing.
+`capability_result_id` is the SHA-256 of canonical JSON over all semantic fields shown above; the ID itself is excluded from its hash input. Artifact ID, checkpoint committed sequence, event sequence, run identity, `captured_at`, and `committed_at` belong to the durable publication envelope created after prefetch, not to the semantic result, which avoids circular content addressing.
 
 Availability is one of:
 
@@ -163,9 +165,10 @@ Time fields have distinct meanings:
 - `published_at_or_filing_at`: when the issuer/source made the fact public;
 - `source_observed_at`: provider-reported observation/event time;
 - `fetched_at`: when TradingAgents requested the source;
-- `captured_at`: when the durable artifact was committed locally.
+- `captured_at`: publication-envelope time when the finalized semantic result was accepted for durable capture;
+- `committed_at`: publication-envelope time when the durable artifact/event commit completed.
 
-The horizon plan derives a timezone-aware `analysis_cutoff_at`. A-share uses end-of-day in `Asia/Shanghai`. Global instruments use the verified primary exchange timezone from instrument identity and the applicable market calendar; if that timezone cannot be established, time-sensitive required capability status is `invalid`. All timestamps are normalized to UTC before comparison.
+Cutoff resolution is two phase. The pure initial horizon plan declares a versioned cutoff-resolution policy but does not claim a verified global timezone. A deterministic verified-identity preflight runs first. Code then resolves and freezes timezone-aware `analysis_cutoff_at` before any time-sensitive provider filtering. A-share uses end-of-day in `Asia/Shanghai`. Global instruments use the verified primary exchange timezone and applicable market calendar; if that timezone cannot be established, time-sensitive required capability status is `invalid`. The resolved cutoff and identity reference are persisted with the durable run plan and selected result envelopes. All timestamps are normalized to UTC before comparison.
 
 A historical run must not use a fact whose publication/filing availability or applicable source event/observation time is after `analysis_cutoff_at`. `fetched_at` or `captured_at` after the cutoff is not by itself proof of future leakage, but a mutable endpoint fetched later may satisfy historical coverage only when a preserved point-in-time record proves the payload was public by the cutoff. Unknown publication/filing availability cannot satisfy a required historical fundamentals or official-disclosure capability. Restated statements must retain both original and restatement publication identity; a restatement published after the cutoff is safely excluded from the historical view and degrades coverage.
 
@@ -257,6 +260,7 @@ The current uncommitted changes to `research_manager.py`, `DecisionBrief.tsx`, w
 
 - Introduce typed capability and provider-attempt contracts.
 - Add deterministic aggregation functions.
+- Add deterministic verified-identity preflight and freeze `analysis_cutoff_at` before time-sensitive fetch/filter steps.
 - Persist per-source attempts and contract-required availability, freshness, time fields, actual provider, and fallback metadata.
 - Add unit tests for every valid and invalid transition.
 
