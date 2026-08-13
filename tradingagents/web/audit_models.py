@@ -100,6 +100,12 @@ class AuditCapabilitySummary(_AuditModel):
     status: str
     reason_codes: tuple[str, ...] = ()
     affected_sections: tuple[str, ...] = ()
+    capability_result_id: str | None = None
+    availability: str | None = None
+    freshness: str | None = None
+    effective_period: str | None = None
+    providers: tuple[str, ...] = ()
+    fallback_from: tuple[str, ...] = ()
 
 
 class AuditToolSummary(_AuditModel):

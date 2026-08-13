@@ -273,6 +273,7 @@ output/
 !/tests/test_official_disclosure_capability.py
 !/tests/test_evidence_registry_integrity.py
 !/tests/test_research_eligibility_closure.py
+!/tests/test_research_policy_matrix.py
 !/tests/web/
 /tests/web/*
 !/tests/web/test_role_projections.py

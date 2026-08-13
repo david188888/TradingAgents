@@ -298,6 +298,43 @@ def _extract_bundle_result_ids(bundle: dict[str, Any]) -> dict[str, str]:
     return indexed
 
 
+def _extract_bundle_result_summaries(bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expose only safe typed-result fields to durable audit projections."""
+    from tradingagents.dataflows.capability_result import CapabilityResultV1
+
+    summaries = []
+    for wrapped in bundle.get("results", ()):
+        if not isinstance(wrapped, dict) or not isinstance(
+            wrapped.get("capability_result"), dict
+        ):
+            continue
+        result = CapabilityResultV1.model_validate(wrapped["capability_result"])
+        summaries.append(
+            {
+                "capability": result.capability,
+                "capability_result_id": result.capability_result_id,
+                "availability": result.availability,
+                "freshness": result.freshness,
+                "effective_period": result.effective_period,
+                "providers": list(
+                    dict.fromkeys(attempt.provider for attempt in result.attempts)
+                ),
+                "fallback_from": list(result.fallback_from),
+                "reason_codes": list(
+                    dict.fromkeys(
+                        (*result.degradation_codes,)
+                        + tuple(
+                            attempt.reason_code
+                            for attempt in result.attempts
+                            if attempt.outcome != "observed"
+                        )
+                    )
+                ),
+            }
+        )
+    return summaries
+
+
 def _promote_evidence_bundles(
     observer: Any,
     commit: Any,
@@ -334,6 +371,7 @@ def _promote_evidence_bundles(
             continue
         canonical_value = canonical_json_str(bundle)
         capability_result_ids = _extract_bundle_result_ids(bundle)
+        capability_result_summaries = _extract_bundle_result_summaries(bundle)
         artifact = observer.store.store_artifact(
             observer.run_id,
             kind="evidence-bundle",
@@ -356,6 +394,7 @@ def _promote_evidence_bundles(
                     "state_key": state_key,
                     "evidence_bundle_capabilities": list(capabilities),
                     "capability_result_ids": capability_result_ids,
+                    "capability_result_summaries": capability_result_summaries,
                     "committed_sequence": committed_sequence,
                 },
                 parent_event_id=checkpoint_event_id,

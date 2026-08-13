@@ -53,6 +53,12 @@ def _coverage(capability: str, *, complete: bool = True) -> CoverageRefV1:
 
 
 def _facts_and_cards(lenses: tuple[str, ...]):
+    capability_by_lens = {
+        "market": "adjusted_price_history",
+        "fundamentals": "fundamentals_quarterly",
+        "news": "company_event_window",
+        "sentiment": "capital_flow",
+    }
     claims = tuple(
         PublicClaim(
             claim_key=f"{lens}.growth_quality.company.stable",
@@ -60,7 +66,7 @@ def _facts_and_cards(lenses: tuple[str, ...]):
             text=f"Verified {lens} fact",
             evidence_ref_ids=(f"evidence_{lens}",),
             source_dates=(NOW,),
-            coverage_ref_ids=(f"coverage_{lens}",),
+            coverage_ref_ids=(f"coverage_{capability_by_lens[lens]}",),
             confidence=0.7,
             action_impact="neutral",
         )
@@ -139,6 +145,31 @@ def test_optional_short_official_gap_does_not_force_rating() -> None:
     assert assessment.decision_eligibility == "full"
     assert assessment.forced_research_rating is None
     assert assessment.missing_capability_actions == ()
+
+
+def test_eligibility_rejects_fact_with_foreign_lens_coverage() -> None:
+    plan = build_data_window_plan("short", "2026-08-13", market="global")
+    claims, cards = _facts_and_cards(("market", "news"))
+    market_claim, news_claim = claims
+    mismatched_news = news_claim.model_copy(
+        update={"coverage_ref_ids": market_claim.coverage_ref_ids}
+    )
+    coverage = tuple(
+        _coverage(capability.capability_id)
+        for capability in plan.capabilities
+        if capability.requirement == "required"
+    )
+
+    assessment = assess_decision_eligibility(
+        plan=plan,
+        evidence_verdict="PASS",
+        claims=(market_claim, mismatched_news),
+        analyst_cards=cards,
+        coverage_refs=coverage,
+    )
+
+    assert assessment.decision_eligibility == "none"
+    assert "insufficient_independent_lenses" in assessment.reason_codes
 
 
 def test_case_assembly_overrides_model_rating_and_adds_review_action() -> None:

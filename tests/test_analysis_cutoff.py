@@ -91,6 +91,14 @@ def test_invalid_cutoff_blocks_price_and_news_provider_calls(monkeypatch) -> Non
     assert news_bundle["status"] == "invalid"
     assert price_bundle["reason_code"] == "analysis_cutoff_resolution_failed"
     assert news_bundle["reason_code"] == "analysis_cutoff_resolution_failed"
+    assert {
+        item["capability"]: item["capability_result"]["availability"]
+        for item in price_bundle["results"]
+    } == {
+        "verified_identity": "invalid",
+        "verified_market_snapshot": "invalid",
+        "adjusted_price_history": "invalid",
+    }
     typed = {
         item["capability"]: item["capability_result"]
         for item in news_bundle["results"]

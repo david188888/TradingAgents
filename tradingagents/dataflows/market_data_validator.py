@@ -47,6 +47,7 @@ class VerifiedCurrentQuote:
 
     close: float
     observed_on: str
+    source_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -239,7 +240,8 @@ def get_verified_current_quote(symbol: str, curr_date: str) -> VerifiedCurrentQu
     with its own facts. This helper never silently treats a prior trading day
     as the requested analysis date.
     """
-    latest = _verified_rows(symbol, curr_date).iloc[-1]
+    rows = _verified_rows(symbol, curr_date)
+    latest = rows.iloc[-1]
     try:
         close = float(latest["Close"])
     except (KeyError, TypeError, ValueError) as exc:
@@ -249,4 +251,9 @@ def get_verified_current_quote(symbol: str, curr_date: str) -> VerifiedCurrentQu
     observed_on = _fmt(latest["Date"])
     if len(observed_on) != 10:
         raise ValueError("Verified OHLCV row has no usable observed date.")
-    return VerifiedCurrentQuote(close=close, observed_on=observed_on)
+    source_id = latest.attrs.get("source_id") or rows.attrs.get("source_id")
+    return VerifiedCurrentQuote(
+        close=close,
+        observed_on=observed_on,
+        source_id=str(source_id) if source_id else None,
+    )

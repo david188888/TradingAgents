@@ -7,7 +7,11 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
-from tradingagents.dataflows.capability_result import CapabilityResultV1, ProviderAttemptV1
+from tradingagents.dataflows.capability_result import (
+    CapabilityResultV1,
+    ProviderAttemptV1,
+    aggregate_capability_availability,
+)
 from tradingagents.dataflows.coverage import BundleCoverageV1, CoveredText, SourceCoverageV1
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
@@ -137,17 +141,20 @@ def run_news_windows(
     assert isinstance(windows, dict)
 
     company_events: dict[str, object] = {}
+    company_observations: dict[str, tuple[object, datetime, datetime]] = {}
     for window in plan.company_windows:
+        started_at = datetime.now(timezone.utc)
         try:
-            payload = _public_window_result(
-                route_to_vendor(
-                    "get_news",
-                    ticker,
-                    window.start_date,
-                    curr_date,
-                    max_pages=plan.company_news_max_pages,
-                )
+            raw = route_to_vendor(
+                "get_news",
+                ticker,
+                window.start_date,
+                curr_date,
+                max_pages=plan.company_news_max_pages,
             )
+            ended_at = datetime.now(timezone.utc)
+            company_observations[window.window_id] = (raw, started_at, ended_at)
+            payload = _public_window_result(raw)
         except Exception as exc:
             payload = {"status": "unavailable", "error_type": type(exc).__name__}
         company_events[window.window_id] = {
@@ -158,6 +165,18 @@ def run_news_windows(
             **payload,
         }
     windows["company_events"] = company_events
+
+    if analysis_cutoff is not None:
+        company_result = _company_event_capability_result(
+            ticker,
+            curr_date,
+            horizon=horizon,
+            cutoff=analysis_cutoff,
+            observations=company_observations,
+        )
+        result_items = result["results"]
+        assert isinstance(result_items, list)
+        result_items.append(company_result)
 
     typed_official: dict[str, Any] | None = None
     if analysis_cutoff is not None:
@@ -348,6 +367,126 @@ def _news_cutoff_failure_bundle(
         )
     legacy["results"] = results
     return json.dumps(legacy, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _company_event_capability_result(
+    ticker: str,
+    analysis_date: str,
+    *,
+    horizon: InvestmentHorizon,
+    cutoff: AnalysisCutoffV1,
+    observations: Mapping[str, tuple[object, datetime, datetime]],
+) -> dict[str, object]:
+    plan = build_data_window_plan(
+        horizon,
+        analysis_date,
+        market=cutoff.market,
+    ).capability_index()["company_event_window"]
+    source_ids = tuple(
+        source_id
+        for group in plan.required_source_groups
+        for source_id in group.source_ids
+    ) + tuple(plan.required_source_ids) + tuple(plan.optional_source_ids)
+    widest = min(
+        build_news_prefetch_plan(
+            horizon, analysis_date, market=cutoff.market
+        ).company_windows,
+        key=lambda window: window.start_date,
+    )
+    observed = observations.get(widest.window_id)
+    raw = observed[0] if observed is not None else None
+    source_coverage = raw.coverage if isinstance(raw, CoveredText) else None
+    selected_source = (
+        source_coverage.source_id
+        if source_coverage is not None and source_coverage.source_id in source_ids
+        else None
+    )
+    captured = datetime.now(timezone.utc)
+    attempts = tuple(
+        ProviderAttemptV1(
+            source_id=source_id,
+            provider=source_id.split(".", 1)[0],
+            outcome="observed" if source_id == selected_source else "skipped_unobserved",
+            reason_code=(
+                "provider_payload_observed"
+                if source_id == selected_source
+                else "source_not_observed"
+            ),
+            recorded_at=captured,
+            started_at=(observed[1] if source_id == selected_source and observed else None),
+            ended_at=(observed[2] if source_id == selected_source and observed else None),
+        )
+        for source_id in source_ids
+    )
+    records = []
+    for source_id, attempt in zip(source_ids, attempts, strict=True):
+        if source_id == selected_source and source_coverage is not None:
+            projected = source_coverage.model_dump(mode="json")
+            projected["capability"] = "company_event_window"
+            records.append(SourceCoverageV1.model_validate(projected))
+        else:
+            records.append(
+                SourceCoverageV1(
+                    capability="company_event_window",
+                    source_id=source_id,
+                    requested_start=widest.start_date,
+                    requested_end=analysis_date,
+                    item_count=0,
+                    completeness="unavailable",
+                    sources=(source_id,),
+                    degradations=(attempt.reason_code,),
+                    as_of=analysis_date,
+                )
+            )
+    coverage = BundleCoverageV1.build(
+        capability="company_event_window",
+        records=tuple(records),
+        required_source_ids=plan.required_source_ids,
+        required_source_groups=plan.required_source_groups,
+        optional_source_ids=plan.optional_source_ids,
+    )
+    availability = aggregate_capability_availability(coverage, attempts)
+    reached = tuple(attempt for attempt in attempts if attempt.reached_provider)
+    typed = CapabilityResultV1(
+        capability="company_event_window",
+        symbol=ticker,
+        market=cutoff.market,
+        analysis_date=analysis_date,
+        analysis_cutoff_at=cutoff.analysis_cutoff_at,
+        availability=availability,
+        freshness=(
+            "current" if availability in {"available", "partial"} else "unknown"
+        ),
+        coverage=coverage,
+        source_ids=source_ids,
+        attempts=attempts,
+        effective_period=f"{widest.lookback_days}_calendar_days",
+        source_observed_at=(
+            datetime.fromisoformat(source_coverage.actual_end).replace(
+                tzinfo=timezone.utc
+            )
+            if source_coverage is not None and source_coverage.actual_end
+            else None
+        ),
+        fetched_at=(observed[1] if reached and observed is not None else None),
+        degradation_codes=tuple(
+            dict.fromkeys(
+                degradation
+                for record in records
+                for degradation in record.degradations
+            )
+        ),
+        limitations=(
+            () if selected_source is not None else ("source_coverage_not_reported",)
+        ),
+    )
+    return {
+        "capability": "company_event_window",
+        "requirement": plan.requirement,
+        "status": "ok" if availability in {"available", "partial"} else "unavailable",
+        "capability_result_id": typed.capability_result_id,
+        "capability_result": typed.semantic_payload(),
+    }
 
 
 @tool

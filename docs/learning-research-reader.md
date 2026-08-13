@@ -1,7 +1,7 @@
 # TradingAgents 学习型研究与 Reader
 
 **状态：** 持续维护  
-**最近核验：** 2026-08-12（`main` / `fad5620`）  
+**最近核验：** 2026-08-13  
 **适用范围：** 学习型公司研究、持仓复盘、Research Case、Thesis Diff、Reader、Companion 与 Audit Center
 
 本文是上述范围的唯一长期事实来源。它记录当前有效的产品边界、系统流程、稳定契约和真实实现状态，不记录逐日开发日志。历史方案、废弃设计和完成过程通过 Git 历史查看。
@@ -61,7 +61,10 @@ Controls
 
 ### 2.1 数据层
 
-周期策略、数据窗口、分页预算、复权要求和 required/optional 能力由版本化代码确定，不由 LLM 临时决定。
+周期策略、数据窗口、分页预算、复权要求和 required/optional 能力由
+`horizon-policy-v2` 确定，不由 LLM 临时决定。v2 增加了逐来源 typed
+结果、A 股官方披露 any-of 规则，以及验证身份/快照的来源闭包；旧 checkpoint
+不会被当成相同运行语义继续使用。
 
 每个数据能力区分：
 
@@ -70,11 +73,31 @@ Controls
 - 页数、是否耗尽和预算截断；
 - as-of、降级原因与来源身份。
 
+核心研究能力还持久化 `CapabilityResultV1` 与逐来源
+`ProviderAttemptV1`。可用性不再从错误文本推断，而是明确区分：
+
+- `available / partial`
+- `not_covered`：已实际询问全部必需来源，权威返回无覆盖；
+- `not_supported`：当前版本没有实现该生产者；
+- `provider_unavailable`：供应商失败、冷却或尚未实际观测；
+- `invalid`：身份、截止时间或载荷契约无效。
+
+每轮研究在任何时敏抓取前冻结 `analysis_cutoff_at`。A 股使用
+`Asia/Shanghai` 分析日边界；全球标的必须先解析可验证的交易所时区。
+无法解析时，价格、新闻和公告抓取不会启动，并持久化 typed invalid
+结果供重放和审计。
+
+当前确定性预取链包括：验证身份、市场快照、复权价格、公司事件、官方
+披露，以及按周期约束的季度/年度三表。分析师工具优先重用这些冻结数据包，
+避免同一轮研究二次抓取产生漂移。
+
 中长期技术结论要求明确的复权序列。复权数据不可用时，不得用 raw price 推断趋势。历史分析不得混入分析日之后的新闻、公告或当前快照。
 
 ### 2.2 研究层
 
 分析师只消费已提交的数据包。Research Manager 输出使用短稳定 claim key 的结构化草稿；assembler 将其解析为当前运行中的 evidence/coverage 引用，并确定性计算 source dates、资格和数据质量。
+
+事实 claim 还必须通过代码拥有的 lens-capability 校验：market 仅接受身份、市场快照和复权价格，fundamentals 仅接受季度/年度基本面，news 仅接受公司事件与官方披露，其余 A 股补充能力才可归入 sentiment。不可用的 typed capability 不会出现在 Research Manager 的候选 key 中；错配 fact 会被 assembler 删除，eligibility 会独立复验一次，模型文本不能升级结论资格。
 
 旧 Markdown 报告保留用于兼容和审计，但不得反向解析为新版事实。
 
@@ -216,6 +239,20 @@ quantity、average cost、currency、facts_as_of、source 和三个布尔存在�
 - `decision_eligibility`: `full | limited | none`
 - `evidence_verdict`: `PASS | LOW_CONFIDENCE | FAIL_STOP | GATE_ERROR`
 - `data_quality`: `healthy | limited | conflicted | blocked`
+
+必需能力若为 partial/stale，资格至多为 `limited`；若为
+`not_covered / not_supported / provider_unavailable / invalid`，仍可展示已经
+验证的局部事实，但顶层研究倾向强制为 `insufficient_evidence`，并由代码
+补充未知项与下一验证动作。可选能力失败不会强制改变顶层倾向。
+
+当前全球中长期研究的 `sec.company_filings` 尚未实现，因此会明确产生
+`not_supported: official_filings_provider_not_implemented`；运行可完成，但
+资格为 limited，倾向为 insufficient_evidence。不得用新闻搜索或第三方摘要
+伪装为 SEC 官方披露。
+
+Registry 对重试结果按 committed sequence、event sequence 和 artifact ID
+确定性选择。选中的 artifact 哈希损坏、跨 run/跨标的链接或已选择的截止日后
+证据不会降级成普通缺失，而会发布不含实质性 claims 的 `FAIL_STOP` 安全壳。
 
 ### 3.3 ThesisDiffV1
 

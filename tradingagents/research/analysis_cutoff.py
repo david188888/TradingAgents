@@ -58,6 +58,7 @@ class AnalysisCutoffV1(BaseModel):
     analysis_cutoff_at: datetime | None = None
     timezone_name: str | None = None
     exchange: str | None = None
+    identity_source_id: str | None = Field(default=None, min_length=1, max_length=160)
     identity_reference: str = Field(pattern=r"^[0-9a-f]{64}$")
     reason_code: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
 
@@ -79,7 +80,11 @@ class AnalysisCutoffV1(BaseModel):
     @model_validator(mode="after")
     def validate_status(self) -> AnalysisCutoffV1:
         if self.status == "resolved":
-            if self.analysis_cutoff_at is None or not self.timezone_name:
+            if (
+                self.analysis_cutoff_at is None
+                or not self.timezone_name
+                or not self.identity_source_id
+            ):
                 raise ValueError("resolved cutoff requires timestamp and timezone")
             if self.reason_code is not None:
                 raise ValueError("resolved cutoff cannot carry a failure reason")
@@ -104,6 +109,10 @@ def resolve_analysis_cutoff(
         "a_share" if is_a_share_ticker(ticker) else "global"
     )
     identity_value = dict(identity or _resolve_identity(ticker, market))
+    if market == "global" and identity_value and not identity_value.get(
+        "identity_source"
+    ):
+        identity_value["identity_source"] = "yfinance.company_profile"
     exchange = _clean(identity_value.get("exchange"))
     timezone_name = _timezone_for_identity(ticker, market, identity_value)
     identity_reference = _identity_reference(ticker, market, identity_value)
@@ -138,6 +147,7 @@ def resolve_analysis_cutoff(
         analysis_cutoff_at=local_cutoff.astimezone(timezone.utc),
         timezone_name=timezone_name,
         exchange=exchange,
+        identity_source_id=_clean(identity_value.get("identity_source")),
         identity_reference=identity_reference,
     )
 
@@ -182,10 +192,16 @@ def cutoff_failure_bundle(
 def _resolve_identity(ticker: str, market: str) -> Mapping[str, Any]:
     if market == "a_share":
         suffix = ticker.upper().rsplit(".", 1)[-1]
-        return {"exchange": suffix, "identity_source": "ticker_suffix"}
+        return {
+            "exchange": suffix,
+            "identity_source": "validated_ticker.exchange",
+        }
     from tradingagents.agents.utils.agent_utils import resolve_instrument_identity
 
-    return resolve_instrument_identity(ticker)
+    identity = dict(resolve_instrument_identity(ticker))
+    if identity:
+        identity["identity_source"] = "yfinance.company_profile"
+    return identity
 
 
 def _timezone_for_identity(

@@ -56,6 +56,7 @@ BUNDLE_EVIDENCE_KEYS = frozenset(
         "evidence:price_bundle",
         "evidence:news_bundle",
         "evidence:supplement_bundle",
+        "evidence:fundamentals_bundle",
     }
 )
 ALL_EVIDENCE_KEYS = REPORT_EVIDENCE_KEYS | BUNDLE_EVIDENCE_KEYS
@@ -92,12 +93,33 @@ def available_candidate_keys(state: Mapping[str, Any]) -> dict[str, list[str]]:
     coverage: list[str] = []
     evidence: list[str] = []
 
+    price_capabilities = _available_typed_capabilities(
+        state.get("adjusted_price_bundle")
+    )
     if _nonempty(state.get("adjusted_price_bundle")):
-        coverage.append("coverage:adjusted_price_history")
-        evidence.append("evidence:price_bundle")
+        if not price_capabilities and not _has_typed_capability_results(
+            state.get("adjusted_price_bundle")
+        ):
+            price_capabilities = ["adjusted_price_history"]
+        if price_capabilities:
+            coverage.extend(f"coverage:{item}" for item in price_capabilities)
+            evidence.append("evidence:price_bundle")
+    news_capabilities = _available_typed_capabilities(state.get("news_window_bundle"))
     if _nonempty(state.get("news_window_bundle")):
-        coverage.append("coverage:company_event_window")
-        evidence.append("evidence:news_bundle")
+        if not news_capabilities and not _has_typed_capability_results(
+            state.get("news_window_bundle")
+        ):
+            news_capabilities = ["company_event_window"]
+        if news_capabilities:
+            coverage.extend(f"coverage:{item}" for item in news_capabilities)
+            evidence.append("evidence:news_bundle")
+
+    fundamentals_capabilities = _available_typed_capabilities(
+        state.get("fundamentals_prefetch_bundle")
+    )
+    if fundamentals_capabilities:
+        coverage.extend(f"coverage:{item}" for item in fundamentals_capabilities)
+        evidence.append("evidence:fundamentals_bundle")
 
     supplement_capabilities = _supplement_capabilities(state.get("a_share_supplement_bundle"))
     if supplement_capabilities:
@@ -113,7 +135,10 @@ def available_candidate_keys(state: Mapping[str, Any]) -> dict[str, list[str]]:
     if _nonempty(state.get("sentiment_report")):
         evidence.append("evidence:sentiment_report")
 
-    return {"coverage": coverage, "evidence": evidence}
+    return {
+        "coverage": list(dict.fromkeys(coverage)),
+        "evidence": list(dict.fromkeys(evidence)),
+    }
 
 
 def _nonempty(value: object) -> bool:
@@ -157,3 +182,38 @@ def _supplement_capabilities(bundle: object) -> list[str]:
         if isinstance(capability, str) and capability:
             capabilities.append(capability)
     return capabilities
+
+
+def _available_typed_capabilities(bundle: object) -> list[str]:
+    """Return typed capabilities with data available for factual claims."""
+
+    payload = _parse_json_object(bundle)
+    if payload is None:
+        return []
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return []
+    capabilities: list[str] = []
+    for wrapped in results:
+        if not isinstance(wrapped, Mapping):
+            continue
+        semantic = wrapped.get("capability_result")
+        if not isinstance(semantic, Mapping):
+            continue
+        capability = semantic.get("capability")
+        if semantic.get("availability") == "available" and isinstance(
+            capability, str
+        ):
+            capabilities.append(capability)
+    return capabilities
+
+
+def _has_typed_capability_results(bundle: object) -> bool:
+    payload = _parse_json_object(bundle)
+    if payload is None or not isinstance(payload.get("results"), list):
+        return False
+    return any(
+        isinstance(wrapped, Mapping)
+        and isinstance(wrapped.get("capability_result"), Mapping)
+        for wrapped in payload["results"]
+    )

@@ -88,9 +88,14 @@ from tradingagents.agents.schemas._research_case_draft import (  # noqa: E402
     ClaimDraft,
     LearningResearchCaseDraft,
 )
+from tradingagents.research.claim_capability_policy import (  # noqa: E402
+    LENS_CAPABILITIES,
+    capabilities_for_lens,
+)
 from tradingagents.research.eligibility import assess_decision_eligibility  # noqa: E402
 from tradingagents.research.evidence_registry import EvidenceRegistry  # noqa: E402
 from tradingagents.research.horizon_policy import DataWindowPlanV1  # noqa: E402
+
 
 # Fixed first-version lens -> capability mapping for AnalystCard statuses.
 # ``market`` tracks the deterministic adjusted price series; ``news`` tracks the
@@ -100,21 +105,6 @@ from tradingagents.research.horizon_policy import DataWindowPlanV1  # noqa: E402
 # is an explicit approximation so the eligibility policy never lets model prose
 # decide capability status; ``fundamentals`` has no coverage in this first
 # version and stays empty.
-_LENS_CAPABILITIES: dict[str, tuple[str, ...]] = {
-    "market": ("adjusted_price_history",),
-    "news": ("company_event_window", "official_disclosures"),
-    "sentiment": (),  # filled dynamically from registry in _sentiment_capabilities
-    "fundamentals": ("fundamentals_quarterly", "fundamentals_annual"),
-}
-
-# Fixed, non-supplement coverage capabilities that belong to price/event lenses.
-_FIXED_COVERAGE_CAPABILITIES = frozenset(
-    capability
-    for capabilities in _LENS_CAPABILITIES.values()
-    for capability in capabilities
-)
-
-
 def _sentiment_capabilities(registry: EvidenceRegistry) -> tuple[str, ...]:
     """Return supplement coverage capabilities attributed to the sentiment lens.
 
@@ -124,9 +114,11 @@ def _sentiment_capabilities(registry: EvidenceRegistry) -> tuple[str, ...]:
     flow or northbound flow).
     """
     return tuple(
-        capability
-        for capability in sorted(registry.coverage_by_capability)
-        if capability not in _FIXED_COVERAGE_CAPABILITIES
+        sorted(
+            capabilities_for_lens(
+                "sentiment", registry.coverage_by_capability
+            )
+        )
     )
 
 
@@ -195,10 +187,25 @@ def _build_facts(
         if len(coverage_refs) != len(draft.coverage_keys):
             omissions.add("research_case.coverage_key_unresolved")
 
+        lens = draft.claim_key.split(".", 1)[0]
+        allowed_capabilities = capabilities_for_lens(
+            lens, registry.coverage_by_capability
+        )
+        coverage_matches_lens = bool(coverage_refs) and all(
+            ref.capability in allowed_capabilities for ref in coverage_refs
+        )
+        if not coverage_matches_lens:
+            omissions.add("research_case.claim_omitted_capability_lens_mismatch")
+
         source_dates = _evidence_source_dates(evidence_refs)
         evidence_ref_ids = tuple(ref.ref_id for ref in evidence_refs)
         coverage_ref_ids = tuple(ref.coverage_ref_id for ref in coverage_refs)
-        if not evidence_ref_ids or not source_dates or not coverage_ref_ids:
+        if (
+            not evidence_ref_ids
+            or not source_dates
+            or not coverage_ref_ids
+            or not coverage_matches_lens
+        ):
             omissions.add("research_case.claim_omitted_missing_evidence")
             dropped.add(draft.claim_key)
             continue
@@ -384,10 +391,10 @@ def _build_analyst_cards(
     cards: list[AnalystCard] = []
     sentiment_caps = _sentiment_capabilities(registry)
     capability_by_lens = {
-        "market": _LENS_CAPABILITIES["market"],
-        "news": _LENS_CAPABILITIES["news"],
+        "market": tuple(sorted(LENS_CAPABILITIES["market"])),
+        "news": tuple(sorted(LENS_CAPABILITIES["news"])),
         "sentiment": sentiment_caps,
-        "fundamentals": _LENS_CAPABILITIES["fundamentals"],
+        "fundamentals": tuple(sorted(LENS_CAPABILITIES["fundamentals"])),
     }
     for lens in ("market", "fundamentals", "news", "sentiment"):
         lens_facts = [

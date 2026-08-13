@@ -10,6 +10,7 @@ import pytest
 from tradingagents.execution.output_publisher import (
     _extract_bundle_capabilities,
     _extract_bundle_result_ids,
+    _extract_bundle_result_summaries,
 )
 from tradingagents.research.analysis_cutoff import resolve_analysis_cutoff
 from tradingagents.research.evidence_registry import build_evidence_registry
@@ -134,6 +135,13 @@ def test_news_publication_indexes_fixed_and_typed_capabilities() -> None:
     assert indexed == {
         "official_disclosures": bundle["results"][0]["capability_result_id"]
     }
+    summary = _extract_bundle_result_summaries(bundle)[0]
+    assert summary["availability"] == "not_supported"
+    assert summary["freshness"] == "unknown"
+    assert summary["providers"] == ["sec"]
+    assert summary["reason_codes"] == [
+        "official_filings_provider_not_implemented"
+    ]
 
 
 def test_publication_rejects_duplicate_typed_capability() -> None:

@@ -1318,6 +1318,12 @@ export interface AuditCapabilitySummaryDTO {
   status: string;
   reason_codes: string[];
   affected_sections: string[];
+  capability_result_id?: string | null;
+  availability?: string | null;
+  freshness?: string | null;
+  effective_period?: string | null;
+  providers?: string[];
+  fallback_from?: string[];
 }
 
 export interface AuditToolSummaryDTO {

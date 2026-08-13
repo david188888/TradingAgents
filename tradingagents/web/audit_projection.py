@@ -174,8 +174,10 @@ def _role_summaries(events: list[PersistedEvent]) -> tuple[AuditRoleSummary, ...
     )
 
 
-def _capability_summaries(snapshot: RunSnapshot) -> tuple[AuditCapabilitySummary, ...]:
-    rendered: list[AuditCapabilitySummary] = []
+def _capability_summaries(
+    snapshot: RunSnapshot, events: list[PersistedEvent]
+) -> tuple[AuditCapabilitySummary, ...]:
+    rendered: dict[str, AuditCapabilitySummary] = {}
     for item in snapshot.degraded_data_sources:
         capability = item.get("capability")
         if not isinstance(capability, str) or not capability:
@@ -189,8 +191,7 @@ def _capability_summaries(snapshot: RunSnapshot) -> tuple[AuditCapabilitySummary
             and reason.get("code")
         ) if isinstance(reasons, list) else ()
         affected = item.get("affected_sections")
-        rendered.append(
-            AuditCapabilitySummary(
+        rendered[capability] = AuditCapabilitySummary(
                 item_id=capability,
                 label=capability,
                 status=str(item.get("status") or "degraded"),
@@ -199,8 +200,42 @@ def _capability_summaries(snapshot: RunSnapshot) -> tuple[AuditCapabilitySummary
                 if isinstance(affected, list)
                 else (),
             )
-        )
-    return tuple(rendered)
+    for event in events:
+        if event.type != "artifact.written":
+            continue
+        summaries = event.payload.get("capability_result_summaries")
+        if not isinstance(summaries, list):
+            continue
+        for summary in summaries:
+            if not isinstance(summary, Mapping):
+                continue
+            capability = summary.get("capability")
+            if not isinstance(capability, str) or not capability:
+                continue
+            reason_codes = summary.get("reason_codes")
+            providers = summary.get("providers")
+            fallback_from = summary.get("fallback_from")
+            rendered[capability] = AuditCapabilitySummary(
+                item_id=capability,
+                label=capability,
+                status=str(summary.get("availability") or "unknown"),
+                reason_codes=tuple(str(item) for item in reason_codes)
+                if isinstance(reason_codes, list)
+                else (),
+                capability_result_id=_optional_text(
+                    summary.get("capability_result_id")
+                ),
+                availability=_optional_text(summary.get("availability")),
+                freshness=_optional_text(summary.get("freshness")),
+                effective_period=_optional_text(summary.get("effective_period")),
+                providers=tuple(str(item) for item in providers)
+                if isinstance(providers, list)
+                else (),
+                fallback_from=tuple(str(item) for item in fallback_from)
+                if isinstance(fallback_from, list)
+                else (),
+            )
+    return tuple(rendered[key] for key in sorted(rendered))
 
 
 def _tool_summaries(events: list[PersistedEvent]) -> tuple[AuditToolSummary, ...]:
@@ -346,7 +381,7 @@ def _build_summary(
     prompt_index = _input_index(events, artifacts, "input.prompt_snapshot")
     config_index = _input_index(events, artifacts, "input.config_snapshot")
     roles = _role_summaries(events)
-    capabilities = _capability_summaries(snapshot)
+    capabilities = _capability_summaries(snapshot, events)
     tools = _tool_summaries(events)
     artifact_summaries = _artifact_summaries(artifacts)
     prompts = _prompt_config_summaries(prompt_index, artifacts, label="Prompt snapshot")

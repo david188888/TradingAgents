@@ -5,7 +5,8 @@
 | 能力 | 路由方法 | 当前来源 | 输入范围 |
 |---|---|---|---|
 | 资金流、两融 | `get_a_share_capital_flow`、`get_a_share_margin_financing` | EastMoney 公共接口 | 单只 A 股 |
-| 交易所公告 | `get_a_share_exchange_announcements` | 上交所/深交所优先，EastMoney 公开备胎 | 单只 A 股 |
+| 官方披露 | `get_a_share_cninfo_announcements` | 巨潮资讯或上交所/深交所，required any-of | 单只 A 股、周期确定的日期区间 |
+| 公告兼容查询 | `get_a_share_exchange_announcements` | 上交所/深交所优先，EastMoney 公开备胎 | 单只 A 股；EastMoney 不计作官方覆盖 |
 | 大宗交易 | `get_a_share_bulk_trades` | EastMoney direct（datacenter） | 单只 A 股、日期区间 |
 | 股东户数 | `get_a_share_shareholder_counts` | EastMoney direct（datacenter） | 单只 A 股 |
 | 限售解禁 | `get_a_share_lockup_releases` | EastMoney direct（datacenter） | 单只 A 股、日期区间 |
@@ -21,6 +22,19 @@
 - iWenCai 只在用户显式安装兼容的 `pywencai` 时启用；没有该客户端时返回不可用，系统不会抓取网页或制造查询结果。
 
 路由默认把上述数据归为可降级的 A 股补充能力：它们的失败不会使 OHLCV、财务报表或最终研究流程被误判为数据缺失。
+
+## 官方披露与覆盖语义
+
+- 中长期策略要求 `cninfo.announcements` 与 `exchange.announcements` 至少一个
+  完整可用；不是把 CNINFO 固定为唯一必需来源。
+- EastMoney 公告仍保留为旧工具的公开兼容备份，但使用非官方语义，不能
+  映射成 `exchange.announcements`，也不能满足官方 required source group。
+- CNINFO 完整性按“请求窗口已完整分页扫描”判断，不要求窗口第一天和最后
+  一天刚好各有公告。分页预算耗尽为 partial。
+- 权威端点完整查询后的空集是 `not_covered`；网络、限流或协议故障是
+  `provider_unavailable`；非官方备份冒充官方载荷是 `invalid`。
+- CNINFO 毫秒时间戳固定按 `Asia/Shanghai` 解释，再与冻结的 UTC cutoff
+  比较，不依赖运行机器的本地时区。
 
 ## 新闻降级与凭据健康
 

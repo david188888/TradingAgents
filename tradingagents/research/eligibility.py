@@ -15,6 +15,7 @@ from tradingagents.agents.schemas._research_case import (
     PublicClaim,
 )
 from tradingagents.dataflows.capability_result import CapabilityResultV1
+from tradingagents.research.claim_capability_policy import capabilities_for_lens
 from tradingagents.research.horizon_policy import DataWindowPlanV1, LensGroupV1
 
 Eligibility = Literal["full", "limited", "none"]
@@ -68,7 +69,7 @@ def assess_decision_eligibility(
         else None
         for capability in required
     }
-    fact_lenses = _usable_lenses(claim_items, cards)
+    fact_lenses = _usable_lenses(claim_items, cards, tuple(coverage.values()))
     required_lenses_ok = set(plan.required_lenses).issubset(fact_lenses) and all(
         _lens_group_usable(group, fact_lenses) for group in plan.required_lens_groups
     )
@@ -151,15 +152,33 @@ def _missing_action(
 
 
 def _usable_lenses(
-    claims: tuple[PublicClaim, ...], cards: tuple[AnalystCard, ...]
+    claims: tuple[PublicClaim, ...],
+    cards: tuple[AnalystCard, ...],
+    coverage_refs: tuple[CoverageRefV1, ...],
 ) -> set[str]:
-    fact_keys = {claim.claim_key for claim in claims if claim.claim_type == "fact"}
+    coverage_by_id = {item.coverage_ref_id: item for item in coverage_refs}
+    observed_capabilities = {item.capability for item in coverage_refs}
+    valid_fact_keys: set[str] = set()
+    for claim in claims:
+        if claim.claim_type != "fact":
+            continue
+        lens = claim.claim_key.split(".", 1)[0]
+        resolved = tuple(
+            coverage_by_id[ref_id]
+            for ref_id in claim.coverage_ref_ids
+            if ref_id in coverage_by_id
+        )
+        allowed = capabilities_for_lens(lens, observed_capabilities)
+        if resolved and len(resolved) == len(claim.coverage_ref_ids) and all(
+            ref.capability in allowed for ref in resolved
+        ):
+            valid_fact_keys.add(claim.claim_key)
     usable: set[str] = set()
     for card in cards:
         if card.availability != "ready":
             continue
         if any(
-            key in fact_keys and key.split(".", 1)[0] == card.lens
+            key in valid_fact_keys and key.split(".", 1)[0] == card.lens
             for key in card.finding_claim_keys
         ):
             usable.add(card.lens)

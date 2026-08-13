@@ -150,7 +150,10 @@ def test_news_bundle_persists_typed_global_negative_result(monkeypatch) -> None:
     )
 
     assert bundle["windows"]["official"]["status"] == "unavailable"
-    assert bundle["results"][0]["capability_result"]["availability"] == (
+    official = next(
+        item for item in bundle["results"] if item["capability"] == "official_disclosures"
+    )
+    assert official["capability_result"]["availability"] == (
         "not_supported"
     )
 

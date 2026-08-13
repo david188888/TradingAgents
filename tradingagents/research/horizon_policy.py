@@ -22,7 +22,7 @@ PriceBasis = Literal[
 Requirement = Literal["required", "optional"]
 LensId = Literal["market", "fundamentals", "news", "sentiment"]
 
-POLICY_VERSION = "horizon-policy-v1"
+POLICY_VERSION = "horizon-policy-v2"
 
 
 class CutoffResolutionPolicyV1(BaseModel):
@@ -119,7 +119,7 @@ class DataWindowPlanV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1] = 1
-    policy_version: Literal["horizon-policy-v1"] = POLICY_VERSION
+    policy_version: Literal["horizon-policy-v2"] = POLICY_VERSION
     horizon: InvestmentHorizon
     market: MarketKind
     analysis_date: str
@@ -201,6 +201,7 @@ def _shared_capabilities(
 ) -> tuple[CapabilityPlanV1, ...]:
     if market == "a_share":
         identity_source_ids = (
+            "validated_ticker.exchange",
             "tushare.stock_basic",
             "eastmoney.stock_profile",
             "akshare.stock_individual_info",
@@ -210,6 +211,7 @@ def _shared_capabilities(
         snapshot_source_ids = (
             "mootdx.daily_bars",
             "tushare.tushare_get_stock",
+            "akshare.daily_bars",
         )
         adjusted_source_ids = (
             "tushare.qfq_daily",
@@ -470,7 +472,7 @@ def build_data_window_plan(
     *,
     market: MarketKind = "a_share",
 ) -> DataWindowPlanV1:
-    """Return the immutable v1 policy plan without accessing any provider."""
+    """Return the immutable v2 policy plan without accessing any provider."""
 
     if horizon == "short":
         capabilities = _shared_capabilities(

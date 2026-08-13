@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Annotated
 
 import pandas as pd
@@ -270,6 +271,7 @@ def load_ohlcv(symbol: str, curr_date: str, via_vendor: bool = False) -> pd.Data
         data = downloaded
 
     data = _clean_dataframe(data)
+    data.attrs["source_id"] = "yfinance.ohlcv"
 
     # Filter to curr_date to prevent look-ahead bias in backtesting
     data = data[data["Date"] <= curr_date_dt]
@@ -314,6 +316,8 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
     )
 
     data = None
+    source_id: str | None = None
+    source_file = f"{data_file}.source"
     if os.path.exists(data_file):
         cached = pd.read_csv(data_file, on_bad_lines="skip", encoding="utf-8")
         if (
@@ -322,18 +326,23 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
             and not _needs_same_day_refresh(data_file, curr_date_dt, today_date)
         ):
             data = cached
+            try:
+                source_id = Path(source_file).read_text(encoding="utf-8").strip() or None
+            except OSError:
+                source_id = None
 
     if data is None:
         errors: list[str] = []
-        for fetch, name in (
-            (get_stock_mootdx_df, "mootdx"),
-            (get_stock_tushare_df, "tushare"),
-            (get_stock_akshare_df, "akshare"),
+        for fetch, name, candidate_source_id in (
+            (get_stock_mootdx_df, "mootdx", "mootdx.daily_bars"),
+            (get_stock_tushare_df, "tushare", "tushare.tushare_get_stock"),
+            (get_stock_akshare_df, "akshare", "akshare.daily_bars"),
         ):
             try:
                 fetched = fetch(symbol, start_str, end_str)
                 if fetched is not None and not fetched.empty and "Close" in fetched.columns:
                     data = fetched
+                    source_id = candidate_source_id
                     break
                 errors.append(f"{name}: empty result")
             except Exception as exc:  # noqa: BLE001 - try next vendor
@@ -347,8 +356,12 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
                 + ")",
             )
         data.to_csv(data_file, index=False, encoding="utf-8")
+        if source_id is not None:
+            Path(source_file).write_text(source_id, encoding="utf-8")
 
     data = _clean_dataframe(data)
+    if source_id is not None:
+        data.attrs["source_id"] = source_id
     data = data[data["Date"] <= curr_date_dt]
     _assert_ohlcv_not_stale(data, curr_date, symbol, canonical)
     return data
