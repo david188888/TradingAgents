@@ -403,12 +403,18 @@ VerifiedInstrumentIdentityV1
   field_facts[value, source_id, observed_at, effective_at],
   provider_attempts, content_hash
 
+VerifiedIdentityCapabilityResultV1
+  base CapabilityResultV1,
+  identity_artifact_ref, identity_content_hash,
+  verification_level
+
 SecFilingIndexV1
   cik, company_name, requested_window,
   fetched_history_files, pagination_exhausted,
   source_artifacts[role, artifact_id, content_hash],
   coverage[index_search_complete, observed_index_count,
-           target_filing_count, required_document_count,
+           target_filing_count, rejected_target_count,
+           required_document_count,
            completed_document_count],
   filings[form, accession, filing_date,
           accepted_at, report_date, primary_document, sec_urls,
@@ -436,6 +442,13 @@ Identity 的 `availability` 表达供应商是否成功观测，`verification_le
 的 history JSON 和每份 primary document 的 raw bytes 都必须先冻结为 artifact，
 index 只能引用这些 artifact，不能只留下远端 URL。
 
+`VerifiedIdentityCapabilityResultV1` 是 identity capability 的唯一 typed result。
+它在现有 `CapabilityResultV1` 语义上增加 identity artifact/hash 与
+verification level；这些字段参与 capability result semantic ID，并进入 Snapshot
+artifact closure。Eligibility 明确要求 required `verified_identity` 同时满足
+generic available/current/complete 和 `verification_level=full` 才能得到 full；
+generic complete 但 verification 为 partial 时，eligibility 至多 limited。
+
 #### 4.3.3 策略解析与数据流
 
 为避免 identity、cutoff 和历史 listing status 互相循环，pre-graph prerequisite
@@ -447,7 +460,7 @@ InstrumentIdentityPreflightV1
   -> freeze AnalysisCutoffV1
   -> VerifiedInstrumentIdentityV1(as-of cutoff)
   -> regulatory scope resolution
-       |-- us_sec_reporting
+       |-- us_sec_candidate
        |-- global_non_sec
        `-- unresolved
   -> freeze ResolvedDataWindowPlanV3 + semantic hash
@@ -462,11 +475,19 @@ SEC User-Agent configured boolean 必须进入 initial-context fingerprint；所
 prefetch 只能消费该冻结 plan，不得在节点内按 `market` 重新构建策略。scope
 为 unresolved 时不得发 SEC 请求。
 
-- `us_sec_reporting` 的 medium/long required source 是
+- `us_sec_candidate` 的确定性谓词是：equity/company 标的具有无冲突的已观察
+  美国主交易所或美国司法辖区事实；它只表示应该执行 SEC provider policy，
+  不宣称 SEC 已覆盖该公司。缺少 User-Agent 或 SEC outage 不改变这个 scope；
+- `us_sec_candidate` 的 medium/long required source 是
   `sec.company_filings`；
+- SEC ticker map 健康且无 CIK 时 official 结果为 not_covered；User-Agent 缺失
+  或 SEC provider outage 时 scope 仍为 `us_sec_candidate`，official 结果为
+  provider_unavailable；
 - `global_non_sec` 保留 required 能力，但生产者明确返回
-  `regulatory_provider_not_implemented`；
-- `unresolved` 为 `invalid`，不能猜测监管机构；
+  `regulatory_provider_not_implemented`，其谓词是已观察且无冲突的非美国主交易所
+  或监管辖区；
+- `unresolved` 只用于交易所/司法辖区缺失或已观察事实冲突，为 `invalid`，不能
+  猜测监管机构；
 - policy version、方法资产和 runtime fingerprint 同步升级；
 - 测试矩阵从 A 股/global 扩展为 A 股、US SEC、非 SEC Global 三种 scope。
 
@@ -478,8 +499,16 @@ documents，生成 typed official result，最后进入 PIT snapshot。目标 fo
 recent/history 重复且内容一致时去重，关键字段冲突时为 invalid。`accepted_at`
 必须按 SEC timestamp 规则转换为 timezone-aware instant；缺失或非法时不得退回
 filing date。流程顺序固定为先解析 accepted time、cutoff filter 和 accession
-dedupe，再下载需要的文档。cutoff 后接受的 amendment 或 restatement 不得改写
-历史分析。
+dedupe，再下载需要的文档。duplicate critical fields 固定为 `form`、
+`filing_date`、`accepted_at`、`report_date`、`primary_document` 和 CIK；同一
+accession 任一关键字段冲突即 invalid。submissions 的无 offset
+`acceptanceDateTime` 按 `America/New_York` 在该日期的 DST 规则解释，再统一转
+UTC。cutoff 后接受的 amendment 或 restatement 不得改写历史分析。
+
+history manifest 的 `filingFrom/filingTo` 缺失或非法时不得跳过对应文件：在预算
+内保守抓取并从实际内容判断；预算不足以读取所有无法判定范围的文件时搜索不
+完整，结果为 partial。目标 filing 的 accepted timestamp 缺失或非法时不得用
+filing date 替代，该项进入 `rejected_target_count` 并使结果至多 partial。
 
 A 股身份分层规则：
 
@@ -500,6 +529,11 @@ provider failure 只进入 attempt/availability，不产生退市、证券类型
 suffix-only 为 unavailable，不是 partial/full。Global 历史身份若只能取得当前
 ticker map，必须由 cutoff 前 filing header/metadata 进一步绑定，否则至多 partial。
 
+AnalysisCutoff 不得指向运行时尚未发生的未来时刻。若 analysis date 是市场本地
+当前日期，cutoff 冻结为 `min(market_eod, preflight_captured_at)`；若是过去日期，
+使用该市场日 EOD；未来 analysis date 为 invalid。这样同日盘中运行不会把当天
+稍后才可能出现的 filing 计入“完整可观测窗口”。
+
 #### 4.3.4 失败语义与访问纪律
 
 | 情况 | Typed 结果 |
@@ -514,15 +548,24 @@ ticker map，必须由 cutoff 前 filing header/metadata 进一步绑定，否�
 | 正文解析失败但原始 HTML 已冻结 | `partial / normalized_text_unavailable` |
 | 索引、必要正文与 cutoff 完整 | `available` |
 
-SEC discovery coverage 在 `SourceCoverageV1` 上增加可选的
-`observed_unit_count` 与 `search_complete`。只有
-`observed_unit_count > 0 && search_complete=false` 时，才允许
-`item_count=0` 且 completeness 为 partial/unknown；这表示已经观察索引但尚未
-完成搜索，不代表目标 filing 存在。仅完整遍历全部 relevant recent/history 后
-零目标 forms 才能得到 not_covered。只存在 8-K/8-K-A 且索引元数据完整时可
+SEC 使用必填字段的 `SecDisclosureCoverageV1` validator，并向
+`SourceCoverageV1` 投影 `observed_unit_count` 与 `search_complete`。唯一映射为：
+
+- incomplete search + zero usable target → coverage unknown、availability partial；
+- incomplete search + 至少一个 usable target → coverage partial、availability partial；
+- exhaustive search + zero target 且 rejected_target_count=0 → unavailable coverage、
+  availability not_covered；
+- 任一 target 因 accepted timestamp 或必要文档不可验证而 rejected/incomplete →
+  coverage partial、availability partial；
+- exhaustive search + 全部必要 evidence 完成 → coverage complete、availability
+  available。
+
+只有 `observed_unit_count > 0 && search_complete=false` 时，generic coverage 才
+允许 `item_count=0` 且 completeness=unknown；这表示已经观察索引但尚未完成
+搜索，不代表目标 filing 存在。只存在 8-K/8-K-A 且索引元数据完整时可
 available；任何保留的 10-K/10-Q 及其 amendments 都必须完成 raw 与 normalized
-document 才可 available。`SecFilingIndexV1.coverage` 是上述搜索和文档完成度的
-权威细分，generic coverage 只是与现有 eligibility 的兼容投影。
+document 才可 available。`SecFilingIndexV1.coverage` 是搜索和文档完成度的权威
+细分，generic coverage 只是与现有 eligibility 的唯一兼容投影。
 
 SEC transport 私有读取 `TRADINGAGENTS_SEC_USER_AGENT`；其他配置、事件、异常、
 artifact、cache key 和 fingerprint 只能看到 `configured: bool`。通用 redactor
@@ -565,6 +608,12 @@ Registry 重放，不重写历史 artifact。v3 run 缺少、损坏、跨 run、
 resolved-plan hash 不符或含 cutoff 后 evidence 的 snapshot 必须产生 FAIL_STOP
 安全壳。Audit 仅显示安全摘要；8-K 原文链接只在用户主动选择 detail 后提供。
 
+`research_policy_version`、`resolved_plan_id` 和 `resolved_plan_hash` 必须作为非
+敏感字段持久化在 `run.started` 和 fingerprint document（或一个先于 graph 的
+committed plan event）中，不能只藏在 `initial_context_hash`。snapshot 缺失时，
+assembler 必须从这个 snapshot 外部凭证判断：v3 及以上 FAIL_STOP，只有 v2 及
+以下可走 legacy Registry。
+
 #### 4.3.6 测试与实际验收
 
 自动化必须覆盖：
@@ -586,6 +635,8 @@ resolved-plan hash 不符或含 cutoff 后 evidence 的 snapshot 必须产生 FA
   cache key、logs 或异常中；
 - incomplete-history + zero target、8-K-only、missing/invalid accepted timestamp、
   recent/history duplicate conflict 和 post-cutoff amendment；
+- malformed/missing history manifest ranges、America/New_York DST 转换，以及同日
+  市场收盘前/后的 cutoff；
 - fake-clock 下的并发限速、429 cooldown、oversize 和 parser timeout；
 - raw/index/bundle/snapshot/case 每个崩溃点、未来事件注入和 through-sequence replay；
 - v2 legacy 无 snapshot 可重放，v3 无 snapshot 必须 FAIL_STOP；
