@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 # Configuration and routing logic
@@ -85,6 +86,12 @@ from .router import (
     _market_for_request,
     _should_skip_vendor_for_symbol,
 )
+from .routing_trace import (
+    RouteAttemptTrace,
+    RoutedVendorCall,
+    capture_route_attempts,
+    record_route_attempt,
+)
 from .symbol_utils import NoMarketDataError
 from .vendor_errors import (  # noqa: F401  - re-exported for callers that import from interface
     _cooldown_for_exception,
@@ -136,6 +143,16 @@ def route_to_vendor(method: str, *args, **kwargs):
             origin=origin or CacheOrigin((), (), time.monotonic()),
         )
     return result
+
+
+def route_to_vendor_with_trace(method: str, *args, **kwargs) -> RoutedVendorCall:
+    """Compatibility-preserving route call plus typed per-provider outcomes."""
+    with capture_route_attempts() as attempts:
+        try:
+            result = route_to_vendor(method, *args, **kwargs)
+        except Exception as exc:  # caller decides whether the capability degrades
+            return RoutedVendorCall(None, exc, tuple(attempts))
+    return RoutedVendorCall(result, None, tuple(attempts))
 
 
 def _route_to_vendor_impl(
@@ -218,6 +235,15 @@ def _route_to_vendor_impl(
                 f"after {cooldown.reason}"
             )
             _provenance.skip(attempt, reason=reason)
+            record_route_attempt(
+                RouteAttemptTrace(
+                    vendor=vendor,
+                    outcome="skipped_unobserved",
+                    reason_code="provider_cooldown_active",
+                    recorded_at=datetime.now(timezone.utc),
+                    vendor_call_id=attempt.vendor_call_id,
+                )
+            )
             _emit_data_progress(
                 "skipped",
                 method,
@@ -240,12 +266,25 @@ def _route_to_vendor_impl(
         impl_func = vendor_impl[0] if isinstance(vendor_impl, list) else vendor_impl
 
         attempt = _provenance.start_attempt(vendor, fallback_chain=tuple(fallback_vendors))
+        trace_started_at = datetime.now(timezone.utc)
         try:
             with _provenance.attempt_scope(attempt):
                 _emit_data_progress("start", method, vendor, args)
                 result = impl_func(*args, **kwargs)
         except NoMarketDataError as e:
             artifact_id = _provenance.fail(attempt, e)
+            record_route_attempt(
+                RouteAttemptTrace(
+                    vendor=vendor,
+                    outcome="not_covered",
+                    reason_code="provider_reported_no_data",
+                    recorded_at=datetime.now(timezone.utc),
+                    started_at=trace_started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    vendor_call_id=attempt.vendor_call_id,
+                    provenance_artifact_id=artifact_id,
+                )
+            )
             last_no_data = e
             _emit_data_progress(
                 "failure",
@@ -264,6 +303,18 @@ def _route_to_vendor_impl(
         except Exception as exc:
             artifact_id = _provenance.fail(attempt, exc)
             if _is_recoverable_vendor_error(vendor, exc):
+                record_route_attempt(
+                    RouteAttemptTrace(
+                        vendor=vendor,
+                        outcome="provider_failed",
+                        reason_code="provider_request_failed",
+                        recorded_at=datetime.now(timezone.utc),
+                        started_at=trace_started_at,
+                        ended_at=datetime.now(timezone.utc),
+                        vendor_call_id=attempt.vendor_call_id,
+                        provenance_artifact_id=artifact_id,
+                    )
+                )
                 _record_vendor_failure(vendor, method, args, exc)
                 _emit_data_progress(
                     "failure",
@@ -292,6 +343,18 @@ def _route_to_vendor_impl(
                             fallback_vendors.append(extra)
                             implicit_fallback_triggered = True
                 continue
+            record_route_attempt(
+                RouteAttemptTrace(
+                    vendor=vendor,
+                    outcome="invalid_payload",
+                    reason_code="provider_unhandled_failure",
+                    recorded_at=datetime.now(timezone.utc),
+                    started_at=trace_started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    vendor_call_id=attempt.vendor_call_id,
+                    provenance_artifact_id=artifact_id,
+                )
+            )
             raise
 
         if _is_missing_required_data_result(result):
@@ -307,10 +370,34 @@ def _route_to_vendor_impl(
                 artifact_id=artifact_id,
             )
             recoverable_errors.append((vendor, ChinaDataUnavailableError(summary)))
+            record_route_attempt(
+                RouteAttemptTrace(
+                    vendor=vendor,
+                    outcome="invalid_payload",
+                    reason_code="provider_payload_missing_required_data",
+                    recorded_at=datetime.now(timezone.utc),
+                    started_at=trace_started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    vendor_call_id=attempt.vendor_call_id,
+                    provenance_artifact_id=artifact_id,
+                )
+            )
             continue
 
         if _should_supplement_yfinance_result(method, vendor, args, result):
             artifact_id = _provenance.succeed(attempt, result)
+            record_route_attempt(
+                RouteAttemptTrace(
+                    vendor=vendor,
+                    outcome="observed",
+                    reason_code="provider_payload_incomplete",
+                    recorded_at=datetime.now(timezone.utc),
+                    started_at=trace_started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    vendor_call_id=attempt.vendor_call_id,
+                    provenance_artifact_id=artifact_id,
+                )
+            )
             reason = _summarize_yfinance_incompleteness(method, args, result)
             incomplete_primary = (vendor, result, reason)
             recoverable_errors.append((vendor, ChinaDataUnavailableError(reason)))
@@ -321,6 +408,18 @@ def _route_to_vendor_impl(
 
         if incomplete_primary and _is_china_supplemental_vendor(vendor):
             artifact_id = _provenance.succeed(attempt, result)
+            record_route_attempt(
+                RouteAttemptTrace(
+                    vendor=vendor,
+                    outcome="observed",
+                    reason_code="provider_payload_observed",
+                    recorded_at=datetime.now(timezone.utc),
+                    started_at=trace_started_at,
+                    ended_at=datetime.now(timezone.utc),
+                    vendor_call_id=attempt.vendor_call_id,
+                    provenance_artifact_id=artifact_id,
+                )
+            )
             _record_vendor_success(vendor, method, args)
             _emit_data_progress(
                 "success",
@@ -341,6 +440,18 @@ def _route_to_vendor_impl(
             )
 
         artifact_id = _provenance.succeed(attempt, result)
+        record_route_attempt(
+            RouteAttemptTrace(
+                vendor=vendor,
+                outcome="observed",
+                reason_code="provider_payload_observed",
+                recorded_at=datetime.now(timezone.utc),
+                started_at=trace_started_at,
+                ended_at=datetime.now(timezone.utc),
+                vendor_call_id=attempt.vendor_call_id,
+                provenance_artifact_id=artifact_id,
+            )
+        )
         _record_vendor_success(vendor, method, args)
         _emit_data_progress(
             "success",
@@ -405,4 +516,3 @@ def _route_to_vendor_impl(
         raise DataUnavailableError(message)
 
     raise RuntimeError(f"No available vendor for '{method}'")
-

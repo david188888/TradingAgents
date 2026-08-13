@@ -105,6 +105,10 @@ class AgentState(MessagesState):
         "Deterministically prefetched horizon-specific news and disclosure bundle",
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    fundamentals_prefetch_bundle: Annotated[
+        str,
+        "Deterministically prefetched horizon-specific financial statements",
+    ]
     methodology_reports: Annotated[
         dict[str, dict[str, Any]],
         "Validated public analyst methodology scorecards; no prompts or private reasoning",

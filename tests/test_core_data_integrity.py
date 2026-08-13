@@ -157,3 +157,22 @@ def test_cooldown_plus_no_data_is_provider_unavailable(monkeypatch) -> None:
         interface.route_to_vendor(
             "get_stock_data", "AAPL", "2026-08-01", "2026-08-13"
         )
+
+
+def test_traced_route_preserves_actual_provider_outcome(monkeypatch) -> None:
+    monkeypatch.setattr(interface, "get_vendor", lambda category, method=None: "yfinance")
+    monkeypatch.setitem(
+        interface.VENDOR_METHODS,
+        "get_income_statement",
+        {"yfinance": lambda *args, **kwargs: "Metric,2025-12-31\nRevenue,1"},
+    )
+
+    routed = interface.route_to_vendor_with_trace(
+        "get_income_statement", "AAPL", "annual", "2026-08-13"
+    )
+
+    assert routed.error is None
+    assert routed.result == "Metric,2025-12-31\nRevenue,1"
+    assert [(item.vendor, item.outcome) for item in routed.attempts] == [
+        ("yfinance", "observed")
+    ]

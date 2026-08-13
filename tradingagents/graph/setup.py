@@ -27,6 +27,9 @@ from tradingagents.agents.utils.a_share_supplement_tools import (
     create_a_share_supplement_prefetch_node,
 )
 from tradingagents.agents.utils.agent_states import AgentState
+from tradingagents.agents.utils.fundamentals_prefetch_tools import (
+    create_fundamentals_prefetch_node,
+)
 from tradingagents.agents.utils.market_data_validation_tools import (
     create_adjusted_price_prefetch_node,
 )
@@ -250,12 +253,16 @@ class GraphSetup:
         plan = build_analyst_execution_plan(selected_analysts)
         market_spec = next((spec for spec in plan.specs if spec.key == "market"), None)
         news_spec = next((spec for spec in plan.specs if spec.key == "news"), None)
+        fundamentals_spec = next(
+            (spec for spec in plan.specs if spec.key == "fundamentals"), None
+        )
         supplement_enabled = any(
             spec.key in {"market", "social", "news"} for spec in plan.specs
         )
         a_share_prefetch_node_id = "A-share Supplement Prefetch"
         price_prefetch_node_id = "Adjusted Price Prefetch"
         news_prefetch_node_id = "News Window Prefetch"
+        fundamentals_prefetch_node_id = "Fundamentals Prefetch"
 
         analyst_factories = {
             "market": lambda: create_market_analyst(self.quick_thinking_llm),
@@ -355,6 +362,22 @@ class GraphSetup:
             workflow.add_node(price_prefetch_node_id, price_prefetch_node)
             workflow.add_edge(price_prefetch_node_id, market_spec.agent_node)
 
+        if fundamentals_spec is not None:
+            fundamentals_prefetch_node = create_fundamentals_prefetch_node()
+            if observation_enabled:
+                assert ObservedGraphTask is not None
+                fundamentals_prefetch_node = ObservedGraphTask(
+                    fundamentals_prefetch_node_id,
+                    "maintenance",
+                    fundamentals_prefetch_node,
+                )
+            workflow.add_node(
+                fundamentals_prefetch_node_id, fundamentals_prefetch_node
+            )
+            workflow.add_edge(
+                fundamentals_prefetch_node_id, fundamentals_spec.agent_node
+            )
+
         if supplement_enabled:
             supplement_prefetch_node = create_a_share_supplement_prefetch_node()
             if observation_enabled:
@@ -394,6 +417,8 @@ class GraphSetup:
                 return price_prefetch_node_id
             if spec.key == "news":
                 return news_prefetch_node_id
+            if spec.key == "fundamentals":
+                return fundamentals_prefetch_node_id
             return spec.agent_node
 
         first_node = analyst_entry_node(plan.specs[0])

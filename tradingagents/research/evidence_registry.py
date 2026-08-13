@@ -43,6 +43,7 @@ _EVIDENCE_BUNDLE_STATE_KEYS = (
     "adjusted_price_bundle",
     "news_window_bundle",
     "a_share_supplement_bundle",
+    "fundamentals_prefetch_bundle",
 )
 
 _CAPABILITY_BY_STATE_KEY = {
@@ -227,6 +228,35 @@ def _bundle_coverage(
                 )
             )
 
+    # Fundamentals prefetch: typed capability results retain all positive and
+    # negative source coverage, so missing providers remain visible on replay.
+    for result in bundle.get("results", ()):
+        if not isinstance(result, Mapping):
+            continue
+        semantic = result.get("capability_result")
+        if not isinstance(semantic, Mapping):
+            continue
+        try:
+            from tradingagents.dataflows.capability_result import CapabilityResultV1
+
+            capability_result = CapabilityResultV1.model_validate(semantic)
+        except (ImportError, ValidationError, ValueError):
+            continue
+        capability = capability_result.capability
+        refs.append(
+            CoverageRefV1(
+                coverage_ref_id=canonical_json_sha256(
+                    {
+                        "capability": capability,
+                        "artifact_id": artifact_id,
+                        "capability_result_id": capability_result.capability_result_id,
+                    }
+                ),
+                capability=capability,
+                envelope=capability_result.coverage,
+            )
+        )
+
     return refs
 
 
@@ -262,6 +292,7 @@ class EvidenceRegistry:
         "evidence:price_bundle": "adjusted_price_bundle",
         "evidence:news_bundle": "news_window_bundle",
         "evidence:supplement_bundle": "a_share_supplement_bundle",
+        "evidence:fundamentals_bundle": "fundamentals_prefetch_bundle",
     }
     _EVIDENCE_KEY_TO_LENS = {
         "evidence:market_report": "market",

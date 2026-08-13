@@ -1,9 +1,13 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
 from tradingagents.dataflows.interface import route_to_vendor
+from tradingagents.research.fundamentals_prefetch import (
+    statement_from_prefetch_bundle,
+)
 
 
 @tool
@@ -30,6 +34,7 @@ def get_balance_sheet(
     ticker: Annotated[str, "ticker symbol"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve balance sheet data for a given ticker symbol.
@@ -41,7 +46,8 @@ def get_balance_sheet(
     Returns:
         str: A formatted report containing balance sheet data
     """
-    return route_to_vendor("get_balance_sheet", ticker, freq, curr_date)
+    prefetched = _prefetched_statement(state, "balance_sheet", freq)
+    return prefetched or route_to_vendor("get_balance_sheet", ticker, freq, curr_date)
 
 
 @tool
@@ -50,6 +56,7 @@ def get_cashflow(
     ticker: Annotated[str, "ticker symbol"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve cash flow statement data for a given ticker symbol.
@@ -61,7 +68,8 @@ def get_cashflow(
     Returns:
         str: A formatted report containing cash flow statement data
     """
-    return route_to_vendor("get_cashflow", ticker, freq, curr_date)
+    prefetched = _prefetched_statement(state, "cash_flow", freq)
+    return prefetched or route_to_vendor("get_cashflow", ticker, freq, curr_date)
 
 
 @tool
@@ -70,6 +78,7 @@ def get_income_statement(
     ticker: Annotated[str, "ticker symbol"],
     freq: Annotated[str, "reporting frequency: annual/quarterly"] = "quarterly",
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"] = None,
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve income statement data for a given ticker symbol.
@@ -81,4 +90,17 @@ def get_income_statement(
     Returns:
         str: A formatted report containing income statement data
     """
-    return route_to_vendor("get_income_statement", ticker, freq, curr_date)
+    prefetched = _prefetched_statement(state, "income_statement", freq)
+    return prefetched or route_to_vendor("get_income_statement", ticker, freq, curr_date)
+
+
+def _prefetched_statement(
+    state: dict[str, Any] | None, statement: str, frequency: str
+) -> str | None:
+    if not isinstance(state, dict):
+        return None
+    return statement_from_prefetch_bundle(
+        state.get("fundamentals_prefetch_bundle"),
+        statement=statement,
+        frequency=frequency,
+    )

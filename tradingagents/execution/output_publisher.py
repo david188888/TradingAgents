@@ -271,8 +271,11 @@ def _extract_bundle_capabilities(state_key: str, bundle: dict[str, Any]) -> tupl
         str(result["capability"])
         for result in results
         if isinstance(result, dict)
-        and result.get("status") == "ok"
         and isinstance(result.get("capability"), str)
+        and (
+            result.get("status") == "ok"
+            or isinstance(result.get("capability_result"), dict)
+        )
     )
 
 

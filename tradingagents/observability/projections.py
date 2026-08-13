@@ -117,7 +117,12 @@ ROLE_STATE_FIELDS: dict[str, tuple[str, ...]] = {
         "a_share_supplement_bundle",
         "messages",
     ),
-    "analyst.fundamentals": (*_INSTRUMENT_FIELDS, "trade_date", "messages"),
+    "analyst.fundamentals": (
+        *_INSTRUMENT_FIELDS,
+        "trade_date",
+        "fundamentals_prefetch_bundle",
+        "messages",
+    ),
     "evidence.steward": (
         "company_of_interest",
         "canonical_company_profile",
@@ -286,6 +291,10 @@ def _project_state_fields(actor_id: str, state: Mapping[str, Any]) -> dict[str, 
         if actor_id == "analyst.sentiment":
             projected["a_share_supplement_bundle"] = state.get(
                 "a_share_supplement_bundle"
+            )
+        if actor_id == "analyst.fundamentals":
+            projected["fundamentals_prefetch_bundle"] = state.get(
+                "fundamentals_prefetch_bundle"
             )
         projected["trade_date"] = state.get("trade_date")
         projected["messages"] = state.get("messages")

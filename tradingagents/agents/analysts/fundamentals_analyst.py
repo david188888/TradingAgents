@@ -26,6 +26,10 @@ def create_fundamentals_analyst(llm):
         )
         current_date = state["trade_date"]
         instrument_context = get_instrument_context_from_state(state)
+        fundamentals_prefetch_bundle = str(
+            state.get("fundamentals_prefetch_bundle")
+            or '{"status":"unavailable","reason_code":"prefetch_missing"}'
+        )
 
         tools = [
             get_fundamentals,
@@ -39,6 +43,7 @@ def create_fundamentals_analyst(llm):
             "You are a researcher tasked with analyzing fundamental information over the past week about a company. Please write a comprehensive report of the company's fundamental information such as financial documents, company profile, basic company financials, and company financial history to gain a full view of the company's fundamental information to inform traders. Make sure to include as much detail as possible. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
             + " Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."
             + " Use the available tools: `get_fundamentals` for comprehensive company analysis, `get_balance_sheet`, `get_cashflow`, and `get_income_statement` for specific financial statements. When several statements are needed together, prefer `get_fundamentals_research_bundle(symbol, curr_date, request)`: it maps a plain-language request only to reviewed capabilities, fetches a bounded subset concurrently, and reports capability-level provenance plus public error categories. It cannot select providers or invoke arbitrary tools."
+            + " A deterministic horizon-bounded statement snapshot is supplied below. Treat it as the canonical statement evidence for this run; tool calls for the same statement/frequency must reuse it rather than widening the time window.\n<prefetched_fundamentals_bundle>\n{fundamentals_prefetch_bundle}\n</prefetched_fundamentals_bundle>"
             + get_language_instruction()
         )
         system_message += build_role_skill_prompt(
@@ -67,6 +72,9 @@ def create_fundamentals_analyst(llm):
         prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(instrument_context=instrument_context)
+        prompt = prompt.partial(
+            fundamentals_prefetch_bundle=fundamentals_prefetch_bundle
+        )
 
         chain = prompt | llm.bind_tools(tools)
 

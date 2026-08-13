@@ -260,6 +260,8 @@ def aggregate_capability_availability(
         for group in coverage.required_source_groups
         for source_id in group.source_ids
     )
+    if not required_sources:
+        required_sources.update(coverage.optional_source_ids)
     relevant = tuple(by_source[source_id] for source_id in required_sources)
     outcomes = {attempt.outcome for attempt in relevant}
     if "invalid_payload" in outcomes:
