@@ -81,7 +81,7 @@ CapabilityResultV1
   effective_period
   published_at_or_filing_at?
   source_observed_at?
-  fetched_at
+  fetched_at?
   degradation_codes[]
   limitations[]
 ```
@@ -114,11 +114,11 @@ Normative crosswalk:
 | `not_covered` | `unavailable` | All sources in the negative-conclusion attempt set were observed and authoritatively reported non-coverage. |
 | `not_supported` | `unavailable` | No implemented producer exists for the required capability/source contract. |
 | `provider_unavailable` | `unavailable` | Required observation was prevented by outage, authentication, throttle, timeout, cooldown, or exhausted attempt budget. |
-| `invalid` | `unavailable` | A payload was observed but failed identity, schema, period, or integrity validation. |
+| `invalid` | `unavailable` | A deterministic prerequisite could not be resolved, or an observed payload failed identity, schema, period, or integrity validation. |
 
 Every non-payload availability (`not_covered`, `not_supported`, `provider_unavailable`, `invalid`) requires `freshness=unknown`; freshness describes usable data, not the recency of an attempt. Zero-item negative outcomes are represented durably by `CapabilityResultV1` and its attempt records. `SourceCoverageV1` continues to describe source coverage and uses `completeness=unavailable` plus stable degradations for zero-item records; it is not asked to encode the negative cause by itself.
 
-`analysis_cutoff_at` is required for every result except `availability=invalid` with the stable reason `analysis_cutoff_resolution_failed`. That exceptional result must retain the failed verified-identity reference/attempts, and the graph must not start any time-sensitive provider fetch or filtering step while the cutoff is absent.
+`analysis_cutoff_at` is required for every result except `availability=invalid` with the stable reason `analysis_cutoff_resolution_failed`. That exceptional result must retain the failed verified-identity reference/attempts, and the graph must not start any time-sensitive provider fetch or filtering step while the cutoff is absent. `fetched_at` is required when at least one attempt reached a provider and is absent when no provider request executed, including prerequisite failure, `not_supported`, and an entirely skipped attempt set. Attempt start/end timestamps distinguish provider requests from skipped outcomes.
 
 ### 5.2 VendorAttemptOutcome
 
@@ -166,7 +166,7 @@ Time fields have distinct meanings:
 - `effective_period`: fiscal or market period described by the fact;
 - `published_at_or_filing_at`: when the issuer/source made the fact public;
 - `source_observed_at`: provider-reported observation/event time;
-- `fetched_at`: when TradingAgents requested the source;
+- `fetched_at`: when TradingAgents first reached a provider for this result; absent when no provider request executed;
 - `captured_at`: publication-envelope time when the finalized semantic result was accepted for durable capture;
 - `committed_at`: publication-envelope time when the durable artifact/event commit completed.
 
@@ -311,7 +311,7 @@ Each correction starts with a focused failing regression test.
 - Contract validation and stable reason codes.
 - Coverage/availability crosswalk, including `coverage=unknown`.
 - Availability/freshness validation, including rejection of non-payload states marked `current` or `stale`.
-- Cutoff-resolution failure: only the typed invalid result may omit `analysis_cutoff_at`, and no time-sensitive provider is invoked.
+- Cutoff-resolution failure: only the typed invalid result may omit `analysis_cutoff_at`; no time-sensitive provider is invoked; `fetched_at` is absent; attempt records prove all relevant outcomes were prerequisite failures or skips.
 - Negative-conclusion budgets and skipped-unobserved sources.
 
 ### 13.2 Provider routing tests
