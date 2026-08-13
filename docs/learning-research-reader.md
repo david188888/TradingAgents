@@ -399,13 +399,20 @@ SEC 官方 Submissions API 无需 API key，单个 CIK 的 recent 结构至少�
 VerifiedInstrumentIdentityV1
   ticker, market, company_name, security_type,
   listing_status, exchange, regulatory_authority,
-  cik, sources, verification_level, content_hash
+  cik, availability, verification_level,
+  field_facts[value, source_id, observed_at, effective_at],
+  provider_attempts, content_hash
 
 SecFilingIndexV1
   cik, company_name, requested_window,
   fetched_history_files, pagination_exhausted,
+  source_artifacts[role, artifact_id, content_hash],
+  coverage[index_search_complete, observed_index_count,
+           target_filing_count, required_document_count,
+           completed_document_count],
   filings[form, accession, filing_date,
-          accepted_at, report_date, primary_document, sec_urls]
+          accepted_at, report_date, primary_document, sec_urls,
+          source_artifact_ref, document_ref]
 
 SecFilingDocumentV1
   accession, form, accepted_at,
@@ -413,29 +420,47 @@ SecFilingDocumentV1
   parser_status, content_hash
 
 PointInTimeEvidenceSnapshotV1
-  run/ticker/cutoff/identity references,
-  selected capability result IDs,
-  evidence and coverage refs,
-  missing/degraded capabilities, snapshot_hash
+  schema_version, run/ticker/cutoff/identity references,
+  source_committed_sequence, resolved_plan_id/hash,
+  selections[capability, capability_result_id, artifact_id,
+             evidence_refs, coverage_refs],
+  artifact_closure, missing/degraded capabilities, snapshot_hash
 ```
 
 大正文不复制进 snapshot。原始 SEC HTML 先作为 durable artifact 保存，再生成
 规范化文本；解析失败不能破坏已经冻结的原始证据。单文档下载和解析必须有
 固定预算，超限不得截断后伪装完整。
 
+Identity 的 `availability` 表达供应商是否成功观测，`verification_level` 表达
+已观测字段的证明强度；两者不得互相推导。SEC current submissions、每个被读取
+的 history JSON 和每份 primary document 的 raw bytes 都必须先冻结为 artifact，
+index 只能引用这些 artifact，不能只留下远端 URL。
+
 #### 4.3.3 策略解析与数据流
 
-`horizon-policy-v3` 把当前 `global` 的监管假设改为两阶段解析：
+为避免 identity、cutoff 和历史 listing status 互相循环，pre-graph prerequisite
+顺序固定为：
 
 ```text
-initial market policy
-  -> VerifiedInstrumentIdentityV1
+InstrumentIdentityPreflightV1
+  ticker, candidate exchange/timezone/regulatory scope
+  -> freeze AnalysisCutoffV1
+  -> VerifiedInstrumentIdentityV1(as-of cutoff)
   -> regulatory scope resolution
        |-- us_sec_reporting
        |-- global_non_sec
        `-- unresolved
-  -> resolved required-source policy
+  -> freeze ResolvedDataWindowPlanV3 + semantic hash
+  -> checkpoint authorization
+  -> graph prefetch consumes the frozen plan
 ```
+
+Preflight 只提供冻结 cutoff 所需的候选交易所、时区和监管范围，不得声称公司
+名称、证券类型或上市状态已经 verified。cutoff 后执行字段级身份验证，再冻结
+resolved plan。preflight、cutoff、verified identity、resolved plan ID/hash 和
+SEC User-Agent configured boolean 必须进入 initial-context fingerprint；所有
+prefetch 只能消费该冻结 plan，不得在节点内按 `market` 重新构建策略。scope
+为 unresolved 时不得发 SEC 请求。
 
 - `us_sec_reporting` 的 medium/long required source 是
   `sec.company_filings`；
@@ -445,10 +470,16 @@ initial market policy
 - policy version、方法资产和 runtime fingerprint 同步升级；
 - 测试矩阵从 A 股/global 扩展为 A 股、US SEC、非 SEC Global 三种 scope。
 
-SEC 流程固定为：ticker/CIK/公司名称/交易所验证，冻结 analysis cutoff，获取
-current submissions 与窗口相交的历史 JSON，只保留 `accepted_at <= cutoff` 的
-目标 forms，下载 10-K/10-Q primary documents，生成 typed official result，最后
-进入 PIT snapshot。cutoff 后接受的 amendment 或 restatement 不得改写历史分析。
+SEC 流程固定为：以官方 ticker map 得到候选 CIK，使用 submissions 的名称、
+ticker/exchange 与 CIK 验证身份，获取 current submissions 与窗口相交的历史
+JSON，只保留 `accepted_at <= cutoff` 的目标 forms，下载 10-K/10-Q primary
+documents，生成 typed official result，最后进入 PIT snapshot。目标 form 集精确
+为 `10-K`、`10-K/A`、`10-Q`、`10-Q/A`、`8-K`、`8-K/A`。accession 是唯一键；
+recent/history 重复且内容一致时去重，关键字段冲突时为 invalid。`accepted_at`
+必须按 SEC timestamp 规则转换为 timezone-aware instant；缺失或非法时不得退回
+filing date。流程顺序固定为先解析 accepted time、cutoff filter 和 accession
+dedupe，再下载需要的文档。cutoff 后接受的 amendment 或 restatement 不得改写
+历史分析。
 
 A 股身份分层规则：
 
@@ -460,6 +491,14 @@ A 股身份分层规则：
 - ticker、名称、证券类型或上市状态发生来源冲突时为 `invalid`，阻止实质性
   claims；
 - 历史 listing status 必须按 cutoff 判断；缺少生效日期时至多 partial。
+
+每个 identity 字段必须分别保存规范化值、source ID、observed time 和 applicable
+effective time。partial 要求 Tushare 与 EastMoney 或 AKShare 中至少一个独立来源
+对 ticker、名称、证券类型和交易所逐字段一致；不能仅比较最终合并后的 profile。
+provider failure 只进入 attempt/availability，不产生退市、证券类型或公司名称
+事实；只有两个或以上已经成功观测并规范化的字段事实冲突才产生 invalid。
+suffix-only 为 unavailable，不是 partial/full。Global 历史身份若只能取得当前
+ticker map，必须由 cutoff 前 filing header/metadata 进一步绑定，否则至多 partial。
 
 #### 4.3.4 失败语义与访问纪律
 
@@ -475,9 +514,30 @@ A 股身份分层规则：
 | 正文解析失败但原始 HTML 已冻结 | `partial / normalized_text_unavailable` |
 | 索引、必要正文与 cutoff 完整 | `available` |
 
-SEC User-Agent 的具体值不得写入日志、Audit 或 fingerprint；只记录是否配置。
-429、403、5xx 和网络超时进入既有 provider health/cooldown，不得紧密循环重试。
-submissions JSON 可以短期缓存；accession 文档按内容哈希长期复用。
+SEC discovery coverage 在 `SourceCoverageV1` 上增加可选的
+`observed_unit_count` 与 `search_complete`。只有
+`observed_unit_count > 0 && search_complete=false` 时，才允许
+`item_count=0` 且 completeness 为 partial/unknown；这表示已经观察索引但尚未
+完成搜索，不代表目标 filing 存在。仅完整遍历全部 relevant recent/history 后
+零目标 forms 才能得到 not_covered。只存在 8-K/8-K-A 且索引元数据完整时可
+available；任何保留的 10-K/10-Q 及其 amendments 都必须完成 raw 与 normalized
+document 才可 available。`SecFilingIndexV1.coverage` 是上述搜索和文档完成度的
+权威细分，generic coverage 只是与现有 eligibility 的兼容投影。
+
+SEC transport 私有读取 `TRADINGAGENTS_SEC_USER_AGENT`；其他配置、事件、异常、
+artifact、cache key 和 fingerprint 只能看到 `configured: bool`。通用 redactor
+同时把 `user_agent`/`sec_user_agent` 视为敏感配置名。限速为每进程、每 SEC
+host 一个 5 requests/second token bucket，最大并发 2；429 尊重 `Retry-After`
+并进入 host cooldown，403、5xx 和网络超时进入既有 provider health/cooldown，
+同一资源在单 run 内不紧密重试。
+
+连接 timeout 为 5 秒、读取 timeout 为 30 秒、规范化 parser timeout 为 10 秒，
+单份 primary document 最大 20 MiB。允许的正文 content type 为 `text/html`、
+`application/xhtml+xml` 和 `text/plain`；其他类型、超限和 parser timeout 分别
+记录 `invalid_content_type`、`oversize`、`parser_timeout`。raw hash 基于完整原始
+bytes；规范化文本执行确定性字符集解析、移除 script/style、Unicode NFC、换行
+与段落空白归一化后单独计算 hash。任何超限或超时都不得保存截断正文。
+submissions JSON 可以短期缓存；accession 文档按 raw content hash 长期复用。
 
 #### 4.3.5 Snapshot 发布与重放
 
@@ -493,13 +553,17 @@ required prefetch graph tasks
 snapshot 在 durable prefetch artifacts 已提交后、Research Case 组装前生成。它
 固定 capability result、artifact、evidence/coverage refs、来源身份、时间语义、
 availability/freshness 和 content hash；canonical 排序后计算 semantic hash。
-snapshot 与 Research Case 使用相同 source committed sequence，case 组装后不得
-再次重选证据。
+snapshot 构建时 Registry 必须只读取
+`through=source_committed_sequence` 的事件，并拒绝 artifact payload 中更晚的
+committed sequence。snapshot artifact/event 先于 Research Case artifact 发布，
+但两者携带相同的 source committed sequence；assembler 只消费冻结 snapshot，
+不得重新 canonical-select。每个 SEC index/document 引用也必须递归校验 run、
+ticker、hash 和 `accepted_at <= cutoff`。
 
-新运行缺少、损坏、跨 run、跨 ticker 或含 cutoff 后 evidence 的 snapshot 必须
-产生 FAIL_STOP 安全壳。旧 run 没有 snapshot 时继续使用旧 Registry 重放，不
-重写历史 artifact。Audit 仅显示安全摘要；8-K 原文链接只在用户主动选择 detail
-后提供。
+`policy_version < horizon-policy-v3` 的旧 run 没有 snapshot 时继续使用旧
+Registry 重放，不重写历史 artifact。v3 run 缺少、损坏、跨 run、跨 ticker、
+resolved-plan hash 不符或含 cutoff 后 evidence 的 snapshot 必须产生 FAIL_STOP
+安全壳。Audit 仅显示安全摘要；8-K 原文链接只在用户主动选择 detail 后提供。
 
 #### 4.3.6 测试与实际验收
 
@@ -514,6 +578,18 @@ snapshot 与 Research Case 使用相同 source committed sequence，case 组装�
 7. snapshot hash、幂等重放、损坏/跨 run/跨 ticker/post-cutoff 拒绝；
 8. US SEC medium/long 的 full 可达、非 SEC Global 保持 limited；
 9. pre-change ResearchCase Reader golden 仍可打开。
+
+此外必须包含以下 silent-failure 断言：
+
+- missing User-Agent、cutoff failure 和 unresolved scope 均为零 SEC HTTP 调用；
+- User-Agent canary 不出现在 effective config、fingerprint、events、artifacts、
+  cache key、logs 或异常中；
+- incomplete-history + zero target、8-K-only、missing/invalid accepted timestamp、
+  recent/history duplicate conflict 和 post-cutoff amendment；
+- fake-clock 下的并发限速、429 cooldown、oversize 和 parser timeout；
+- raw/index/bundle/snapshot/case 每个崩溃点、未来事件注入和 through-sequence replay；
+- v2 legacy 无 snapshot 可重放，v3 无 snapshot 必须 FAIL_STOP；
+- E2E 必须断言 artifact/event/provenance linkage，不只检查 Reader 文案。
 
 生产 E2E fake runner 不再发布 Buy/Hold/Sell、仓位和旧 public-output 模板；它
 必须发布 typed identity/capability results、SEC available/provider outage 两种
