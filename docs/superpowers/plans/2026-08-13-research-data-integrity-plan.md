@@ -1,9 +1,13 @@
 # Research Data Integrity Implementation Plan
 
+**Status:** Completed historical implementation plan; frozen  
 **Design:** `docs/superpowers/specs/2026-08-13-research-data-integrity-design.md`  
 **Execution order:** A -> B -> C -> D -> E -> F -> UI acceptance  
 **Deferred:** model switching, model probes, cross-model evaluation, Agent methodology/debate redesign  
 **Worktree protection:** do not modify the pre-existing uncommitted `research_manager.py`, `DecisionBrief.tsx`, `workbench.css`, or built web assets.
+
+Current behavior and the active roadmap are maintained only in
+[`docs/learning-research-reader.md`](../../learning-research-reader.md).
 
 ## Delivery rules
 

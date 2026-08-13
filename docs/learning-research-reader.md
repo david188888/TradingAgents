@@ -333,8 +333,39 @@ Reader 与初始 DOM，禁止 content-addressed ID、locator、hash 和 raw cont
 | P2-4 独立 Audit Center | Merged | PR #5 / `1f7b258` |
 | P2-5 视觉、响应式、可访问性与 golden QA | Merged | PR #5 / `1f7b258` |
 | 合入 CI 合同 | Merged | `88e3681`，经 PR #5 合入 `main` |
+| 分析截止时点、typed capability 与来源尝试契约 | Merged | `80746ad`–`12a82cc` |
+| 数据路由、身份、新闻时区与 OHLCV 时点修复 | Merged | `8798962`–`fcef49d` |
+| fundamentals / official durable bundles 与六格策略闭包 | Merged | `1749096`–`5e42aa3` |
+| Registry、claim capability、eligibility 与 required-prefetch 闭包 | Merged | `9cbf5de`–`a3e1dec` |
 
 已验证的 typed run：`run_20260810T152235678110Z_aa9f06e0`。它包含 6 个 claims、4 个 analyst cards、partial availability 和 `eligibility=none`，可用于本地 Reader 验收；不得将其私有原始内容提交为 fixture。
+
+### 4.1 当前验证基线与能力边界
+
+2026-08-13 的数据完整性门禁为 122 passed；完整后端套件为 1713 passed、
+28 failed。未通过项仍包含旧契约/图拓扑断言、live 网络与 Wind 环境依赖，
+不能把当前分支描述为全仓全绿。前端 typecheck 和 Reader/Audit 定向测试通过；
+完整 Vitest 仍有 2 个与当前未提交 UI 改动对应的旧断言失败。
+
+六格策略中，A 股 short/medium/long 与 global short 在 required evidence 完整时
+可以达到 full。Global medium/long 因 `sec.company_filings` 尚未实现，必须保持
+limited 并强制 `insufficient_evidence`，不得由第三方新闻或模型判断绕过。
+
+### 4.2 下一阶段现役路线
+
+当前只维护下面一条演进顺序；跨模型适配继续按用户要求延期：
+
+1. 实现 SEC submissions/filings、accepted timestamp、分页 coverage 和 cutoff，
+   并把一次运行聚合为统一 `PointInTimeEvidenceSnapshot`；
+2. 将 A 股 `verified_identity` 收紧到公司名称、证券类型和上市状态可验证；
+3. 让生产 E2E fixture 发布 `research-case-v2` 与 typed capability audit；
+4. 在上述事实层稳定后增加代码化 `ConflictSummary`、教育型
+   `ResearchLensResult` 和 `LearningTrace`。
+
+外部仓库审计仅用于确定实现优先级：PIT snapshot 借鉴 ai-hedge-fund，冲突与
+质量状态借鉴 daily_stock_analysis，教育型 lens 借鉴 serenity-skill/finskills，
+A 股 failure-domain 防护借鉴 a-stock-data，证据缺口规划借鉴 Dexter。自动交易、
+仓位优化、收益排行、P&L 奖励、跟单和名人 persona 不进入现役产品路线。
 
 ## 5. 已合入功能的验收记录
 

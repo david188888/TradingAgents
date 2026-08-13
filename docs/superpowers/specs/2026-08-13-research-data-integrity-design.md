@@ -1,9 +1,12 @@
 # Research Data Integrity and Eligibility Closure
 
-**Status:** Approved design, pending written-spec review  
+**Status:** Implemented historical design; frozen  
 **Date:** 2026-08-13  
 **Scope:** First implementation subproject for the learning-oriented TradingAgents roadmap  
 **Out of scope:** Cross-model portability, model capability probing, cross-model golden evaluation, Agent methodology redesign, debate redesign, ResearchMemory, and Reader layout redesign
+
+Current behavior and the active roadmap are maintained only in
+[`docs/learning-research-reader.md`](../../learning-research-reader.md).
 
 ## 1. Purpose
 

@@ -2,6 +2,9 @@
 
 日期：2026-08-13
 
+> 状态：已冻结的审计快照，不是现役产品合同。当前实现状态与路线统一维护在
+> [`docs/learning-research-reader.md`](../learning-research-reader.md)。
+
 ## 1. 产品目标与非目标
 
 TradingAgents 的目标不是自动赚钱，也不是把多 Agent 包装成量化交易系统。它应当帮助用户：
