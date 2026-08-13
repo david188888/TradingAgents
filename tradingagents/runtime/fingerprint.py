@@ -31,9 +31,9 @@ from tradingagents.execution.runner import (
     PreparedInitialContext,
 )
 from tradingagents.observability.canonical import (
-    AGENT_STATE_SCHEMA_SHA256,
     BUSINESS_PROJECTION_VERSION,
     SERIALIZER_VERSION,
+    agent_state_schema_for,
     canonical_json_bytes,
     canonical_sha256,
 )
@@ -41,6 +41,14 @@ from tradingagents.observability.events import EVENT_SCHEMA_VERSION
 from tradingagents.observability.redaction import (
     RedactionRecord,
     remove_credentials_recursive,
+)
+from tradingagents.research.analysis_cutoff import (
+    PREPARED_CONTEXT_SCHEMA_DOCUMENT,
+    PreparedResearchScaffoldV1,
+)
+from tradingagents.runtime.contracts import (
+    PRODUCTION_RUNTIME_CONTRACT,
+    RuntimeContractSelection,
 )
 from tradingagents.runtime.store import RunStore
 
@@ -265,6 +273,7 @@ def build_resume_fingerprint(
     effective_config: Mapping[str, Any],
     initial_context: Mapping[str, Any],
     capability_report: Any | None = None,
+    runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT,
 ) -> ResumeFingerprintV1:
     """Build a production fingerprint from the actual local runtime."""
     return _build_resume_fingerprint_for_test(
@@ -275,7 +284,10 @@ def build_resume_fingerprint(
         runtime_environment=runtime_environment_manifest(
             capability_report=capability_report
         ),
-        agent_state_schema_sha256=AGENT_STATE_SCHEMA_SHA256,
+        agent_state_schema_sha256=agent_state_schema_for(
+            runtime_contract.policy_version
+        ).sha256,
+        runtime_contract=runtime_contract,
     )
 
 
@@ -290,7 +302,8 @@ def _build_resume_fingerprint_for_test(
     runtime_environment: RuntimeEnvironmentManifest | None = None,
     runtime_python: Mapping[str, Any] | None = None,
     runtime_distributions: list[Mapping[str, Any]] | None = None,
-    agent_state_schema_sha256: str = AGENT_STATE_SCHEMA_SHA256,
+    agent_state_schema_sha256: str | None = None,
+    runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT,
 ) -> ResumeFingerprintV1:
     if not effective_config:
         raise FingerprintError("complete effective_config is required")
@@ -304,7 +317,8 @@ def _build_resume_fingerprint_for_test(
         if prepared_request != prepared_config:
             raise FingerprintError("request and effective_config do not match")
     context, context_credentials, context_complete = _prepare_initial_context(
-        initial_context
+        initial_context,
+        runtime_contract=runtime_contract,
     )
     if runtime_environment is None and (
         runtime_python is not None or runtime_distributions is not None
@@ -325,7 +339,10 @@ def _build_resume_fingerprint_for_test(
     semantics_hash = runtime_semantics_hash or hash_runtime_sources(package_root)
     if not _is_sha256(semantics_hash):
         raise FingerprintError("runtime_semantics_hash must be a SHA-256 digest")
-    if not _is_sha256(agent_state_schema_sha256):
+    schema_sha256 = agent_state_schema_sha256 or agent_state_schema_for(
+        runtime_contract.policy_version
+    ).sha256
+    if not _is_sha256(schema_sha256):
         raise FingerprintError("agent_state_schema_sha256 must be a SHA-256 digest")
     document = {
         "fingerprint_version": FINGERPRINT_VERSION,
@@ -351,11 +368,18 @@ def _build_resume_fingerprint_for_test(
         "observation_schema": {
             "serializer_version": SERIALIZER_VERSION,
             "business_projection_version": BUSINESS_PROJECTION_VERSION,
-            "agent_state_schema_sha256": agent_state_schema_sha256,
+            "agent_state_schema_sha256": schema_sha256,
         },
         "event_schema_version": EVENT_SCHEMA_VERSION,
         "initial_context_hash": canonical_sha256(context),
     }
+    if runtime_contract.policy_version == "horizon-policy-v3":
+        document["runtime_contract"] = {
+            "policy_version": "horizon-policy-v3",
+            "prepared_context_schema_sha256": canonical_sha256(
+                PREPARED_CONTEXT_SCHEMA_DOCUMENT
+            ),
+        }
     digest = canonical_sha256(document)
     issues = list(environment.issues)
     if not context_complete:
@@ -388,7 +412,7 @@ def compare_resume_fingerprints(
     if expected_digest == actual_digest and expected.resumable and actual.resumable:
         return FingerprintComparison(True)
     mismatches = []
-    for component in (
+    components = [
         "fingerprint_version",
         "request",
         "effective_config",
@@ -397,7 +421,10 @@ def compare_resume_fingerprints(
         "observation_schema",
         "event_schema_version",
         "initial_context_hash",
-    ):
+    ]
+    if "runtime_contract" in expected.document or "runtime_contract" in actual.document:
+        components.append("runtime_contract")
+    for component in components:
         if canonical_sha256(expected.document.get(component)) != canonical_sha256(
             actual.document.get(component)
         ):
@@ -405,6 +432,20 @@ def compare_resume_fingerprints(
     if not expected.resumable or not actual.resumable:
         mismatches.append("resume_eligibility")
     return FingerprintComparison(False, tuple(mismatches))
+
+
+def prepared_initial_context_hash(initial_context: PreparedInitialContext) -> str:
+    """Hash exactly the context projection authorized by the resume gate."""
+
+    context, _credentials, complete = _prepare_initial_context(
+        initial_context.values,
+        runtime_contract=initial_context.runtime_contract,
+    )
+    if not complete:
+        raise CheckpointResumeUnavailable(
+            "checkpoint resume is unavailable: initial_context_unavailable"
+        )
+    return canonical_sha256(context)
 
 
 class CheckpointIncompatible(RuntimeError):
@@ -480,6 +521,7 @@ class FingerprintCheckpointGuard:
             effective_config=self.effective_config,
             initial_context=initial_context.values,
             capability_report=self.capability_report,
+            runtime_contract=initial_context.runtime_contract,
         )
         if not current.resumable:
             raise CheckpointResumeUnavailable(
@@ -511,6 +553,12 @@ class FingerprintCheckpointGuard:
             run_id=self.run_id,
             fingerprint_sha256=current.sha256,
             mode=mode,
+            runtime_policy_version=initial_context.runtime_contract.policy_version,
+            agent_state_schema_sha256=current.document["observation_schema"][
+                "agent_state_schema_sha256"
+            ],
+            prepared_context_sha256=current.document["initial_context_hash"],
+            checkpoint_id=_checkpoint_access_id(checkpoint_access),
         )
 
 
@@ -566,6 +614,8 @@ def _fingerprint_from_payload(payload: Mapping[str, Any]) -> ResumeFingerprintV1
 
 def _prepare_initial_context(
     initial_context: Mapping[str, Any],
+    *,
+    runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT,
 ) -> tuple[dict[str, Any], tuple[RedactionRecord, ...], bool]:
     stripped = remove_credentials_recursive(initial_context)
     value = prune_removed_credential_shells(initial_context, stripped.value)
@@ -594,6 +644,14 @@ def _prepare_initial_context(
             },
         }
         complete = _initial_context_is_complete(context)
+    if runtime_contract.policy_version == "horizon-policy-v3":
+        preflight = value.get("research_preflight") if isinstance(value, Mapping) else None
+        try:
+            scaffold = PreparedResearchScaffoldV1.model_validate(preflight)
+        except (TypeError, ValueError) as exc:
+            raise FingerprintError("valid v3 research_preflight is required") from exc
+        context["research_preflight"] = scaffold.model_dump(mode="json")
+        complete = complete and True
     return context, stripped.manifest, complete
 
 

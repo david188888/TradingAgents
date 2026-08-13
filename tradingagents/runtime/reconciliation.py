@@ -8,12 +8,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from tradingagents.observability.canonical import (
-    AGENT_STATE_SCHEMA_SHA256,
-    APPLICATION_STATE_FIELDS,
     BUSINESS_PROJECTION_VERSION,
     RESERVED_OBSERVATION_FIELD,
     SERIALIZER_VERSION,
     BusinessStateProjectionV1,
+    agent_state_schema_for,
     canonical_sha256,
     pending_writes_touch_business_state,
 )
@@ -22,6 +21,7 @@ from tradingagents.observability.events import (
     PersistedEvent,
     RunEventDraft,
 )
+from tradingagents.runtime.contracts import RuntimePolicyVersion
 
 ApplicationStatus = Literal["committed", "pending_apply", "abandoned"]
 
@@ -67,7 +67,12 @@ class DurableCheckpoint:
     updated_channels: tuple[str, ...] = ()
 
     @classmethod
-    def from_stream_payload(cls, payload: Mapping[str, Any]) -> DurableCheckpoint:
+    def from_stream_payload(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        policy_version: RuntimePolicyVersion = "horizon-policy-v2",
+    ) -> DurableCheckpoint:
         config = payload.get("config")
         metadata = payload.get("metadata")
         values = payload.get("values")
@@ -96,7 +101,10 @@ class DurableCheckpoint:
             checkpoint_id=checkpoint_id,
             graph_step=graph_step,
             channel_values=values,
-            state_sha256=BusinessStateProjectionV1.from_channel_values(values).sha256,
+            state_sha256=BusinessStateProjectionV1.from_channel_values(
+                values,
+                policy_version=policy_version,
+            ).sha256,
             next_nodes=tuple(next_nodes),
             updated_channels=_updated_channels_from_metadata(metadata),
         )
@@ -107,6 +115,7 @@ class DurableCheckpoint:
         value: Any,
         *,
         next_nodes: Sequence[str] | None = None,
+        policy_version: RuntimePolicyVersion = "horizon-policy-v2",
     ) -> DurableCheckpoint:
         if value is None:
             raise CheckpointObservationIncompatible(("checkpoint_missing",))
@@ -137,7 +146,8 @@ class DurableCheckpoint:
             graph_step=graph_step,
             channel_values=channel_values,
             state_sha256=BusinessStateProjectionV1.from_channel_values(
-                channel_values
+                channel_values,
+                policy_version=policy_version,
             ).sha256,
             next_nodes=tuple(next_nodes)
             if next_nodes is not None
@@ -241,9 +251,18 @@ def checkpoint_transition(
     current: DurableCheckpoint,
     parent: DurableCheckpoint | None,
     candidates: Mapping[str, TaskCandidate],
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> CheckpointTransition:
-    current_commits = observation_commit_map(current.channel_values)
-    parent_commits = observation_commit_map(parent.channel_values) if parent else {}
+    current_commits = observation_commit_map(
+        current.channel_values,
+        policy_version=policy_version,
+    )
+    parent_commits = (
+        observation_commit_map(parent.channel_values, policy_version=policy_version)
+        if parent
+        else {}
+    )
     if set(parent_commits) - set(current_commits):
         raise CheckpointObservationIncompatible(("commit_token_removed",))
     changed_existing = {
@@ -263,7 +282,8 @@ def checkpoint_transition(
     if not applied_commits:
         if parent is None:
             projection = BusinessStateProjectionV1.from_channel_values(
-                current.channel_values
+                current.channel_values,
+                policy_version=policy_version,
             )
             if current.graph_step != -1 or projection.values:
                 raise CheckpointObservationIncompatible(
@@ -274,11 +294,16 @@ def checkpoint_transition(
             raise CheckpointObservationIncompatible(
                 ("tokenless_business_state_change",)
             )
-        if set(current.updated_channels) & set(APPLICATION_STATE_FIELDS):
+        if set(current.updated_channels) & set(
+            agent_state_schema_for(policy_version).application_fields
+        ):
             raise CheckpointObservationIncompatible(
                 ("tokenless_application_channel_update",)
             )
-        if pending_writes_touch_business_state(parent.pending_writes):
+        if pending_writes_touch_business_state(
+            parent.pending_writes,
+            policy_version=policy_version,
+        ):
             raise CheckpointObservationIncompatible(
                 ("tokenless_pending_business_write",)
             )
@@ -308,23 +333,35 @@ def reconcile_checkpoint_frontier(
     latest_next_nodes: Sequence[str] | None = None,
     parent_next_nodes: Sequence[str] | None = None,
     read_artifact: Callable[[str], bytes] | None = None,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> ReconciliationPlan:
     starts = task_start_map(events)
-    candidates = candidate_map(events, read_artifact=read_artifact)
+    candidates = candidate_map(
+        events,
+        read_artifact=read_artifact,
+        policy_version=policy_version,
+    )
     latest = DurableCheckpoint.from_checkpoint_tuple(
         latest_tuple,
         next_nodes=latest_next_nodes,
+        policy_version=policy_version,
     )
     parent = (
         DurableCheckpoint.from_checkpoint_tuple(
             parent_tuple,
             next_nodes=parent_next_nodes,
+            policy_version=policy_version,
         )
         if parent_tuple is not None
         else None
     )
     _validate_started_candidate_pairs(starts, candidates)
-    transition = checkpoint_transition(latest, parent, candidates)
+    transition = checkpoint_transition(
+        latest,
+        parent,
+        candidates,
+        policy_version=policy_version,
+    )
     checkpoint_events = [
         event for event in events if event.type == "graph.checkpoint_committed"
     ]
@@ -335,14 +372,21 @@ def reconcile_checkpoint_frontier(
         latest,
         parent,
         transition,
+        policy_version=policy_version,
     )
     if missing_transition is not None:
         committed_ids = tuple(
             dict.fromkeys((*committed_ids, *missing_transition.applied_task_ids))
         )
 
-    pending_commits = pending_observation_commit_map(latest.pending_writes)
-    durable_commits = observation_commit_map(latest.channel_values)
+    pending_commits = pending_observation_commit_map(
+        latest.pending_writes,
+        policy_version=policy_version,
+    )
+    durable_commits = observation_commit_map(
+        latest.channel_values,
+        policy_version=policy_version,
+    )
     for task_id, commit in pending_commits.items():
         if task_id in committed_ids or task_id in durable_commits:
             raise CheckpointObservationIncompatible(("pending_task_already_committed",))
@@ -358,7 +402,11 @@ def reconcile_checkpoint_frontier(
         set(starts) | set(candidates)
     ) - set(committed_ids) - set(pending_ids) - abandoned_existing
     abandoned = tuple(sorted(tails))
-    _validate_durable_commit_coverage(latest, committed_ids)
+    _validate_durable_commit_coverage(
+        latest,
+        committed_ids,
+        policy_version=policy_version,
+    )
     compensation = _abandonment_compensation(events, abandoned)
     return ReconciliationPlan(
         base_sequence=max((event.sequence for event in events), default=0),
@@ -432,6 +480,7 @@ def candidate_map(
     events: Sequence[PersistedEvent],
     *,
     read_artifact: Callable[[str], bytes] | None = None,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> dict[str, TaskCandidate]:
     candidates: dict[str, TaskCandidate] = {}
     abandoned_sequences: dict[str, list[int]] = {}
@@ -444,7 +493,7 @@ def candidate_map(
         if event.type != "graph.task_output_ready":
             continue
         raw = event.payload.get("observation_commit")
-        commit = _parse_commit(raw)
+        commit = _parse_commit(raw, policy_version=policy_version)
         task_id = commit.graph_task_id
         previous = candidates.get(task_id)
         if previous is not None and not any(
@@ -492,6 +541,8 @@ def candidate_map(
 
 def observation_commit_map(
     channel_values: Mapping[str, Any],
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> dict[str, ObservationCommitV1]:
     raw = channel_values.get(RESERVED_OBSERVATION_FIELD, {})
     if raw is None:
@@ -502,7 +553,7 @@ def observation_commit_map(
     for task_id, value in raw.items():
         if not isinstance(task_id, str) or not task_id:
             raise CheckpointObservationIncompatible(("commit_map_shape",))
-        commit = _parse_commit(value)
+        commit = _parse_commit(value, policy_version=policy_version)
         if commit.graph_task_id != task_id:
             raise CheckpointObservationIncompatible(("commit_task_id_mismatch",))
         commits[task_id] = commit
@@ -633,6 +684,8 @@ def _abandonment_compensation(
 
 def pending_observation_commit_map(
     pending_writes: Sequence[tuple[Any, ...]],
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> dict[str, ObservationCommitV1]:
     commits: dict[str, ObservationCommitV1] = {}
     business_write_tasks: set[str] = set()
@@ -646,7 +699,10 @@ def pending_observation_commit_map(
             if not isinstance(value, Mapping):
                 raise CheckpointObservationIncompatible(("pending_commit_shape",))
             for commit_task_id, raw_commit in value.items():
-                commit = _parse_commit(raw_commit)
+                commit = _parse_commit(
+                    raw_commit,
+                    policy_version=policy_version,
+                )
                 if commit_task_id != commit.graph_task_id or task_id != commit.graph_task_id:
                     raise CheckpointObservationIncompatible(
                         ("pending_commit_task_id_mismatch",)
@@ -656,7 +712,10 @@ def pending_observation_commit_map(
                         ("duplicate_pending_commit",)
                     )
                 commits[commit.graph_task_id] = commit
-        elif pending_writes_touch_business_state((write,)):
+        elif pending_writes_touch_business_state(
+            (write,),
+            policy_version=policy_version,
+        ):
             business_write_tasks.add(task_id)
     if business_write_tasks - set(commits):
         raise CheckpointObservationIncompatible(
@@ -665,7 +724,11 @@ def pending_observation_commit_map(
     return commits
 
 
-def _parse_commit(value: Any) -> ObservationCommitV1:
+def _parse_commit(
+    value: Any,
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
+) -> ObservationCommitV1:
     if not isinstance(value, Mapping):
         raise CheckpointObservationIncompatible(("commit_token_shape",))
     expected_fields = {
@@ -703,7 +766,8 @@ def _parse_commit(value: Any) -> ObservationCommitV1:
     if (
         commit.serializer_version != SERIALIZER_VERSION
         or commit.projection_version != BUSINESS_PROJECTION_VERSION
-        or commit.agent_state_schema_sha256 != AGENT_STATE_SCHEMA_SHA256
+        or commit.agent_state_schema_sha256
+        != agent_state_schema_for(policy_version).sha256
     ):
         raise CheckpointObservationIncompatible(("commit_token_schema",))
     return commit
@@ -726,9 +790,14 @@ def _missing_checkpoint_transition(
     latest: DurableCheckpoint,
     parent: DurableCheckpoint | None,
     transition: CheckpointTransition,
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> CheckpointTransition | None:
     if not checkpoint_events:
-        if parent is not None and observation_commit_map(parent.channel_values):
+        if parent is not None and observation_commit_map(
+            parent.channel_values,
+            policy_version=policy_version,
+        ):
             raise CheckpointObservationIncompatible(
                 ("checkpoint_event_frontier_too_far_behind",)
             )
@@ -744,10 +813,18 @@ def _missing_checkpoint_transition(
     last = checkpoint_events[-1]
     checkpoint_id = last.payload.get("checkpoint_id")
     if checkpoint_id == latest.checkpoint_id:
-        _validate_existing_checkpoint_event(last, transition)
+        _validate_existing_checkpoint_event(
+            last,
+            transition,
+            policy_version=policy_version,
+        )
         return None
     if parent is not None and checkpoint_id == parent.checkpoint_id:
-        _validate_checkpoint_marker_against_durable_state(last, parent)
+        _validate_checkpoint_marker_against_durable_state(
+            last,
+            parent,
+            policy_version=policy_version,
+        )
         return transition
     raise CheckpointObservationIncompatible(("checkpoint_event_frontier_mismatch",))
 
@@ -755,6 +832,8 @@ def _missing_checkpoint_transition(
 def _validate_existing_checkpoint_event(
     event: PersistedEvent,
     transition: CheckpointTransition,
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> None:
     expected = {
         "graph_step": transition.checkpoint.graph_step,
@@ -771,7 +850,10 @@ def _validate_existing_checkpoint_event(
     if raw_commits is not None:
         if not isinstance(raw_commits, list):
             raise CheckpointObservationIncompatible(("checkpoint_event_content_mismatch",))
-        parsed = tuple(_parse_commit(value) for value in raw_commits)
+        parsed = tuple(
+            _parse_commit(value, policy_version=policy_version)
+            for value in raw_commits
+        )
         if tuple(commit.as_dict() for commit in parsed) != tuple(
             commit.as_dict() for commit in transition.applied_commits
         ):
@@ -781,6 +863,8 @@ def _validate_existing_checkpoint_event(
 def _validate_checkpoint_marker_against_durable_state(
     event: PersistedEvent,
     checkpoint: DurableCheckpoint,
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> None:
     payload = event.payload
     if (
@@ -799,14 +883,20 @@ def _validate_checkpoint_marker_against_durable_state(
         or payload.get("barrier_only") is bool(applied_ids)
     ):
         raise CheckpointObservationIncompatible(("checkpoint_event_content_mismatch",))
-    durable = observation_commit_map(checkpoint.channel_values)
+    durable = observation_commit_map(
+        checkpoint.channel_values,
+        policy_version=policy_version,
+    )
     if set(applied_ids) - set(durable):
         raise CheckpointObservationIncompatible(("checkpoint_event_content_mismatch",))
     raw_commits = payload.get("observation_commits")
     if raw_commits is not None:
         if not isinstance(raw_commits, list):
             raise CheckpointObservationIncompatible(("checkpoint_event_shape",))
-        parsed = tuple(_parse_commit(value) for value in raw_commits)
+        parsed = tuple(
+            _parse_commit(value, policy_version=policy_version)
+            for value in raw_commits
+        )
         if tuple(commit.graph_task_id for commit in parsed) != tuple(applied_ids):
             raise CheckpointObservationIncompatible(("checkpoint_event_content_mismatch",))
         for commit in parsed:
@@ -821,8 +911,15 @@ def _validate_checkpoint_marker_against_durable_state(
 def _validate_durable_commit_coverage(
     latest: DurableCheckpoint,
     committed_task_ids: Sequence[str],
+    *,
+    policy_version: RuntimePolicyVersion = "horizon-policy-v2",
 ) -> None:
-    durable_ids = set(observation_commit_map(latest.channel_values))
+    durable_ids = set(
+        observation_commit_map(
+            latest.channel_values,
+            policy_version=policy_version,
+        )
+    )
     if durable_ids - set(committed_task_ids):
         raise CheckpointObservationIncompatible(("durable_task_without_commit_event",))
     if set(committed_task_ids) - durable_ids:

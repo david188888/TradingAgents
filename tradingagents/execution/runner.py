@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any, Literal
 
 from tradingagents.dataflows.target_context import clear_target_ticker
@@ -25,7 +26,12 @@ from tradingagents.execution.output_publisher import (
     _step_applied_draft,
     promote_derived_public_artifact,
 )
-from tradingagents.research.analysis_cutoff import resolve_analysis_cutoff
+from tradingagents.research.analysis_cutoff import (
+    InstrumentIdentityPreflightV1,
+    PreparedResearchScaffoldV1,
+    resolve_analysis_cutoff,
+    resolve_bounded_analysis_cutoff,
+)
 from tradingagents.research.case_assembly import (
     assemble_fail_stop_research_case,
     assemble_partial_research_case,
@@ -34,6 +40,10 @@ from tradingagents.research.case_assembly import (
 from tradingagents.research.evidence_registry import build_evidence_registry
 from tradingagents.research.horizon_policy import build_data_window_plan
 from tradingagents.research.integrity import ResearchIntegrityError
+from tradingagents.runtime.contracts import (
+    PRODUCTION_RUNTIME_CONTRACT,
+    RuntimeContractSelection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +161,53 @@ class PreparedInitialContext:
     """Resolved values that determine the graph's exact initial state."""
 
     values: Mapping[str, Any]
+    runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT
+
+
+@dataclass(frozen=True)
+class RuntimePreparationInputs:
+    """Internal dependency bundle for the non-production v3 test gate."""
+
+    captured_at: datetime
+    identity_preflight: InstrumentIdentityPreflightV1 | Mapping[str, Any]
+    past_context: str
+    instrument_context: Any
+    runtime_contract: RuntimeContractSelection = field(
+        default_factory=RuntimeContractSelection.v3_test
+    )
+
+    def __post_init__(self) -> None:
+        if self.runtime_contract.policy_version != "horizon-policy-v3":
+            raise ValueError("runtime preparation inputs are reserved for v3")
+        if self.captured_at.tzinfo is None:
+            raise ValueError("runtime preparation clock must be timezone-aware")
+
+
+def prepare_v3_research_scaffold(
+    request: AnalysisRequest,
+    *,
+    captured_at: datetime,
+    identity_preflight: InstrumentIdentityPreflightV1 | Mapping[str, Any],
+) -> PreparedResearchScaffoldV1:
+    """Build provider-free v3 preflight state from fully injected inputs."""
+
+    preflight = (
+        identity_preflight
+        if isinstance(identity_preflight, InstrumentIdentityPreflightV1)
+        else InstrumentIdentityPreflightV1.model_validate(identity_preflight)
+    )
+    cutoff = resolve_bounded_analysis_cutoff(
+        request.ticker,
+        request.analysis_date,
+        captured_at=captured_at,
+        identity=preflight,
+    )
+    return PreparedResearchScaffoldV1(
+        ticker=request.ticker,
+        analysis_date=request.analysis_date,
+        identity_preflight=preflight,
+        analysis_cutoff=cutoff,
+    )
 
 
 @dataclass(frozen=True)
@@ -171,6 +228,10 @@ class CheckpointAuthorization:
     run_id: str
     fingerprint_sha256: str
     mode: Literal["fresh", "resume"]
+    runtime_policy_version: str
+    agent_state_schema_sha256: str
+    prepared_context_sha256: str
+    checkpoint_id: str | None
     _issuer: object = field(repr=False, compare=False)
 
     @classmethod
@@ -180,6 +241,10 @@ class CheckpointAuthorization:
         run_id: str,
         fingerprint_sha256: str,
         mode: Literal["fresh", "resume"],
+        runtime_policy_version: str,
+        agent_state_schema_sha256: str,
+        prepared_context_sha256: str,
+        checkpoint_id: str | None,
     ) -> CheckpointAuthorization:
         authorization = object.__new__(cls)
         object.__setattr__(authorization, "run_id", run_id)
@@ -189,6 +254,22 @@ class CheckpointAuthorization:
             fingerprint_sha256,
         )
         object.__setattr__(authorization, "mode", mode)
+        object.__setattr__(
+            authorization,
+            "runtime_policy_version",
+            runtime_policy_version,
+        )
+        object.__setattr__(
+            authorization,
+            "agent_state_schema_sha256",
+            agent_state_schema_sha256,
+        )
+        object.__setattr__(
+            authorization,
+            "prepared_context_sha256",
+            prepared_context_sha256,
+        )
+        object.__setattr__(authorization, "checkpoint_id", checkpoint_id)
         object.__setattr__(
             authorization,
             "_issuer",
@@ -204,8 +285,14 @@ StateUpdateSink = Callable[[Mapping[str, Any]], None]
 class AnalysisRunner:
     """Execute a configured TradingAgents graph without consumer-specific output."""
 
-    def __init__(self, owner: Any):
+    def __init__(
+        self,
+        owner: Any,
+        *,
+        runtime_preparation: RuntimePreparationInputs | None = None,
+    ):
         self.owner = owner
+        self._runtime_preparation = runtime_preparation
         self._checkpoint_context_owned = False
         self._checkpoint_entered = False
         self._checkpoint_graph_recompiled = False
@@ -213,6 +300,30 @@ class AnalysisRunner:
         self._checkpoint_authorization: CheckpointAuthorization | None = None
         self._active_thread_id: str | None = None
         self._resume_state: Mapping[str, Any] | None = None
+
+    @property
+    def runtime_contract(self) -> RuntimeContractSelection:
+        if self._runtime_preparation is None:
+            return PRODUCTION_RUNTIME_CONTRACT
+        return self._runtime_preparation.runtime_contract
+
+    def prepare_initial_context(
+        self,
+        request: AnalysisRequest,
+    ) -> PreparedInitialContext:
+        """Resolve the run-scoped context through the selected internal contract."""
+
+        inputs = self._runtime_preparation
+        if inputs is None:
+            return self._resolve_initial_context(request)
+        return self._resolve_initial_context(
+            request,
+            runtime_contract=inputs.runtime_contract,
+            captured_at=inputs.captured_at,
+            identity_preflight=inputs.identity_preflight,
+            past_context_preflight=inputs.past_context,
+            instrument_context_preflight=inputs.instrument_context,
+        )
 
     def run(
         self,
@@ -243,13 +354,15 @@ class AnalysisRunner:
 
         owner = self.owner
         owner.ticker = request.ticker
-        owner._resolve_pending_entries(request.ticker)
+        if self.runtime_contract.policy_version == "horizon-policy-v2":
+            owner._resolve_pending_entries(request.ticker)
         token.raise_if_cancelled()
 
         try:
             prepared: PreparedAnalysis | None = None
             if checkpoint_run_id is not None and owner.config.get("checkpoint_enabled"):
-                initial_context = self._resolve_initial_context(request)
+                initial_context = self.prepare_initial_context(request)
+                self._validate_observation_contract(observation_context, initial_context)
                 token.raise_if_cancelled()
                 access = checkpoint_access(
                     owner.config["data_cache_dir"],
@@ -264,6 +377,7 @@ class AnalysisRunner:
                     authorization,
                     access,
                     checkpoint_run_id,
+                    initial_context,
                 )
                 self._checkpoint_authorization = authorization
                 token.raise_if_cancelled()
@@ -282,7 +396,11 @@ class AnalysisRunner:
                     if checkpoint_run_id is None or not owner.config.get(
                         "checkpoint_enabled"
                     ):
-                        initial_context = self._resolve_initial_context(request)
+                        initial_context = self.prepare_initial_context(request)
+                        self._validate_observation_contract(
+                            observation_context,
+                            initial_context,
+                        )
                     prepared = self._create_initial_state(
                         request,
                         initial_context,
@@ -395,26 +513,53 @@ class AnalysisRunner:
     def _resolve_initial_context(
         self,
         request: AnalysisRequest,
+        *,
+        runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT,
+        captured_at: datetime | None = None,
+        identity_preflight: (
+            InstrumentIdentityPreflightV1 | Mapping[str, Any] | None
+        ) = None,
+        past_context_preflight: str | None = None,
+        instrument_context_preflight: Any | None = None,
     ) -> PreparedInitialContext:
         owner = self.owner
-        past_context = owner.memory_log.get_past_context(request.ticker)
-        instrument_context = owner.resolve_instrument_context(
-            request.ticker,
-            request.asset_type,
-        )
-        analysis_cutoff = resolve_analysis_cutoff(
-            request.ticker,
-            request.analysis_date,
-        )
-        return PreparedInitialContext(
-            {
+        if runtime_contract.policy_version == "horizon-policy-v3":
+            if (
+                captured_at is None
+                or identity_preflight is None
+                or past_context_preflight is None
+                or instrument_context_preflight is None
+            ):
+                raise ValueError("v3 preflight requires fully injected inputs")
+            past_context = past_context_preflight
+            instrument_context = instrument_context_preflight
+            scaffold = prepare_v3_research_scaffold(
+                request,
+                captured_at=captured_at,
+                identity_preflight=identity_preflight,
+            )
+            analysis_cutoff = scaffold.analysis_cutoff
+        else:
+            past_context = owner.memory_log.get_past_context(request.ticker)
+            instrument_context = owner.resolve_instrument_context(
+                request.ticker,
+                request.asset_type,
+            )
+            scaffold = None
+            analysis_cutoff = resolve_analysis_cutoff(
+                request.ticker,
+                request.analysis_date,
+            )
+        values = {
                 "past_context": past_context,
                 "company_of_interest": request.ticker,
                 "asset_type": request.asset_type,
                 "instrument_context": instrument_context,
                 "analysis_cutoff": analysis_cutoff.model_dump(mode="json"),
-            }
-        )
+        }
+        if scaffold is not None:
+            values["research_preflight"] = scaffold.model_dump(mode="json")
+        return PreparedInitialContext(values, runtime_contract)
 
     def _create_initial_state(
         self,
@@ -558,7 +703,11 @@ class AnalysisRunner:
         observer = getattr(observation_context, "observer", None)
         if observer is None or self._checkpoint_saver is None:
             raise RuntimeError("checkpoint observation requires observer and active saver")
-        streamed = DurableCheckpoint.from_stream_payload(payload)
+        policy_version = observation_context.runtime_contract.policy_version
+        streamed = DurableCheckpoint.from_stream_payload(
+            payload,
+            policy_version=policy_version,
+        )
         durable_tuple = self._checkpoint_saver.get_tuple(payload["config"])
         if durable_tuple is None:
             raise RuntimeError("synchronous checkpoint was not durable")
@@ -583,6 +732,7 @@ class AnalysisRunner:
         durable = DurableCheckpoint.from_checkpoint_tuple(
             durable_tuple,
             next_nodes=latest_next,
+            policy_version=policy_version,
         )
         if (
             durable.graph_step != streamed.graph_step
@@ -602,6 +752,7 @@ class AnalysisRunner:
                 observer.run_id,
                 artifact_id,
             ),
+            policy_version=policy_version,
         )
         apply_reconciliation_plan(
             store,
@@ -628,7 +779,8 @@ class AnalysisRunner:
         if observer is None:
             return
         events = observer.store.read_events(observer.run_id)
-        candidates = candidate_map(events)
+        policy_version = observation_context.runtime_contract.policy_version
+        candidates = candidate_map(events, policy_version=policy_version)
         applied = tuple(
             sorted(
                 task_id
@@ -644,7 +796,10 @@ class AnalysisRunner:
                 observer.run_id,
                 graph_step,
                 applied,
-                BusinessStateProjectionV1.from_channel_values(values).sha256,
+                BusinessStateProjectionV1.from_channel_values(
+                    values,
+                    policy_version=policy_version,
+                ).sha256,
             )
         )
         observer.refresh_from_events()
@@ -703,6 +858,7 @@ class AnalysisRunner:
                 observer.run_id,
                 artifact_id,
             ),
+            policy_version=observation_context.runtime_contract.policy_version,
         )
         apply_reconciliation_plan(
             store,
@@ -980,6 +1136,7 @@ class AnalysisRunner:
         authorization: CheckpointAuthorization,
         access: Any,
         run_id: str,
+        initial_context: PreparedInitialContext,
     ) -> None:
         if not isinstance(authorization, CheckpointAuthorization):
             raise RuntimeError("checkpoint guard did not return an authorization")
@@ -991,11 +1148,42 @@ class AnalysisRunner:
         expected_mode = "resume" if getattr(access, "latest", None) is not None else "fresh"
         if authorization.run_id != run_id or authorization.mode != expected_mode:
             raise RuntimeError("checkpoint authorization does not match the checkpoint frontier")
+        from tradingagents.observability.canonical import agent_state_schema_for
+        from tradingagents.runtime.fingerprint import prepared_initial_context_hash
+
+        expected_policy = initial_context.runtime_contract.policy_version
+        if authorization.runtime_policy_version != expected_policy:
+            raise RuntimeError("checkpoint authorization runtime policy does not match")
+        if authorization.agent_state_schema_sha256 != agent_state_schema_for(
+            expected_policy
+        ).sha256:
+            raise RuntimeError("checkpoint authorization state schema does not match")
+        if authorization.prepared_context_sha256 != prepared_initial_context_hash(
+            initial_context
+        ):
+            raise RuntimeError("checkpoint authorization prepared context does not match")
+        if authorization.checkpoint_id != _checkpoint_id(
+            getattr(access, "latest", None)
+        ):
+            raise RuntimeError("checkpoint authorization frontier does not match")
         digest = authorization.fingerprint_sha256
         if len(digest) != 64 or any(
             character not in "0123456789abcdef" for character in digest
         ):
             raise RuntimeError("checkpoint authorization has an invalid fingerprint")
+
+    def _validate_observation_contract(
+        self,
+        observation_context: Any | None,
+        initial_context: PreparedInitialContext,
+    ) -> None:
+        if observation_context is None:
+            return
+        selected = getattr(observation_context, "runtime_contract", None)
+        if not isinstance(selected, RuntimeContractSelection):
+            selected = PRODUCTION_RUNTIME_CONTRACT
+        if selected != initial_context.runtime_contract:
+            raise RuntimeError("observation context runtime contract does not match runner")
 
     def _validate_checkpoint_guard_type(self, checkpoint_guard: CheckpointGuard) -> None:
         from tradingagents.runtime.fingerprint import FingerprintCheckpointGuard

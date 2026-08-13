@@ -14,9 +14,9 @@ from langgraph.runtime import Runtime
 from tradingagents.dataflows.config import get_config
 from tradingagents.graph.runtime_events import runtime_event_sink
 from tradingagents.observability.canonical import (
-    AGENT_STATE_SCHEMA_SHA256,
     BUSINESS_PROJECTION_VERSION,
     SERIALIZER_VERSION,
+    agent_state_schema_for,
     business_delta_sha256,
     project_business_delta,
 )
@@ -30,6 +30,10 @@ from tradingagents.observability.projections import (
     project_role_input,
 )
 from tradingagents.observability.redaction import redact_recursive
+from tradingagents.runtime.contracts import (
+    PRODUCTION_RUNTIME_CONTRACT,
+    RuntimeContractSelection,
+)
 
 TaskKind = Literal["input", "role", "tool", "maintenance"]
 
@@ -39,6 +43,7 @@ class GraphObservationRunContext:
     observer: DurableRunObserver
     role_projection: RoleProjectionRunContext
     actual_config_getter: Callable[[], Mapping[str, Any]] = get_config
+    runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT
 
 
 @dataclass(frozen=True)
@@ -76,6 +81,7 @@ class ObservedGraphTask:
             graph_step=graph_step,
             node_id=self.node_id,
             task_kind=self.task_kind,
+            runtime_contract=run_context.runtime_contract,
         ).output
 
     def _invoke(self, state: Mapping[str, Any], config: RunnableConfig) -> dict[str, Any]:
@@ -161,6 +167,7 @@ class ObservedNode(ObservedGraphTask):
                 turn_id=turn_ref.turn_id,
                 tool_call_ids=tuple(call["id"] for call in tool_calls),
                 actor_id=self.actor_id,
+                runtime_contract=run_context.runtime_contract,
             )
             if not tool_calls:
                 observer.mark_turn_output_ready(
@@ -275,6 +282,7 @@ class ObservedToolNode(ObservedGraphTask):
             turn_id=turn_ref.turn_id,
             tool_call_ids=expected_ids,
             actor_id=turn_ref.actor_id,
+            runtime_contract=run_context.runtime_contract,
         ).output
 
 
@@ -288,6 +296,7 @@ def observe_initial_input(
         run_context.observer,
         graph_task_id,
         state,
+        runtime_contract=run_context.runtime_contract,
     )
     if reused is not None:
         return reused
@@ -298,6 +307,7 @@ def observe_initial_input(
         graph_step=0,
         node_id=None,
         task_kind="input",
+        runtime_contract=run_context.runtime_contract,
     ).output
 
 
@@ -305,6 +315,8 @@ def _reuse_synthetic_input_candidate(
     observer: DurableRunObserver,
     graph_task_id: str,
     state: Mapping[str, Any],
+    *,
+    runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT,
 ) -> dict[str, Any] | None:
     existing = [
         event
@@ -333,7 +345,12 @@ def _reuse_synthetic_input_candidate(
     ):
         return None
     raw = event.payload["observation_commit"]
-    expected_hash = business_delta_sha256(state)
+    policy_version = runtime_contract.policy_version
+    schema = agent_state_schema_for(policy_version)
+    expected_hash = business_delta_sha256(
+        state,
+        policy_version=policy_version,
+    )
     if (
         set(raw)
         != {
@@ -350,7 +367,7 @@ def _reuse_synthetic_input_candidate(
         }
         or raw.get("serializer_version") != SERIALIZER_VERSION
         or raw.get("projection_version") != BUSINESS_PROJECTION_VERSION
-        or raw.get("agent_state_schema_sha256") != AGENT_STATE_SCHEMA_SHA256
+        or raw.get("agent_state_schema_sha256") != schema.sha256
         or raw.get("task_kind") != "input"
         or raw.get("graph_task_id") != graph_task_id
         or raw.get("graph_step") != 0
@@ -533,17 +550,26 @@ def _persist_output_candidate(
     turn_id: str | None = None,
     tool_call_ids: tuple[str, ...] = (),
     actor_id: str | None = None,
+    runtime_contract: RuntimeContractSelection = PRODUCTION_RUNTIME_CONTRACT,
 ) -> _PersistedCandidate:
-    business_delta = project_business_delta(delta)
+    policy_version = runtime_contract.policy_version
+    schema = agent_state_schema_for(policy_version)
+    business_delta = project_business_delta(
+        delta,
+        policy_version=policy_version,
+    )
     artifact = observer.store_artifact("data", business_delta)
     commit = ObservationCommitV1(
         serializer_version=SERIALIZER_VERSION,
         projection_version=BUSINESS_PROJECTION_VERSION,
-        agent_state_schema_sha256=AGENT_STATE_SCHEMA_SHA256,
+        agent_state_schema_sha256=schema.sha256,
         task_kind=task_kind,
         graph_task_id=graph_task_id,
         graph_step=graph_step,
-        business_delta_sha256=business_delta_sha256(delta),
+        business_delta_sha256=business_delta_sha256(
+            delta,
+            policy_version=policy_version,
+        ),
         node_id=node_id,
         turn_id=turn_id,
         tool_call_ids=tool_call_ids,

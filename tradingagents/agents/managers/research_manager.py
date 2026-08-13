@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from pydantic import ValidationError
 
 from tradingagents.agents.schemas import (
     LearningResearchCaseDraft,
+    LearningResearchSummary,
     ResearchPlan,
     render_learning_case_draft,
+    render_learning_research_summary,
     render_research_plan,
 )
 from tradingagents.agents.utils.agent_utils import (
@@ -154,7 +157,9 @@ def _learning_research_result(state, llm) -> dict:
     """Keep the legacy research judge from emitting a transaction proposal."""
     debate_state = state["investment_debate_state"]
     evidence_status = str(state.get("evidence_status") or "unknown")
-    research_summary, draft = _render_learning_research(state, llm, evidence_status)
+    research_summary, draft, summary_fallback = _render_learning_research(
+        state, llm, evidence_status
+    )
     case_candidate: dict[str, object] = {"evidence_verdict": evidence_status}
     if draft is not None:
         case_candidate["draft"] = draft.model_dump(mode="json")
@@ -172,13 +177,17 @@ def _learning_research_result(state, llm) -> dict:
     }
     # The rendered report remains available to downstream graph nodes, while
     # the same validated draft is promoted only after the graph checkpoint
-    # commits.  Reader never has to infer a conclusion from Markdown.
-    if draft is not None:
+    # commits. Reader never has to infer a conclusion from Markdown.
+    if draft is not None or summary_fallback is not None:
         result["reader_public_output"] = {
             "kind": "research",
             "value": {
                 "kind": "learning_research_summary",
-                "summary": draft.to_learning_summary_dict(),
+                "summary": (
+                    draft.to_learning_summary_dict()
+                    if draft is not None
+                    else summary_fallback.model_dump(mode="json")
+                ),
             },
         }
     return result
@@ -186,11 +195,11 @@ def _learning_research_result(state, llm) -> dict:
 
 def _render_learning_research(
     state, llm, evidence_status: str
-) -> tuple[str, LearningResearchCaseDraft | None]:
+) -> tuple[str, LearningResearchCaseDraft | None, LearningResearchSummary | None]:
     """Use one bounded synthesis turn; fall back to an explicit abstention."""
     structured_llm = bind_structured(llm, LearningResearchCaseDraft, "Research Manager")
     if structured_llm is None:
-        return _learning_research_fallback(evidence_status), None
+        return _render_learning_summary_fallback(state, llm, evidence_status)
     mode = state.get("mode")
     holding_context = state.get("holding_context") if mode == "holding_review" else None
     candidate_keys = available_candidate_keys(state)
@@ -284,8 +293,80 @@ claim_key 示例（严格遵守四段，每段必须以小写字母开头、只�
 
     if draft is None:
         logger.warning("Research Manager: falling back; no valid structured draft produced")
-        return _learning_research_fallback(evidence_status), None
-    return render_learning_case_draft(draft), draft
+        return _render_learning_summary_fallback(state, llm, evidence_status)
+    return render_learning_case_draft(draft), draft, None
+
+
+def _render_learning_summary_fallback(
+    state, llm, evidence_status: str
+) -> tuple[str, LearningResearchCaseDraft | None, LearningResearchSummary | None]:
+    """Keep the L1 result useful when a provider cannot emit the full claim graph.
+
+    This is deliberately a separate, smaller contract. It preserves a
+    validated research synthesis for the brief while the ResearchCase remains
+    honestly partial because individual evidence bindings were not produced.
+    """
+    structured_llm = bind_structured(llm, LearningResearchSummary, "Research Manager")
+    if structured_llm is None:
+        return _learning_research_fallback(evidence_status), None, None
+    holding_context = (
+        state.get("holding_context") if state.get("mode") == "holding_review" else None
+    )
+    prompt = f"""你是学习型公司研究的 Research Manager。完整的证据绑定论点草稿未能通过结构校验；请改为产出一个简洁、结构化的 LearningResearchSummary。
+
+这不是交易系统：不得出现买入、卖出、持有、仓位、数量、订单、价格指令或执行时间。只总结研究倾向、事实、推论、未知、三种情景、催化剂、失效条件与下次复核。
+
+重要边界：这份摘要不能声称每条文字都已完成逐条证据绑定。只使用下方材料中明确给出的信息；材料不足的部分写入 unknowns。不要把未验证假设写成事实。
+
+证据状态：{evidence_status}
+持仓复盘上下文（若有）：{holding_context!r}
+
+市场报告：{state.get("market_report", "")}
+基本面报告：{state.get("fundamentals_report", "")}
+新闻报告：{state.get("news_report", "")}
+情绪报告：{state.get("sentiment_report", "")}
+研究辩论：{state.get("investment_debate_state", {}).get("history", "")}
+
+若 original_thesis 缺失，绝不填写 holding_thesis_assessment。"""
+
+    def invoke_summary(one_prompt: str) -> LearningResearchSummary | None:
+        try:
+            result = structured_llm.invoke(one_prompt)
+            if isinstance(result, LearningResearchSummary):
+                return result
+            return LearningResearchSummary.model_validate(result)
+        except Exception as exc:  # noqa: BLE001 - optional recovery path
+            logger.warning("Research Manager: summary fallback failed (%s)", exc)
+            return None
+
+    def invoke_plain_json(one_prompt: str) -> LearningResearchSummary | None:
+        try:
+            response = llm.invoke(one_prompt)
+            content = getattr(response, "content", response)
+            if not isinstance(content, str):
+                return None
+            return LearningResearchSummary.model_validate(json.loads(content))
+        except (TypeError, ValueError, ValidationError) as exc:
+            logger.warning("Research Manager: plain JSON summary fallback failed (%s)", exc)
+            return None
+        except Exception as exc:  # noqa: BLE001 - optional recovery path
+            logger.warning("Research Manager: plain summary fallback failed (%s)", exc)
+            return None
+
+    summary = invoke_summary(prompt)
+    if summary is None:
+        summary = invoke_summary(
+            prompt
+            + "\n\n请现在直接提交完整的 LearningResearchSummary；不要解释修正过程，也不要调用其他工具。"
+        )
+    if summary is None:
+        summary = invoke_plain_json(
+            prompt
+            + "\n\n函数调用不可用。请只返回一个合法 JSON 对象，键必须严格匹配 LearningResearchSummary；不要使用 Markdown 代码块、解释或其他文字。"
+        )
+    if summary is None:
+        return _learning_research_fallback(evidence_status), None, None
+    return render_learning_research_summary(summary), None, summary
 
 
 def _learning_research_fallback(evidence_status: str) -> str:

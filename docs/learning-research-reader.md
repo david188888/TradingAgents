@@ -716,8 +716,8 @@ assembler 必须从这个 snapshot 外部凭证判断：v3 及以上 FAIL_STOP�
 | ID | Story | Points | 依赖 | MoSCoW | 状态 |
 |---|---|---:|---|---|---|
 | S1 | 冻结内部契约与 SEC coverage 语义 | 5 | 无 | Must | Done |
-| S2a | 实现纯 preflight、cutoff 与 runtime scaffold | 5 | S1 | Must | Next |
-| S3 | 建立合规且不可泄密的 SEC transport | 5 | S1 | Must | To Do |
+| S2a | 实现纯 preflight、cutoff 与 runtime scaffold | 5 | S1 | Must | Done |
+| S3 | 建立合规且不可泄密的 SEC transport | 5 | S1 | Must | Next |
 | S4 | 构建 SEC filing discovery draft | 8 | S1、S3 | Must | To Do |
 | S5a | 规范化并 stage SEC source artifacts | 8 | S3、S4 | Must | To Do |
 | S5b | 发布 SEC durable closure 与最终 index | 8 | S5a | Must | To Do |
@@ -820,6 +820,15 @@ Tasks / technical notes：
 - 为同日 cutoff、future invalid、双次纯解析与 v2 resume golden 建立测试。
 
 Estimation：5 points。依赖：S1。Business value：High。
+
+实现状态：完成。production v2 继续使用字面量冻结的 41 字段 descriptor 与原有
+fingerprint 投影；显式内部 v3 test gate 使用完全注入的 clock、identity preflight、
+past context 与 instrument context，缺一即 fail closed，不回退到 memory/provider。
+bounded cutoff 已覆盖 A 股和纽约时区的历史、市场本地当天及未来日期；`captured_at`
+只属于调用 envelope，不进入 semantic scaffold。run-scoped policy 已贯穿 fingerprint、
+observation candidate/commit、checkpoint projection 与 reconciliation，跨 policy token
+稳定报 `commit_token_schema`。聚焦门禁已加入 CI；production v3、真实 identity/plan
+provider 与 plan event 仍保持未激活，分别留给 S6a/S6b。
 
 #### 4.4.4 S3：建立合规且不可泄密的 SEC transport
 

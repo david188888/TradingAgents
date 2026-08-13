@@ -2675,6 +2675,16 @@ td.input-ref {
   line-height: 1.7;
 }
 
+.brief-synthesis-note {
+  margin: -8px 0 2px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--amber);
+  color: var(--muted);
+  background: var(--panel-2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .brief-claims ul {
   display: grid;
   gap: 6px;
@@ -3404,25 +3414,13 @@ td.input-ref {
 }
 
 .thesis-diff {
-  position: relative;
   margin: 22px 0 6px;
   scroll-margin-top: 68px;
   overflow: hidden;
-  border: 1px solid #d8d0be;
-  border-radius: var(--radius-lg);
-  background:
-    linear-gradient(90deg, rgba(62, 90, 120, 0.055) 1px, transparent 1px) 27px 0 / 28px 100%,
-    #fdfbf5;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
   box-shadow: var(--shadow-sm);
-}
-
-.thesis-diff::before {
-  position: absolute;
-  inset: 0 auto 0 22px;
-  width: 1px;
-  background: rgba(190, 90, 76, 0.24);
-  content: "";
-  pointer-events: none;
 }
 
 .thesis-diff-head {
@@ -3430,8 +3428,8 @@ td.input-ref {
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  padding: 18px 20px 16px 42px;
-  border-bottom: 1px solid #e2dccf;
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--line);
 }
 
 .thesis-diff-head h3 {
@@ -3462,8 +3460,7 @@ td.input-ref {
 .thesis-diff-summary {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  padding: 0 0 0 23px;
-  border-bottom: 1px solid #e2dccf;
+  border-bottom: 1px solid var(--line);
 }
 
 .thesis-summary-item {
@@ -3473,7 +3470,7 @@ td.input-ref {
   gap: 6px;
   min-width: 0;
   padding: 10px 12px;
-  border-left: 1px solid #e8e2d7;
+  border-left: 1px solid var(--line);
   color: var(--muted);
   font-size: 10px;
 }
@@ -3514,14 +3511,14 @@ td.input-ref {
   display: grid;
   gap: 0;
   margin: 0;
-  padding: 0 0 0 23px;
+  padding: 0;
   list-style: none;
 }
 
 .thesis-entry {
   position: relative;
-  padding: 16px 20px 17px 19px;
-  border-top: 1px solid #e8e2d7;
+  padding: 16px 20px 17px;
+  border-top: 1px solid var(--line);
 }
 
 .thesis-entry:first-child { border-top: 0; }
@@ -3534,12 +3531,11 @@ td.input-ref {
 
 .thesis-state-mark {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  background: #fdfbf5;
+  border: 0;
+  background: transparent;
 }
 
 .thesis-entry-head > div {
@@ -3572,14 +3568,14 @@ td.input-ref {
   gap: 1px;
   margin: 11px 0 0 37px;
   overflow: hidden;
-  border: 1px solid #e1dbcf;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: #e1dbcf;
+  background: var(--line);
 }
 
 .thesis-entry-comparison > div {
   padding: 9px 11px;
-  background: rgba(255, 255, 255, 0.56);
+  background: var(--panel-2);
 }
 
 .thesis-entry-comparison > div:first-child { color: var(--muted); }
@@ -3612,9 +3608,9 @@ td.input-ref {
   align-items: center;
   gap: 5px;
   padding: 3px 7px;
-  border: 1px solid #ddd6c9;
+  border: 1px solid var(--line-2);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.56);
+  background: var(--panel-2);
   color: var(--muted);
   font-size: 9px;
 }
@@ -3633,7 +3629,7 @@ td.input-ref {
 }
 
 .thesis-diff-empty {
-  padding: 20px 20px 21px 42px;
+  padding: 20px;
 }
 
 .thesis-diff-empty strong {

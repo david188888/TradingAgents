@@ -34,6 +34,11 @@ from tradingagents.observability.observer import DurableRunObserver
 from tradingagents.observability.projections import RoleProjectionRunContext
 from tradingagents.observability.provenance import provenance_scope
 from tradingagents.observability.roles import ROLE_REGISTRY, role_instance_id
+from tradingagents.runtime.contracts import (
+    PRODUCTION_RUNTIME_CONTRACT,
+    RuntimeContractSelection,
+    RuntimePolicyVersion,
+)
 
 from .broker import EventBroker
 from .degradations import summarize_data_degradations
@@ -473,14 +478,19 @@ class SingleRunManager:
                     if resumed_from_sequence is None:
                         raise RunNotResumable("resume sequence is missing")
                     self._resume_open_turns(observer, resumed_from_sequence)
+                runner = self.runner_factory(request, observer)
                 run_context = GraphObservationRunContext(
                     observer,
                     RoleProjectionRunContext(
                         request.effective_config,
                         effective_config_artifact_id=config_artifact.artifact_id,
                     ),
+                    runtime_contract=getattr(
+                        runner,
+                        "runtime_contract",
+                        PRODUCTION_RUNTIME_CONTRACT,
+                    ),
                 )
-                runner = self.runner_factory(request, observer)
                 checkpoint_guard = checkpoint_guard_override
                 if checkpoint_guard is None:
                     checkpoint_guard = self.checkpoint_guard_factory(
@@ -1301,8 +1311,9 @@ def _default_resume_preflight(
         if not owner.config.get("checkpoint_enabled"):
             raise RunNotResumable("checkpoint resume is disabled")
         owner.ticker = request.ticker
-        owner._resolve_pending_entries(request.ticker)
-        initial_context = runner._resolve_initial_context(request)
+        if runner.runtime_contract.policy_version == "horizon-policy-v2":
+            owner._resolve_pending_entries(request.ticker)
+        initial_context = runner.prepare_initial_context(request)
         access = checkpoint_access(
             owner.config["data_cache_dir"],
             request.ticker,
@@ -1340,6 +1351,7 @@ def _default_resume_preflight(
                     snapshot.run_id,
                     artifact_id,
                 ),
+                policy_version=runner.runtime_contract.policy_version,
             )
         except CheckpointObservationIncompatible as exc:
             raise ResumeRunConflict(
@@ -1393,6 +1405,7 @@ def _default_startup_reconciler(
             snapshot.run_id,
             artifact_id,
         ),
+        policy_version=_runtime_policy_from_snapshot(snapshot),
     )
 
     def current_checkpoint_id() -> str | None:
@@ -1416,6 +1429,27 @@ def _default_startup_reconciler(
         observer=observer,
     )
     AnalysisRunner.promote_reconciled_tasks(observer, plan)
+
+
+def _runtime_policy_from_snapshot(snapshot: RunSnapshot) -> RuntimePolicyVersion:
+    """Select the durable run policy; legacy snapshots are exactly v2."""
+
+    payload = snapshot.resume_fingerprint
+    if payload is None:
+        return PRODUCTION_RUNTIME_CONTRACT.policy_version
+    document = payload.get("document") if isinstance(payload, Mapping) else None
+    runtime = document.get("runtime_contract") if isinstance(document, Mapping) else None
+    if runtime is None:
+        return PRODUCTION_RUNTIME_CONTRACT.policy_version
+    if not isinstance(runtime, Mapping):
+        raise RunNotResumable("runtime contract fingerprint is invalid")
+    policy_version = runtime.get("policy_version")
+    if not isinstance(policy_version, str):
+        raise RunNotResumable("runtime contract fingerprint is invalid")
+    try:
+        return RuntimeContractSelection(policy_version=policy_version).policy_version
+    except ValueError as exc:
+        raise RunNotResumable("runtime contract fingerprint is invalid") from exc
 
 
 def _abandon_uncommitted_event_tail(

@@ -58,11 +58,26 @@ export function DecisionBrief({ envelope, onOpenAudit }: DecisionBriefProps): JS
             <h3>结论</h3>
             {summary ? <p>{summary.text}</p> : value.learning_summary ? <p>{value.learning_summary.inferences[0] ?? "本次研究保留为待验证结论。"}</p> : <p className="placeholder">本次运行没有可验证的公开结论摘要。</p>}
           </div>
+          {value.learning_summary && !summary ? (
+            <p className="brief-synthesis-note">
+              以下摘要来自已校验的研究综合；逐条证据绑定暂不可用，因此不作为可追溯证据化结论展示。
+            </p>
+          ) : null}
           {value.learning_summary ? <LearningSummary summary={value.learning_summary} /> : null}
           {value.holding_review ? <HoldingReview review={value.holding_review} /> : null}
-          <BriefClaims title="核心驱动" claims={value.drivers} empty="没有带可解析证据引用的核心驱动。" />
-          <BriefClaims title="主要风险" claims={value.risks} empty="没有已公开的主要风险条目。" />
-          <BriefClaims title="验证节点" claims={value.catalysts} empty="本次运行没有公开验证节点。" />
+          {value.learning_summary ? (
+            <>
+              <BriefTextList title="核心驱动" items={value.learning_summary.inferences.length ? value.learning_summary.inferences : value.learning_summary.facts} empty="暂无已整理的核心驱动。" />
+              <BriefTextList title="主要风险" items={value.learning_summary.invalidation_conditions} empty="暂无已整理的主要风险。" />
+              <BriefTextList title="验证节点" items={value.learning_summary.catalysts} empty="暂无已整理的验证节点。" />
+            </>
+          ) : (
+            <>
+              <BriefClaims title="核心驱动" claims={value.drivers} empty="没有带可解析证据引用的核心驱动。" />
+              <BriefClaims title="主要风险" claims={value.risks} empty="没有已公开的主要风险条目。" />
+              <BriefClaims title="验证节点" claims={value.catalysts} empty="本次运行没有公开验证节点。" />
+            </>
+          )}
         </>
       ) : (
         <div className="brief-legacy">
@@ -99,13 +114,13 @@ function LearningSummary({ summary }: { summary: NonNullable<ReaderBriefDTO["lea
     <section className="brief-claims learning-summary">
       <h3>研究摘要</h3>
       <p>置信度：{Math.round(summary.confidence * 100)}%</p>
-      <BriefTextList title="事实" items={summary.facts} empty="暂无已整理事实。" />
-      <BriefTextList title="推论" items={summary.inferences} empty="暂无额外推论。" />
-      <BriefTextList title="未知与待验证" items={summary.unknowns} empty="暂无额外未知项。" />
+      <BriefSummaryTextList title="事实" items={summary.facts} empty="暂无已整理事实。" />
+      <BriefSummaryTextList title="推论" items={summary.inferences} empty="暂无额外推论。" />
+      <BriefSummaryTextList title="未知与待验证" items={summary.unknowns} empty="暂无额外未知项。" />
       <h4>三种情景</h4>
       <ul>{scenarioRows.map(([label, scenario]) => <li key={label}><strong>{label}：{scenario.title}</strong>。条件：{scenario.condition}；研究含义：{scenario.implication}</li>)}</ul>
-      <BriefTextList title="催化剂" items={summary.catalysts} empty="暂无已验证催化剂。" />
-      <BriefTextList title="失效条件" items={summary.invalidation_conditions} empty="暂无额外失效条件。" />
+      <BriefSummaryTextList title="催化剂" items={summary.catalysts} empty="暂无已验证催化剂。" />
+      <BriefSummaryTextList title="失效条件" items={summary.invalidation_conditions} empty="暂无额外失效条件。" />
       <h4>下次复核</h4>
       <p>{summary.next_review}</p>
       {summary.holding_thesis_assessment ? <><h4>持仓理由复核</h4><p>当前证据评估：{summary.holding_thesis_assessment.status}。{summary.holding_thesis_assessment.rationale}</p><p>当前可观察研究假设：{summary.holding_thesis_assessment.current_research_hypothesis}</p></> : null}
@@ -114,6 +129,15 @@ function LearningSummary({ summary }: { summary: NonNullable<ReaderBriefDTO["lea
 }
 
 function BriefTextList({ title, items, empty }: { title: string; items: string[]; empty: string }): JSX.Element {
+  return (
+    <section className="brief-claims">
+      <h3>{title}</h3>
+      {items.length ? <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="placeholder">{empty}</p>}
+    </section>
+  );
+}
+
+function BriefSummaryTextList({ title, items, empty }: { title: string; items: string[]; empty: string }): JSX.Element {
   return <><h4>{title}</h4>{items.length ? <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="placeholder">{empty}</p>}</>;
 }
 
