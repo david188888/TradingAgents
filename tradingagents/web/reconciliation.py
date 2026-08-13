@@ -1,8 +1,10 @@
 """Compatibility facade: implementation moved to tradingagents.runtime.reconciliation."""
 
-from tradingagents.runtime.reconciliation import (  # noqa: F401  - facade re-export
+from tradingagents.observability.canonical import (  # noqa: F401  - facade re-export
     AGENT_STATE_SCHEMA_SHA256,
     APPLICATION_STATE_FIELDS,
+)
+from tradingagents.runtime.reconciliation import (  # noqa: F401  - facade re-export
     BUSINESS_PROJECTION_VERSION,
     RESERVED_OBSERVATION_FIELD,
     SERIALIZER_VERSION,

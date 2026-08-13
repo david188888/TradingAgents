@@ -1,8 +1,10 @@
 """Compatibility facade: implementation moved to tradingagents.runtime.fingerprint."""
 
+from tradingagents.observability.canonical import (  # noqa: F401  - facade re-export
+    AGENT_STATE_SCHEMA_SHA256,
+)
 from tradingagents.runtime.fingerprint import (  # noqa: F401  - facade re-export
     _SOURCE_EXCLUDED_ROOTS,
-    AGENT_STATE_SCHEMA_SHA256,
     BUSINESS_PROJECTION_VERSION,
     EVENT_SCHEMA_VERSION,
     FINGERPRINT_VERSION,
