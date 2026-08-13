@@ -71,7 +71,7 @@ CapabilityResultV1
   symbol
   market
   analysis_date
-  analysis_cutoff_at
+  analysis_cutoff_at?
   availability
   freshness
   coverage
@@ -117,6 +117,8 @@ Normative crosswalk:
 | `invalid` | `unavailable` | A payload was observed but failed identity, schema, period, or integrity validation. |
 
 Every non-payload availability (`not_covered`, `not_supported`, `provider_unavailable`, `invalid`) requires `freshness=unknown`; freshness describes usable data, not the recency of an attempt. Zero-item negative outcomes are represented durably by `CapabilityResultV1` and its attempt records. `SourceCoverageV1` continues to describe source coverage and uses `completeness=unavailable` plus stable degradations for zero-item records; it is not asked to encode the negative cause by itself.
+
+`analysis_cutoff_at` is required for every result except `availability=invalid` with the stable reason `analysis_cutoff_resolution_failed`. That exceptional result must retain the failed verified-identity reference/attempts, and the graph must not start any time-sensitive provider fetch or filtering step while the cutoff is absent.
 
 ### 5.2 VendorAttemptOutcome
 
@@ -309,6 +311,7 @@ Each correction starts with a focused failing regression test.
 - Contract validation and stable reason codes.
 - Coverage/availability crosswalk, including `coverage=unknown`.
 - Availability/freshness validation, including rejection of non-payload states marked `current` or `stale`.
+- Cutoff-resolution failure: only the typed invalid result may omit `analysis_cutoff_at`, and no time-sensitive provider is invoked.
 - Negative-conclusion budgets and skipped-unobserved sources.
 
 ### 13.2 Provider routing tests
