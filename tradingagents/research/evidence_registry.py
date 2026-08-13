@@ -33,7 +33,10 @@ from typing import Any
 from pydantic import ValidationError
 
 from tradingagents.agents.schemas._research_case import CoverageRefV1, EvidenceRefV2
-from tradingagents.dataflows.capability_result import CapabilityResultV1
+from tradingagents.dataflows.capability_result import (
+    ParsedCapabilityResultV1,
+    parse_capability_result_entry,
+)
 from tradingagents.dataflows.coverage import BundleCoverageV1, SourceCoverageV1
 from tradingagents.research.integrity import ResearchIntegrityError
 
@@ -137,16 +140,11 @@ def _coverage_record(coverage: Any, capability: str) -> SourceCoverageV1 | None:
 def _bundle_coverage(
     bundle: Mapping[str, Any],
     artifact_id: str,
+    typed_results: tuple[ParsedCapabilityResultV1, ...],
 ) -> list[CoverageRefV1]:
     """Derive bundle-level coverage refs for a persisted evidence bundle."""
     refs: list[CoverageRefV1] = []
-    typed_capabilities = {
-        str(semantic.get("capability"))
-        for wrapped in bundle.get("results", ())
-        if isinstance(wrapped, Mapping)
-        and isinstance((semantic := wrapped.get("capability_result")), Mapping)
-        and isinstance(semantic.get("capability"), str)
-    }
+    typed_capabilities = {result.capability for result in typed_results}
 
     # Adjusted price: a single SourceCoverageV1 on the adjusted result.
     adjusted = bundle.get("adjusted")
@@ -244,18 +242,7 @@ def _bundle_coverage(
 
     # Fundamentals prefetch: typed capability results retain all positive and
     # negative source coverage, so missing providers remain visible on replay.
-    for result in bundle.get("results", ()):
-        if not isinstance(result, Mapping):
-            continue
-        semantic = result.get("capability_result")
-        if not isinstance(semantic, Mapping):
-            continue
-        try:
-            from tradingagents.dataflows.capability_result import CapabilityResultV1
-
-            capability_result = CapabilityResultV1.model_validate(semantic)
-        except (ImportError, ValidationError, ValueError):
-            continue
+    for capability_result in typed_results:
         capability = capability_result.capability
         refs.append(
             CoverageRefV1(
@@ -295,7 +282,7 @@ class EvidenceRegistry:
         default_factory=dict
     )
     capability_results_by_capability: Mapping[
-        str, tuple[CapabilityResultV1, ...]
+        str, tuple[ParsedCapabilityResultV1, ...]
     ] = field(default_factory=dict)
     # First evidence ref registered for each prefetch state_key (e.g.
     # ``adjusted_price_bundle``), so short ``evidence:`` keys can be resolved.
@@ -326,7 +313,7 @@ class EvidenceRegistry:
 
     def get_capability_results(
         self, capability: str
-    ) -> tuple[CapabilityResultV1, ...]:
+    ) -> tuple[ParsedCapabilityResultV1, ...]:
         return self.capability_results_by_capability.get(capability, ())
 
     def resolve_evidence_key(self, key: str) -> EvidenceRefV2 | None:
@@ -371,7 +358,7 @@ def build_evidence_registry(
 
     evidence_refs: list[EvidenceRefV2] = []
     coverage_refs: list[CoverageRefV1] = []
-    capability_results: list[CapabilityResultV1] = []
+    capability_results: list[ParsedCapabilityResultV1] = []
     seen_ref_ids: set[str] = set()
 
     def register_evidence(
@@ -451,6 +438,10 @@ def build_evidence_registry(
         ):
             raise ResearchIntegrityError("evidence_instrument_identity_conflict")
         typed_results = _typed_capability_results(bundle)
+        if expected_ticker is not None and any(
+            result.symbol != expected_ticker for result in typed_results
+        ):
+            raise ResearchIntegrityError("evidence_instrument_identity_conflict")
         _validate_unique_capability_results(typed_results)
         declared_result_ids = payload.get("capability_result_ids")
         if isinstance(declared_result_ids, Mapping) and dict(declared_result_ids) != {
@@ -467,7 +458,7 @@ def build_evidence_registry(
             _parse_event_time(event.timestamp),
         )
         evidence_by_state_key[state_key] = ref
-        coverage_refs.extend(_bundle_coverage(bundle, artifact_id))
+        coverage_refs.extend(_bundle_coverage(bundle, artifact_id, typed_results))
 
     # 2. Committed analyst report revisions.
     report_evidence_by_lens: dict[str, EvidenceRefV2] = {}
@@ -518,7 +509,7 @@ def build_evidence_registry(
         coverage_by_capability.setdefault(ref.capability, []).append(ref)
     if any(len(refs) > 1 for refs in coverage_by_capability.values()):
         raise ResearchIntegrityError("duplicate_selected_capability_coverage")
-    results_by_capability: dict[str, list[CapabilityResultV1]] = {}
+    results_by_capability: dict[str, list[ParsedCapabilityResultV1]] = {}
     for result in capability_results:
         results_by_capability.setdefault(result.capability, []).append(result)
     if any(len(results) > 1 for results in results_by_capability.values()):
@@ -572,23 +563,17 @@ def _validate_artifact_hash(
 
 def _typed_capability_results(
     bundle: Mapping[str, Any],
-) -> tuple[CapabilityResultV1, ...]:
-    results: list[CapabilityResultV1] = []
+) -> tuple[ParsedCapabilityResultV1, ...]:
+    results: list[ParsedCapabilityResultV1] = []
     for wrapped in bundle.get("results", ()):
         if not isinstance(wrapped, Mapping):
             continue
-        semantic = wrapped.get("capability_result")
-        if semantic is None:
+        if not ({"capability_result", "capability_result_id"} & wrapped.keys()):
             continue
-        if not isinstance(semantic, Mapping):
-            raise ResearchIntegrityError("capability_result_contract_invalid")
         try:
-            result = CapabilityResultV1.model_validate(semantic)
+            result = parse_capability_result_entry(wrapped)
         except (ValidationError, ValueError) as exc:
             raise ResearchIntegrityError("capability_result_contract_invalid") from exc
-        declared_id = wrapped.get("capability_result_id")
-        if declared_id is not None and declared_id != result.capability_result_id:
-            raise ResearchIntegrityError("capability_result_linkage_invalid")
         cutoff = result.analysis_cutoff_at
         for timestamp in (
             result.published_at_or_filing_at,
@@ -601,7 +586,7 @@ def _typed_capability_results(
 
 
 def _validate_unique_capability_results(
-    results: tuple[CapabilityResultV1, ...],
+    results: tuple[ParsedCapabilityResultV1, ...],
 ) -> None:
     capabilities = [result.capability for result in results]
     if len(set(capabilities)) != len(capabilities):

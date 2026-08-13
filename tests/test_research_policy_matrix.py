@@ -159,14 +159,15 @@ def test_complete_coverage_without_typed_result_cannot_reach_full():
 
 
 def test_candidate_keys_expose_only_available_typed_capabilities():
+    quarterly = _typed_available(_complete_coverage("fundamentals_quarterly"))
+    events = _typed_available(_complete_coverage("company_event_window"))
     state = {
         "fundamentals_prefetch_bundle": {
             "results": [
                 {
-                    "capability_result": {
-                        "capability": "fundamentals_quarterly",
-                        "availability": "available",
-                    }
+                    "capability": quarterly.capability,
+                    "capability_result_id": quarterly.capability_result_id,
+                    "capability_result": quarterly.semantic_payload(),
                 },
                 {
                     "capability_result": {
@@ -179,10 +180,9 @@ def test_candidate_keys_expose_only_available_typed_capabilities():
         "news_window_bundle": {
             "results": [
                 {
-                    "capability_result": {
-                        "capability": "company_event_window",
-                        "availability": "available",
-                    }
+                    "capability": events.capability,
+                    "capability_result_id": events.capability_result_id,
+                    "capability_result": events.semantic_payload(),
                 },
                 {
                     "capability_result": {

@@ -704,19 +704,19 @@ assembler 必须从这个 snapshot 外部凭证判断：v3 及以上 FAIL_STOP�
 完成要求是新增定向门禁全部通过，且完整套件不新增未解释失败；现有失败仍须
 单列，不能误报为全绿。
 
-### 4.4 实施计划（Awaiting Implementation Approval）
+### 4.4 实施计划（In Progress）
 
-本节把 4.3 的已批准设计拆成可独立验收的实施故事。当前状态只是计划已成文，
-不表示任何 SEC、PIT snapshot 或严格身份能力已经上线。实施默认 WIP=1，按编号
+本节把 4.3 的已批准设计拆成可独立验收的实施故事。完成状态表示对应内部契约
+已在本演进分支实现并通过门禁，不表示 production v3 已启用。实施默认 WIP=1，按编号
 逐个完成；每个故事先写失败测试，再写最小实现，再运行相关回归并单独提交。
 不新增规格、进度或 handoff Markdown，状态与验收只更新本文。
 
 #### 4.4.1 任务板、优先级与范围
 
-| ID | Story | Points | 依赖 | MoSCoW | 初始状态 |
+| ID | Story | Points | 依赖 | MoSCoW | 状态 |
 |---|---|---:|---|---|---|
-| S1 | 冻结内部契约与 SEC coverage 语义 | 5 | 无 | Must | To Do |
-| S2a | 实现纯 preflight、cutoff 与 runtime scaffold | 5 | S1 | Must | To Do |
+| S1 | 冻结内部契约与 SEC coverage 语义 | 5 | 无 | Must | Done |
+| S2a | 实现纯 preflight、cutoff 与 runtime scaffold | 5 | S1 | Must | Next |
 | S3 | 建立合规且不可泄密的 SEC transport | 5 | S1 | Must | To Do |
 | S4 | 构建 SEC filing discovery draft | 8 | S1、S3 | Must | To Do |
 | S5a | 规范化并 stage SEC source artifacts | 8 | S3、S4 | Must | To Do |
@@ -778,6 +778,14 @@ Tasks / technical notes：
 - 新增纯契约测试，并在 `.gitignore` 明确放行对应测试文件。
 
 Estimation：5 points。依赖：无。Business value：High。
+
+实现状态：完成。identity、SEC filing/index、PIT snapshot、SEC coverage 与 typed
+result parser 已形成严格 v1 内部契约；新增 durable ref 统一使用内容寻址 ID，
+Registry/publisher 对跨 ticker、未知 subtype、half-typed wrapper、hash/closure 不一致
+均 fail closed。冻结的 pre-S1 v2 fixture 已验证 Registry、Research Case 与 Reader
+纯读 replay 不写回。Pydantic 2.11.7 与 2.13.3 聚焦测试均通过；CI 后端契约
+109/109 通过；完整后端为 1738 passed、28 failed、68 subtests passed，28 项失败
+与实施前基线数量一致且不在 S1 修改路径。
 
 #### 4.4.3 S2a：实现纯 preflight、cutoff 与 runtime scaffold
 

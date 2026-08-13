@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from datetime import date, datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 from pydantic import (
     BaseModel,
@@ -166,9 +167,7 @@ class CapabilityResultV1(BaseModel):
 
     def semantic_payload(self) -> dict[str, Any]:
         """Return JSON-compatible semantic fields without computed/envelope IDs."""
-        return _json_value(
-            {name: getattr(self, name) for name in type(self).model_fields}
-        )
+        return semantic_model_payload(self)
 
     @model_validator(mode="after")
     def validate_result(self) -> CapabilityResultV1:
@@ -238,6 +237,80 @@ class CapabilityResultV1(BaseModel):
         return self
 
 
+class VerifiedIdentityCapabilityResultV1(CapabilityResultV1):
+    """Strict identity result linked to one durable identity contract."""
+
+    contract_kind: Literal["verified-identity-capability-result-v1"] = (
+        "verified-identity-capability-result-v1"
+    )
+    capability: Literal["verified_identity"] = "verified_identity"
+    identity_artifact_id: str = Field(min_length=1, max_length=512)
+    identity_content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    verification_level: Literal["full", "partial", "unverified"]
+
+    @model_validator(mode="after")
+    def validate_identity_link(self) -> VerifiedIdentityCapabilityResultV1:
+        validate_content_addressed_id(
+            self.identity_artifact_id,
+            self.identity_content_sha256,
+            label="identity artifact ID",
+        )
+        return self
+
+
+ParsedCapabilityResultV1: TypeAlias = (
+    CapabilityResultV1 | VerifiedIdentityCapabilityResultV1
+)
+
+
+def parse_capability_result(
+    value: Mapping[str, Any] | ParsedCapabilityResultV1,
+) -> ParsedCapabilityResultV1:
+    """Parse a legacy base result or an explicitly discriminated subtype."""
+
+    if isinstance(value, VerifiedIdentityCapabilityResultV1):
+        return value
+    if isinstance(value, CapabilityResultV1):
+        return value
+    if not isinstance(value, Mapping):
+        raise TypeError("capability result must be a mapping or typed result")
+    contract_kind = value.get("contract_kind")
+    if contract_kind is None:
+        return CapabilityResultV1.model_validate(value)
+    if contract_kind == "verified-identity-capability-result-v1":
+        return VerifiedIdentityCapabilityResultV1.model_validate(value)
+    raise ValueError(f"unsupported capability result contract: {contract_kind!r}")
+
+
+def parse_capability_result_entry(
+    wrapped: Mapping[str, Any],
+    *,
+    require_declared_id: bool = True,
+) -> ParsedCapabilityResultV1:
+    """Parse one bundle entry and validate its outer semantic linkage."""
+
+    semantic = wrapped.get("capability_result")
+    if not isinstance(semantic, Mapping):
+        raise ValueError("capability result entry requires semantic content")
+    result = parse_capability_result(semantic)
+    declared_id = wrapped.get("capability_result_id")
+    if require_declared_id and (
+        not isinstance(declared_id, str)
+        or len(declared_id) != 64
+        or any(char not in "0123456789abcdef" for char in declared_id)
+    ):
+        raise ValueError("capability result entry requires a declared result ID")
+    if declared_id is not None and declared_id != result.capability_result_id:
+        raise ValueError("declared result ID does not match semantic content")
+    declared_capability = wrapped.get("capability")
+    if (
+        declared_capability is not None
+        and declared_capability != result.capability
+    ):
+        raise ValueError("declared capability does not match semantic content")
+    return result
+
+
 def aggregate_capability_availability(
     coverage: BundleCoverageV1,
     attempts: tuple[ProviderAttemptV1, ...],
@@ -290,3 +363,35 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
     return value
+
+
+def semantic_model_payload(model: BaseModel) -> dict[str, Any]:
+    """Serialize only declared fields, recursively excluding computed fields.
+
+    This deliberately avoids ``exclude_computed_fields`` so the contract works
+    on every supported Pydantic v2 release while preserving legacy hashes.
+    """
+
+    return _json_value(
+        {name: getattr(model, name) for name in type(model).model_fields}
+    )
+
+
+def validate_content_addressed_id(
+    artifact_id: str,
+    content_sha256: str,
+    *,
+    label: str = "artifact ID",
+) -> None:
+    """Require a stable ``kind:<lowercase sha256>`` identifier."""
+
+    prefix, separator, suffix = artifact_id.rpartition(":")
+    if (
+        not separator
+        or not prefix
+        or len(suffix) != 64
+        or any(char not in "0123456789abcdef" for char in suffix)
+    ):
+        raise ValueError(f"{label} must be content-addressed")
+    if suffix != content_sha256:
+        raise ValueError(f"{label} does not match content hash")

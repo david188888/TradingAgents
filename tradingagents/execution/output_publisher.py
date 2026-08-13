@@ -257,7 +257,12 @@ def _promote_report_revisions(
         promoted_reports.add(identity)
 
 
-def _extract_bundle_capabilities(state_key: str, bundle: dict[str, Any]) -> tuple[str, ...]:
+def _extract_bundle_capabilities(
+    state_key: str,
+    bundle: dict[str, Any],
+    *,
+    parsed_results: tuple[Any, ...] | None = None,
+) -> tuple[str, ...]:
     """Return the capabilities covered by one persisted prefetch bundle."""
     from tradingagents.research.evidence_registry import _CAPABILITY_BY_STATE_KEY
 
@@ -265,73 +270,92 @@ def _extract_bundle_capabilities(state_key: str, bundle: dict[str, Any]) -> tupl
     results = bundle.get("results")
     if not isinstance(results, list):
         return fixed
+    typed_results = (
+        _parse_bundle_result_entries(bundle)
+        if parsed_results is None
+        else parsed_results
+    )
+    typed_capabilities = {result.capability for result in typed_results}
     dynamic = tuple(
+        result.capability for result in typed_results
+    ) + tuple(
         str(result["capability"])
         for result in results
         if isinstance(result, dict)
         and isinstance(result.get("capability"), str)
-        and (
-            result.get("status") == "ok"
-            or isinstance(result.get("capability_result"), dict)
-        )
+        and result.get("status") == "ok"
+        and result["capability"] not in typed_capabilities
     )
     return tuple(dict.fromkeys(fixed + dynamic))
 
 
-def _extract_bundle_result_ids(bundle: dict[str, Any]) -> dict[str, str]:
+def _parse_bundle_result_entries(bundle: dict[str, Any]) -> tuple[Any, ...]:
+    from tradingagents.dataflows.capability_result import parse_capability_result_entry
+
+    parsed = []
+    for wrapped in bundle.get("results", ()):
+        if not isinstance(wrapped, dict):
+            continue
+        if not ({"capability_result", "capability_result_id"} & wrapped.keys()):
+            continue
+        parsed.append(parse_capability_result_entry(wrapped))
+    capabilities = [result.capability for result in parsed]
+    if len(set(capabilities)) != len(capabilities):
+        raise ValueError("duplicate capability result in one committed bundle")
+    return tuple(parsed)
+
+
+def _extract_bundle_result_ids(
+    bundle: dict[str, Any], *, parsed_results: tuple[Any, ...] | None = None
+) -> dict[str, str]:
     """Validate and index typed semantic results before durable publication."""
-    from tradingagents.dataflows.capability_result import CapabilityResultV1
-
-    indexed: dict[str, str] = {}
-    for wrapped in bundle.get("results", ()):
-        if not isinstance(wrapped, dict) or not isinstance(
-            wrapped.get("capability_result"), dict
-        ):
-            continue
-        result = CapabilityResultV1.model_validate(wrapped["capability_result"])
-        declared_id = wrapped.get("capability_result_id")
-        if declared_id != result.capability_result_id:
-            raise ValueError("capability result ID does not match semantic content")
-        if result.capability in indexed:
-            raise ValueError("duplicate capability result in one committed bundle")
-        indexed[result.capability] = result.capability_result_id
-    return indexed
+    results = (
+        _parse_bundle_result_entries(bundle)
+        if parsed_results is None
+        else parsed_results
+    )
+    return {result.capability: result.capability_result_id for result in results}
 
 
-def _extract_bundle_result_summaries(bundle: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_bundle_result_summaries(
+    bundle: dict[str, Any], *, parsed_results: tuple[Any, ...] | None = None
+) -> list[dict[str, Any]]:
     """Expose only safe typed-result fields to durable audit projections."""
-    from tradingagents.dataflows.capability_result import CapabilityResultV1
-
     summaries = []
-    for wrapped in bundle.get("results", ()):
-        if not isinstance(wrapped, dict) or not isinstance(
-            wrapped.get("capability_result"), dict
-        ):
-            continue
-        result = CapabilityResultV1.model_validate(wrapped["capability_result"])
-        summaries.append(
-            {
-                "capability": result.capability,
-                "capability_result_id": result.capability_result_id,
-                "availability": result.availability,
-                "freshness": result.freshness,
-                "effective_period": result.effective_period,
-                "providers": list(
-                    dict.fromkeys(attempt.provider for attempt in result.attempts)
-                ),
-                "fallback_from": list(result.fallback_from),
-                "reason_codes": list(
-                    dict.fromkeys(
-                        (*result.degradation_codes,)
-                        + tuple(
-                            attempt.reason_code
-                            for attempt in result.attempts
-                            if attempt.outcome != "observed"
-                        )
+    results = (
+        _parse_bundle_result_entries(bundle)
+        if parsed_results is None
+        else parsed_results
+    )
+    for result in results:
+        summary = {
+            "capability": result.capability,
+            "capability_result_id": result.capability_result_id,
+            "availability": result.availability,
+            "freshness": result.freshness,
+            "effective_period": result.effective_period,
+            "providers": list(
+                dict.fromkeys(attempt.provider for attempt in result.attempts)
+            ),
+            "fallback_from": list(result.fallback_from),
+            "reason_codes": list(
+                dict.fromkeys(
+                    (*result.degradation_codes,)
+                    + tuple(
+                        attempt.reason_code
+                        for attempt in result.attempts
+                        if attempt.outcome != "observed"
                     )
-                ),
-            }
-        )
+                )
+            ),
+        }
+        contract_kind = getattr(result, "contract_kind", None)
+        verification_level = getattr(result, "verification_level", None)
+        if contract_kind is not None:
+            summary["contract_kind"] = contract_kind
+        if verification_level is not None:
+            summary["verification_level"] = verification_level
+        summaries.append(summary)
     return summaries
 
 
@@ -370,15 +394,22 @@ def _promote_evidence_bundles(
         if identity in promoted_evidence:
             continue
         canonical_value = canonical_json_str(bundle)
-        capability_result_ids = _extract_bundle_result_ids(bundle)
-        capability_result_summaries = _extract_bundle_result_summaries(bundle)
+        parsed_results = _parse_bundle_result_entries(bundle)
+        capability_result_ids = _extract_bundle_result_ids(
+            bundle, parsed_results=parsed_results
+        )
+        capability_result_summaries = _extract_bundle_result_summaries(
+            bundle, parsed_results=parsed_results
+        )
         artifact = observer.store.store_artifact(
             observer.run_id,
             kind="evidence-bundle",
             value=canonical_value,
             media_type="application/json",
         )
-        capabilities = _extract_bundle_capabilities(state_key, bundle)
+        capabilities = _extract_bundle_capabilities(
+            state_key, bundle, parsed_results=parsed_results
+        )
         observer.emit(
             RunEventDraft(
                 observer.run_id,

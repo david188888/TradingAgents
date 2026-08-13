@@ -14,7 +14,7 @@ from tradingagents.agents.schemas._research_case import (
     EvidenceVerdict,
     PublicClaim,
 )
-from tradingagents.dataflows.capability_result import CapabilityResultV1
+from tradingagents.dataflows.capability_result import ParsedCapabilityResultV1
 from tradingagents.research.claim_capability_policy import capabilities_for_lens
 from tradingagents.research.horizon_policy import DataWindowPlanV1, LensGroupV1
 
@@ -46,7 +46,7 @@ def assess_decision_eligibility(
     claims: Iterable[PublicClaim],
     analyst_cards: Iterable[AnalystCard],
     coverage_refs: Iterable[CoverageRefV1],
-    capability_results: Iterable[CapabilityResultV1] = (),
+    capability_results: Iterable[ParsedCapabilityResultV1] = (),
     conflicts: Iterable[ConflictRecord] = (),
     used_optional_capabilities: Iterable[str] = (),
 ) -> EligibilityAssessment:
@@ -54,7 +54,7 @@ def assess_decision_eligibility(
     claim_items = tuple(claims)
     cards = tuple(analyst_cards)
     coverage = {item.capability: item for item in coverage_refs}
-    typed_groups: dict[str, list[CapabilityResultV1]] = {}
+    typed_groups: dict[str, list[ParsedCapabilityResultV1]] = {}
     for item in capability_results:
         typed_groups.setdefault(item.capability, []).append(item)
     conflict_items = tuple(conflicts)
@@ -148,7 +148,7 @@ def assess_decision_eligibility(
 
 
 def _missing_action(
-    capability: str, result: CapabilityResultV1
+    capability: str, result: ParsedCapabilityResultV1
 ) -> MissingCapabilityAction:
     reason = next(
         (

@@ -27,6 +27,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from pydantic import ValidationError
+
 from tradingagents.agents.schemas._research_case import (
     _CLAIM_LENSES,
     _CLAIM_PREDICATES,
@@ -194,17 +196,19 @@ def _available_typed_capabilities(bundle: object) -> list[str]:
     if not isinstance(results, list):
         return []
     capabilities: list[str] = []
+    from tradingagents.dataflows.capability_result import parse_capability_result_entry
+
     for wrapped in results:
         if not isinstance(wrapped, Mapping):
             continue
-        semantic = wrapped.get("capability_result")
-        if not isinstance(semantic, Mapping):
+        if "capability_result" not in wrapped:
             continue
-        capability = semantic.get("capability")
-        if semantic.get("availability") == "available" and isinstance(
-            capability, str
-        ):
-            capabilities.append(capability)
+        try:
+            result = parse_capability_result_entry(wrapped)
+        except (TypeError, ValueError, ValidationError):
+            continue
+        if result.availability == "available":
+            capabilities.append(result.capability)
     return capabilities
 
 

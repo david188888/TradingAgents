@@ -107,10 +107,13 @@ class SourceCoverageV1(BaseModel):
                 raise ValueError("unavailable coverage cannot contain items or an observed window")
             if not self.degradations:
                 raise ValueError("unavailable coverage requires a public degradation code")
-        elif self.item_count == 0:
+        elif self.item_count == 0 and not self._allows_zero_usable_items():
             raise ValueError(f"{self.completeness} coverage requires usable retained items")
 
         return self
+
+    def _allows_zero_usable_items(self) -> bool:
+        return False
 
 
 class PriceSeriesCoverageV1(SourceCoverageV1):
@@ -125,6 +128,72 @@ class PriceSeriesCoverageV1(SourceCoverageV1):
     def validate_adjustment(self) -> PriceSeriesCoverageV1:
         if self.price_basis != "raw" and not self.adjustment_verified:
             raise ValueError("adjusted price coverage must verify its adjustment convention")
+        return self
+
+
+class SecDisclosureCoverageV1(SourceCoverageV1):
+    """SEC search and document closure without weakening generic coverage."""
+
+    coverage_kind: Literal["sec-disclosure-coverage-v1"] = (
+        "sec-disclosure-coverage-v1"
+    )
+    observed_unit_count: int = Field(ge=0)
+    search_complete: bool
+    target_filing_count: int = Field(ge=0)
+    rejected_target_count: int = Field(ge=0)
+    required_document_count: int = Field(ge=0)
+    completed_document_count: int = Field(ge=0)
+
+    def _allows_zero_usable_items(self) -> bool:
+        return (
+            self.item_count == 0
+            and (
+                (
+                    not self.search_complete
+                    and self.observed_unit_count > 0
+                    and self.completeness == "unknown"
+                )
+                or (
+                    self.search_complete
+                    and self.rejected_target_count > 0
+                    and self.completeness == "partial"
+                )
+            )
+        )
+
+    @model_validator(mode="after")
+    def validate_sec_semantics(self) -> SecDisclosureCoverageV1:
+        if self.capability != "official_disclosures":
+            raise ValueError("SEC coverage is only valid for official_disclosures")
+        if self.completed_document_count > self.required_document_count:
+            raise ValueError("completed documents cannot exceed required documents")
+        if self.rejected_target_count > self.target_filing_count:
+            raise ValueError("rejected targets cannot exceed target filings")
+        usable_targets = self.target_filing_count - self.rejected_target_count
+        if self.item_count > usable_targets:
+            raise ValueError("usable items cannot exceed retained target filings")
+        if self.required_document_count > usable_targets:
+            raise ValueError("required documents cannot exceed retained target filings")
+        if self.target_filing_count > self.observed_unit_count:
+            raise ValueError("target filings cannot exceed observed index units")
+        if self.search_complete != (self.pagination_exhausted is True):
+            raise ValueError("search_complete must match pagination exhaustion")
+
+        if not self.search_complete:
+            expected = "partial" if self.item_count else "unknown"
+        elif self.rejected_target_count > 0:
+            expected = "partial"
+        elif self.target_filing_count == 0:
+            expected = "unavailable"
+        elif (
+            self.item_count == usable_targets
+            and self.completed_document_count == self.required_document_count
+        ):
+            expected = "complete"
+        else:
+            expected = "partial"
+        if self.completeness != expected:
+            raise ValueError("SEC completeness does not match search and document closure")
         return self
 
 
@@ -221,6 +290,11 @@ def aggregate_bundle_completeness(
     return "unavailable"
 
 
+CoverageRecordV1 = (
+    SecDisclosureCoverageV1 | PriceSeriesCoverageV1 | SourceCoverageV1
+)
+
+
 class BundleCoverageV1(BaseModel):
     """Stable bundle-level coverage retaining every source record."""
 
@@ -230,7 +304,7 @@ class BundleCoverageV1(BaseModel):
     required_source_ids: tuple[str, ...]
     required_source_groups: tuple[SourceGroupRequirementV1, ...] = ()
     optional_source_ids: tuple[str, ...]
-    records: tuple[SourceCoverageV1, ...]
+    records: tuple[CoverageRecordV1, ...]
     bundle_completeness: CoverageCompleteness
 
     @classmethod
