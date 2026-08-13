@@ -186,9 +186,7 @@ def test_semantic_id_is_stable_and_excludes_itself() -> None:
         availability="available",
         freshness="current",
     )
-    second = CapabilityResultV1.model_validate(
-        first.model_dump(exclude_computed_fields=True)
-    )
+    second = CapabilityResultV1.model_validate(first.semantic_payload())
 
     assert first.capability_result_id == second.capability_result_id
     assert len(first.capability_result_id) == 64

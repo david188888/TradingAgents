@@ -270,6 +270,7 @@ output/
 !/tests/test_no_data_handling.py
 !/tests/test_identity_and_news_time.py
 !/tests/test_fundamentals_prefetch.py
+!/tests/test_official_disclosure_capability.py
 !/tests/web/
 /tests/web/*
 !/tests/web/test_role_projections.py

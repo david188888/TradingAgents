@@ -10,11 +10,16 @@ from tradingagents.dataflows.coverage import CoveredText
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
 from tradingagents.research.analysis_cutoff import (
+    AnalysisCutoffV1,
     cutoff_failure_bundle,
+    parse_analysis_cutoff,
     time_sensitive_fetch_blocked,
 )
 from tradingagents.research.horizon_policy import InvestmentHorizon
 from tradingagents.research.news_prefetch import build_news_prefetch_plan
+from tradingagents.research.official_disclosures import (
+    build_official_disclosure_result,
+)
 
 MAX_PREFETCH_DATA_CHARS = 12_000
 
@@ -73,7 +78,14 @@ def get_news_windows(
     tool schema. Bare legacy callers use the medium policy.
     """
     horizon = _state_horizon(state)
-    return run_news_windows(ticker, curr_date, horizon=horizon)
+    return run_news_windows(
+        ticker,
+        curr_date,
+        horizon=horizon,
+        analysis_cutoff=parse_analysis_cutoff(
+            state.get("analysis_cutoff") if state is not None else None
+        ),
+    )
 
 
 def _state_horizon(state: Mapping[str, Any] | None) -> InvestmentHorizon:
@@ -103,6 +115,7 @@ def run_news_windows(
     curr_date: str,
     *,
     horizon: InvestmentHorizon,
+    analysis_cutoff: AnalysisCutoffV1 | None = None,
 ) -> str:
     """Execute deterministic prefetch windows for one run and horizon."""
     market = "a_share" if is_a_share_ticker(ticker) else "global"
@@ -116,6 +129,7 @@ def run_news_windows(
         "horizon": horizon,
         "policy_version": plan.policy_version,
         "windows": {},
+        "results": [],
     }
     windows = result["windows"]
     assert isinstance(windows, dict)
@@ -143,9 +157,34 @@ def run_news_windows(
         }
     windows["company_events"] = company_events
 
-    if market == "a_share":
-        assert plan.research_reports_start is not None
-        assert plan.research_reports_max_pages is not None
+    typed_official: dict[str, Any] | None = None
+    if analysis_cutoff is not None:
+        typed_official = build_official_disclosure_result(
+            ticker,
+            curr_date,
+            horizon=horizon,
+            cutoff=analysis_cutoff,
+        )
+
+    if typed_official is not None:
+        capability_result = typed_official["capability_result"]
+        assert isinstance(capability_result, dict)
+        official = {
+            "status": typed_official["status"],
+            "data": str(typed_official.get("data") or "")[:MAX_PREFETCH_DATA_CHARS],
+            "truncated": len(str(typed_official.get("data") or ""))
+            > MAX_PREFETCH_DATA_CHARS,
+            "capability_result_id": typed_official["capability_result_id"],
+            "availability": capability_result["availability"],
+            "coverage": capability_result["coverage"],
+            "limitations": capability_result["limitations"],
+        }
+        result_items = result["results"]
+        assert isinstance(result_items, list)
+        result_items.append(
+            {key: value for key, value in typed_official.items() if key != "data"}
+        )
+    elif market == "a_share":
         try:
             official = _public_window_result(
                 route_to_vendor(
@@ -158,6 +197,15 @@ def run_news_windows(
             )
         except Exception as exc:
             official = {"status": "unavailable", "error_type": type(exc).__name__}
+    else:
+        official = {
+            "status": "unavailable",
+            "reason": "official_filings_provider_not_implemented",
+        }
+
+    if market == "a_share":
+        assert plan.research_reports_start is not None
+        assert plan.research_reports_max_pages is not None
         try:
             research_reports = _public_window_result(
                 route_to_vendor(
@@ -174,10 +222,6 @@ def run_news_windows(
                 "error_type": type(exc).__name__,
             }
     else:
-        official = {
-            "status": "unavailable",
-            "reason": "official_filings_provider_not_implemented",
-        }
         research_reports = {
             "status": "unavailable",
             "reason": "a_share_research_reports_not_applicable",
@@ -215,6 +259,7 @@ def create_news_window_prefetch_node():
                 str(state["company_of_interest"]),
                 str(state["trade_date"]),
                 horizon=horizon,
+                analysis_cutoff=parse_analysis_cutoff(state.get("analysis_cutoff")),
             )
         }
 
