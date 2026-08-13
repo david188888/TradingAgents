@@ -27,7 +27,7 @@ When a required capability is unavailable, the system must still publish a usefu
 3. A rendered Markdown or sentinel string is not a state contract.
 4. Historical research must not consume facts observed after its analysis date.
 5. A result that is incomplete but useful should degrade transparently rather than disappear.
-6. Data that cannot be attributed safely to the requested instrument must stop publication.
+6. Data that cannot be attributed safely to the requested instrument must stop publication of substantive claims. The system may still publish a typed safe failure shell with public remediation guidance.
 7. The change must evolve the existing provider, bundle, coverage, artifact, Evidence Registry, eligibility, and Reader path rather than introduce a parallel research platform.
 
 ## 3. Product decisions
@@ -74,8 +74,6 @@ CapabilityResultV1
   coverage
   source_ids[]
   attempts[]
-  artifact_id?
-  committed_sequence
   fallback_from[]
   effective_period
   published_at_or_filing_at?
@@ -85,6 +83,8 @@ CapabilityResultV1
   degradation_codes[]
   limitations[]
 ```
+
+`capability_result_id` is the SHA-256 of canonical JSON over all semantic fields shown above; the ID itself is excluded from its hash input. Artifact ID, checkpoint committed sequence, event sequence, and run identity belong to the durable publication envelope created after prefetch, not to the semantic result, which avoids circular content addressing.
 
 Availability is one of:
 
@@ -107,14 +107,14 @@ Normative crosswalk:
 
 | Availability | Allowed coverage | Required interpretation |
 |---|---|---|
-| `available` | `complete` or `unknown` | Usable payload exists. `unknown` means the requested-versus-observed extent cannot be proven and caps a required capability at `limited`. |
-| `partial` | `partial` or `unknown` | Usable payload exists, but either an observed gap is known or coverage cannot be proven. |
+| `available` | `complete` | Usable payload exists and the requested-versus-observed extent is proven complete. Freshness is `current` or `stale`. |
+| `partial` | `partial` or `unknown` | Usable payload exists, but either an observed gap is known or coverage cannot be proven. Freshness is `current`, `stale`, or `unknown`. |
 | `not_covered` | `unavailable` | All sources in the negative-conclusion attempt set were observed and authoritatively reported non-coverage. |
 | `not_supported` | `unavailable` | No implemented producer exists for the required capability/source contract. |
 | `provider_unavailable` | `unavailable` | Required observation was prevented by outage, authentication, throttle, timeout, cooldown, or exhausted attempt budget. |
 | `invalid` | `unavailable` | A payload was observed but failed identity, schema, period, or integrity validation. |
 
-Zero-item negative outcomes are represented durably by `CapabilityResultV1` and its attempt records. `SourceCoverageV1` continues to describe source coverage and uses `completeness=unavailable` plus stable degradations for zero-item records; it is not asked to encode the negative cause by itself.
+Every non-payload availability (`not_covered`, `not_supported`, `provider_unavailable`, `invalid`) requires `freshness=unknown`; freshness describes usable data, not the recency of an attempt. Zero-item negative outcomes are represented durably by `CapabilityResultV1` and its attempt records. `SourceCoverageV1` continues to describe source coverage and uses `completeness=unavailable` plus stable degradations for zero-item records; it is not asked to encode the negative cause by itself.
 
 ### 5.2 VendorAttemptOutcome
 
@@ -145,7 +145,7 @@ Legacy text-returning tools may render these outcomes at their boundary. Core ro
 
 ### 6.1 Canonical artifact selection
 
-A run may commit retries, but a Research Case must not reselect evidence during replay. For each capability, the assembler selects the highest committed capability artifact whose `committed_sequence` is less than or equal to the candidate Research Case source sequence. It then persists the selected artifact ID, capability-result ID, evidence refs, and coverage refs in the case publication input. Reader replay consumes those persisted selections rather than asking the Registry to choose the first artifact again.
+A run may commit retries, but a Research Case must not reselect evidence during replay. The publisher enforces at most one capability result for a capability at any one checkpoint committed sequence. For each capability, the assembler selects the greatest eligible publication-envelope tuple `(committed_sequence, event_sequence, artifact_id)` whose committed sequence is less than or equal to the candidate Research Case source sequence. It then persists the selected artifact ID, semantic `capability_result_id`, evidence refs, and coverage refs in the case publication input. Reader replay consumes those persisted selections rather than asking the Registry to choose the first artifact again.
 
 ## 7. Cache and historical-date semantics
 
@@ -165,7 +165,9 @@ Time fields have distinct meanings:
 - `fetched_at`: when TradingAgents requested the source;
 - `captured_at`: when the durable artifact was committed locally.
 
-A historical run must not use a fact whose publication/filing availability is after its analysis-date cutoff. `fetched_at` or `captured_at` after the cutoff is not by itself proof of future leakage, but a mutable endpoint fetched later may satisfy historical coverage only when a preserved point-in-time record proves the payload was public by the cutoff. Unknown publication/filing availability cannot satisfy a required historical fundamentals or official-disclosure capability. Restated statements must retain both original and restatement publication identity; a restatement published after the cutoff is excluded from the historical view.
+The horizon plan derives a timezone-aware `analysis_cutoff_at`. A-share uses end-of-day in `Asia/Shanghai`. Global instruments use the verified primary exchange timezone from instrument identity and the applicable market calendar; if that timezone cannot be established, time-sensitive required capability status is `invalid`. All timestamps are normalized to UTC before comparison.
+
+A historical run must not use a fact whose publication/filing availability or applicable source event/observation time is after `analysis_cutoff_at`. `fetched_at` or `captured_at` after the cutoff is not by itself proof of future leakage, but a mutable endpoint fetched later may satisfy historical coverage only when a preserved point-in-time record proves the payload was public by the cutoff. Unknown publication/filing availability cannot satisfy a required historical fundamentals or official-disclosure capability. Restated statements must retain both original and restatement publication identity; a restatement published after the cutoff is safely excluded from the historical view and degrades coverage.
 
 ## 8. Core data corrections
 
@@ -234,7 +236,7 @@ Existing verified claims remain visible. The model cannot omit or rewrite the co
 - corrupted artifact/hash or cross-run evidence linkage;
 - payload identity that cannot be associated safely with the requested instrument.
 
-Registry and runner errors are divided into recoverable absence and typed fatal integrity failures. Corrupted artifact/hash, cross-run identity/linkage conflict, instrument conflict, and post-cutoff evidence are not skipped and cannot fall through to the generic partial-case fallback. They propagate to a safe public `FAIL_STOP` shell that withholds substantive claims and exposes only stable public reason codes and remediation guidance.
+Registry and runner errors are divided into recoverable absence and typed fatal integrity failures. A post-cutoff candidate record detected before selection is safely excluded and degrades coverage. Post-cutoff evidence already selected, registered, or linked into a public fact is a temporal-integrity violation. Corrupted artifact/hash, cross-run identity/linkage conflict, instrument conflict, and temporal-integrity violations are not skipped and cannot fall through to the generic partial-case fallback. They propagate to a safe public `FAIL_STOP` shell that withholds substantive claims and exposes only stable public reason codes and remediation guidance.
 
 ## 11. Compatibility and migration
 
@@ -302,6 +304,7 @@ Each correction starts with a focused failing regression test.
 - Stale-cache and historical-date rules.
 - Contract validation and stable reason codes.
 - Coverage/availability crosswalk, including `coverage=unknown`.
+- Availability/freshness validation, including rejection of non-payload states marked `current` or `stale`.
 - Negative-conclusion budgets and skipped-unobserved sources.
 
 ### 13.2 Provider routing tests
@@ -322,6 +325,7 @@ Use deterministic fake providers for:
 - Current-day A-share cache TTL.
 - Historical as-of isolation.
 - Timezone boundary cases.
+- Market-timezone `analysis_cutoff_at` derivation and UTC comparison.
 - Unknown-date news excluded from coverage.
 - Fiscal period, filing date, and analysis date remain distinct.
 - Restatements after the historical cutoff are excluded.
@@ -345,7 +349,8 @@ Expected results:
 - global medium/long: `official_disclosures=not_supported`, eligibility is `limited`, and rating is `insufficient_evidence`; no fake SEC-complete fixture is allowed;
 - partial/stale -> at most `limited`;
 - required unavailable -> run completes and stance is `insufficient_evidence`;
-- identity, corruption, cross-run linkage, or post-cutoff conflict -> `FAIL_STOP` safe shell with substantive claims withheld.
+- safely filterable post-cutoff candidate record -> excluded and coverage degraded;
+- identity, corruption, cross-run linkage, or already-selected post-cutoff evidence -> `FAIL_STOP` safe shell with substantive claims withheld.
 
 ### 13.5 Regression checks
 
