@@ -251,8 +251,6 @@ class GraphSetup:
         configurable by a v1 preset.
         """
         plan = build_analyst_execution_plan(selected_analysts)
-        market_spec = next((spec for spec in plan.specs if spec.key == "market"), None)
-        news_spec = next((spec for spec in plan.specs if spec.key == "news"), None)
         fundamentals_spec = next(
             (spec for spec in plan.specs if spec.key == "fundamentals"), None
         )
@@ -338,45 +336,29 @@ class GraphSetup:
             workflow.add_node(spec.clear_node, clear_node)
             workflow.add_node(spec.tool_node, tool_node)
 
-        if news_spec is not None:
-            prefetch_node = create_news_window_prefetch_node()
+        # Required evidence production is policy-owned, not analyst-selection
+        # owned.  All runs therefore execute the three deterministic prefetch
+        # tasks before the first selected analyst.  Short-horizon fundamentals
+        # remain optional and are fetched only when that analyst was selected.
+        prefetch_nodes = (
+            (price_prefetch_node_id, create_adjusted_price_prefetch_node()),
+            (news_prefetch_node_id, create_news_window_prefetch_node()),
+            (
+                fundamentals_prefetch_node_id,
+                create_fundamentals_prefetch_node(
+                    include_optional=fundamentals_spec is not None
+                ),
+            ),
+        )
+        for node_id, prefetch_node in prefetch_nodes:
             if observation_enabled:
                 assert ObservedGraphTask is not None
                 prefetch_node = ObservedGraphTask(
-                    news_prefetch_node_id,
+                    node_id,
                     "maintenance",
                     prefetch_node,
                 )
-            workflow.add_node(news_prefetch_node_id, prefetch_node)
-            workflow.add_edge(news_prefetch_node_id, news_spec.agent_node)
-
-        if market_spec is not None:
-            price_prefetch_node = create_adjusted_price_prefetch_node()
-            if observation_enabled:
-                assert ObservedGraphTask is not None
-                price_prefetch_node = ObservedGraphTask(
-                    price_prefetch_node_id,
-                    "maintenance",
-                    price_prefetch_node,
-                )
-            workflow.add_node(price_prefetch_node_id, price_prefetch_node)
-            workflow.add_edge(price_prefetch_node_id, market_spec.agent_node)
-
-        if fundamentals_spec is not None:
-            fundamentals_prefetch_node = create_fundamentals_prefetch_node()
-            if observation_enabled:
-                assert ObservedGraphTask is not None
-                fundamentals_prefetch_node = ObservedGraphTask(
-                    fundamentals_prefetch_node_id,
-                    "maintenance",
-                    fundamentals_prefetch_node,
-                )
-            workflow.add_node(
-                fundamentals_prefetch_node_id, fundamentals_prefetch_node
-            )
-            workflow.add_edge(
-                fundamentals_prefetch_node_id, fundamentals_spec.agent_node
-            )
+            workflow.add_node(node_id, prefetch_node)
 
         if supplement_enabled:
             supplement_prefetch_node = create_a_share_supplement_prefetch_node()
@@ -411,22 +393,17 @@ class GraphSetup:
         )
 
         # Define edges
-        # Start with the first analyst
-        def analyst_entry_node(spec):
-            if spec.key == "market":
-                return price_prefetch_node_id
-            if spec.key == "news":
-                return news_prefetch_node_id
-            if spec.key == "fundamentals":
-                return fundamentals_prefetch_node_id
-            return spec.agent_node
-
-        first_node = analyst_entry_node(plan.specs[0])
+        # Start with the policy-driven deterministic evidence chain, then run
+        # only the analysts the user selected.
+        first_node = plan.specs[0].agent_node
         if supplement_enabled:
             workflow.add_edge(START, a_share_prefetch_node_id)
-            workflow.add_edge(a_share_prefetch_node_id, first_node)
+            workflow.add_edge(a_share_prefetch_node_id, price_prefetch_node_id)
         else:
-            workflow.add_edge(START, first_node)
+            workflow.add_edge(START, price_prefetch_node_id)
+        workflow.add_edge(price_prefetch_node_id, news_prefetch_node_id)
+        workflow.add_edge(news_prefetch_node_id, fundamentals_prefetch_node_id)
+        workflow.add_edge(fundamentals_prefetch_node_id, first_node)
 
         # Connect analysts in sequence
         for i, spec in enumerate(plan.specs):
@@ -444,9 +421,7 @@ class GraphSetup:
 
             # Connect to next analyst or to Evidence Steward if this is the last analyst
             if i < len(plan.specs) - 1:
-                next_spec = plan.specs[i + 1]
-                next_node = analyst_entry_node(next_spec)
-                workflow.add_edge(current_clear, next_node)
+                workflow.add_edge(current_clear, plan.specs[i + 1].agent_node)
             else:
                 workflow.add_edge(current_clear, "Evidence Steward")
 

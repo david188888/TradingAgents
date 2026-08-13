@@ -98,7 +98,7 @@ def _prepare_effective_config_with_manifest(
 
 
 def hash_runtime_sources(package_root: str | Path | None = None) -> str:
-    """Hash the stable path/byte manifest for all semantic Python sources."""
+    """Hash the stable manifest for Python and bundled methodology sources."""
     root = Path(package_root) if package_root is not None else _default_package_root()
     root = root.resolve()
     before = _source_paths(root)
@@ -601,7 +601,10 @@ def _source_paths(root: Path) -> tuple[Path, ...]:
     if not root.is_dir():
         raise FingerprintError("tradingagents package root is unavailable")
     paths = []
-    for path in root.rglob("*.py"):
+    candidates = tuple(root.rglob("*.py")) + tuple(
+        (root / "skills" / "library").rglob("SKILL.md")
+    )
+    for path in candidates:
         relative = path.relative_to(root)
         if "__pycache__" in relative.parts:
             continue

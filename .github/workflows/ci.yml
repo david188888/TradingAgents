@@ -63,6 +63,14 @@ jobs:
       - name: Reader backend contracts
         run: >-
           python -m pytest -q
+          tests/test_capability_result.py
+          tests/test_analysis_cutoff.py
+          tests/test_fundamentals_prefetch.py
+          tests/test_official_disclosure_capability.py
+          tests/test_evidence_registry_integrity.py
+          tests/test_research_eligibility_closure.py
+          tests/test_research_policy_matrix.py
+          tests/test_required_prefetch_graph.py
           tests/test_thesis_diff.py
           tests/test_reader_companion.py
           tests/test_reader_audit.py

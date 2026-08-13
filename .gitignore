@@ -274,6 +274,7 @@ output/
 !/tests/test_evidence_registry_integrity.py
 !/tests/test_research_eligibility_closure.py
 !/tests/test_research_policy_matrix.py
+!/tests/test_required_prefetch_graph.py
 !/tests/web/
 /tests/web/*
 !/tests/web/test_role_projections.py

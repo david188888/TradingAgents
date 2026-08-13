@@ -329,6 +329,11 @@ def _identity_and_snapshot_results(
     ).capability_index()
     identity_source = cutoff.identity_source_id
     quote_source = quote.get("source_id")
+    observed_on = (
+        str(quote.get("price_as_of"))
+        if isinstance(quote.get("price_as_of"), str)
+        else None
+    )
     results = []
     for capability_id, selected_source, started_at in (
         ("verified_identity", identity_source, recorded_at),
@@ -341,6 +346,8 @@ def _identity_and_snapshot_results(
             for source_id in group.source_ids
         ) + tuple(capability.required_source_ids) + tuple(capability.optional_source_ids)
         selected = str(selected_source) if selected_source in source_ids else None
+        if capability_id == "verified_market_snapshot" and observed_on is None:
+            selected = None
         attempts = tuple(
             ProviderAttemptV1(
                 source_id=source_id,
@@ -361,8 +368,22 @@ def _identity_and_snapshot_results(
             SourceCoverageV1(
                 capability=capability_id,
                 source_id=source_id,
-                actual_start=analysis_date if source_id == selected else None,
-                actual_end=analysis_date if source_id == selected else None,
+                actual_start=(
+                    observed_on
+                    if capability_id == "verified_market_snapshot"
+                    and source_id == selected
+                    else analysis_date
+                    if source_id == selected
+                    else None
+                ),
+                actual_end=(
+                    observed_on
+                    if capability_id == "verified_market_snapshot"
+                    and source_id == selected
+                    else analysis_date
+                    if source_id == selected
+                    else None
+                ),
                 item_count=1 if source_id == selected else 0,
                 completeness="complete" if source_id == selected else "unavailable",
                 sources=(source_id,),
@@ -386,7 +407,14 @@ def _identity_and_snapshot_results(
             analysis_date=analysis_date,
             analysis_cutoff_at=cutoff.analysis_cutoff_at,
             availability=availability,
-            freshness=("current" if availability == "available" else "unknown"),
+            freshness=(
+                _snapshot_freshness(observed_on, analysis_date)
+                if capability_id == "verified_market_snapshot"
+                and availability == "available"
+                else "current"
+                if availability == "available"
+                else "unknown"
+            ),
             coverage=coverage,
             source_ids=source_ids,
             attempts=attempts,
@@ -413,6 +441,21 @@ def _identity_and_snapshot_results(
             }
         )
     return results
+
+
+def _snapshot_freshness(observed_on: str | None, analysis_date: str) -> str:
+    """Apply a small weekend-tolerant bound without claiming a market calendar."""
+
+    if observed_on is None:
+        return "unknown"
+    try:
+        lag = (
+            datetime.fromisoformat(analysis_date).date()
+            - datetime.fromisoformat(observed_on).date()
+        ).days
+    except ValueError:
+        return "unknown"
+    return "current" if 0 <= lag <= 3 else "stale"
 
 
 def _adjusted_price_typed_result(

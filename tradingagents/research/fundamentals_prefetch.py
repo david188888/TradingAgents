@@ -74,6 +74,106 @@ class StatementMetadata:
     limitations: tuple[str, ...] = ()
 
 
+def build_fundamentals_cutoff_failure_bundle(
+    symbol: str,
+    analysis_date: str,
+    *,
+    horizon: InvestmentHorizon,
+    cutoff: AnalysisCutoffV1 | None,
+    include_optional: bool = True,
+    recorded_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Return typed negative statement results without touching providers."""
+
+    from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+
+    market = cutoff.market if cutoff is not None else (
+        "a_share" if is_a_share_ticker(symbol) else "global"
+    )
+    plan = build_data_window_plan(horizon, analysis_date, market=market)
+    captured = recorded_at or datetime.now(timezone.utc)
+    results: list[dict[str, Any]] = []
+    for capability in plan.capabilities:
+        if not capability.capability_id.startswith("fundamentals_"):
+            continue
+        if not include_optional and capability.requirement != "required":
+            continue
+        source_ids = (
+            tuple(capability.required_source_ids)
+            + tuple(
+                source_id
+                for group in capability.required_source_groups
+                for source_id in group.source_ids
+            )
+            + tuple(capability.optional_source_ids)
+        )
+        attempts = tuple(
+            ProviderAttemptV1(
+                source_id=source_id,
+                provider=source_id.split(".", 1)[0],
+                outcome="skipped_unobserved",
+                reason_code="analysis_cutoff_resolution_failed",
+                recorded_at=captured,
+            )
+            for source_id in source_ids
+        )
+        records = tuple(
+            SourceCoverageV1(
+                capability=capability.capability_id,
+                source_id=source_id,
+                item_count=0,
+                completeness="unavailable",
+                sources=(source_id,),
+                degradations=("analysis_cutoff_resolution_failed",),
+                as_of=analysis_date,
+            )
+            for source_id in source_ids
+        )
+        coverage = BundleCoverageV1.build(
+            capability=capability.capability_id,
+            records=records,
+            required_source_ids=capability.required_source_ids,
+            required_source_groups=capability.required_source_groups,
+            optional_source_ids=capability.optional_source_ids,
+        )
+        typed = CapabilityResultV1(
+            capability=capability.capability_id,
+            symbol=symbol,
+            market=market,
+            analysis_date=analysis_date,
+            analysis_cutoff_at=None,
+            availability="invalid",
+            freshness="unknown",
+            coverage=coverage,
+            source_ids=source_ids,
+            attempts=attempts,
+            degradation_codes=("analysis_cutoff_resolution_failed",),
+            limitations=("analysis_cutoff_resolution_failed",),
+        )
+        results.append(
+            {
+                "capability": capability.capability_id,
+                "requirement": capability.requirement,
+                "status": "unavailable",
+                "statements": [],
+                "capability_result_id": typed.capability_result_id,
+                "capability_result": typed.semantic_payload(),
+            }
+        )
+    return {
+        "schema_version": 1,
+        "policy_version": plan.policy_version,
+        "ticker": symbol,
+        "market": market,
+        "horizon": horizon,
+        "as_of": analysis_date,
+        "status": "invalid",
+        "reason_code": "analysis_cutoff_resolution_failed",
+        "analysis_cutoff": cutoff.model_dump(mode="json") if cutoff else {},
+        "results": results,
+    }
+
+
 def build_fundamentals_prefetch_bundle(
     symbol: str,
     analysis_date: str,
@@ -82,6 +182,7 @@ def build_fundamentals_prefetch_bundle(
     cutoff: AnalysisCutoffV1,
     fetch: FetchStatements | None = None,
     recorded_at: datetime | None = None,
+    include_optional: bool = True,
 ) -> dict[str, Any]:
     """Fetch statement capabilities once and return canonical bundle content."""
 
@@ -100,6 +201,7 @@ def build_fundamentals_prefetch_bundle(
         )
         for capability in plan.capabilities
         if capability.capability_id.startswith("fundamentals_")
+        and (include_optional or capability.requirement == "required")
     ]
     return {
         "schema_version": 1,

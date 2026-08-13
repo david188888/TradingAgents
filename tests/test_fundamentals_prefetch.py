@@ -8,6 +8,7 @@ from tradingagents.dataflows.routing_trace import RouteAttemptTrace, RoutedVendo
 from tradingagents.research.analysis_cutoff import resolve_analysis_cutoff
 from tradingagents.research.evidence_registry import build_evidence_registry
 from tradingagents.research.fundamentals_prefetch import (
+    build_fundamentals_cutoff_failure_bundle,
     build_fundamentals_prefetch_bundle,
     statement_from_prefetch_bundle,
 )
@@ -135,6 +136,29 @@ def test_bundle_semantic_result_ids_are_stable() -> None:
     assert [item["capability_result_id"] for item in first["results"]] == [
         item["capability_result_id"] for item in second["results"]
     ]
+
+
+def test_cutoff_failure_emits_typed_negative_required_fundamentals() -> None:
+    invalid = resolve_analysis_cutoff(
+        "UNKNOWN", "2026-08-13", identity={"exchange": "UNMAPPED"}
+    )
+
+    bundle = build_fundamentals_cutoff_failure_bundle(
+        "UNKNOWN",
+        "2026-08-13",
+        horizon="medium",
+        cutoff=invalid,
+        include_optional=False,
+        recorded_at=NOW,
+    )
+
+    assert [item["capability"] for item in bundle["results"]] == [
+        "fundamentals_quarterly"
+    ]
+    typed = bundle["results"][0]["capability_result"]
+    assert typed["availability"] == "invalid"
+    assert typed["analysis_cutoff_at"] is None
+    assert all(item["outcome"] == "skipped_unobserved" for item in typed["attempts"])
 
 
 def test_evidence_registry_registers_fundamentals_coverage() -> None:

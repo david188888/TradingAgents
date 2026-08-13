@@ -99,13 +99,49 @@ def _global_official(horizon: str) -> CapabilityResultV1:
     return CapabilityResultV1.model_validate(wrapped["capability_result"])
 
 
+def _typed_available(ref: CoverageRefV1, *, market: str) -> CapabilityResultV1:
+    attempts = tuple(
+        {
+            "source_id": record.source_id,
+            "provider": record.source_id.split(".", 1)[0],
+            "outcome": "observed",
+            "reason_code": "provider_payload_observed",
+            "recorded_at": NOW,
+            "started_at": NOW,
+            "ended_at": NOW,
+        }
+        for record in ref.envelope.records
+    )
+    return CapabilityResultV1(
+        capability=ref.capability,
+        symbol="fixture",
+        market=market,
+        analysis_date="2026-08-13",
+        analysis_cutoff_at=NOW,
+        availability="available",
+        freshness="current",
+        coverage=ref.envelope,
+        source_ids=tuple(record.source_id for record in ref.envelope.records),
+        attempts=attempts,
+        fetched_at=NOW,
+    )
+
+
 def test_required_global_sec_gap_forces_insufficient_evidence() -> None:
     plan = build_data_window_plan("medium", "2026-08-13", market="global")
     claims, cards = _facts_and_cards(("market", "fundamentals", "news"))
+    official = _global_official("medium")
     coverage = tuple(
         _coverage(capability.capability_id, complete=capability.capability_id != "official_disclosures")
         for capability in plan.capabilities
         if capability.requirement == "required"
+        and capability.capability_id != "official_disclosures"
+    ) + (
+        CoverageRefV1(
+            coverage_ref_id="coverage_official_unavailable",
+            capability="official_disclosures",
+            envelope=official.coverage,
+        ),
     )
 
     assessment = assess_decision_eligibility(
@@ -114,7 +150,12 @@ def test_required_global_sec_gap_forces_insufficient_evidence() -> None:
         claims=claims,
         analyst_cards=cards,
         coverage_refs=coverage,
-        capability_results=(_global_official("medium"),),
+        capability_results=tuple(
+            _typed_available(item, market="global")
+            for item in coverage
+            if item.capability != "official_disclosures"
+        )
+        + (official,),
     )
 
     assert assessment.decision_eligibility == "limited"
@@ -139,7 +180,10 @@ def test_optional_short_official_gap_does_not_force_rating() -> None:
         claims=claims,
         analyst_cards=cards,
         coverage_refs=coverage,
-        capability_results=(_global_official("short"),),
+        capability_results=tuple(
+            _typed_available(item, market="global") for item in coverage
+        )
+        + (_global_official("short"),),
     )
 
     assert assessment.decision_eligibility == "full"
@@ -195,8 +239,16 @@ def test_case_assembly_overrides_model_rating_and_adds_review_action() -> None:
         )
         for index, lens in enumerate(("market", "fundamentals", "news"), start=1)
     }
-    coverage_by_capability = {item.capability: (item,) for item in coverage}
     official = _global_official("medium")
+    official_ref = CoverageRefV1(
+        coverage_ref_id="coverage_official_unavailable",
+        capability="official_disclosures",
+        envelope=official.coverage,
+    )
+    coverage = tuple(
+        item for item in coverage if item.capability != "official_disclosures"
+    ) + (official_ref,)
+    coverage_by_capability = {item.capability: (item,) for item in coverage}
     registry = EvidenceRegistry(
         evidence_refs=tuple(evidence.values()),
         coverage_refs=coverage,

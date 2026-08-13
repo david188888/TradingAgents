@@ -54,7 +54,9 @@ def assess_decision_eligibility(
     claim_items = tuple(claims)
     cards = tuple(analyst_cards)
     coverage = {item.capability: item for item in coverage_refs}
-    typed_results = {item.capability: item for item in capability_results}
+    typed_groups: dict[str, list[CapabilityResultV1]] = {}
+    for item in capability_results:
+        typed_groups.setdefault(item.capability, []).append(item)
     conflict_items = tuple(conflicts)
     required = tuple(item.capability_id for item in plan.capabilities if item.requirement == "required")
     required_statuses = {
@@ -63,12 +65,24 @@ def assess_decision_eligibility(
         else "unavailable"
         for capability in required
     }
+    typed_results = {
+        capability: results[0]
+        for capability, results in typed_groups.items()
+        if len(results) == 1
+        and results[0].market == plan.market
+        and results[0].analysis_date == plan.analysis_date
+        and coverage.get(capability) is not None
+        and results[0].coverage == coverage[capability].envelope
+    }
     required_availability = {
         capability: typed_results[capability].availability
         if capability in typed_results
         else None
         for capability in required
     }
+    missing_typed_results = tuple(
+        capability for capability in required if capability not in typed_results
+    )
     fact_lenses = _usable_lenses(claim_items, cards, tuple(coverage.values()))
     required_lenses_ok = set(plan.required_lenses).issubset(fact_lenses) and all(
         _lens_group_usable(group, fact_lenses) for group in plan.required_lens_groups
@@ -94,6 +108,8 @@ def assess_decision_eligibility(
                 and typed_results[capability].freshness != "current"
             )
         ]
+        if missing_typed_results:
+            codes.append("required_capability_result_missing")
         if evidence_verdict == "LOW_CONFIDENCE":
             codes.append("evidence_low_confidence")
         if incomplete_required:

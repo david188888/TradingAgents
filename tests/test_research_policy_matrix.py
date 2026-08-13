@@ -137,6 +137,27 @@ def test_six_cell_required_policy_has_closed_typed_pipeline(market, horizon):
     assert all(CAPABILITY_PIPELINES[item].typed_result for item in required)
 
 
+def test_complete_coverage_without_typed_result_cannot_reach_full():
+    plan = build_data_window_plan("short", "2026-08-13", market="global")
+    claims, cards = _claims_and_cards(("market", "news"))
+    coverage = tuple(
+        _complete_coverage(item.capability_id)
+        for item in plan.capabilities
+        if item.requirement == "required"
+    )
+
+    assessment = assess_decision_eligibility(
+        plan=plan,
+        evidence_verdict="PASS",
+        claims=claims,
+        analyst_cards=cards,
+        coverage_refs=coverage,
+    )
+
+    assert assessment.decision_eligibility == "limited"
+    assert "required_capability_result_missing" in assessment.reason_codes
+
+
 def test_candidate_keys_expose_only_available_typed_capabilities():
     state = {
         "fundamentals_prefetch_bundle": {
@@ -275,7 +296,7 @@ def test_six_cell_eligibility_expectation(market, horizon):
         for capability in plan.capabilities
         if capability.requirement == "required"
     )
-    typed: tuple[CapabilityResultV1, ...] = ()
+    typed = tuple(_typed_available(item, market=market) for item in coverage)
     if market == "global" and horizon in {"medium", "long"}:
         cutoff = resolve_analysis_cutoff(
             "AAPL", "2026-08-13", identity={"exchange": "NMS"}
@@ -283,7 +304,7 @@ def test_six_cell_eligibility_expectation(market, horizon):
         wrapped = build_official_disclosure_result(
             "AAPL", "2026-08-13", horizon=horizon, cutoff=cutoff, recorded_at=NOW
         )
-        typed = (CapabilityResultV1.model_validate(wrapped["capability_result"]),)
+        official = CapabilityResultV1.model_validate(wrapped["capability_result"])
         coverage = tuple(
             item
             for item in coverage
@@ -292,9 +313,14 @@ def test_six_cell_eligibility_expectation(market, horizon):
             CoverageRefV1(
                 coverage_ref_id="coverage_official_unavailable",
                 capability="official_disclosures",
-                envelope=typed[0].coverage,
+                envelope=official.coverage,
             ),
         )
+        typed = tuple(
+            item
+            for item in typed
+            if item.capability != "official_disclosures"
+        ) + (official,)
 
     assessment = assess_decision_eligibility(
         plan=plan,
@@ -311,3 +337,33 @@ def test_six_cell_eligibility_expectation(market, horizon):
     else:
         assert assessment.decision_eligibility == "full"
         assert assessment.forced_research_rating is None
+
+
+def _typed_available(
+    ref: CoverageRefV1, *, market: str = "a_share"
+) -> CapabilityResultV1:
+    attempts = tuple(
+        {
+            "source_id": record.source_id,
+            "provider": record.source_id.split(".", 1)[0],
+            "outcome": "observed",
+            "reason_code": "provider_payload_observed",
+            "recorded_at": NOW,
+            "started_at": NOW,
+            "ended_at": NOW,
+        }
+        for record in ref.envelope.records
+    )
+    return CapabilityResultV1(
+        capability=ref.capability,
+        symbol="fixture",
+        market=market,
+        analysis_date="2026-08-13",
+        analysis_cutoff_at=NOW,
+        availability="available",
+        freshness="current",
+        coverage=ref.envelope,
+        source_ids=tuple(record.source_id for record in ref.envelope.records),
+        attempts=attempts,
+        fetched_at=NOW,
+    )

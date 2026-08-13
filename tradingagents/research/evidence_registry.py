@@ -140,10 +140,20 @@ def _bundle_coverage(
 ) -> list[CoverageRefV1]:
     """Derive bundle-level coverage refs for a persisted evidence bundle."""
     refs: list[CoverageRefV1] = []
+    typed_capabilities = {
+        str(semantic.get("capability"))
+        for wrapped in bundle.get("results", ())
+        if isinstance(wrapped, Mapping)
+        and isinstance((semantic := wrapped.get("capability_result")), Mapping)
+        and isinstance(semantic.get("capability"), str)
+    }
 
     # Adjusted price: a single SourceCoverageV1 on the adjusted result.
     adjusted = bundle.get("adjusted")
-    if isinstance(adjusted, Mapping):
+    if (
+        isinstance(adjusted, Mapping)
+        and "adjusted_price_history" not in typed_capabilities
+    ):
         record = _coverage_record(adjusted.get("coverage"), "adjusted_price_history")
         if record is not None:
             envelope = BundleCoverageV1.build(
@@ -168,7 +178,7 @@ def _bundle_coverage(
 
     # News windows: a single company_event_window source record.
     windows = bundle.get("windows")
-    if isinstance(windows, Mapping):
+    if isinstance(windows, Mapping) and "company_event_window" not in typed_capabilities:
         company_events = windows.get("company_events")
         if isinstance(company_events, Mapping):
             for window in company_events.values():
@@ -206,6 +216,8 @@ def _bundle_coverage(
                 continue
             capability = result.get("capability")
             if not isinstance(capability, str) or not capability:
+                continue
+            if capability in typed_capabilities:
                 continue
             record = _coverage_record(result.get("coverage"), capability)
             if record is None:
@@ -504,6 +516,8 @@ def build_evidence_registry(
     coverage_by_capability: dict[str, list[CoverageRefV1]] = {}
     for ref in coverage_refs:
         coverage_by_capability.setdefault(ref.capability, []).append(ref)
+    if any(len(refs) > 1 for refs in coverage_by_capability.values()):
+        raise ResearchIntegrityError("duplicate_selected_capability_coverage")
     results_by_capability: dict[str, list[CapabilityResultV1]] = {}
     for result in capability_results:
         results_by_capability.setdefault(result.capability, []).append(result)
