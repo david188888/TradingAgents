@@ -126,11 +126,13 @@ def normalize_ticker_symbol(ticker: str) -> str:
     prefix_match = re.fullmatch(r"(SH|SZ|BJ)(\d{6})", compact)
     if prefix_match:
         exchange, code = prefix_match.groups()
+        strict_ticker_code(f"{exchange}{code}")
         return _format_canonical_a_share(code, exchange)
 
     suffix_match = re.fullmatch(r"(\d{6})(SH|SS|SZ|BJ)", compact)
     if suffix_match:
         code, exchange = suffix_match.groups()
+        strict_ticker_code(f"{code}.{'SH' if exchange == 'SS' else exchange}")
         return _format_canonical_a_share(code, exchange)
 
     return value

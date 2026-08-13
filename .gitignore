@@ -268,6 +268,7 @@ output/
 !/tests/test_analysis_cutoff.py
 !/tests/test_core_data_integrity.py
 !/tests/test_no_data_handling.py
+!/tests/test_identity_and_news_time.py
 /assets/
 /frontend/src/**/*.test.ts
 /frontend/src/**/*.test.tsx

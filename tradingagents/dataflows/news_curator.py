@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .config import get_config
 from .consistency import attach_cross_source_info, create_llm_from_config, cross_source_summary
@@ -255,20 +256,29 @@ _STALE_DATE_FORMATS = (
 )
 
 
-def _parse_date_best_effort(raw: str) -> datetime | None:
+def _parse_date_best_effort(
+    raw: str, *, default_timezone: tzinfo = timezone.utc
+) -> datetime | None:
     text = str(raw or "").strip()
     if not text:
         return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=default_timezone)
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, AttributeError):
+        pass
     cleaned = re.sub(r"\s+[A-Z]{2,4}$", "", text)
     for fmt in _STALE_DATE_FORMATS:
         try:
-            return datetime.strptime(cleaned, fmt).replace(tzinfo=None)
+            parsed = datetime.strptime(cleaned, fmt)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=default_timezone)
+            return parsed.astimezone(timezone.utc)
         except ValueError:
             continue
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
-    except (ValueError, AttributeError):
-        return None
+    return None
 
 
 def _filter_stale_items(
@@ -279,12 +289,18 @@ def _filter_stale_items(
     Returns (kept_items, stale_count).
     """
     try:
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
+        market_timezone = _news_market_timezone()
+        start = datetime.strptime(start_date, "%Y-%m-%d").replace(
+            tzinfo=market_timezone
+        )
+        end = datetime.strptime(end_date, "%Y-%m-%d").replace(
+            tzinfo=market_timezone
+        )
     except ValueError:
         return items, 0
 
-    end_inclusive = end + timedelta(days=1)
+    start_utc = start.astimezone(timezone.utc)
+    end_inclusive = (end + timedelta(days=1)).astimezone(timezone.utc)
     kept = []
     stale_count = 0
     for item in items:
@@ -292,12 +308,35 @@ def _filter_stale_items(
         if item.get("stale"):
             stale_count += 1
             continue
-        pub_dt = _parse_date_best_effort(item.get("published", ""))
-        if pub_dt is not None and (pub_dt < start or pub_dt >= end_inclusive):
+        pub_dt = _parse_date_best_effort(
+            item.get("published", ""), default_timezone=market_timezone
+        )
+        if pub_dt is None:
+            item["published_time_status"] = "unknown"
+            item.setdefault("limitations", []).append(
+                "publication_time_unknown_excluded_from_window_coverage"
+            )
+        elif pub_dt < start_utc or pub_dt >= end_inclusive:
             stale_count += 1
             continue
+        else:
+            item["published_time_status"] = "verified"
+            item["published_at_utc"] = pub_dt.isoformat()
         kept.append(item)
     return kept, stale_count
+
+
+def _news_market_timezone() -> tzinfo:
+    target = get_target_ticker()
+    if target is not None:
+        try:
+            from .ticker_utils import is_a_share_ticker
+
+            if is_a_share_ticker(target.ticker):
+                return ZoneInfo("Asia/Shanghai")
+        except ValueError:
+            pass
+    return timezone.utc
 
 
 def _dedupe_news_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -364,6 +403,17 @@ def _format_curated_news(
             f"Relevance: {low_relevance_count} item(s) marked low-relevance "
             f"(target ticker/company not detected in the item)."
         )
+    unknown_date_count = sum(
+        item.get("published_time_status") == "unknown" for item in curated
+    )
+    dated_item_count = sum(
+        item.get("published_time_status") == "verified" for item in curated
+    )
+    if unknown_date_count:
+        sections.append(
+            f"Timeliness limitation: {unknown_date_count} retained item(s) have "
+            "no verified publication time and do not contribute to window coverage."
+        )
 
     if errors:
         sections.append(
@@ -375,7 +425,13 @@ def _format_curated_news(
         sections.append("No parseable news items were found, but at least one source returned data.")
         for vendor, result in successes:
             sections.append(f"### Raw {vendor} result\n{str(result)[:2000]}")
-        return _preserve_source_coverage("\n\n".join(sections), successes)
+        return _preserve_source_coverage(
+            "\n\n".join(sections),
+            successes,
+            dated_item_count=0,
+            unknown_date_count=0,
+            curation_unverifiable=True,
+        )
 
     sections.append(
         f"Curator retained {len(curated)} item(s) after source labeling, deduplication, and max item limiting."
@@ -394,18 +450,31 @@ def _format_curated_news(
         body = [f"### {idx}. {title} (source: {source}, publisher: {publisher}{score_part}, credibility: {credibility}{cs_part}{relevance_part})"]
         if item.get("published"):
             body.append(f"Published: {item['published']}")
+        elif item.get("published_time_status") == "unknown":
+            body.append(
+                "Publication time unavailable; excluded from recency/window coverage."
+            )
         if item.get("content"):
             body.append(str(item["content"]).strip())
         if item.get("url"):
             body.append(f"Link: {item['url']}")
         sections.append("\n".join(body))
 
-    return _preserve_source_coverage("\n\n".join(sections), successes)
+    return _preserve_source_coverage(
+        "\n\n".join(sections),
+        successes,
+        dated_item_count=dated_item_count,
+        unknown_date_count=unknown_date_count,
+    )
 
 
 def _preserve_source_coverage(
     rendered: str,
     successes: list[tuple[str, Any]],
+    *,
+    dated_item_count: int,
+    unknown_date_count: int,
+    curation_unverifiable: bool = False,
 ) -> str:
     """Keep provider-owned pagination proof through curation.
 
@@ -431,4 +500,20 @@ def _preserve_source_coverage(
         records,
         key=lambda coverage: rank[coverage.completeness],
     )
+    if strongest.completeness == "complete" and (
+        unknown_date_count or curation_unverifiable
+    ):
+        downgraded = "partial" if dated_item_count else "unknown"
+        strongest = SourceCoverageV1.model_validate(
+            {
+                **strongest.model_dump(mode="json"),
+                "completeness": downgraded,
+                "degradations": tuple(strongest.degradations)
+                + (
+                    "publication_time_unknown_excluded_from_window_coverage"
+                    if unknown_date_count
+                    else "curated_items_unverifiable",
+                ),
+            }
+        )
     return CoveredText(rendered, strongest)
