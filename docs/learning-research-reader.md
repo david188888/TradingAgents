@@ -367,6 +367,164 @@ limited 并强制 `insufficient_evidence`，不得由第三方新闻或模型判
 A 股 failure-domain 防护借鉴 a-stock-data，证据缺口规划借鉴 Dexter。自动交易、
 仓位优化、收益排行、P&L 奖励、跟单和名人 persona 不进入现役产品路线。
 
+### 4.3 SEC、PIT snapshot 与严格身份设计（Approved Design，尚未实现）
+
+本节是下一实施切片的已批准设计。实现完成前，第 3.2 节所述 global
+medium/long `not_supported` 行为仍是现役事实；本节不得被解释为已经上线。
+
+#### 4.3.1 范围与非目标
+
+- 首阶段完整支持美国 SEC reporting companies；其他 Global 市场继续明确
+  `not_supported`，不以第三方新闻或模型推断冒充监管披露；
+- 完整索引窗口内的 10-K、10-Q、8-K 及其 amendments；冻结并解析 10-K/10-Q
+  primary document，8-K 首阶段只保留完整元数据与 SEC 原文链接；
+- SEC 访问必须显式配置 `TRADINGAGENTS_SEC_USER_AGENT`，未配置时不发请求；
+- `PointInTimeEvidenceSnapshotV1` 先作为内部 durable contract，不改变 Reader
+  公共 schema；
+- 跨模型适配、其他监管机构、8-K 全文批量解析和 Reader 新布局不在本切片。
+
+SEC 官方 Submissions API 无需 API key，单个 CIK 的 recent 结构至少包含最近
+一年或最近 1,000 条 filing，并通过附加 JSON 文件声明更早历史；实现必须按
+窗口读取相关历史文件，而不是只看 recent。访问必须遵守 SEC 公布的自动访问
+策略；客户端默认限制为每秒 5 次请求，低于当前每秒 10 次的公开上限。
+
+权威参考：
+
+- `https://www.sec.gov/search-filings/edgar-application-programming-interfaces`
+- `https://www.sec.gov/about/webmaster-frequently-asked-questions`
+
+#### 4.3.2 内部契约
+
+```text
+VerifiedInstrumentIdentityV1
+  ticker, market, company_name, security_type,
+  listing_status, exchange, regulatory_authority,
+  cik, sources, verification_level, content_hash
+
+SecFilingIndexV1
+  cik, company_name, requested_window,
+  fetched_history_files, pagination_exhausted,
+  filings[form, accession, filing_date,
+          accepted_at, report_date, primary_document, sec_urls]
+
+SecFilingDocumentV1
+  accession, form, accepted_at,
+  raw_artifact_ref, normalized_text_artifact_ref,
+  parser_status, content_hash
+
+PointInTimeEvidenceSnapshotV1
+  run/ticker/cutoff/identity references,
+  selected capability result IDs,
+  evidence and coverage refs,
+  missing/degraded capabilities, snapshot_hash
+```
+
+大正文不复制进 snapshot。原始 SEC HTML 先作为 durable artifact 保存，再生成
+规范化文本；解析失败不能破坏已经冻结的原始证据。单文档下载和解析必须有
+固定预算，超限不得截断后伪装完整。
+
+#### 4.3.3 策略解析与数据流
+
+`horizon-policy-v3` 把当前 `global` 的监管假设改为两阶段解析：
+
+```text
+initial market policy
+  -> VerifiedInstrumentIdentityV1
+  -> regulatory scope resolution
+       |-- us_sec_reporting
+       |-- global_non_sec
+       `-- unresolved
+  -> resolved required-source policy
+```
+
+- `us_sec_reporting` 的 medium/long required source 是
+  `sec.company_filings`；
+- `global_non_sec` 保留 required 能力，但生产者明确返回
+  `regulatory_provider_not_implemented`；
+- `unresolved` 为 `invalid`，不能猜测监管机构；
+- policy version、方法资产和 runtime fingerprint 同步升级；
+- 测试矩阵从 A 股/global 扩展为 A 股、US SEC、非 SEC Global 三种 scope。
+
+SEC 流程固定为：ticker/CIK/公司名称/交易所验证，冻结 analysis cutoff，获取
+current submissions 与窗口相交的历史 JSON，只保留 `accepted_at <= cutoff` 的
+目标 forms，下载 10-K/10-Q primary documents，生成 typed official result，最后
+进入 PIT snapshot。cutoff 后接受的 amendment 或 restatement 不得改写历史分析。
+
+A 股身份分层规则：
+
+- CNINFO/交易所确认 ticker、规范化公司名称、证券类型和上市状态或生效日期，
+  才能得到 full；
+- 官方源不可用时，Tushare 与 EastMoney/AKShare 两个独立来源一致只能得到
+  partial，eligibility 至多 limited；
+- 仅交易所后缀正确不能满足 `verified_identity`；
+- ticker、名称、证券类型或上市状态发生来源冲突时为 `invalid`，阻止实质性
+  claims；
+- 历史 listing status 必须按 cutoff 判断；缺少生效日期时至多 partial。
+
+#### 4.3.4 失败语义与访问纪律
+
+| 情况 | Typed 结果 |
+|---|---|
+| SEC User-Agent 未配置 | `provider_unavailable / sec_user_agent_not_configured` |
+| ticker map/submissions 请求失败 | `provider_unavailable` |
+| 健康 ticker map 中没有美国标的 | `not_covered / sec_cik_not_found` |
+| 非 SEC Global 市场 | `not_supported / regulatory_provider_not_implemented` |
+| CIK/ticker/name/accession 身份冲突 | `invalid`，进入 FAIL_STOP |
+| 完整遍历窗口且没有目标 forms | `not_covered / no_target_filings_in_window` |
+| 历史分页未耗尽或必要正文缺失 | `partial` |
+| 正文解析失败但原始 HTML 已冻结 | `partial / normalized_text_unavailable` |
+| 索引、必要正文与 cutoff 完整 | `available` |
+
+SEC User-Agent 的具体值不得写入日志、Audit 或 fingerprint；只记录是否配置。
+429、403、5xx 和网络超时进入既有 provider health/cooldown，不得紧密循环重试。
+submissions JSON 可以短期缓存；accession 文档按内容哈希长期复用。
+
+#### 4.3.5 Snapshot 发布与重放
+
+```text
+required prefetch graph tasks
+  -> durable bundle artifacts
+  -> Registry integrity validation and canonical selection
+  -> point-in-time-evidence-snapshot-v1
+  -> ResearchCase assembler consumes frozen selections
+  -> research-case-v2
+```
+
+snapshot 在 durable prefetch artifacts 已提交后、Research Case 组装前生成。它
+固定 capability result、artifact、evidence/coverage refs、来源身份、时间语义、
+availability/freshness 和 content hash；canonical 排序后计算 semantic hash。
+snapshot 与 Research Case 使用相同 source committed sequence，case 组装后不得
+再次重选证据。
+
+新运行缺少、损坏、跨 run、跨 ticker 或含 cutoff 后 evidence 的 snapshot 必须
+产生 FAIL_STOP 安全壳。旧 run 没有 snapshot 时继续使用旧 Registry 重放，不
+重写历史 artifact。Audit 仅显示安全摘要；8-K 原文链接只在用户主动选择 detail
+后提供。
+
+#### 4.3.6 测试与实际验收
+
+自动化必须覆盖：
+
+1. ticker/CIK/name/exchange 一致性和三种 regulatory scope；
+2. recent/history 拼接、分页耗尽、预算截断和 amendment；
+3. accepted timestamp cutoff 与时区边界；
+4. 10-K/10-Q raw HTML、规范化文本、hash 与 8-K metadata-only；
+5. User-Agent 缺失、HTTP/网络失败、无 CIK、超限和解析失败；
+6. A 股官方 full、双源 partial、后缀-only unavailable 和冲突 FAIL_STOP；
+7. snapshot hash、幂等重放、损坏/跨 run/跨 ticker/post-cutoff 拒绝；
+8. US SEC medium/long 的 full 可达、非 SEC Global 保持 limited；
+9. pre-change ResearchCase Reader golden 仍可打开。
+
+生产 E2E fake runner 不再发布 Buy/Hold/Sell、仓位和旧 public-output 模板；它
+必须发布 typed identity/capability results、SEC available/provider outage 两种
+确定性场景、PIT snapshot、`research-case-v2` 和 Audit capability summaries。
+浏览器验收覆盖创建运行、SSE、Reader、Audit、刷新重放、控制台和初始 DOM
+隐私；Computer Use 只补充真实窗口、滚动和长内容检查。真实 SEC 是可选 smoke，
+不是自动化完成 oracle。
+
+完成要求是新增定向门禁全部通过，且完整套件不新增未解释失败；现有失败仍须
+单列，不能误报为全绿。
+
 ## 5. 已合入功能的验收记录
 
 本节保留已合入能力的验收边界，便于后续改动定位回归；它不是待办列表或
