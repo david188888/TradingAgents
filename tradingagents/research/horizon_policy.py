@@ -25,6 +25,15 @@ LensId = Literal["market", "fundamentals", "news", "sentiment"]
 POLICY_VERSION = "horizon-policy-v1"
 
 
+class CutoffResolutionPolicyV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    policy_version: Literal["analysis-cutoff-v1"] = "analysis-cutoff-v1"
+    boundary: Literal["market_local_end_of_day"] = "market_local_end_of_day"
+    a_share_timezone: Literal["Asia/Shanghai"] = "Asia/Shanghai"
+    global_verified_exchange_required: Literal[True] = True
+
+
 class WindowSpecV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -114,6 +123,9 @@ class DataWindowPlanV1(BaseModel):
     horizon: InvestmentHorizon
     market: MarketKind
     analysis_date: str
+    cutoff_resolution_policy: CutoffResolutionPolicyV1 = Field(
+        default_factory=CutoffResolutionPolicyV1
+    )
     capabilities: tuple[CapabilityPlanV1, ...] = Field(min_length=1)
     required_lenses: tuple[LensId, ...]
     required_lens_groups: tuple[LensGroupV1, ...] = ()

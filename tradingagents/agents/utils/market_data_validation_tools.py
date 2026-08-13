@@ -13,6 +13,10 @@ from tradingagents.dataflows.market_data_validator import (
     get_verified_current_quote,
 )
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+from tradingagents.research.analysis_cutoff import (
+    cutoff_failure_bundle,
+    time_sensitive_fetch_blocked,
+)
 from tradingagents.research.horizon_policy import InvestmentHorizon
 from tradingagents.research.price_coverage import adjusted_price_capability_dict
 from tradingagents.research.price_prefetch import build_price_prefetch_plan
@@ -159,6 +163,12 @@ def create_adjusted_price_prefetch_node():
     """Create the deterministic graph task that precedes Market Analyst."""
 
     def prefetch(state: Mapping[str, Any]) -> dict[str, str]:
+        if time_sensitive_fetch_blocked(state):
+            return {
+                "adjusted_price_bundle": cutoff_failure_bundle(
+                    state, capability="adjusted_price_history"
+                )
+            }
         return {
             "adjusted_price_bundle": run_adjusted_price_prefetch(
                 str(state["company_of_interest"]),

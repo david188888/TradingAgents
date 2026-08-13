@@ -140,6 +140,7 @@ def resolve_instrument_identity(ticker: str) -> dict:
         ("sector", "sector"),
         ("industry", "industry"),
         ("exchange", "exchange"),
+        ("exchangeTimezoneName", "exchange_timezone"),
         ("quoteType", "quote_type"),
     ):
         value = _clean_identity_value(info.get(source_key))
@@ -244,4 +245,3 @@ def create_msg_delete():
         return {"messages": removal_operations + [placeholder]}
 
     return delete_messages
-

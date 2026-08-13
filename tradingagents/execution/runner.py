@@ -25,6 +25,7 @@ from tradingagents.execution.output_publisher import (
     _step_applied_draft,
     promote_derived_public_artifact,
 )
+from tradingagents.research.analysis_cutoff import resolve_analysis_cutoff
 from tradingagents.research.case_assembly import (
     assemble_partial_research_case,
     assemble_research_case,
@@ -384,12 +385,17 @@ class AnalysisRunner:
             request.ticker,
             request.asset_type,
         )
+        analysis_cutoff = resolve_analysis_cutoff(
+            request.ticker,
+            request.analysis_date,
+        )
         return PreparedInitialContext(
             {
                 "past_context": past_context,
                 "company_of_interest": request.ticker,
                 "asset_type": request.asset_type,
                 "instrument_context": instrument_context,
+                "analysis_cutoff": analysis_cutoff.model_dump(mode="json"),
             }
         )
 
@@ -408,6 +414,7 @@ class AnalysisRunner:
             "holding_context": _serialize_portfolio_context(request.holding_context),
             "past_context": initial_context.values["past_context"],
             "instrument_context": initial_context.values["instrument_context"],
+            "analysis_cutoff": initial_context.values["analysis_cutoff"],
         }
         # Both public modes are research-only.  Legacy PortfolioContext is
         # normalized at the HTTP/snapshot boundary into HoldingContext and

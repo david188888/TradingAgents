@@ -71,6 +71,10 @@ class AgentState(MessagesState):
     company_of_interest: Annotated[str, "Company that we are interested in trading"]
     instrument_context: Annotated[str, "Deterministic ticker identity resolved at run start"]
     trade_date: Annotated[str, "What date we are trading at"]
+    analysis_cutoff: Annotated[
+        dict[str, Any],
+        "Verified market-time analysis cutoff resolved before time-sensitive fetches",
+    ]
     mode: Annotated[str, "Research mode: company_research or holding_review"]
     horizon: Annotated[str, "Investment horizon: short, medium, or long"]
     asset_type: Annotated[str, "Asset type: stock (default) or crypto"]

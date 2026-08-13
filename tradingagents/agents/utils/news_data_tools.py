@@ -9,6 +9,10 @@ from tradingagents.agents.utils.tool_guard import guard_target_ticker
 from tradingagents.dataflows.coverage import CoveredText
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+from tradingagents.research.analysis_cutoff import (
+    cutoff_failure_bundle,
+    time_sensitive_fetch_blocked,
+)
 from tradingagents.research.horizon_policy import InvestmentHorizon
 from tradingagents.research.news_prefetch import build_news_prefetch_plan
 
@@ -200,6 +204,12 @@ def create_news_window_prefetch_node():
 
     def prefetch(state: Mapping[str, Any]) -> dict[str, str]:
         horizon = _state_horizon(state)
+        if time_sensitive_fetch_blocked(state):
+            return {
+                "news_window_bundle": cutoff_failure_bundle(
+                    state, capability="company_event_window"
+                )
+            }
         return {
             "news_window_bundle": run_news_windows(
                 str(state["company_of_interest"]),

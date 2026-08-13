@@ -22,6 +22,7 @@ class Propagator:
         asset_type: str = "stock",
         past_context: str = "",
         instrument_context: str = "",
+        analysis_cutoff: dict[str, Any] | None = None,
         portfolio_context: dict[str, Any] | None = None,
         observation_context=None,
         horizon: str = "medium",
@@ -45,6 +46,7 @@ class Propagator:
             "holding_context": holding_context,
             "portfolio_context": portfolio_context,
             "instrument_context": instrument_context,
+            "analysis_cutoff": dict(analysis_cutoff or {}),
             "trade_date": str(trade_date),
             "past_context": past_context,
             "investment_debate_state": InvestDebateState(
