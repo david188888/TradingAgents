@@ -107,15 +107,22 @@ def _ensure_date_column(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def _clean_dataframe(data: pd.DataFrame) -> pd.DataFrame:
-    """Normalize a stock DataFrame for stockstats: parse dates, drop invalid rows, fill price gaps."""
+    """Normalize OHLCV without inventing historical values.
+
+    Missing OHLC rows are unusable for price analysis and are dropped. Volume
+    may remain unknown; it is never forward- or backward-filled because either
+    operation would manufacture trading activity.
+    """
     data = _ensure_date_column(data)
     data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
     data = data.dropna(subset=["Date"])
 
     price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
     data[price_cols] = data[price_cols].apply(pd.to_numeric, errors="coerce")
-    data = data.dropna(subset=["Close"])
-    data[price_cols] = data[price_cols].ffill().bfill()
+    required_price_cols = [
+        column for column in ("Open", "High", "Low", "Close") if column in data
+    ]
+    data = data.dropna(subset=required_price_cols)
 
     return data
 
@@ -309,7 +316,11 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
     data = None
     if os.path.exists(data_file):
         cached = pd.read_csv(data_file, on_bad_lines="skip", encoding="utf-8")
-        if not cached.empty and "Close" in cached.columns:
+        if (
+            not cached.empty
+            and "Close" in cached.columns
+            and not _needs_same_day_refresh(data_file, curr_date_dt, today_date)
+        ):
             data = cached
 
     if data is None:

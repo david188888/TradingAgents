@@ -266,6 +266,8 @@ output/
 !/tests/test_reader_audit.py
 !/tests/test_capability_result.py
 !/tests/test_analysis_cutoff.py
+!/tests/test_core_data_integrity.py
+!/tests/test_no_data_handling.py
 /assets/
 /frontend/src/**/*.test.ts
 /frontend/src/**/*.test.tsx

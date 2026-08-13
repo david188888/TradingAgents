@@ -227,11 +227,6 @@ def _route_to_vendor_impl(
                 vendor_call_id=attempt.vendor_call_id,
             )
             recoverable_errors.append((vendor, DataSourceUnavailableError(reason)))
-            if last_no_data is None and args:
-                last_no_data = NoMarketDataError(
-                    symbol=str(args[0]),
-                    detail=f"vendor {vendor} in cooldown after {cooldown.reason}",
-                )
             # A stored cooldown only represents a prior transient failure. It
             # gets the same implicit safety-net fallback as a live 429/network
             # failure, even when the user explicitly selected one primary.
@@ -362,7 +357,10 @@ def _route_to_vendor_impl(
     # Return one explicit, instructive sentinel rather than a vendor-specific
     # empty string, so the agent reports "unavailable" instead of inventing a
     # value. This takes precedence over incidental fallback errors.
-    if last_no_data is not None:
+    only_authoritative_no_data = bool(recoverable_errors) and all(
+        isinstance(error, NoMarketDataError) for _vendor, error in recoverable_errors
+    )
+    if last_no_data is not None and only_authoritative_no_data:
         sym = last_no_data.symbol
         canonical = last_no_data.canonical
         resolved = "" if canonical == sym else f" (resolved to '{canonical}')"
@@ -407,5 +405,4 @@ def _route_to_vendor_impl(
         raise DataUnavailableError(message)
 
     raise RuntimeError(f"No available vendor for '{method}'")
-
 

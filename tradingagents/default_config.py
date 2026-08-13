@@ -179,9 +179,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # Sina direct endpoint (quotes.sina.cn, zero key); tushare remains the
         # primary A-share statement source.  Non-A-share tickers skip tushare/
         # sina via the market matrix and fall through to yfinance/alpha_vantage.
-        "get_balance_sheet": "tushare,sina",
-        "get_cashflow": "tushare,sina",
-        "get_income_statement": "tushare,sina",
+        "get_balance_sheet": "tushare,sina,yfinance,alpha_vantage",
+        "get_cashflow": "tushare,sina,yfinance,alpha_vantage",
+        "get_income_statement": "tushare,sina,yfinance,alpha_vantage",
         # A-share indicators are computed locally from the mootdx/tushare OHLCV
         # chain; non-A-share tickers skip "local" and use yfinance.
         "get_indicators": "local,yfinance",
