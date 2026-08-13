@@ -431,6 +431,10 @@ PointInTimeEvidenceSnapshotV1
   selections[capability, capability_result_id, artifact_id,
              evidence_refs, coverage_refs],
   artifact_closure, missing/degraded capabilities, snapshot_hash
+
+SnapshotPublicationV1
+  snapshot_artifact_id, source_committed_sequence,
+  registry_through_sequence, resolved_plan_hash
 ```
 
 大正文不复制进 snapshot。原始 SEC HTML 先作为 durable artifact 保存，再生成
@@ -604,12 +608,50 @@ required prefetch graph tasks
 snapshot 在 durable prefetch artifacts 已提交后、Research Case 组装前生成。它
 固定 capability result、artifact、evidence/coverage refs、来源身份、时间语义、
 availability/freshness 和 content hash；canonical 排序后计算 semantic hash。
-snapshot 构建时 Registry 必须只读取
-`through=source_committed_sequence` 的事件，并拒绝 artifact payload 中更晚的
-committed sequence。snapshot artifact/event 先于 Research Case artifact 发布，
-但两者携带相同的 source committed sequence；assembler 只消费冻结 snapshot，
-不得重新 canonical-select。每个 SEC index/document 引用也必须递归校验 run、
-ticker、hash 和 `accepted_at <= cutoff`。
+发布使用两个不可混淆的序列边界：`source_committed_sequence=C` 是 Research
+Case 所在 accepted graph commit marker 的业务提交边界；marker 类型只允许
+committed `graph.step_applied` 或 `graph.checkpoint_committed`。
+`registry_through_sequence=E` 是 Registry
+`read_events(through=E)` 的包含式物理读取边界。实现必须先完成由 C 及所有更早
+accepted marker 所授权的预期 Registry-visible publication，包括 evidence bundle、
+SEC closure、`report.updated` 及其 backing artifact，再设置显式阶段屏障并一次性
+冻结 E，最后构建 snapshot；
+不得依赖 Research Case 所在 commit 恰好最后执行。必须满足 `E >= C`，且
+snapshot 与 Research Case 自身事件 sequence 均大于 E。
+
+Registry 读取到 E 后，只接受同时满足以下条件的 v3 evidence：事件
+`sequence <= E`；child 与 parent 的 status 都是 committed；整数
+`payload.committed_sequence <= C`；parent 属于同一 run；parent sequence 等于该
+committed sequence；artifact event 晚于 parent。lineage 分成两个且仅两个 profile：
+
+- `graph-commit`：parent 是 `graph.step_applied` 或
+  `graph.checkpoint_committed`，`graph_task_id` 必须位于 parent 的 applied task IDs；
+- `pregraph-plan`：parent 是 committed `research.plan_resolved`，只允许 verified
+  identity/plan artifacts，必须匹配 parent 的 identity ref、plan hash 与 run，且不得
+  伪造 graph task identity。
+
+缺失或非整数 committed sequence 是 integrity failure，不能默认为 0。既有 run、
+ticker、hash、cutoff 和 capability result identity 校验继续执行。
+
+`registry_through_sequence` 是发布和重放元数据，不参与 snapshot semantic hash；
+同一 C 即使恢复后的物理 event 位置不同，只要冻结选择相同，snapshot hash 必须
+相同。snapshot artifact/event 先于 Research Case artifact 发布，但两者携带相同
+的 source committed sequence；assembler 只消费冻结 snapshot，不得重新
+canonical-select。每个 SEC index/document 引用也必须递归校验 run、ticker、hash
+和 `accepted_at <= cutoff`。
+
+v3 的 `report.updated` 与 backing artifact 同样必须携带 task、parent、committed
+sequence 和 committed status；E 之后的 future report 不得进入 snapshot。
+
+崩溃恢复遵守固定语义：marker 后、promotion 前崩溃时先补齐 promotion 再冻结
+新的 E；部分 promotion 后崩溃时按 publication kind 的稳定 identity 幂等补齐：
+bundle 使用 `(task_id, state_key)`，report 使用 `(task_id, report_kind)`，SEC closure
+member 使用 `(task_id, artifact_role, semantic_or_content_id)`，最终 index/result 使用
+`(task_id, capability, semantic_result_id)`；snapshot
+已发布而 case 未发布时，必须复用 `(run_id, C, resolved_plan_hash)` 对应的既有
+snapshot 与 E，不得用更晚事件重新选择。同一 identity 出现不同 semantic
+snapshot 必须 FAIL_STOP；完全相同视为幂等。已落盘但没有 committed
+`artifact.written` 的孤儿 artifact 不可见，恢复时可以重新发布事件。
 
 `policy_version < horizon-policy-v3` 的旧 run 没有 snapshot 时继续使用旧
 Registry 重放，不重写历史 artifact。v3 run 缺少、损坏、跨 run、跨 ticker、
@@ -661,6 +703,528 @@ assembler 必须从这个 snapshot 外部凭证判断：v3 及以上 FAIL_STOP�
 
 完成要求是新增定向门禁全部通过，且完整套件不新增未解释失败；现有失败仍须
 单列，不能误报为全绿。
+
+### 4.4 实施计划（Awaiting Implementation Approval）
+
+本节把 4.3 的已批准设计拆成可独立验收的实施故事。当前状态只是计划已成文，
+不表示任何 SEC、PIT snapshot 或严格身份能力已经上线。实施默认 WIP=1，按编号
+逐个完成；每个故事先写失败测试，再写最小实现，再运行相关回归并单独提交。
+不新增规格、进度或 handoff Markdown，状态与验收只更新本文。
+
+#### 4.4.1 任务板、优先级与范围
+
+| ID | Story | Points | 依赖 | MoSCoW | 初始状态 |
+|---|---|---:|---|---|---|
+| S1 | 冻结内部契约与 SEC coverage 语义 | 5 | 无 | Must | To Do |
+| S2a | 实现纯 preflight、cutoff 与 runtime scaffold | 5 | S1 | Must | To Do |
+| S3 | 建立合规且不可泄密的 SEC transport | 5 | S1 | Must | To Do |
+| S4 | 构建 SEC filing discovery draft | 8 | S1、S3 | Must | To Do |
+| S5a | 规范化并 stage SEC source artifacts | 8 | S3、S4 | Must | To Do |
+| S5b | 发布 SEC durable closure 与最终 index | 8 | S5a | Must | To Do |
+| S6a | 收紧 A 股与 Global verified identity | 8 | S1、S2a、S4 | Must | To Do |
+| S6b | 冻结 scope、resolved plan 与授权后事件 | 8 | S2a、S3、S6a | Must | To Do |
+| S7a | 闭合 policy、eligibility 与最终 stance | 8 | S5b、S6b | Must | To Do |
+| S7b | 让 graph 只消费 frozen required plan | 5 | S6b、S7a | Must | To Do |
+| S8a | 构建 bounded Registry 与纯 snapshot builder | 8 | S5b、S7a | Must | To Do |
+| S8b | 建立发布屏障、恢复语义并原子启用 v3 | 8 | S7b、S8a | Must | To Do |
+| S9 | 迁移生产 E2E fixture 与实际 Reader 验收 | 5 | S8b | Must | To Do |
+| S10 | 合入 CI、隐私门禁与统一文档收尾 | 5 | S1-S9 | Must | To Do |
+
+本切片的 Should Have 只有显式配置身份后的真实 SEC 只读 smoke；它不是自动化
+oracle，也不能阻止无网络环境完成确定性验收。其他监管机构、8-K 正文批量解析、
+Reader schema/layout 变化、跨模型适配、交易信号、仓位、回测和 P&L 学习均为
+Won't Have。
+
+当前工作区已有用户自己的 Reader、静态产物与 `research_manager.py` 未提交修改。
+实现前后都必须重新核对 Git 状态，不得暂存或覆盖这些修改。这一保护适用于所有
+story；任何可能重写 `tradingagents/web/static/` 的 production build、E2E server
+或实际浏览器验收必须在 `/private/tmp` 的独立 clean worktree 执行。若确实必须在
+当前工作区执行或改动用户已修改的 `research_manager.py`，先停止并取得逐文件
+授权，不自行合并。
+
+跨故事硬规则：S8b 原子激活前，所有新增运行行为只允许由显式 v3 test gate
+启用，production fresh run 继续 v2。任何 story 只要触及现有 runtime、通用 parser、
+publisher、AgentState、provider 或 replay 路径，就必须在该 story 内通过 v2
+fresh-run 与 replay golden；不能把兼容验证推迟到 S8b。
+
+#### 4.4.2 S1：冻结内部契约与 SEC coverage 语义
+
+**作为** Research Case 管线，**我希望** identity、SEC filing 和 snapshot 拥有
+严格版本化契约，**从而** provider、Registry 和 eligibility 不再靠松散字典猜测。
+
+Acceptance criteria：
+
+- Given 相同规范化输入，When 构建 identity、filing index/document、typed result
+  或 snapshot，Then semantic ID/hash 稳定且字段顺序不影响结果；
+- Given incomplete search、rejected target、exhaustive zero target 和 8-K-only
+  四类输入，When 映射 generic coverage，Then 结果严格符合 4.3.4，非法零项组合
+  在模型验证阶段失败；
+- Given identity subclass payload，When publisher、Registry 或任何 generic result
+  入口解析，Then统一 discriminated parser 保留 subclass 字段；未知 contract kind
+  fail closed，而不是被 `CapabilityResultV1(extra=forbid)` 误拒绝或降级；
+- Given contract payload 含未知字段、跨 ticker 引用或 hash 不符，When 校验，
+  Then fail closed，不做兼容性静默丢字段。
+
+Tasks / technical notes：
+
+- 新增 `tradingagents/research/instrument_identity.py`、
+  `tradingagents/research/sec_filings.py` 和
+  `tradingagents/research/pit_snapshot.py` 的纯模型与 canonical helpers；
+- 在 `tradingagents/dataflows/coverage.py` 增加 SEC 专用 validator 和最小兼容投影，
+  不放宽其他 capability 的零项不变量；
+- 扩展 `capability_result.py` 的 identity typed result 和统一 discriminated
+  parser/union；同步替换 publisher、Registry coverage/result 等全部基类解析入口，
+  所有派生字段进入 semantic ID；
+- 新增纯契约测试，并在 `.gitignore` 明确放行对应测试文件。
+
+Estimation：5 points。依赖：无。Business value：High。
+
+#### 4.4.3 S2a：实现纯 preflight、cutoff 与 runtime scaffold
+
+**作为** 历史公司研究使用者，**我希望** preflight 与 cutoff 可以无副作用地冻结，
+**从而** 后续 identity、policy 和 resume 能建立在同一可测试的时间基础上。
+
+Acceptance criteria：
+
+- Given 过去、市场本地当天盘前/盘中/盘后和未来日期，When 解析 cutoff，Then
+  分别使用市场 EOD、`min(EOD, captured_at)` 或 invalid，结果可用 fake clock
+  重放；
+- Given相同 request 与 injected clock，When resume preflight 和真实执行分别解析，
+  Then得到相同 prepared scaffold，不写事件、不访问 provider；
+- Given显式 v3 test gate 下 scaffold 字段变化，When构建 fingerprint，Then
+  preflight/cutoff schema 参与兼容性判断；production v2 fingerprint projection 保持
+  原样，不要求新字段或 snapshot；
+- Given任何本故事共享路径改动，When重放现有 v2 golden，Then历史 artifact 不被
+  重写，旧 run 不需要新增字段。
+- Given后续 v3 fields 加入 AgentState，When选择 schema descriptor，Then v2 运行与
+  checkpoint 继续使用冻结的 legacy descriptor/hash，v3 才使用包含新字段的
+  descriptor；不能由全局最新 TypedDict hash 隐式改变 v2 fingerprint。
+
+Tasks / technical notes：
+
+- 演进 `analysis_cutoff.py`、`execution/runner.py`、`runtime/fingerprint.py` 和
+  prepared-context schema；只建立可注入 identity/plan 槽位，不在本故事接入 provider；
+- 在 `observability/canonical.py` 与 fingerprint boundary 定义按 policy version
+  选择的 AgentState schema descriptor；v2 descriptor 固定，v3 descriptor 可演进，
+  observation commit 与 resume comparison 使用同一个已选 descriptor；
+- `_resolve_initial_context` 保持纯函数式边界；本故事不发布 plan event，不升级
+  production policy，event 与 frozen plan 接线留给 S6b；
+- 为同日 cutoff、future invalid、双次纯解析与 v2 resume golden 建立测试。
+
+Estimation：5 points。依赖：S1。Business value：High。
+
+#### 4.4.4 S3：建立合规且不可泄密的 SEC transport
+
+**作为** 数据完整性维护者，**我希望** SEC 访问有明确身份、限速、预算与脱敏，
+**从而** provider failure 可诊断但访问身份不会进入任何持久化表面。
+
+Acceptance criteria：
+
+- Given `TRADINGAGENTS_SEC_USER_AGENT` 缺失，When 调用任何 SEC capability，Then
+  返回 `provider_unavailable/sec_user_agent_not_configured` 且 HTTP 调用数为 0；
+- Given canary User-Agent，When 运行成功或失败，Then canary 不出现在 effective
+  config、fingerprint、event、artifact、cache key、log、异常、本系统对外 API
+  响应、请求日志或调试投影，只出现 `configured: true`；唯一允许表面是发往 SEC
+  host 的 outbound `User-Agent` header；
+- Given fake clock 下并发请求，When 命中 token bucket 或 429，Then 每 host 不超过
+  5 rps、并发不超过 2，并尊重 `Retry-After` cooldown；
+- Given 403、5xx、timeout、非法 content type 或超限文档，When transport 返回，
+  Then 使用稳定 reason code，不紧密重试，不返回截断 bytes。
+
+Tasks / technical notes：
+
+- 新增 `tradingagents/dataflows/sec_edgar.py`，注入 clock、HTTP client 和 budget，
+  transport 私有读取环境变量并提供只返回 boolean 的 config-status resolver；
+- 扩展 `observability/redaction.py`，把 `user_agent`、`sec_user_agent` 及规范化变体
+  纳入统一敏感键注册；
+- `.env.example` 只说明配置方法，不写真实身份；默认 config 不保存原值。
+
+Estimation：5 points。依赖：S1。Business value：High。
+
+#### 4.4.5 S4：构建 SEC filing discovery draft
+
+**作为** 历史公司研究使用者，**我希望** discovery draft 保留 cutoff 前已验证的
+usable targets 与真实搜索完成度，**从而** 后续 Agent 不会看到未来 amendment，
+也不会因漏页把 partial 误判成“没有披露”。
+
+Acceptance criteria：
+
+- Given ticker map、recent 和多个 history fixtures，When discovery，Then 只保留
+  精确 forms，解析 New York DST accepted time，并在 cutoff 后排除；
+- Given recent/history 同 accession 相同或关键字段冲突，When merge，Then 前者
+  幂等去重，后者 invalid/FAIL_STOP；
+- Given history manifest 范围缺失或非法，When 预算足够或不足，Then 分别保守读取
+  内容或明确 partial，不能跳过并声称 exhaustive；
+- Given accepted timestamp 缺失/非法，When target 被拒绝，Then增加
+  `rejected_target_count`，即使所有 target 被拒绝也返回 partial zero-item，而非
+  not_covered；
+- Given history search 不完整但已有 usable target，When 生成 draft，Then保留该
+  target 且 coverage 为 partial；S4 不发布最终 durable index/result；
+- Given 健康 ticker map 无 CIK、完整窗口无目标 forms 或 provider outage，When
+  构建 discovery outcome，Then保留足以让 S5b 唯一生成规定 not_covered 或
+  provider_unavailable typed result 的结构化原因。
+
+Tasks / technical notes：
+
+- 在 `sec_filings.py` 实现 ticker/CIK/name/exchange binding、recent/history parser、
+  accession merge、cutoff filter 与纯 `SecFilingDiscoveryDraftV1` builder；
+- discovery 只依赖 S3 注入 transport，不在 parser 中读环境、系统时钟或网络；
+- 使用脱敏 SEC JSON fixtures 覆盖 current/history、amendment 与 DST 边界。
+
+Estimation：8 points。依赖：S1、S3。Business value：High。
+
+#### 4.4.6 S5a：规范化并 stage SEC source artifacts
+
+**作为** 证据审计者，**我希望** SEC source JSON、10-K/10-Q 原文和规范化文本
+形成可 checkpoint 的 staged closure，**从而** parser 与 transport 不需要直接
+依赖运行存储，恢复后仍能证明每个文件属于哪个 graph task。
+
+Acceptance criteria：
+
+- Given `10-K`、`10-K/A`、`10-Q`、`10-Q/A`，When 下载成功，Then完整 raw bytes
+  与规范化文本分别形成 content-addressed staged artifact refs；
+- Given current submissions 与每个实际读取的 history JSON，When discovery 完成，
+  Then每个完整 source payload 都有 staged ref，draft 不只留下远端 URL；
+- Given 8-K/8-K-A，When staging，Then只保留完整 metadata 与 SEC 原文链接，不下载
+  正文；
+- Given parser timeout、oversize、非法 content type 或字符集异常，When 处理，
+  Then不保存截断正文，已完整冻结的 raw artifact 保留，结果按规则 partial；
+- Given graph candidate delta，When checkpoint 持久化，Then closure manifest 含
+  opaque staged refs、run/ticker/task/hash/role，恢复时不需要重新下载已完整内容。
+- Given v3 maintenance node 在 observed task context 内或外执行，When获取 artifact
+  sink，Then前者得到绑定 observer/run/task/graph-step 的窄 sink，后者 fail closed；
+  v2 节点继续原路径，不要求 sink。
+
+Tasks / technical notes：
+
+- 增加窄接口 `EvidenceArtifactSink`，包装现有 `RunStore.store_artifact` 并返回
+  `StagedArtifactRefV1`；transport/parser 不直接导入 RunStore；
+- 由 `ObservedGraphTask` 调用 maintenance node 时建立 run-scoped sink context，
+  producer 只通过窄 context accessor 获取；必要落点包括 `graph_tasks.py` 和 graph
+  runtime，禁止 provider 从全局查找 store；
+- staged refs 与 closure manifest 必须进入 AgentState/candidate delta，只有后续
+  parent commit promotion 才使其对 Registry 可见；不重写现有原子存储实现；
+- 规范化固定为确定性 charset、script/style 移除、Unicode NFC 与空白归一化，
+  预算严格使用 5s connect、30s read、10s parser、20 MiB。
+
+Estimation：8 points。依赖：S3、S4。Business value：High。
+
+#### 4.4.7 S5b：发布 SEC durable closure 与最终 index
+
+**作为** Evidence Registry，**我希望** 只看到 checkpoint 后校验并提交的完整 SEC
+closure，**从而** staged 文件或不完整 draft 不能被误当作可引用证据。
+
+Acceptance criteria：
+
+- Given staged current/history JSON、必要 raw/normalized documents 和 discovery
+  draft，When parent graph commit 被接受，Then publisher 先验证 run、ticker、task、
+  hash 与 closure，再发布 visibility events、最终 `SecFilingIndexV1` 和 typed result；
+- Given final index，When递归检查 `source_artifacts` 与 document refs，Then每个读取的
+  current/history JSON 及每个必要正文均可由 committed event、hash 和 lineage 找到；
+- Given仅有 8-K/8-K-A 且 metadata/index 完整，When构建结果，Then无需正文即可
+  available；Given 任一必要 10-K/10-Q 文档缺失，Then至多 partial；
+- Given orphan staged file、closure hash 不符或跨 run/ticker ref，When publisher
+  处理，Then拒绝发布；未提交 orphan 对 Registry 不可见；
+- Given现有 v2 run/golden，When共享 publisher 与 Registry 路径变化，Then历史
+  artifact 仍可重放且不要求 snapshot。
+
+Tasks / technical notes：
+
+- 扩展 `output_publisher.py` 的 SEC closure promotion，复用现有 store，不把可见性
+  逻辑放进 transport 或 parser；
+- S4 只拥有 discovery draft；最终 index/result 的唯一所有者是本故事；
+- 部分 promotion 崩溃与跨 commit 恢复留给 S8b，本故事只证明单次 accepted parent
+  下的闭包、顺序与 fail-closed publication。
+
+Estimation：8 points。依赖：S5a。Business value：High。
+
+#### 4.4.8 S6a：收紧 A 股与 Global verified identity
+
+**作为** 公司研究使用者，**我希望** 公司身份的 full/partial/invalid 有字段级
+来源证明，**从而** ticker 后缀或 provider failure 不会被误当成公司事实。
+
+Acceptance criteria：
+
+- Given CNINFO/交易所确认 ticker、名称、证券类型和历史上市状态，When 截止日
+  有效，Then identity verification 为 full；
+- Given 官方源不可用且 Tushare 与 EastMoney/AKShare 两个独立来源逐字段一致，
+  When 合并，Then verification 仅为 partial，eligibility 至多 limited；
+- Given suffix-only、单一第三方源或缺失 effective time，When 验证，Then分别为
+  unavailable 或至多 partial，不推导上市状态；
+- Given 两个成功观测来源在关键字段冲突，When 合并，Then invalid/FAIL_STOP；
+  provider failure 只进入 attempts，不制造冲突事实；
+- Given US ticker map 只能证明当前身份，When cutoff 是历史日期，Then必须由 cutoff
+  前 filing metadata/header 绑定，否则至多 partial。
+- Given `global_non_sec` 当前或历史 fixture，When官方身份字段完整或只能证明当前
+  状态，Then分别按证据得到 full 或至多 partial；不得为未实现监管披露生成 SEC
+  coverage。
+
+Tasks / technical notes：
+
+- 将现有 identity producer 演进为字段 facts + attempts，复用严格 official source
+  路由并保持 EastMoney 不得伪装交易所；
+- capability result 与 coverage 分别保存 availability 与 verification_level，不
+  互相推导；eligibility 强制规则留给 S7a；
+- 所有 provider 测试使用 fixture，真实第三方网络不是完成条件。
+
+Estimation：8 points。依赖：S1、S2a、S4。Business value：High。
+
+#### 4.4.9 S6b：冻结 scope、resolved plan 与授权后事件
+
+**作为** 可恢复运行，**我希望** verified identity、监管 scope、SEC 配置状态与
+resolved plan 在授权后、graph/prefetch provider 前只冻结和发布一次，**从而** 被拒绝的
+resume 不污染事件流，真实执行也不会与 preflight 产生两个计划。
+
+Acceptance criteria：
+
+- Given无冲突美国、非美国、缺失或冲突身份 facts，When结合 preflight 与 S6a
+  identity，Then只得到 `us_sec_candidate`、`global_non_sec` 或 `unresolved`；
+- Given unresolved scope 或 cutoff invalid，When运行，Then在任何 SEC HTTP 前停止；
+- Given相同 prepared context，When fresh run、resume preflight 与授权后执行，Then
+  plan ID/hash 和 fingerprint 一致，纯解析阶段不写事件；
+- Given显式 v3 test gate 且 fingerprint authorization 成功，When graph 尚未启动，
+  Then幂等发布一次
+  committed verified identity artifact/result 与 `research.plan_resolved`；后者包含
+  非敏感 policy schema、identity ref、scope、cutoff、plan ID/hash 与 SEC configured
+  boolean；
+- Given resume authorization 失败或 preflight 被重复调用，When检查事件流，Then无
+  plan event 污染或重复；现有 v2 golden 仍可重放且不要求 snapshot。
+- Given v3 fresh run，When准备 context，Then先纯解析/stage identity，再冻结
+  plan/fingerprint，授权成功后发布；Given v3 resume，Then Manager 在 preauthorize
+  前从既有 committed `research.plan_resolved` hydrate identity/plan，既不重调
+  identity provider，真实执行也复用同一 contract；
+- Given committed plan，When identity artifact 对 Registry 可见，Then
+  `research.plan_resolved` 是 run-level `pregraph-plan` commit marker，identity
+  artifact event 以它为 parent 并携带其 sequence；不得伪装 graph-task lineage。
+
+Tasks / technical notes：
+
+- 演进 `horizon_policy.py`、runner、fingerprint、event schema、redaction/projection、
+  AgentState 与 propagation；event 幂等键绑定 run + plan hash；
+- 顺序固定为 pure resolve/freeze → fingerprint authorization → committed plan event
+  → graph/prefetch provider；`run.started` 保持 Manager 现有生命周期；
+- fresh 与 resume 使用两个显式分支；v3 resume 缺失、重复或损坏 plan marker 时在
+  provider/graph 前拒绝，Registry validator 支持 `pregraph-plan` 与 `graph-commit`
+  两种且仅两种 lineage；
+- 构建 `ResolvedDataWindowPlanV3` 和测试 gate，但 production policy 继续为 v2；
+  v3 默认激活与 snapshot 缺失保护必须在 S8b 同一原子故事完成。
+
+Estimation：8 points。依赖：S2a、S3、S6a。Business value：High。
+
+#### 4.4.10 S7a：闭合 policy、eligibility 与最终 stance
+
+**作为** 学习型研究系统，**我希望** required evidence 由冻结 policy 驱动且不能
+被 analyst 选择或 favorable 文本绕过，**从而** full 始终表示证据契约真正闭合。
+
+Acceptance criteria：
+
+- Given A 股、US SEC、非 SEC Global 的 short/medium/long 矩阵，When required
+  evidence 完整或缺失，Then full/limited/FAIL_STOP 与 policy v3 唯一对应；
+- Given US candidate medium/long，When SEC evidence 完整，Then
+  `sec.company_filings` 可满足 required official；When UA 缺失/outage，Then scope
+  不改变但只能 limited；
+- Given non-SEC Global medium/long，When运行，Then返回
+  `not_supported/regulatory_provider_not_implemented`，第三方新闻不能替代；
+- Given required typed result 为 0 个或多个，或 semantic ID/plan/ticker/date 自相
+  矛盾，When eligibility，Then属于 contract integrity failure 并 FAIL_STOP；
+- Given合法 result 为 partial/stale，When eligibility，Then至多 limited；Given
+  `not_covered`、`not_supported` 或 `provider_unavailable`，Then limited 且顶层
+  `insufficient_evidence`；Given `invalid`，Then FAIL_STOP；
+- Given result 声称 current 但时间 facts 不支持，When校验，Then FAIL_STOP；正常且
+  自洽的 stale value 不是 integrity failure；Given identity 非 full，Then不能 full；
+- Given任一 required capability 为 not_covered、not_supported 或
+  provider_unavailable，When模型 draft 给出 favorable stance，Then case assembler
+  最终政策覆盖层强制 `insufficient_evidence`；Given invalid，Then FAIL_STOP；
+- Given共享 Registry/assembler/eligibility 路径变更，When重放现有 v2 golden，Then
+  legacy case 仍可打开，不要求 typed v3 result 或 snapshot。
+
+Tasks / technical notes：
+
+- 演进 `official_disclosures.py`、Registry、claim capability policy、case assembler
+  与 eligibility；
+- 强制 required typed result，保留 v2 legacy replay 但不得让 legacy fallback
+  满足 v3；
+- 用一张参数化矩阵测试覆盖九个 market-scope × horizon 组合与 failure states。
+
+Estimation：8 points。依赖：S5b、S6b。Business value：High。
+
+#### 4.4.11 S7b：让 graph 只消费 frozen required plan
+
+**作为** policy owner，**我希望** maintenance producer 由 frozen required
+capabilities 驱动，**从而** 用户是否选择某个 analyst 不会决定必要证据是否被获取。
+
+Acceptance criteria：
+
+- Given任意 analyst selection，When frozen plan 要求 identity、snapshot、price、
+  event、official 或 fundamentals，Then对应 maintenance nodes 都存在且顺序稳定；
+- Given A 股 supplement，When news/fundamentals analyst 未选择，Then required official
+  或 fundamentals producer 仍执行，不沿用 analyst-key 条件；
+- Given v3 prepared state，When graph nodes 执行，Then price、news、fundamentals、
+  official 与工具节点不再调用 `build_data_window_plan` 重建 policy；
+- Given production 默认仍是 v2，When旧请求运行，Then graph 兼容路径和 v2 golden
+  不改变；显式 v3 fixture 才走 frozen plan。
+
+Tasks / technical notes：
+
+- 枚举并替换 market data、news、fundamentals、official disclosure 与工具节点中的
+  plan 重建调用点；
+- graph setup 从 frozen required capabilities 构造 maintenance chain，analyst 选择
+  只决定解释角色，不决定 evidence producers；
+- 为 analyst 组合、九格 policy 与 v2/v3 分流建立参数化测试。
+
+Estimation：5 points。依赖：S6b、S7a。Business value：High。
+
+#### 4.4.12 S8a：构建 bounded Registry 与纯 snapshot builder
+
+**作为** Research Case 的所有 Agent，**我希望** 引用同一个已冻结 snapshot，
+**从而** 组装、刷新和恢复都不会重新挑选更有利或更晚的证据。
+
+Acceptance criteria：
+
+- Given显式 C 与 E，When Registry 读取 `read_events(through=E)`，Then只选择
+  committed status、parent/task lineage 和 `committed_sequence <= C` 合法的 bundle、
+  SEC closure 与 report evidence；
+- Given verified identity 或 graph evidence，When验证 lineage，Then前者只接受
+  `pregraph-plan` marker，后者只接受 `graph-commit` marker；两类不能相互冒充；
+- Given缺失/伪造 committed sequence、错误 parent/task、未来事件、跨 run/ticker、
+  post-cutoff 或 closure/hash 损坏，When 构建/重放，Then FAIL_STOP；
+- Given同一 run 的 replay、相同 C 和相同可见事件，When纯 snapshot builder 重复
+  构建，Then semantic hash 和 selections 相同，E 不参与 semantic hash；
+- Given report 在 E 前合法发布或 E 后才发布，When构建 snapshot，Then前者可被
+  选择，后者被排除；
+- Given v2 Registry golden，When bounded/lineage 路径加入，Then legacy 重放仍成功，
+  不要求 v3 committed metadata 或 snapshot。
+
+Tasks / technical notes：
+
+- 为 EvidenceRegistry 增加显式 `through`、source boundary 与 lineage validator，
+  删除 v3 的 `committed_sequence=0` 默认；
+- 实现无副作用 snapshot builder 与 artifact closure validator；assembler 增加消费
+  frozen selections 的内部入口，但 production publication 仍不切到 v3；
+- 纯测试覆盖 bundle、SEC closure、report、future injection 和 hash/closure 错误。
+
+Estimation：8 points。依赖：S5b、S7a。Business value：High。
+
+#### 4.4.13 S8b：建立发布屏障、恢复语义并原子启用 v3
+
+**作为** 可恢复 Research Case publisher，**我希望** 所有 Registry-visible evidence
+先发布、冻结 E、再发布 snapshot 与 case，**从而** 任一崩溃点恢复后都不会漏选、
+重复选择或重新挑选未来证据。
+
+Acceptance criteria：
+
+- Given一批 accepted graph commits，When promotion，Then先发布全部 bundle、SEC
+  closure、`report.updated` 及 backing artifacts，再冻结 durable event boundary E，
+  然后仅在存在 case candidate 时构建/复用 snapshot，最后发布 case；
+- Given v3 report publication，When写入事件，Then report 与 backing artifact 都有
+  committed status、task、parent 与 committed sequence；E 后 future report 被排除；
+- Given marker 后、部分 promotion 后、snapshot 后或 case 前崩溃，When resume，Then
+  分别补齐幂等 publication、复用既有 `(run_id,C,plan_hash)` snapshot/E，且不漏不重；
+- Given bundle、report、closure member、final index/result 或 snapshot 任一稳定
+  identity 的 partial publication，When crash/retry，Then各自按 4.3.5 的 identity
+  幂等补齐，不用其他 kind 的键误判已完成；
+- Given同一 snapshot identity 出现不同 semantic snapshot，When恢复，Then
+  FAIL_STOP；完全相同视为幂等；
+- Given v2 run 无 snapshot 或 v3 run 无/坏 snapshot，When重放，Then前者走 legacy，
+  后者安全壳；Reader 公共 schema 保持兼容；
+- Given所有 v3 路径通过，When production policy 从 v2 切到 v3，Then activation、
+  snapshot 强制与 v2/v3 分流发生在同一提交，不存在“v3 已标记但无 snapshot”窗口。
+
+Tasks / technical notes：
+
+- 重构 `_promote_commits` 为 batch phases，不在逐 commit 循环中提前组装 case；阶段
+  次序固定为 Registry-visible publication → E → snapshot → case → lifecycle terminal；
+- 给 v3 report publication 补齐 lineage metadata，publisher 冻结真实 event-log E，
+  不把 payload 的 committed sequence 当作物理边界；
+- 实现 crash injection、resume reuse、v2/v3 分流与最终 policy activation 测试。
+- activation 同步选择 v3 AgentState schema descriptor；v2 fresh/replay/resume 继续
+  使用冻结 legacy descriptor，不用全局最新 schema hash 改写历史边界。
+
+Estimation：8 points。依赖：S7b、S8a。Business value：High。
+
+#### 4.4.14 S9：迁移生产 E2E fixture 与实际 Reader 验收
+
+**作为** 产品维护者，**我希望** 本地真实运行链展示 typed evidence、snapshot 和
+Research Case，**从而** E2E 验证的是现役学习产品而不是旧交易模板。
+
+Acceptance criteria：
+
+- Given deterministic SEC available 与 provider outage 场景，When fake runner
+  完成，Then发布 identity/result/bundle/snapshot/case 及完整 event/provenance
+  linkage，不发布 Buy/Hold/Sell、仓位或旧 public-output；
+- Given创建运行、SSE、Reader、Audit 与页面刷新，When使用浏览器自动化，Then
+  snapshot-backed case 可重放，capability 摘要一致，控制台无异常；
+- Given初始 DOM、网络响应和 Audit detail，When扫描 canary，Then无 User-Agent、
+  locator、Prompt、原始 provider 异常或私有思维链；
+- Given真实桌面窗口、长内容和窄宽度，When使用 Computer Use，Then关键内容可读、
+  滚动与刷新正常，不依赖自动化截图的偶然布局。
+
+Tasks / technical notes：
+
+- 改造 `scripts/e2e_server.py` 和现有 Reader/Audit fixtures；公共 Reader DTO 不变；
+- 本故事同步在 `.gitignore` 精确放行 e2e server 与新增 fixture/test，不等待 S10，
+  也不使用 `git add -f`；
+- 先跑 Playwright/HTTP assertions，再按用户要求用 in-app Browser 与 Computer Use
+  做实际交互；server、production build 和实际浏览器测试全部从独立 clean worktree
+  启动，真实 SEC 只做可选、只读、明确 UA 的 smoke。
+
+Estimation：5 points。依赖：S8b。Business value：High。
+
+#### 4.4.15 S10：合入 CI、隐私门禁与统一文档收尾
+
+**作为** 后续维护者，**我希望** clean checkout 能复现新增契约和关键失败路径，
+**从而** 新 provider 或模型不能悄悄绕过证据闭包。
+
+Acceptance criteria：
+
+- Given clean checkout，When CI 运行，Then contract、cutoff/policy、SEC transport、
+  discovery/document、identity、eligibility、snapshot/replay 与 E2E 关键测试均被
+  明确跟踪并执行；
+- Given完整后端/前端套件，When比较批准前基线，Then不新增未解释失败；目标门禁
+  全绿，既有失败继续单列；
+- Given最终 Git diff，When closeout，Then只包含本切片授权文件，不包含用户既有
+  Reader/静态产物/manager 修改或临时报告；
+- Given最终状态，When维护者阅读本文，Then能够区分 Merged、Branch Ready、可选
+  smoke 与未实现范围，不需要第二份状态文档。
+
+Tasks / technical notes：
+
+- 精确扩展 `.gitignore` test whitelist 和 `.github/workflows/ci.yml`，禁止
+  `git add -f`；
+- 运行 Ruff、定向/完整 pytest、Vitest、typecheck、production build、Playwright、
+  `git diff --check`，并记录准确基线；任何会生成静态产物的命令只在 clean
+  worktree 运行，并把结果与实现 commit 比较；
+- 使用 neat-freak 复核 code/runtime/docs/rules/memory/workspace 六个事实表面，
+  只更新本文；任何删除候选先报告，取得单独确认后才执行。
+
+Estimation：5 points。依赖：S1-S9。Business value：High。
+
+#### 4.4.16 Definition of Ready、提交顺序与 Definition of Done
+
+Definition of Ready：4.3 设计和双边界勘误已批准；每个 story 的 fixture、clock、
+failure reason 与 expected coverage 可在无网络环境表达；开始 story 前工作区与用户
+修改边界已重新确认；任何重叠文件已有明确处理方式。
+
+建议提交顺序与故事一致，每个 commit 只跨一个可独立回退的行为边界：contracts；
+纯 preflight/cutoff；SEC transport；filing discovery draft；artifact staging；SEC
+durable closure；verified identity；scope/plan persistence；policy/eligibility；
+frozen-plan graph；bounded Registry；PIT publication/recovery/v3 activation；E2E；
+CI/docs。S4、S5a、S5b 即使由同一模块承载也保持独立提交，使 parser、文件副作用
+和可见性 publication 分别审查。
+
+Definition of Done：
+
+- 每个 story 的 Given/When/Then acceptance criteria 有自动化证据；新行为先看到
+  失败测试，相关回归、Ruff 和 `git diff --check` 通过；
+- v3 required capability 不能缺 typed result，任何 future/cross-run/corrupt/identity
+  conflict 都安全降级或 FAIL_STOP，不留下模型可绕过的 favorable rating；
+- SEC canary 通过所有持久化、日志、本系统对外 API、cache 和异常表面的负向
+  扫描，只允许出现在发往 SEC host 的 outbound header；
+- snapshot、case、Audit 与刷新重放拥有可追踪 event/artifact/provenance linkage；
+- 完整套件不新增未解释失败，浏览器与 Computer Use 实际验收完成；
+- 不更改 Reader 公共 schema，不实现跨模型适配或交易目标，不覆盖用户未提交修改；
+- 本文状态更新为 Branch Ready，分支按授权提交并推送；清理动作遵守 neat-freak
+  的再次确认门槛。
 
 ## 5. 已合入功能的验收记录
 
