@@ -165,11 +165,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "a_share_specialty_data": "eastmoney",
         "a_share_query_data": "iwencai",
         "a_share_telegraph": "cls",
-        # Wind AIFin Market premium data (requires WIND_API_KEY).
-        # These categories only have wind as a vendor; when wind_enabled is
-        # False or the key is missing, these capabilities degrade to
-        # unavailable without affecting core A-share paths.
-        "wind_index_data": "wind",
+        # Wind AIFin Market is the premium primary; EastMoney is the keyless
+        # fallback for index snapshot/history when Wind is unavailable.
+        "wind_index_data": "wind,eastmoney",
         "wind_macro_data": "wind",
         "wind_risk_data": "wind",
     },

@@ -84,6 +84,10 @@ from .eastmoney import (
 )
 from .eastmoney_news import get_news_eastmoney
 from .fred import get_macro_data as get_fred_macro_data
+from .index_provider import (
+    get_index_history_eastmoney,
+    get_index_snapshot_eastmoney,
+)
 from .mootdx_provider import get_a_share_f10, get_fundamentals_mootdx, get_stock_mootdx
 from .option_provider import get_a_share_option_greeks, get_a_share_option_tquote
 from .sentiment_provider import get_a_share_hot_concept, get_a_share_hot_list
@@ -423,10 +427,14 @@ VENDOR_METHODS = {
     "get_a_share_price_anomaly_count": {"eastmoney": get_a_share_price_anomaly_count_em},
     "search_a_share_iwencai": {"iwencai": search_a_share_iwencai},
     "get_cls_telegraph": {"cls": get_cls_telegraph},
-    # Wind AIFin Market capabilities (premium index/macro/risk data).
-    # Wind-only capabilities: no public fallback for equivalent quality.
-    "get_index_snapshot": {"wind": get_wind_index_snapshot},
-    "get_index_history": {"wind": get_wind_index_history},
+    "get_index_snapshot": {
+        "wind": get_wind_index_snapshot,
+        "eastmoney": get_index_snapshot_eastmoney,
+    },
+    "get_index_history": {
+        "wind": get_wind_index_history,
+        "eastmoney": get_index_history_eastmoney,
+    },
     "get_index_profile": {"wind": get_wind_index_profile},
     "get_index_fundamentals": {"wind": get_wind_index_fundamentals},
     "search_macro_series": {"wind": search_wind_macro_series},

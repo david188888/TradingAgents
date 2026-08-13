@@ -117,7 +117,7 @@
 | 当前估值/历史估值分位 | Wind → Tencent | 第一 | Wind 契约覆盖更广，Tencent 保留轻量后备 |
 | 财务报表/财务比率 | Wind → Tushare → Sina/AKShare | 第一（分字段验收后） | 降低多来源拼接；报告期和单位不一致时不得合并 |
 | 公司档案/股东/公司事件/风险 | Wind → 对应现有专用来源 | 第一 | Wind 覆盖完整，现有来源按精确能力保留后备 |
-| 指数快照/K 线/档案/估值 | Wind | 第一/初期唯一 | 当前项目缺失；后续可增加公共来源作灾备 |
+| 指数快照/K 线/档案/估值 | Wind → EastMoney（仅 snapshot/history 的 keyless 灾备） | 第一/初期唯一主源 | Wind 保持 premium 主源；EastMoney 只在 Wind 不可用时提供明确降级，档案/估值不混入公共 fallback |
 | 中国宏观/行业 EDB | Wind → AKShare（仅受支持别名） | 第一 | Wind 提供指标发现与广覆盖，AKShare 保留基础序列灾备 |
 | 全球宏观（已有 FRED 别名） | FRED → Wind EDB（显式需要时） | 第二 | FRED 对已有美国系列简单稳定，避免不必要迁移 |
 | 精确官方公告 | CNINFO → 交易所 → Wind | 最后 | 法定披露原站优先，Wind 用于补缺而不是改变证据等级 |
