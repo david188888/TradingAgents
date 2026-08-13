@@ -27,11 +27,13 @@ from tradingagents.execution.output_publisher import (
 )
 from tradingagents.research.analysis_cutoff import resolve_analysis_cutoff
 from tradingagents.research.case_assembly import (
+    assemble_fail_stop_research_case,
     assemble_partial_research_case,
     assemble_research_case,
 )
 from tradingagents.research.evidence_registry import build_evidence_registry
 from tradingagents.research.horizon_policy import build_data_window_plan
+from tradingagents.research.integrity import ResearchIntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,11 @@ def _assemble_research_case_or_fallback(
             evidence_verdict=evidence_verdict,
         )
     try:
-        registry = build_evidence_registry(observer.store, observer.run_id)
+        registry = build_evidence_registry(
+            observer.store,
+            observer.run_id,
+            expected_ticker=snapshot.ticker,
+        )
         market = (
             "a_share" if is_a_share_ticker(snapshot.ticker) else "global"
         )
@@ -80,6 +86,17 @@ def _assemble_research_case_or_fallback(
             plan=plan,
             source_sequence=source_sequence,
             evidence_verdict=evidence_verdict,
+        )
+    except ResearchIntegrityError as exc:
+        logger.error(
+            "research integrity failure for run %s: %s",
+            snapshot.run_id,
+            exc.reason_code,
+        )
+        return assemble_fail_stop_research_case(
+            snapshot,
+            source_sequence=source_sequence,
+            reason_code=exc.reason_code,
         )
     except Exception:
         logger.warning(

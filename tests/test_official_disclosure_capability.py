@@ -88,6 +88,49 @@ def test_global_official_disclosure_is_explicitly_not_supported() -> None:
     )
 
 
+def test_eastmoney_fallback_cannot_satisfy_official_source_group() -> None:
+    cutoff = resolve_analysis_cutoff("000338.SZ", "2026-08-13")
+
+    def fetch(_symbol: str, _start: str, _pages: int) -> RoutedVendorCall:
+        cninfo = RouteAttemptTrace(
+            vendor="cninfo",
+            outcome="provider_failed",
+            reason_code="provider_request_failed",
+            recorded_at=NOW,
+            started_at=NOW,
+            ended_at=NOW,
+        )
+        fallback = RouteAttemptTrace(
+            vendor="china_exchange",
+            outcome="observed",
+            reason_code="provider_payload_observed",
+            recorded_at=NOW,
+            started_at=NOW,
+            ended_at=NOW,
+        )
+        return RoutedVendorCall(
+            "# Source: eastmoney\npublic fallback records",
+            None,
+            (cninfo, fallback),
+        )
+
+    wrapped = build_official_disclosure_result(
+        "000338.SZ",
+        "2026-08-13",
+        horizon="medium",
+        cutoff=cutoff,
+        fetch=fetch,
+        recorded_at=NOW,
+    )
+
+    result = wrapped["capability_result"]
+    assert result["availability"] == "invalid"
+    assert result["attempts"][1]["outcome"] == "invalid_payload"
+    assert result["attempts"][1]["reason_code"] == (
+        "non_official_fallback_not_eligible"
+    )
+
+
 def test_news_bundle_persists_typed_global_negative_result(monkeypatch) -> None:
     monkeypatch.setattr(
         "tradingagents.agents.utils.news_data_tools.route_to_vendor",

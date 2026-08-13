@@ -33,7 +33,9 @@ from typing import Any
 from pydantic import ValidationError
 
 from tradingagents.agents.schemas._research_case import CoverageRefV1, EvidenceRefV2
+from tradingagents.dataflows.capability_result import CapabilityResultV1
 from tradingagents.dataflows.coverage import BundleCoverageV1, SourceCoverageV1
+from tradingagents.research.integrity import ResearchIntegrityError
 
 # Recognized analyst report kinds that carry durable evidence.
 _REPORT_KINDS = frozenset({"market", "fundamentals", "news", "sentiment"})
@@ -280,6 +282,9 @@ class EvidenceRegistry:
     coverage_by_capability: Mapping[str, tuple[CoverageRefV1, ...]] = field(
         default_factory=dict
     )
+    capability_results_by_capability: Mapping[
+        str, tuple[CapabilityResultV1, ...]
+    ] = field(default_factory=dict)
     # First evidence ref registered for each prefetch state_key (e.g.
     # ``adjusted_price_bundle``), so short ``evidence:`` keys can be resolved.
     evidence_by_state_key: Mapping[str, EvidenceRefV2] = field(default_factory=dict)
@@ -307,6 +312,11 @@ class EvidenceRegistry:
     def get_coverage(self, capability: str) -> tuple[CoverageRefV1, ...]:
         return self.coverage_by_capability.get(capability, ())
 
+    def get_capability_results(
+        self, capability: str
+    ) -> tuple[CapabilityResultV1, ...]:
+        return self.capability_results_by_capability.get(capability, ())
+
     def resolve_evidence_key(self, key: str) -> EvidenceRefV2 | None:
         """Resolve a short ``evidence:<label>`` key to a durable evidence ref."""
         state_key = self._EVIDENCE_KEY_TO_STATE_KEY.get(key)
@@ -329,11 +339,14 @@ class EvidenceRegistry:
 def build_evidence_registry(
     store: Any,
     run_id: str,
+    *,
+    expected_ticker: str | None = None,
 ) -> EvidenceRegistry:
     """Scan a run's artifact.written/report.updated events into a registry.
 
-    Unreadable or malformed artifacts are skipped and never fail the run;
-    only valid current-run artifacts are registered.
+    Recoverable absence is represented by typed capability results. Corrupt,
+    cross-run, identity-conflicting, or temporally invalid selected artifacts
+    raise ``ResearchIntegrityError`` and cannot silently become partial output.
     """
     events = store.read_events(run_id)
 
@@ -346,6 +359,7 @@ def build_evidence_registry(
 
     evidence_refs: list[EvidenceRefV2] = []
     coverage_refs: list[CoverageRefV1] = []
+    capability_results: list[CapabilityResultV1] = []
     seen_ref_ids: set[str] = set()
 
     def register_evidence(
@@ -381,22 +395,57 @@ def build_evidence_registry(
         evidence_refs.append(ref)
         return ref
 
-    # 1. Persisted evidence bundles.
+    # 1. Persisted evidence bundles. A later committed retry wins; selection
+    # happens before reading so a corrupt selected retry cannot fall back to a
+    # favorable older artifact.
     evidence_by_state_key: dict[str, EvidenceRefV2] = {}
-    for event in events:
-        if event.type != "artifact.written":
-            continue
+    bundle_candidates = [
+        event
+        for event in events
+        if event.type == "artifact.written"
+        and event.payload.get("kind") == "evidence-bundle"
+        and isinstance(event.payload.get("state_key"), str)
+    ]
+    selected_by_state_key: dict[str, Any] = {}
+    for event in bundle_candidates:
+        if getattr(event, "run_id", run_id) != run_id:
+            raise ResearchIntegrityError("cross_run_evidence_linkage")
+        state_key = str(event.payload["state_key"])
+        current = selected_by_state_key.get(state_key)
+        if current is None or _artifact_selection_key(event) > _artifact_selection_key(
+            current
+        ):
+            selected_by_state_key[state_key] = event
+
+    for state_key in sorted(selected_by_state_key):
+        event = selected_by_state_key[state_key]
         payload = event.payload
-        if payload.get("kind") != "evidence-bundle":
-            continue
         artifact_id = str(payload["artifact_id"])
         try:
             raw = store.read_artifact(run_id, artifact_id)
+            _validate_artifact_hash(raw, artifact_id, payload)
             bundle = json.loads(raw.decode("utf-8"))
             if not isinstance(bundle, dict):
                 raise ValueError("evidence bundle must be a JSON object")
-        except Exception:
-            continue
+        except ResearchIntegrityError:
+            raise
+        except Exception as exc:
+            raise ResearchIntegrityError("selected_evidence_artifact_corrupt") from exc
+        bundle_ticker = bundle.get("ticker")
+        if (
+            expected_ticker is not None
+            and isinstance(bundle_ticker, str)
+            and bundle_ticker != expected_ticker
+        ):
+            raise ResearchIntegrityError("evidence_instrument_identity_conflict")
+        typed_results = _typed_capability_results(bundle)
+        _validate_unique_capability_results(typed_results)
+        declared_result_ids = payload.get("capability_result_ids")
+        if isinstance(declared_result_ids, Mapping) and dict(declared_result_ids) != {
+            result.capability: result.capability_result_id for result in typed_results
+        }:
+            raise ResearchIntegrityError("capability_result_linkage_invalid")
+        capability_results.extend(typed_results)
         ref = register_evidence(
             canonical_json_sha256(bundle),
             artifact_id,
@@ -405,29 +454,37 @@ def build_evidence_registry(
             _bundle_source_observed_at(bundle),
             _parse_event_time(event.timestamp),
         )
-        state_key = payload.get("state_key")
-        if isinstance(state_key, str) and state_key:
-            # First registered bundle wins for each state_key so a re-run
-            # cannot silently replace an already-durable evidence reference.
-            evidence_by_state_key.setdefault(state_key, ref)
+        evidence_by_state_key[state_key] = ref
         coverage_refs.extend(_bundle_coverage(bundle, artifact_id))
 
     # 2. Committed analyst report revisions.
     report_evidence_by_lens: dict[str, EvidenceRefV2] = {}
+    report_candidates: dict[str, Any] = {}
     for event in events:
         if event.type != "report.updated":
             continue
         report_kind = event.payload.get("report_kind")
         if report_kind not in _REPORT_KINDS:
             continue
+        current = report_candidates.get(str(report_kind))
+        if current is None or _report_selection_key(event) > _report_selection_key(
+            current
+        ):
+            report_candidates[str(report_kind)] = event
+    for report_kind in sorted(report_candidates):
+        event = report_candidates[report_kind]
         artifact_id = str(event.payload.get("artifact_id") or "")
         written = artifact_written.get(artifact_id)
         if written is None:
-            continue
+            raise ResearchIntegrityError("report_artifact_linkage_invalid")
         try:
-            content = store.read_artifact(run_id, artifact_id).decode("utf-8")
-        except Exception:
-            continue
+            raw = store.read_artifact(run_id, artifact_id)
+            _validate_artifact_hash(raw, artifact_id, written.payload)
+            content = raw.decode("utf-8")
+        except ResearchIntegrityError:
+            raise
+        except Exception as exc:
+            raise ResearchIntegrityError("selected_report_artifact_corrupt") from exc
         media_type = str(written.payload.get("media_type") or "text/markdown")
         locator = str(written.payload.get("locator") or "")
         ref = register_evidence(
@@ -438,7 +495,7 @@ def build_evidence_registry(
             None,
             _parse_event_time(written.timestamp),
         )
-        report_evidence_by_lens.setdefault(report_kind, ref)
+        report_evidence_by_lens[report_kind] = ref
 
     by_ref_id = {ref.ref_id: ref for ref in evidence_refs}
     by_artifact_id: dict[str, list[EvidenceRefV2]] = {}
@@ -447,6 +504,11 @@ def build_evidence_registry(
     coverage_by_capability: dict[str, list[CoverageRefV1]] = {}
     for ref in coverage_refs:
         coverage_by_capability.setdefault(ref.capability, []).append(ref)
+    results_by_capability: dict[str, list[CapabilityResultV1]] = {}
+    for result in capability_results:
+        results_by_capability.setdefault(result.capability, []).append(result)
+    if any(len(results) > 1 for results in results_by_capability.values()):
+        raise ResearchIntegrityError("duplicate_selected_capability_result")
 
     return EvidenceRegistry(
         evidence_refs=tuple(evidence_refs),
@@ -456,6 +518,77 @@ def build_evidence_registry(
         coverage_by_capability={
             k: tuple(v) for k, v in coverage_by_capability.items()
         },
+        capability_results_by_capability={
+            k: tuple(v) for k, v in results_by_capability.items()
+        },
         evidence_by_state_key=evidence_by_state_key,
         report_evidence_by_lens=report_evidence_by_lens,
     )
+
+
+def _artifact_selection_key(event: Any) -> tuple[int, int, str]:
+    committed = event.payload.get("committed_sequence", 0)
+    return (
+        int(committed) if isinstance(committed, int) else 0,
+        int(getattr(event, "sequence", 0)),
+        str(event.payload.get("artifact_id") or ""),
+    )
+
+
+def _report_selection_key(event: Any) -> tuple[int, int, str]:
+    revision = event.payload.get("revision", 0)
+    return (
+        int(revision) if isinstance(revision, int) else 0,
+        int(getattr(event, "sequence", 0)),
+        str(event.payload.get("artifact_id") or ""),
+    )
+
+
+def _validate_artifact_hash(
+    raw: bytes, artifact_id: str, payload: Mapping[str, Any]
+) -> None:
+    actual = hashlib.sha256(raw).hexdigest()
+    declared = payload.get("content_sha256")
+    if isinstance(declared, str) and declared != actual:
+        raise ResearchIntegrityError("evidence_artifact_hash_mismatch")
+    suffix = artifact_id.rsplit(":", 1)[-1]
+    if len(suffix) == 64 and suffix != actual:
+        raise ResearchIntegrityError("evidence_artifact_hash_mismatch")
+
+
+def _typed_capability_results(
+    bundle: Mapping[str, Any],
+) -> tuple[CapabilityResultV1, ...]:
+    results: list[CapabilityResultV1] = []
+    for wrapped in bundle.get("results", ()):
+        if not isinstance(wrapped, Mapping):
+            continue
+        semantic = wrapped.get("capability_result")
+        if semantic is None:
+            continue
+        if not isinstance(semantic, Mapping):
+            raise ResearchIntegrityError("capability_result_contract_invalid")
+        try:
+            result = CapabilityResultV1.model_validate(semantic)
+        except (ValidationError, ValueError) as exc:
+            raise ResearchIntegrityError("capability_result_contract_invalid") from exc
+        declared_id = wrapped.get("capability_result_id")
+        if declared_id is not None and declared_id != result.capability_result_id:
+            raise ResearchIntegrityError("capability_result_linkage_invalid")
+        cutoff = result.analysis_cutoff_at
+        for timestamp in (
+            result.published_at_or_filing_at,
+            result.source_observed_at,
+        ):
+            if cutoff is not None and timestamp is not None and timestamp > cutoff:
+                raise ResearchIntegrityError("selected_evidence_after_cutoff")
+        results.append(result)
+    return tuple(results)
+
+
+def _validate_unique_capability_results(
+    results: tuple[CapabilityResultV1, ...],
+) -> None:
+    capabilities = [result.capability for result in results]
+    if len(set(capabilities)) != len(capabilities):
+        raise ResearchIntegrityError("duplicate_capability_result")

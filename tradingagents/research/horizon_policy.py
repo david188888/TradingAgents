@@ -325,8 +325,22 @@ def _official_disclosures(
         candidate_sources = ("cninfo.announcements", "exchange.announcements")
     else:
         candidate_sources = ("sec.company_filings",)
-    required_sources = candidate_sources[:1] if requirement == "required" else ()
-    optional_sources = candidate_sources[1:] if requirement == "required" else candidate_sources
+    required_sources: tuple[str, ...] = ()
+    required_groups: tuple[SourceGroupRequirementV1, ...] = ()
+    optional_sources = candidate_sources
+    if requirement == "required":
+        if market == "a_share":
+            required_groups = (
+                SourceGroupRequirementV1(
+                    group_id="official_disclosure_primary",
+                    minimum_usable=1,
+                    source_ids=candidate_sources,
+                ),
+            )
+            optional_sources = ()
+        else:
+            required_sources = candidate_sources
+            optional_sources = ()
     return _capability(
         "official_disclosures",
         requirement,
@@ -335,6 +349,7 @@ def _official_disclosures(
         required_sources,
         optional_sources,
         budget=_budget(3, 1000, 20),
+        required_source_groups=required_groups,
     )
 
 

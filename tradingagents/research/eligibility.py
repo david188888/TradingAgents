@@ -14,6 +14,7 @@ from tradingagents.agents.schemas._research_case import (
     EvidenceVerdict,
     PublicClaim,
 )
+from tradingagents.dataflows.capability_result import CapabilityResultV1
 from tradingagents.research.horizon_policy import DataWindowPlanV1, LensGroupV1
 
 Eligibility = Literal["full", "limited", "none"]
@@ -24,6 +25,17 @@ class EligibilityAssessment:
     decision_eligibility: Eligibility
     data_quality: DataQuality
     reason_codes: tuple[str, ...]
+    forced_research_rating: Literal["insufficient_evidence"] | None = None
+    missing_capability_actions: tuple[MissingCapabilityAction, ...] = ()
+
+
+@dataclass(frozen=True)
+class MissingCapabilityAction:
+    capability: str
+    availability: str
+    reason_code: str
+    required_evidence: str
+    review_trigger: str
 
 
 def assess_decision_eligibility(
@@ -33,6 +45,7 @@ def assess_decision_eligibility(
     claims: Iterable[PublicClaim],
     analyst_cards: Iterable[AnalystCard],
     coverage_refs: Iterable[CoverageRefV1],
+    capability_results: Iterable[CapabilityResultV1] = (),
     conflicts: Iterable[ConflictRecord] = (),
     used_optional_capabilities: Iterable[str] = (),
 ) -> EligibilityAssessment:
@@ -40,12 +53,19 @@ def assess_decision_eligibility(
     claim_items = tuple(claims)
     cards = tuple(analyst_cards)
     coverage = {item.capability: item for item in coverage_refs}
+    typed_results = {item.capability: item for item in capability_results}
     conflict_items = tuple(conflicts)
     required = tuple(item.capability_id for item in plan.capabilities if item.requirement == "required")
     required_statuses = {
         capability: coverage.get(capability).envelope.bundle_completeness
         if coverage.get(capability) is not None
         else "unavailable"
+        for capability in required
+    }
+    required_availability = {
+        capability: typed_results[capability].availability
+        if capability in typed_results
+        else None
         for capability in required
     }
     fact_lenses = _usable_lenses(claim_items, cards)
@@ -65,7 +85,13 @@ def assess_decision_eligibility(
         eligibility: Eligibility = "none"
     else:
         incomplete_required = [
-            capability for capability, status in required_statuses.items() if status != "complete"
+            capability
+            for capability, status in required_statuses.items()
+            if status != "complete"
+            or (
+                capability in typed_results
+                and typed_results[capability].freshness != "current"
+            )
         ]
         if evidence_verdict == "LOW_CONFIDENCE":
             codes.append("evidence_low_confidence")
@@ -85,7 +111,43 @@ def assess_decision_eligibility(
         coverage=coverage,
         used_optional_capabilities=tuple(used_optional_capabilities),
     )
-    return EligibilityAssessment(eligibility, data_quality, tuple(codes))
+    unavailable_required = tuple(
+        capability
+        for capability, availability in required_availability.items()
+        if availability
+        in {"not_covered", "not_supported", "provider_unavailable", "invalid"}
+    )
+    actions = tuple(
+        _missing_action(capability, typed_results[capability])
+        for capability in unavailable_required
+    )
+    return EligibilityAssessment(
+        eligibility,
+        data_quality,
+        tuple(codes),
+        "insufficient_evidence" if unavailable_required else None,
+        actions,
+    )
+
+
+def _missing_action(
+    capability: str, result: CapabilityResultV1
+) -> MissingCapabilityAction:
+    reason = next(
+        (
+            attempt.reason_code
+            for attempt in result.attempts
+            if attempt.outcome != "observed"
+        ),
+        "required_capability_unavailable",
+    )
+    return MissingCapabilityAction(
+        capability=capability,
+        availability=result.availability,
+        reason_code=reason,
+        required_evidence=f"verified_{capability}",
+        review_trigger=f"recheck_{capability}_when_provider_or_filing_is_available",
+    )
 
 
 def _usable_lenses(

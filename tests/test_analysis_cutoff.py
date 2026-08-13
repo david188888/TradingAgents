@@ -91,3 +91,14 @@ def test_invalid_cutoff_blocks_price_and_news_provider_calls(monkeypatch) -> Non
     assert news_bundle["status"] == "invalid"
     assert price_bundle["reason_code"] == "analysis_cutoff_resolution_failed"
     assert news_bundle["reason_code"] == "analysis_cutoff_resolution_failed"
+    typed = {
+        item["capability"]: item["capability_result"]
+        for item in news_bundle["results"]
+    }
+    assert typed["company_event_window"]["availability"] == "invalid"
+    assert typed["official_disclosures"]["availability"] == "invalid"
+    assert all(
+        attempt["outcome"] == "skipped_unobserved"
+        for result in typed.values()
+        for attempt in result["attempts"]
+    )

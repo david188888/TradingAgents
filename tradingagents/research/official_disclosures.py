@@ -39,6 +39,11 @@ def build_official_disclosure_result(
 ) -> dict[str, Any]:
     """Return one durable result that preserves every policy-declared source."""
 
+    if cutoff.status != "resolved":
+        raise ValueError("official disclosure fetch requires a resolved cutoff")
+    if cutoff.ticker != symbol or cutoff.analysis_date != analysis_date:
+        raise ValueError("official disclosure cutoff identity does not match request")
+
     plan = build_data_window_plan(
         horizon,
         analysis_date,
@@ -94,11 +99,20 @@ def build_official_disclosure_result(
             source_id = _SOURCE_BY_VENDOR.get(trace.vendor)
             if source_id is None or source_id not in source_ids:
                 continue
+            outcome = trace.outcome
+            reason_code = trace.reason_code
+            if (
+                source_id == "exchange.announcements"
+                and outcome == "observed"
+                and _is_non_official_exchange_fallback(routed.result)
+            ):
+                outcome = "invalid_payload"
+                reason_code = "non_official_fallback_not_eligible"
             attempt = ProviderAttemptV1(
                 source_id=source_id,
                 provider=trace.vendor,
-                outcome=trace.outcome,
-                reason_code=trace.reason_code,
+                outcome=outcome,
+                reason_code=reason_code,
                 recorded_at=trace.recorded_at,
                 started_at=trace.started_at,
                 ended_at=trace.ended_at,
@@ -272,3 +286,8 @@ def _unavailable_coverage(
         degradations=(reason_code,),
         as_of=analysis_date,
     )
+
+
+def _is_non_official_exchange_fallback(raw: object) -> bool:
+    rendered = str(raw).lower()
+    return "# source: eastmoney" in rendered or "# source: 东方财富" in rendered

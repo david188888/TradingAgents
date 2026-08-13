@@ -47,6 +47,28 @@ def assemble_partial_research_case(
     )
 
 
+def assemble_fail_stop_research_case(
+    snapshot: RunSnapshot,
+    *,
+    source_sequence: int,
+    reason_code: str,
+) -> ResearchCaseV2:
+    """Publish a safe shell when attribution or temporal integrity is unsafe."""
+
+    result = assemble_partial_research_case(
+        snapshot,
+        source_sequence=source_sequence,
+        evidence_verdict="FAIL_STOP",
+    )
+    return result.model_copy(
+        update={
+            "omissions": tuple(
+                sorted(set(result.omissions) | {f"research_integrity.{reason_code}"})
+            )
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Full evidence-bound assembler
 # ---------------------------------------------------------------------------
@@ -80,14 +102,16 @@ from tradingagents.research.horizon_policy import DataWindowPlanV1  # noqa: E402
 # version and stays empty.
 _LENS_CAPABILITIES: dict[str, tuple[str, ...]] = {
     "market": ("adjusted_price_history",),
-    "news": ("company_event_window",),
+    "news": ("company_event_window", "official_disclosures"),
     "sentiment": (),  # filled dynamically from registry in _sentiment_capabilities
-    "fundamentals": (),
+    "fundamentals": ("fundamentals_quarterly", "fundamentals_annual"),
 }
 
 # Fixed, non-supplement coverage capabilities that belong to price/event lenses.
 _FIXED_COVERAGE_CAPABILITIES = frozenset(
-    {"adjusted_price_history", "company_event_window"}
+    capability
+    for capabilities in _LENS_CAPABILITIES.values()
+    for capability in capabilities
 )
 
 
@@ -475,6 +499,9 @@ def assemble_research_case(
                 )
                 if ref is not None:
                     coverage_by_id.setdefault(ref_id, ref)
+    for capability in plan.capabilities:
+        for ref in registry.get_coverage(capability.capability_id):
+            coverage_by_id.setdefault(ref.coverage_ref_id, ref)
 
     evidence_refs = tuple(evidence_by_id.values())
     coverage_refs = tuple(coverage_by_id.values())
@@ -492,22 +519,54 @@ def assemble_research_case(
         claims=public_claims,
         analyst_cards=analyst_cards,
         coverage_refs=coverage_refs,
+        capability_results=tuple(
+            result
+            for capability in plan.capabilities
+            for result in registry.get_capability_results(capability.capability_id)
+        ),
         conflicts=(),
         used_optional_capabilities=used_optional_capabilities,
     )
     decision_eligibility = assessment.decision_eligibility
     data_quality = assessment.data_quality
 
+    generated_unknowns = tuple(
+        _missing_capability_unknown(action)
+        for action in assessment.missing_capability_actions
+        if _missing_capability_claim_key(action.capability) not in claim_keys
+    )
+    public_claims += generated_unknowns
+    claim_keys.update(claim.claim_key for claim in generated_unknowns)
+    existing_review_ids = {item.item_id for item in review_items}
+    generated_reviews = tuple(
+        _missing_capability_review(action)
+        for action in assessment.missing_capability_actions
+        if f"verify_{action.capability}" not in existing_review_ids
+    )
+    review_items += generated_reviews
+    catalysts += generated_reviews
+    if generated_reviews:
+        review_plan = ReviewPlan(
+            next_review_at=None,
+            item_ids=tuple(item.item_id for item in review_items),
+            reason=draft.next_review,
+        )
+
     if decision_eligibility == "none":
         research_rating = None
         rating_confidence = None
     else:
-        research_rating = draft.research_tilt
+        research_rating = assessment.forced_research_rating or draft.research_tilt
         rating_confidence = draft.confidence
 
     availability = (
         "partial"
-        if (omissions or scenarios is None or dropped_facts)
+        if (
+            omissions
+            or scenarios is None
+            or dropped_facts
+            or assessment.missing_capability_actions
+        )
         else "full"
     )
 
@@ -534,4 +593,46 @@ def assemble_research_case(
         coverage_refs=coverage_refs,
         audit_refs=(),
         omissions=tuple(sorted(omissions)),
+    )
+
+
+def _missing_capability_claim_key(capability: str) -> str:
+    lens = (
+        "news"
+        if capability == "official_disclosures"
+        else "fundamentals"
+        if capability.startswith("fundamentals_")
+        else "market"
+    )
+    topic = (
+        "governance_risk"
+        if capability == "official_disclosures"
+        else "growth_quality"
+        if capability.startswith("fundamentals_")
+        else "market_trend"
+    )
+    return f"{lens}.{topic}.{capability}.uncertain"
+
+
+def _missing_capability_unknown(action) -> PublicClaim:
+    return PublicClaim(
+        claim_key=_missing_capability_claim_key(action.capability),
+        claim_type="unknown",
+        text=(
+            f"Required capability {action.capability} is unavailable "
+            f"({action.reason_code}); no substantive conclusion is inferred from it."
+        ),
+        action_impact="limits",
+        required_evidence=(action.required_evidence,),
+        review_trigger=action.review_trigger,
+    )
+
+
+def _missing_capability_review(action) -> ReviewItem:
+    return ReviewItem(
+        item_id=f"verify_{action.capability}",
+        text=f"Recheck {action.capability} after resolving {action.reason_code}.",
+        claim_keys=(_missing_capability_claim_key(action.capability),),
+        trigger_kind="filing",
+        trigger_value=action.review_trigger,
     )

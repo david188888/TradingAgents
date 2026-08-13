@@ -261,13 +261,11 @@ def _extract_bundle_capabilities(state_key: str, bundle: dict[str, Any]) -> tupl
     """Return the capabilities covered by one persisted prefetch bundle."""
     from tradingagents.research.evidence_registry import _CAPABILITY_BY_STATE_KEY
 
-    fixed = _CAPABILITY_BY_STATE_KEY.get(state_key)
-    if fixed is not None:
-        return fixed
+    fixed = _CAPABILITY_BY_STATE_KEY.get(state_key, ())
     results = bundle.get("results")
     if not isinstance(results, list):
-        return ()
-    return tuple(
+        return fixed
+    dynamic = tuple(
         str(result["capability"])
         for result in results
         if isinstance(result, dict)
@@ -277,6 +275,27 @@ def _extract_bundle_capabilities(state_key: str, bundle: dict[str, Any]) -> tupl
             or isinstance(result.get("capability_result"), dict)
         )
     )
+    return tuple(dict.fromkeys(fixed + dynamic))
+
+
+def _extract_bundle_result_ids(bundle: dict[str, Any]) -> dict[str, str]:
+    """Validate and index typed semantic results before durable publication."""
+    from tradingagents.dataflows.capability_result import CapabilityResultV1
+
+    indexed: dict[str, str] = {}
+    for wrapped in bundle.get("results", ()):
+        if not isinstance(wrapped, dict) or not isinstance(
+            wrapped.get("capability_result"), dict
+        ):
+            continue
+        result = CapabilityResultV1.model_validate(wrapped["capability_result"])
+        declared_id = wrapped.get("capability_result_id")
+        if declared_id != result.capability_result_id:
+            raise ValueError("capability result ID does not match semantic content")
+        if result.capability in indexed:
+            raise ValueError("duplicate capability result in one committed bundle")
+        indexed[result.capability] = result.capability_result_id
+    return indexed
 
 
 def _promote_evidence_bundles(
@@ -314,6 +333,7 @@ def _promote_evidence_bundles(
         if identity in promoted_evidence:
             continue
         canonical_value = canonical_json_str(bundle)
+        capability_result_ids = _extract_bundle_result_ids(bundle)
         artifact = observer.store.store_artifact(
             observer.run_id,
             kind="evidence-bundle",
@@ -335,6 +355,7 @@ def _promote_evidence_bundles(
                     "graph_task_id": commit.graph_task_id,
                     "state_key": state_key,
                     "evidence_bundle_capabilities": list(capabilities),
+                    "capability_result_ids": capability_result_ids,
                     "committed_sequence": committed_sequence,
                 },
                 parent_event_id=checkpoint_event_id,

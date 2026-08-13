@@ -1,12 +1,14 @@
 import json
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
-from tradingagents.dataflows.coverage import CoveredText
+from tradingagents.dataflows.capability_result import CapabilityResultV1, ProviderAttemptV1
+from tradingagents.dataflows.coverage import BundleCoverageV1, CoveredText, SourceCoverageV1
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
 from tradingagents.research.analysis_cutoff import (
@@ -15,7 +17,7 @@ from tradingagents.research.analysis_cutoff import (
     parse_analysis_cutoff,
     time_sensitive_fetch_blocked,
 )
-from tradingagents.research.horizon_policy import InvestmentHorizon
+from tradingagents.research.horizon_policy import InvestmentHorizon, build_data_window_plan
 from tradingagents.research.news_prefetch import build_news_prefetch_plan
 from tradingagents.research.official_disclosures import (
     build_official_disclosure_result,
@@ -250,9 +252,7 @@ def create_news_window_prefetch_node():
         horizon = _state_horizon(state)
         if time_sensitive_fetch_blocked(state):
             return {
-                "news_window_bundle": cutoff_failure_bundle(
-                    state, capability="company_event_window"
-                )
+                "news_window_bundle": _news_cutoff_failure_bundle(state, horizon)
             }
         return {
             "news_window_bundle": run_news_windows(
@@ -264,6 +264,90 @@ def create_news_window_prefetch_node():
         }
 
     return prefetch
+
+
+def _news_cutoff_failure_bundle(
+    state: Mapping[str, Any], horizon: InvestmentHorizon
+) -> str:
+    """Retain the legacy failure shell plus typed negative planned results."""
+
+    legacy = json.loads(
+        cutoff_failure_bundle(state, capability="company_event_window")
+    )
+    cutoff = parse_analysis_cutoff(state.get("analysis_cutoff"))
+    assert cutoff is not None and cutoff.status == "invalid"
+    plan = build_data_window_plan(
+        horizon,
+        cutoff.analysis_date,
+        market=cutoff.market,
+    )
+    captured = datetime.now(timezone.utc)
+    results = []
+    for capability_id in ("company_event_window", "official_disclosures"):
+        capability = plan.capability_index()[capability_id]
+        source_ids = (
+            tuple(capability.required_source_ids)
+            + tuple(
+                source_id
+                for group in capability.required_source_groups
+                for source_id in group.source_ids
+            )
+            + tuple(capability.optional_source_ids)
+        )
+        attempts = tuple(
+            ProviderAttemptV1(
+                source_id=source_id,
+                provider=source_id.split(".", 1)[0],
+                outcome="skipped_unobserved",
+                reason_code="analysis_cutoff_resolution_failed",
+                recorded_at=captured,
+            )
+            for source_id in source_ids
+        )
+        records = tuple(
+            SourceCoverageV1(
+                capability=capability_id,
+                source_id=source_id,
+                item_count=0,
+                completeness="unavailable",
+                sources=(source_id,),
+                degradations=("analysis_cutoff_resolution_failed",),
+                as_of=cutoff.analysis_date,
+            )
+            for source_id in source_ids
+        )
+        coverage = BundleCoverageV1.build(
+            capability=capability_id,
+            records=records,
+            required_source_ids=capability.required_source_ids,
+            required_source_groups=capability.required_source_groups,
+            optional_source_ids=capability.optional_source_ids,
+        )
+        typed = CapabilityResultV1(
+            capability=capability_id,
+            symbol=cutoff.ticker,
+            market=cutoff.market,
+            analysis_date=cutoff.analysis_date,
+            analysis_cutoff_at=None,
+            availability="invalid",
+            freshness="unknown",
+            coverage=coverage,
+            source_ids=source_ids,
+            attempts=attempts,
+            degradation_codes=("analysis_cutoff_resolution_failed",),
+            limitations=("analysis_cutoff_resolution_failed",),
+        )
+        results.append(
+            {
+                "capability": capability_id,
+                "requirement": capability.requirement,
+                "status": "unavailable",
+                "capability_result_id": typed.capability_result_id,
+                "capability_result": typed.semantic_payload(),
+            }
+        )
+    legacy["results"] = results
+    return json.dumps(legacy, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 @tool

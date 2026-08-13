@@ -14,6 +14,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -21,7 +22,7 @@ import requests
 from .china_data import ChinaDataUnavailableError
 from .coverage import CoveredText, SourceCoverageV1
 from .eastmoney import EASTMONEY_DATACENTER_URL, em_get
-from .errors import VendorHTTPError
+from .errors import NoMarketDataError, VendorHTTPError
 from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare_symbol
 
 SSE_ANNOUNCEMENT_URL = "https://query.sse.com.cn/security/stock/queryCompanyBulletin.do"
@@ -287,7 +288,11 @@ def get_a_share_cninfo_announcements(
         pagination_exhausted = False
 
     if not records:
-        raise ChinaDataUnavailableError(f"CNINFO returned no announcements for {code}.")
+        raise NoMarketDataError(
+            ticker,
+            code,
+            "CNINFO completed the requested announcement query with no records.",
+        )
     observed_dates = sorted(record["Published"] for record in records if record["Published"])
     actual_start = observed_dates[0] if observed_dates else None
     actual_end = observed_dates[-1] if observed_dates else None
@@ -302,8 +307,13 @@ def get_a_share_cninfo_announcements(
         degradations.append("requested_window_unproven")
     elif invalid_published_count:
         completeness = "partial"
-    elif actual_start == start_date and actual_end == end_date:
+    elif start_date and end_date and pagination_exhausted:
         completeness = "complete"
+        # For a sparse event dataset, full coverage means the provider query
+        # exhausted the requested interval; it does not require an event on
+        # both boundary dates.
+        actual_start = start_date
+        actual_end = end_date
     else:
         completeness = "partial"
         degradations.append("requested_window_not_fully_observed")
@@ -348,7 +358,10 @@ def _cninfo_total_pages(payload: Mapping[str, Any]) -> int | None:
 def _cninfo_ts_to_date(value: object) -> str:
     if isinstance(value, (int, float)):
         try:
-            return datetime.fromtimestamp(float(value) / 1000).strftime("%Y-%m-%d")
+            return datetime.fromtimestamp(
+                float(value) / 1000,
+                tz=ZoneInfo("Asia/Shanghai"),
+            ).strftime("%Y-%m-%d")
         except (OSError, OverflowError, ValueError):
             return ""
     candidate = str(value or "")[:10].replace("/", "-")

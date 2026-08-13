@@ -271,6 +271,8 @@ output/
 !/tests/test_identity_and_news_time.py
 !/tests/test_fundamentals_prefetch.py
 !/tests/test_official_disclosure_capability.py
+!/tests/test_evidence_registry_integrity.py
+!/tests/test_research_eligibility_closure.py
 !/tests/web/
 /tests/web/*
 !/tests/web/test_role_projections.py
