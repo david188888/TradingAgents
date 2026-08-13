@@ -73,8 +73,15 @@ CapabilityResultV1
   freshness
   coverage
   source_ids[]
+  attempts[]
   artifact_id?
+  committed_sequence
   fallback_from[]
+  effective_period
+  published_at_or_filing_at?
+  source_observed_at?
+  fetched_at
+  captured_at
   degradation_codes[]
   limitations[]
 ```
@@ -94,11 +101,24 @@ Freshness is a separate dimension:
 - `stale`
 - `unknown`
 
-Coverage remains represented by the existing `BundleCoverageV1` and its `complete | partial | unknown | unavailable` completeness contract. Separating availability, freshness, and coverage prevents impossible single-enum compromises such as losing the fact that a dataset is both complete for its requested historical window and stale relative to the current run.
+Coverage remains represented by the existing `BundleCoverageV1` and its `complete | partial | unknown | unavailable` completeness contract. Separating availability, freshness, and coverage prevents impossible single-enum compromises such as losing the fact that a dataset is both complete for its requested historical window and stale relative to the current run. Eligibility consumes both typed capability status and coverage; it must not infer the reason for `unavailable` from coverage alone.
+
+Normative crosswalk:
+
+| Availability | Allowed coverage | Required interpretation |
+|---|---|---|
+| `available` | `complete` or `unknown` | Usable payload exists. `unknown` means the requested-versus-observed extent cannot be proven and caps a required capability at `limited`. |
+| `partial` | `partial` or `unknown` | Usable payload exists, but either an observed gap is known or coverage cannot be proven. |
+| `not_covered` | `unavailable` | All sources in the negative-conclusion attempt set were observed and authoritatively reported non-coverage. |
+| `not_supported` | `unavailable` | No implemented producer exists for the required capability/source contract. |
+| `provider_unavailable` | `unavailable` | Required observation was prevented by outage, authentication, throttle, timeout, cooldown, or exhausted attempt budget. |
+| `invalid` | `unavailable` | A payload was observed but failed identity, schema, period, or integrity validation. |
+
+Zero-item negative outcomes are represented durably by `CapabilityResultV1` and its attempt records. `SourceCoverageV1` continues to describe source coverage and uses `completeness=unavailable` plus stable degradations for zero-item records; it is not asked to encode the negative cause by itself.
 
 ### 5.2 VendorAttemptOutcome
 
-Provider routing uses an internal attempt outcome instead of a public sentinel string:
+Provider routing uses a typed attempt outcome instead of a public sentinel string:
 
 - `observed`
 - `not_covered`
@@ -107,7 +127,7 @@ Provider routing uses an internal attempt outcome instead of a public sentinel s
 - `invalid_payload`
 - `skipped_unobserved`
 
-Each outcome retains the provider, source identity, attempt/call identity, error category, timestamps, and artifact/provenance linkage when present.
+Each outcome retains the provider, source identity, attempt/call identity, stable reason code, start/end timestamps, and artifact/provenance linkage when present. The canonical durable capability artifact contains one attempt record for every attempted or skipped eligible source. Negative and skipped outcomes are persisted even when no usable payload exists.
 
 Legacy text-returning tools may render these outcomes at their boundary. Core routing, bundle construction, Registry, and eligibility must consume typed state.
 
@@ -115,12 +135,17 @@ Legacy text-returning tools may render these outcomes at their boundary. Core ro
 
 1. A required source or source group that returns schema-valid data and satisfies its requested coverage produces `available`.
 2. Usable data with incomplete coverage produces `partial`.
-3. `not_covered` is allowed only when all eligible observations required to make that claim were actually attempted and returned authoritative non-coverage.
+3. `not_covered` is allowed only when every source in the capability's **negative-conclusion attempt set** was actually attempted and returned authoritative non-coverage. For a direct required source, the set contains that source. For an any-of source group, it contains every eligible group member until one satisfies the group or all members return authoritative non-coverage. Optional sources are excluded.
 4. Any required provider that remains unobserved because of outage, authentication, rate limiting, timeout, or cooldown prevents a `not_covered` conclusion and produces `provider_unavailable` unless another accepted source group independently satisfies the capability.
 5. A capability without an implemented producer produces `not_supported` with a stable reason code.
 6. A payload that violates schema, identity, period, or integrity requirements produces `invalid`.
 7. When an accepted fallback independently satisfies the full source requirement, the capability may be `available`; the failed primary remains visible through `fallback_from` and provenance.
 8. Optional source failure does not lower a fully satisfied required source group.
+9. Fetch budgets must permit exhaustion of the negative-conclusion attempt set when a `not_covered` conclusion is desired. If budget is exhausted first, remaining sources are durably recorded as `skipped_unobserved` and the aggregate is `provider_unavailable`, never `not_covered`.
+
+### 6.1 Canonical artifact selection
+
+A run may commit retries, but a Research Case must not reselect evidence during replay. For each capability, the assembler selects the highest committed capability artifact whose `committed_sequence` is less than or equal to the candidate Research Case source sequence. It then persists the selected artifact ID, capability-result ID, evidence refs, and coverage refs in the case publication input. Reader replay consumes those persisted selections rather than asking the Registry to choose the first artifact again.
 
 ## 7. Cache and historical-date semantics
 
@@ -132,7 +157,15 @@ When a live source is unavailable but a compatible last-good artifact exists:
 - decision eligibility is capped at `limited` for a stale required capability;
 - the cache must be compatible with the requested symbol, market, capability, period, price basis, and analysis-date boundary.
 
-A historical run must not use a fact published or observed after its analysis date. A later cache write may be used only when the underlying source observation itself is demonstrably at or before the historical analysis date and the artifact preserves that distinction.
+Time fields have distinct meanings:
+
+- `effective_period`: fiscal or market period described by the fact;
+- `published_at_or_filing_at`: when the issuer/source made the fact public;
+- `source_observed_at`: provider-reported observation/event time;
+- `fetched_at`: when TradingAgents requested the source;
+- `captured_at`: when the durable artifact was committed locally.
+
+A historical run must not use a fact whose publication/filing availability is after its analysis-date cutoff. `fetched_at` or `captured_at` after the cutoff is not by itself proof of future leakage, but a mutable endpoint fetched later may satisfy historical coverage only when a preserved point-in-time record proves the payload was public by the cutoff. Unknown publication/filing availability cannot satisfy a required historical fundamentals or official-disclosure capability. Restated statements must retain both original and restatement publication identity; a restatement published after the cutoff is excluded from the historical view.
 
 ## 8. Core data corrections
 
@@ -155,7 +188,7 @@ Add `fundamentals_prefetch_bundle` before the Fundamentals Analyst.
 - Medium: eight quarters are required; five annual years are optional.
 - Long: five annual years are required; twelve quarters are optional.
 
-The bundle records statement type, fiscal period, publication/filing date when available, requested and observed windows, source, units, currency, and limitations.
+The bundle records statement type, fiscal period, publication/filing date, requested and observed windows, source, units, currency, all five time semantics, attempt outcomes, and limitations. Unknown publication/filing date can be displayed as limited evidence for a current run but cannot establish required historical coverage.
 
 The bundle is the canonical current-run snapshot. A later Analyst tool request must reuse the current run's frozen data or request cache rather than silently perform an unconstrained second fetch.
 
@@ -174,6 +207,7 @@ policy declaration
   -> producer
   -> durable artifact
   -> Evidence Registry coverage
+  -> typed capability-status consumer
   -> eligibility consumer
 ```
 
@@ -183,13 +217,15 @@ The invariant is tested for all three horizons and both supported market kinds.
 
 The existing report remains publishable when data is missing.
 
-- All required capabilities complete/current and the Evidence Gate permits publication: eligibility may be `full`.
+- All implemented required capabilities complete/current and the Evidence Gate permits publication: eligibility may be `full`, except in policy cells with an intentionally unsupported required capability.
 - A required capability that is partial or stale: eligibility is at most `limited`.
 - A required capability that is `not_covered`, `not_supported`, `provider_unavailable`, or `invalid`: the report remains publishable, but the top-level stance is forced to `insufficient_evidence`.
 - Optional capability failure affects only related limitations and claim confidence.
 - A model-provided stance or confidence cannot upgrade deterministic eligibility.
 
-Existing verified claims remain visible. The missing capability must yield an `unknown` with a stable reason and a next validation action.
+`assess_decision_eligibility` returns the eligibility, data quality, a forced top-level rating when applicable, and deterministic missing-capability actions. Final case assembly applies this result after parsing the model draft and overrides any incompatible model rating. For every unavailable required capability, assembly creates or merges a code-owned `unknown` and review action from a versioned capability/reason mapping. `ResearchCaseV2` validates that unavailable required capability results cannot coexist with a rating other than `insufficient_evidence`.
+
+Existing verified claims remain visible. The model cannot omit or rewrite the code-owned missing-capability reason and next validation action.
 
 `FAIL_STOP` is reserved for cases where safe attribution or temporal integrity is impossible, including:
 
@@ -198,6 +234,8 @@ Existing verified claims remain visible. The missing capability must yield an `u
 - corrupted artifact/hash or cross-run evidence linkage;
 - payload identity that cannot be associated safely with the requested instrument.
 
+Registry and runner errors are divided into recoverable absence and typed fatal integrity failures. Corrupted artifact/hash, cross-run identity/linkage conflict, instrument conflict, and post-cutoff evidence are not skipped and cannot fall through to the generic partial-case fallback. They propagate to a safe public `FAIL_STOP` shell that withholds substantive claims and exposes only stable public reason codes and remediation guidance.
+
 ## 11. Compatibility and migration
 
 - Public Reader schema major is unchanged.
@@ -205,6 +243,7 @@ Existing verified claims remain visible. The missing capability must yield an `u
 - Existing state bundle keys continue to carry canonical JSON strings.
 - `CoveredText` and legacy text-returning tools remain available at compatibility boundaries.
 - New typed metadata is added within versioned bundles and is rendered to text only at legacy boundaries.
+- Any new public `ResearchCaseV2` field is additive with a legacy-safe default, or is introduced behind a versioned parser path. A golden pre-change serialized `ResearchCaseV2` artifact must continue to open in Reader.
 - The implementation does not change Analyst count, debate order, prompts, model/provider selection, or Reader layout.
 - Python and semantic data-contract changes must invalidate incompatible checkpoints through the existing fingerprint mechanism. Methodology-asset fingerprinting belongs to a later subproject.
 
@@ -216,6 +255,7 @@ The current uncommitted changes to `research_manager.py`, `DecisionBrief.tsx`, w
 
 - Introduce typed capability and provider-attempt contracts.
 - Add deterministic aggregation functions.
+- Persist per-source attempts and contract-required availability, freshness, time fields, actual provider, and fallback metadata.
 - Add unit tests for every valid and invalid transition.
 
 ### Increment B: independent data correctness fixes
@@ -231,23 +271,25 @@ Each correction starts with a focused failing regression test.
 ### Increment C: fundamentals prefetch
 
 - Add the deterministic bundle builder and graph prefetch node.
-- Persist the bundle as an evidence artifact.
+- Persist the bundle, typed attempts, time semantics, and capability result as an evidence artifact.
 - Make Analyst access reuse the frozen current-run result.
 
 ### Increment D: official disclosure coverage
 
-- Register existing A-share official evidence.
-- Emit explicit `not_supported` global coverage until SEC integration exists.
+- Register existing A-share official evidence with typed attempts and time semantics.
+- Emit and persist explicit `not_supported` global coverage until SEC integration exists.
 
 ### Increment E: Registry and eligibility closure
 
 - Register every required capability.
+- Select the latest eligible committed artifact per capability and persist the selection into case publication input.
+- Propagate fatal integrity results instead of skipping them or publishing the generic partial fallback.
 - Add closure tests.
 - Enforce the top-level `insufficient_evidence` cap.
 
-### Increment F: provenance and documentation
+### Increment F: audit presentation and documentation
 
-- Record availability, freshness, period, unit, currency, actual provider, and fallback.
+- Expose already-recorded typed provenance in the audit presentation where safe.
 - Update the learning research and data-capability documentation.
 
 ## 13. Test strategy
@@ -259,6 +301,8 @@ Each correction starts with a focused failing regression test.
 - Fallback source preservation.
 - Stale-cache and historical-date rules.
 - Contract validation and stable reason codes.
+- Coverage/availability crosswalk, including `coverage=unknown`.
+- Negative-conclusion budgets and skipped-unobserved sources.
 
 ### 13.2 Provider routing tests
 
@@ -280,6 +324,8 @@ Use deterministic fake providers for:
 - Timezone boundary cases.
 - Unknown-date news excluded from coverage.
 - Fiscal period, filing date, and analysis date remain distinct.
+- Restatements after the historical cutoff are excluded.
+- Unknown filing dates do not satisfy historical required coverage.
 
 ### 13.4 Policy closure matrix
 
@@ -291,14 +337,15 @@ x
 a_share | global
 ```
 
-Test a complete fixture, a partial/stale fixture, a required-unavailable fixture, and an identity-conflict fixture.
+Test a complete fixture where the policy cell is implementable, a partial/stale fixture, a required-unavailable fixture, an identity-conflict fixture, an artifact-corruption fixture, a cross-run-linkage fixture, and a post-cutoff fixture.
 
 Expected results:
 
-- complete -> `full` is reachable;
+- A-share short/medium/long and global short: a complete fixture makes `full` reachable when all other eligibility conditions pass;
+- global medium/long: `official_disclosures=not_supported`, eligibility is `limited`, and rating is `insufficient_evidence`; no fake SEC-complete fixture is allowed;
 - partial/stale -> at most `limited`;
 - required unavailable -> run completes and stance is `insufficient_evidence`;
-- identity conflict -> `FAIL_STOP`.
+- identity, corruption, cross-run linkage, or post-cutoff conflict -> `FAIL_STOP` safe shell with substantive claims withheld.
 
 ### 13.5 Regression checks
 
@@ -310,6 +357,7 @@ After each increment run:
 - full pytest compared with the recorded pre-change baseline;
 - Ruff;
 - frontend typecheck and existing tests.
+- pre-change serialized `ResearchCaseV2` Reader golden.
 
 The pre-change workspace has known failures. Completion requires no new failures, all subproject tests passing, and related old failures fixed where the changed behavior supersedes them. Network-, credential-, and sandbox-dependent failures must be reported separately rather than hidden.
 
@@ -317,8 +365,8 @@ The pre-change workspace has known failures. Completion requires no new failures
 
 Use the user-requested in-app browser as the primary UI interaction surface. Validate:
 
-1. Create an A-share medium company research run.
-2. Inspect data progress and provider failure identity.
+1. Use the production application path with a deterministic acceptance fixture that injects a named required-provider outage or cooldown into an A-share medium company research run.
+2. Inspect data progress and confirm the injected provider failure identity.
 3. Open the completed Reader.
 4. Verify `insufficient_evidence`, missing reasons, and next validation actions.
 5. Verify supported local facts remain readable.
@@ -326,7 +374,7 @@ Use the user-requested in-app browser as the primary UI interaction surface. Val
 7. Inspect Audit Center to ensure outage/cooldown is not rendered as company non-coverage.
 8. Check browser console, failed requests, and initial DOM for regressions or sensitive debug leakage.
 
-If real credentials are unavailable, use the production application path with deterministic fixtures. Do not fabricate a successful live result.
+Run any credentialed live analysis separately as a smoke check; it is not the deterministic acceptance oracle. Do not fabricate a successful live result.
 
 Computer Use is secondary and limited to desktop-level checks that the browser surface cannot prove efficiently:
 
