@@ -560,9 +560,17 @@ SEC 使用必填字段的 `SecDisclosureCoverageV1` validator，并向
 - exhaustive search + 全部必要 evidence 完成 → coverage complete、availability
   available。
 
-只有 `observed_unit_count > 0 && search_complete=false` 时，generic coverage 才
-允许 `item_count=0` 且 completeness=unknown；这表示已经观察索引但尚未完成
-搜索，不代表目标 filing 存在。只存在 8-K/8-K-A 且索引元数据完整时可
+generic coverage 的零 usable item 只有两个合法例外：
+
+- `observed_unit_count > 0 && search_complete=false` →
+  `item_count=0`、completeness=unknown、availability=partial；
+- `search_complete=true && rejected_target_count>0` →
+  `item_count=0`、completeness=partial、availability=partial。
+
+`search_complete=true && rejected_target_count=0 && item_count=0` 必须是
+completeness=unavailable、availability=not_covered。前两个例外表示已经观察到
+索引或目标，但尚无可用 filing evidence，不代表公司没有 filing。只存在
+8-K/8-K-A 且索引元数据完整时可
 available；任何保留的 10-K/10-Q 及其 amendments 都必须完成 raw 与 normalized
 document 才可 available。`SecFilingIndexV1.coverage` 是搜索和文档完成度的权威
 细分，generic coverage 只是与现有 eligibility 的唯一兼容投影。
@@ -635,6 +643,8 @@ assembler 必须从这个 snapshot 外部凭证判断：v3 及以上 FAIL_STOP�
   cache key、logs 或异常中；
 - incomplete-history + zero target、8-K-only、missing/invalid accepted timestamp、
   recent/history duplicate conflict 和 post-cutoff amendment；
+- exhaustive history + all targets rejected for invalid accepted timestamp，必须
+  生成 partial/zero-item 而不是 not_covered；
 - malformed/missing history manifest ranges、America/New_York DST 转换，以及同日
   市场收盘前/后的 cutoff；
 - fake-clock 下的并发限速、429 cooldown、oversize 和 parser timeout；
