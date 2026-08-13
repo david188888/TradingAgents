@@ -264,6 +264,7 @@ output/
 !/tests/test_thesis_diff.py
 !/tests/test_reader_companion.py
 !/tests/test_reader_audit.py
+!/tests/test_capability_result.py
 /assets/
 /frontend/src/**/*.test.ts
 /frontend/src/**/*.test.tsx
