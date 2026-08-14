@@ -284,7 +284,17 @@ def _generate_llm_summary(
         result = structured_llm.invoke(prompt)
     except Exception as exc:  # noqa: BLE001 - summary must never change run outcome
         LOGGER.warning("debate summary generation failed for %s: %s", snapshot.run_id, exc)
-        return None
+        try:
+            correction = (
+                prompt
+                + "\n\n上一次输出未通过 DebateSummaryArtifact schema，错误如下："
+                + str(exc)
+                + "\n请修正所有 validation error；同时确保 global_summary <=160，研究/风险每轮 summary <=240，lane summary <=200，关键词使用短词组。只返回完整合法对象。"
+            )
+            result = structured_llm.invoke(correction)
+        except Exception as retry_exc:  # noqa: BLE001 - optional recovery path
+            LOGGER.warning("debate summary correction failed for %s: %s", snapshot.run_id, retry_exc)
+            return None
 
     if not isinstance(result, DebateSummaryArtifact):
         LOGGER.warning("debate summary: LLM returned %s, expected DebateSummaryArtifact", type(result))

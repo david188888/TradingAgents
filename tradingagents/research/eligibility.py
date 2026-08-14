@@ -94,7 +94,8 @@ def assess_decision_eligibility(
         codes.append("evidence_gate_blocked")
     if critical:
         codes.append("critical_conflict")
-    if len(fact_lenses) < 2:
+    minimum_independent_lenses = max(1, len(plan.required_lenses))
+    if len(fact_lenses) < minimum_independent_lenses:
         codes.append("insufficient_independent_lenses")
     if codes:
         eligibility: Eligibility = "none"

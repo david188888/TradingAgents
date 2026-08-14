@@ -35,7 +35,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from tradingagents.observability.provenance import capture_vendor_raw
 
-from .coverage import CoveredText, SourceCoverageV1
+from .coverage import CoveredText, PriceSeriesCoverageV1, SourceCoverageV1
 from .errors import (
     NoMarketDataError,
     VendorNotConfiguredError,
@@ -845,6 +845,125 @@ def _make_coverage(
         degradations=degradations,
         as_of=as_of or _today(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Provider: Adjusted stock price history
+# ---------------------------------------------------------------------------
+
+
+def get_stock_adjusted_price_history(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> str:
+    """Retrieve explicitly forward-adjusted daily A-share OHLCV from Wind."""
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    if start > end:
+        raise ValueError("start_date cannot be after end_date")
+    windcode = to_wind_symbol(symbol)
+    params = {
+        "windcode": windcode,
+        "begin_date": start_date,
+        "end_date": end_date,
+        "period": "1d",
+        "aftype": "0",
+        "issusp": "0",
+    }
+    envelope = _call_wind("stock_data", "get_stock_kline", params)
+    tables = _extract_tables(envelope.data)
+    if not tables or tables[0].is_empty:
+        raise NoMarketDataError(
+            symbol,
+            canonical=windcode,
+            detail="Wind returned no adjusted stock kline data",
+        )
+
+    table = tables[0]
+    date_column = next(
+        (
+            column
+            for column in table.columns
+            if str(column).strip().upper() in {"TIME", "DATE", "TRADE_DATE", "日期"}
+        ),
+        None,
+    )
+    if date_column is None:
+        raise WindParamError(
+            "INVALID_PAYLOAD",
+            "Wind stock kline response has no date column",
+        )
+    valid_rows = []
+    valid_dates = []
+    date_index = table.columns.index(date_column)
+    for row in table.rows:
+        value = str(row[date_index])[:10]
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError:
+            continue
+        if start <= parsed <= end:
+            valid_rows.append(row)
+            valid_dates.append(parsed.isoformat())
+    if not valid_dates:
+        raise NoMarketDataError(
+            symbol,
+            canonical=windcode,
+            detail=f"no adjusted rows inside {start_date}..{end_date}",
+        )
+    table = WindTable(
+        columns=table.columns,
+        rows=tuple(valid_rows),
+        column_types=table.column_types,
+        column_units=table.column_units,
+    )
+
+    actual_start = min(valid_dates)
+    actual_end = max(valid_dates)
+    exact_boundaries = actual_start == start_date and actual_end == end_date
+    coverage = PriceSeriesCoverageV1(
+        capability="adjusted_price_history",
+        source_id="wind.stock_kline_qfq_daily",
+        requested_start=start_date,
+        requested_end=end_date,
+        actual_start=actual_start,
+        actual_end=actual_end,
+        item_count=len(valid_dates),
+        completeness="complete" if exact_boundaries else "unknown",
+        sources=(WIND_VENDOR, "wind.stock_kline_qfq_daily"),
+        degradations=(
+            () if exact_boundaries else ("trading_calendar_boundaries_not_proven",)
+        ),
+        as_of=end_date,
+        price_basis="qfq",
+        adjustment_source="wind.stock_data.get_stock_kline(aftype=0)",
+        adjustment_verified=True,
+        granularity="daily",
+    )
+    capture_vendor_raw(
+        {"table": table.row_dicts(), "params": params},
+        metadata={
+            "provider": WIND_VENDOR,
+            "dataset": "adjusted_price_history",
+            "symbol": symbol,
+            "price_basis": "qfq",
+        },
+    )
+    text = "\n".join(
+        [
+            f"# Adjusted stock data for {symbol} ({windcode}) from {start_date} to {end_date}",
+            f"# Source: wind (stock_data.get_stock_kline, skill {SKILL_VERSION})",
+            "# Price basis: qfq",
+            "# Adjustment source: wind.stock_data.get_stock_kline(aftype=0)",
+            "# This series is for historical returns, trend, and indicators; do not use it as an executable current-price quote.",
+            "",
+            _table_to_csv(table),
+        ]
+    )
+    if envelope.warnings:
+        text += "\n# Warnings: " + "; ".join(envelope.warnings)
+    return CoveredText(text, coverage)
 
 
 # ---------------------------------------------------------------------------

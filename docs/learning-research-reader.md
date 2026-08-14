@@ -1,12 +1,12 @@
 # TradingAgents 学习型研究与 Reader
 
-**状态：** 持续维护  
-**最近核验：** 2026-08-13  
+**状态：** Legacy composite reference; pending staged decomposition
+**最近核验：** 2026-08-13
 **适用范围：** 学习型公司研究、持仓复盘、Research Case、Thesis Diff、Reader、Companion 与 Audit Center
 
-本文是上述范围的唯一长期事实来源。它记录当前有效的产品边界、系统流程、稳定契约和真实实现状态，不记录逐日开发日志。历史方案、废弃设计和完成过程通过 Git 历史查看。
+> **迁移提示：** 本文约 1,800 行正文在 Phase 1 原样保留，供兼容、历史核对和迁移使用。它不再是唯一或权威的架构、契约、状态来源；当前入口见 [docs/README.md](README.md)，当前架构见 [ARCHITECTURE.md](../ARCHITECTURE.md)，机器定义的契约见 [docs/contracts/README.md](contracts/README.md) 与代码。计划、设计和验收记录仍按其文档分类处理，不应覆盖当前实现事实。
 
-如果本文与代码不一致，以已经合入 `main` 且通过测试的代码为准，并在同一修复中更新本文。分支上的功能只能标记为 `Branch Ready`，不能提前标记为 `Merged`。
+本文正文保留既有产品边界、系统流程、稳定契约和实现记录。内容移动、拆分或删除属于后续阶段；在此之前，若本文与代码不一致，以代码和测试为准，并在同一修复中更新对应的权威文档。
 
 ## 1. 产品定位
 

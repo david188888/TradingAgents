@@ -184,7 +184,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # chain; non-A-share tickers skip "local" and use yfinance.
         "get_indicators": "local,yfinance",
         # Historical trend analysis must never fall back to raw OHLCV.
-        "get_adjusted_price_history": "tushare,akshare,yfinance,alpha_vantage",
+        "get_adjusted_price_history": "wind,tushare,akshare,yfinance,alpha_vantage",
         # News uses one shared company-news chain; the router filters vendors
         # by market. Global news has its own method-compatible chain.
         "get_news": "tavily,eastmoney,yfinance,alpha_vantage",

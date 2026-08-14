@@ -214,6 +214,7 @@ def _shared_capabilities(
             "akshare.daily_bars",
         )
         adjusted_source_ids = (
+            "wind.stock_kline_qfq_daily",
             "tushare.qfq_daily",
             "akshare.qfq_daily",
         )
@@ -260,11 +261,6 @@ def _shared_capabilities(
         minimum_usable=1,
         source_ids=adjusted_source_ids,
     )
-    event_sources = SourceGroupRequirementV1(
-        group_id="company_news_provider",
-        minimum_usable=1,
-        source_ids=event_source_ids,
-    )
     capabilities = (
         _capability(
             "verified_identity",
@@ -306,13 +302,12 @@ def _shared_capabilities(
         ),
         _capability(
             "company_event_window",
-            "required",
+            "optional",
             event_windows,
             ("daily",),
             (),
-            event_optional_sources,
+            event_source_ids + event_optional_sources,
             budget=_budget(5, 500, 10),
-            required_source_groups=(event_sources,),
         ),
     )
     return capabilities
@@ -516,14 +511,7 @@ def build_data_window_plan(
             analysis_date=analysis_date,
             capabilities=capabilities,
             required_lenses=("market",),
-            required_lens_groups=(
-                LensGroupV1(
-                    group_id="news_or_sentiment",
-                    minimum_usable=1,
-                    lens_ids=("news", "sentiment"),
-                ),
-            ),
-            optional_lenses=("fundamentals",),
+            optional_lenses=("fundamentals", "news", "sentiment"),
         )
 
     if horizon == "medium":
@@ -570,8 +558,8 @@ def build_data_window_plan(
             market=market,
             analysis_date=analysis_date,
             capabilities=capabilities,
-            required_lenses=("market", "fundamentals", "news"),
-            optional_lenses=("sentiment",),
+            required_lenses=("market", "fundamentals"),
+            optional_lenses=("news", "sentiment"),
         )
 
     if horizon == "long":
@@ -612,8 +600,8 @@ def build_data_window_plan(
             market=market,
             analysis_date=analysis_date,
             capabilities=capabilities,
-            required_lenses=("market", "fundamentals", "news"),
-            optional_lenses=("sentiment",),
+            required_lenses=("market", "fundamentals"),
+            optional_lenses=("news", "sentiment"),
         )
 
     raise ValueError(f"unsupported investment horizon: {horizon}")

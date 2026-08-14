@@ -32,6 +32,7 @@ from tradingagents.research.price_prefetch import build_price_prefetch_plan
 
 MAX_PRICE_BUNDLE_CHARS = 24_000
 _ADJUSTED_SOURCE_BY_VENDOR = {
+    "wind": "wind.stock_kline_qfq_daily",
     "tushare": "tushare.qfq_daily",
     "akshare": "akshare.qfq_daily",
     "yfinance": "yfinance.adjusted_ohlcv",

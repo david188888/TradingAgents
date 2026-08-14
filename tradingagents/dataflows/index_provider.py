@@ -226,7 +226,11 @@ class EastMoneyIndexProvider:
         return em_get(EASTMONEY_INDEX_HISTORY_URL, params=params)
 
 
-def get_index_snapshot_eastmoney(index_code: str) -> CoveredText:
+def get_index_snapshot_eastmoney(
+    index_code: str,
+    as_of: str | None = None,
+) -> CoveredText:
+    """Return the latest public snapshot; ``as_of`` is retained for route compatibility."""
     return EastMoneyIndexProvider().snapshot(index_code).render()
 
 

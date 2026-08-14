@@ -1,11 +1,17 @@
 # TradingAgents 接入 Wind AIFin Market 的 A 股数据源方案
 
-> 状态：Proposed  
+> 状态：Implemented for adjusted-price routing; remaining Wind capabilities stay gated by contract verification
 > 调研日期：2026-08-12（Asia/Shanghai）  
 > 适用范围：A 股个股、指数/板块、中国宏观与行业 EDB、公告、财经新闻，以及与这些数据直接相关的基本面、估值、事件和风险指标  
 > 本文性质：架构决策与实施/测试计划，不包含生产密钥，不代表已完成实时数据验收
 
-## 1. 执行摘要
+本轮已完成的实现范围：
+
+- `stock_data.get_stock_kline` 已按本机 `wind-mcp-skill` 2.0.1 的 `stock.md` 契约接入 `get_adjusted_price_history`。
+- 生产请求固定为日线、前复权：`period=1d`、`aftype=0`，并显式记录 `price_basis=qfq`、实际日期窗口和 provenance。
+- 默认链已更新为 `Wind → Tushare → AKShare → yfinance → Alpha Vantage`；原始 `mootdx` 不进入复权链。
+- Wind 财务报表、公司新闻/事件仍未接入生产链，必须分别完成字段、报告期、证据类型和覆盖契约验收后再实施。
+
 
 结论不是把 Wind 统一放在所有数据源的第一位或最后一位，而是按“能力粒度”决定优先级：
 

@@ -98,3 +98,14 @@ jobs:
         # `web --help` is only reachable with the extra, so just exercise the
         # legacy analyze dispatch shape here.
         run: tradingagents --help
+
+  docs:
+    name: documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Check Agent documentation and local links
+        run: python scripts/check_agent_docs.py

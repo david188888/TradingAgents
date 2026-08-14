@@ -23,10 +23,15 @@ Market / Social / News / Fundamentals Analysts
 ```
 
 It supports company research and holding review without producing orders, target
-positions, or Buy/Hold/Sell instructions. The upstream-compatible legacy path is
-still available for older runs and CLI workflows:
+positions, or Buy/Hold/Sell instructions. The upstream-compatible legacy graph
+branch remains retained for compatibility with older runs and legacy boundaries;
+current typed request modes are only `company_research` and `holding_review`, and
+the CLI defaults to `company_research`. Both typed modes bypass Trader and the
+three-role risk debate, then terminate through Portfolio Manager.
 
 ```
+Retained legacy compatibility graph branch, not selected by current typed request modes
+
 Market / Social / News / Fundamentals Analysts
                     ↓
              Evidence Steward
@@ -45,8 +50,9 @@ Market / Social / News / Fundamentals Analysts
 Four analysts gather complementary evidence. The Evidence Steward validates the
 research package before the Bull and Bear researchers debate it. In learning modes,
 the Research Manager produces evidence-bound claims that are assembled into a
-typed Research Case and projected into the Reader. Trader and risk/portfolio roles
-remain part of the legacy pipeline only.
+typed Research Case and projected into the Reader. Trader and the three-role
+risk debate remain in the retained compatibility branch; Portfolio Manager is the
+shared terminal convergence for typed and legacy routes.
 
 ## Quick Start
 
@@ -106,14 +112,23 @@ Persistent data lives under `~/.tradingagents/`:
 
 ## Documentation
 
-The current product contract and implementation status live in one maintained
-document. Supporting operational references remain focused
-on their respective data, replay, and preset contracts:
+Start with the shortest path for the task at hand:
 
-- [Learning research and Reader](docs/learning-research-reader.md)
+1. [Documentation index](docs/README.md) for the repository map and document ownership.
+2. [Current architecture](ARCHITECTURE.md) and [product context](docs/context.md) for system boundaries.
+3. [Agent working rules](AGENTS.md) before changing code or configuration.
+4. [Contract index](docs/contracts/README.md) before changing a public request, artifact, event, or API shape.
+5. [Research Reader architecture](docs/architecture/research-reader.md) for the typed learning-research path.
+
+Focused references:
+
 - [A-share data capabilities](docs/a-share-data-capabilities.md)
 - [Observability and replay](docs/observability-replay.md)
 - [Workbench presets](docs/workbench-presets.md)
+- [Legacy composite reference](docs/learning-research-reader.md) (migration reference; not the canonical ownership map)
+- [Contributing](CONTRIBUTING.md) for validation and documentation-impact rules
+
+Plans and reviews are deliberately kept separate from current-state documentation. Use the [documentation index](docs/README.md) to classify them before relying on their claims.
 
 ## License
 

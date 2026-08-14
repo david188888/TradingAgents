@@ -225,6 +225,65 @@ def canonical_fundamentals_bundle(bundle: Mapping[str, Any]) -> str:
     )
 
 
+def fundamentals_from_prefetch_bundle(
+    raw_bundle: str | Mapping[str, Any] | None,
+) -> str | None:
+    """Return the frozen comprehensive fundamentals payload, if present."""
+
+    if isinstance(raw_bundle, str):
+        try:
+            bundle = json.loads(raw_bundle)
+        except (TypeError, ValueError):
+            return None
+    elif isinstance(raw_bundle, Mapping):
+        bundle = raw_bundle
+    else:
+        return None
+    if not isinstance(bundle, Mapping):
+        return None
+
+    results = tuple(
+        result
+        for result in bundle.get("results", ())
+        if isinstance(result, Mapping)
+        and str(result.get("capability", "")).startswith("fundamentals_")
+    )
+    if not results:
+        return None
+
+    usable = tuple(
+        result
+        for result in results
+        if str(result.get("status", "")).lower() in {"ok", "partial"}
+    )
+    if usable:
+        payload = {
+            "ticker": bundle.get("ticker"),
+            "horizon": bundle.get("horizon"),
+            "as_of": bundle.get("as_of"),
+            "results": list(usable),
+        }
+        return "PREFETCHED_FUNDAMENTALS_BUNDLE:\n" + json.dumps(
+            payload, sort_keys=True, ensure_ascii=False
+        )
+
+    reason = "prefetched_fundamentals_unavailable"
+    for result in results:
+        for statement in result.get("statements", ()):
+            if isinstance(statement, Mapping) and statement.get("reason_code"):
+                reason = str(statement["reason_code"])
+                break
+        if reason != "prefetched_fundamentals_unavailable":
+            break
+        capability_result = result.get("capability_result")
+        if isinstance(capability_result, Mapping):
+            codes = capability_result.get("degradation_codes", ())
+            if codes:
+                reason = str(next(iter(codes)))
+                break
+    return f"PREFETCHED_FUNDAMENTALS_UNAVAILABLE: {reason}"
+
+
 def statement_from_prefetch_bundle(
     raw_bundle: str | Mapping[str, Any] | None,
     *,

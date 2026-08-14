@@ -104,6 +104,7 @@ from .vendor_errors import (  # noqa: F401  - re-exported for callers that impor
     _record_vendor_success,
     _should_halt_on_missing_data,
     _summarize_vendor_error,
+    public_vendor_reason_code,
 )
 from .yfinance_incompleteness import (  # noqa: F401  - re-exported for callers that import from interface
     _expected_weekday_count,
@@ -307,7 +308,7 @@ def _route_to_vendor_impl(
                     RouteAttemptTrace(
                         vendor=vendor,
                         outcome="provider_failed",
-                        reason_code="provider_request_failed",
+                        reason_code=public_vendor_reason_code(exc),
                         recorded_at=datetime.now(timezone.utc),
                         started_at=trace_started_at,
                         ended_at=datetime.now(timezone.utc),
@@ -347,7 +348,7 @@ def _route_to_vendor_impl(
                 RouteAttemptTrace(
                     vendor=vendor,
                     outcome="invalid_payload",
-                    reason_code="provider_unhandled_failure",
+                    reason_code=public_vendor_reason_code(exc),
                     recorded_at=datetime.now(timezone.utc),
                     started_at=trace_started_at,
                     ended_at=datetime.now(timezone.utc),

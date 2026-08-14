@@ -287,10 +287,29 @@ claim_key 示例（严格遵守四段，每段必须以小写字母开头、只�
         correction = (
             "\n\n你上一次的输出未通过校验，请只修正下列问题后重新输出完整的 LearningResearchCaseDraft，不要改变其他字段：\n"
             f"{error}\n"
-            "重点检查：每个 claim_key 必须是四段 lens.topic.subject.predicate，每段以小写字母开头、只含 a-z 0-9 _，不要加入股票代码或数字开头的段。"
+            "重点检查：每个 claim_key 必须是四段 lens.topic.subject.predicate，每段以小写字母开头、只含 a-z 0-9 _，不要加入股票代码或数字开头的段；fact 必须同时带一个列出的 evidence key 和一个与 lens 匹配的 coverage key；inference 必须引用存活 fact；unknown 不能带 evidence 或 confidence。"
         )
         draft, _ = _invoke_once(prompt + correction)
 
+    def _invoke_plain_json(one_prompt: str) -> LearningResearchCaseDraft | None:
+        try:
+            response = llm.invoke(one_prompt)
+            content = getattr(response, "content", response)
+            if not isinstance(content, str):
+                return None
+            return LearningResearchCaseDraft.model_validate(json.loads(content))
+        except (TypeError, ValueError, ValidationError) as exc:
+            logger.warning("Research Manager: plain draft recovery failed (%s)", exc)
+            return None
+        except Exception as exc:  # noqa: BLE001 - optional recovery path
+            logger.warning("Research Manager: plain draft recovery failed (%s)", exc)
+            return None
+
+    if draft is None:
+        draft = _invoke_plain_json(
+            prompt
+            + "\n\n函数调用不可用或输出未通过校验。请只返回一个合法 JSON 对象，键必须严格匹配 LearningResearchCaseDraft；不要使用 Markdown 代码块、解释或其他文字。"
+        )
     if draft is None:
         logger.warning("Research Manager: falling back; no valid structured draft produced")
         return _render_learning_summary_fallback(state, llm, evidence_status)
@@ -357,7 +376,7 @@ def _render_learning_summary_fallback(
     if summary is None:
         summary = invoke_summary(
             prompt
-            + "\n\n请现在直接提交完整的 LearningResearchSummary；不要解释修正过程，也不要调用其他工具。"
+            + "\n\n上一次摘要未通过 LearningResearchSummary schema。请严格修正所有 validation error，尤其是 facts/inferences/unknowns/catalysts/invalidation_conditions 的数量上限；每个字段必须是规定类型。只返回完整合法对象，不要解释修正过程。"
         )
     if summary is None:
         summary = invoke_plain_json(

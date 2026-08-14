@@ -103,6 +103,7 @@ from .wind_provider import (
     get_index_profile as get_wind_index_profile,
     get_index_snapshot as get_wind_index_snapshot,
     get_macro_series as get_wind_macro_series,
+    get_stock_adjusted_price_history as get_wind_stock_adjusted_price_history,
     search_macro_series as search_wind_macro_series,
 )
 
@@ -299,8 +300,9 @@ VENDOR_METHODS = {
         "yfinance": get_YFin_data_online,
     },
     "get_adjusted_price_history": {
-        # Deliberately excludes mootdx and raw Tushare. An unavailable adjusted
-        # source must degrade explicitly instead of silently becoming raw.
+        # Wind explicitly requests daily forward-adjusted (qfq) bars. Raw
+        # providers are intentionally excluded from this capability.
+        "wind": get_wind_stock_adjusted_price_history,
         "tushare": get_stock_tushare_qfq,
         "akshare": get_stock_akshare_qfq,
         "yfinance": get_YFin_adjusted_data_online,

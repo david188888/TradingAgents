@@ -15,6 +15,7 @@ import requests
 from tradingagents.observability.provenance import capture_vendor_raw
 
 from .config import get_config
+from .coverage import SourceCoverageV1
 from .news_key_health import (
     RATE_LIMIT_COOLDOWN_SECONDS,
     TRANSIENT_FAILURE_COOLDOWN_SECONDS,
@@ -152,13 +153,71 @@ def _search_tavily(
         )
 
     _save_raw_response(log_key, log_date, method, payload, response_data)
-    return {
+    items = _items_from_response(response_data, cfg, start_date, end_date)
+    result = {
         "source": "tavily",
         "query": query,
         "payload": payload,
         "response": response_data,
-        "items": _items_from_response(response_data, cfg, start_date, end_date),
+        "items": items,
     }
+    if method == "get_news":
+        result["coverage"] = _company_news_coverage(
+            items=items,
+            start_date=start_date,
+            end_date=end_date,
+        ).model_dump(mode="json")
+    return result
+
+
+def _company_news_coverage(
+    *,
+    items: list[dict[str, Any]],
+    start_date: str,
+    end_date: str,
+) -> SourceCoverageV1:
+    """Describe Tavily news observability without overstating search recall."""
+    dated_items = [
+        (item, _published_date_iso(str(item.get("published") or "")))
+        for item in items
+    ]
+    dated_items = [(item, published) for item, published in dated_items if published]
+    if not dated_items:
+        return SourceCoverageV1(
+            capability="company_event_window",
+            source_id="tavily.company_news",
+            requested_start=start_date,
+            requested_end=end_date,
+            item_count=0,
+            completeness="unavailable",
+            sources=("tavily.company_news",),
+            degradations=("no_time_verifiable_items",),
+            as_of=end_date,
+        )
+    observed_dates = sorted(published for _item, published in dated_items)
+    return SourceCoverageV1(
+        capability="company_event_window",
+        source_id="tavily.company_news",
+        requested_start=start_date,
+        requested_end=end_date,
+        actual_start=observed_dates[0],
+        actual_end=observed_dates[-1],
+        item_count=len(dated_items),
+        completeness="partial",
+        sources=("tavily.company_news",),
+        degradations=("search_recall_not_verifiable",),
+        as_of=end_date,
+    )
+
+
+def _published_date_iso(value: str) -> str | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        try:
+            return datetime.strptime(value[:10], "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            return None
 
 
 def _configured_api_keys() -> tuple[str, ...]:

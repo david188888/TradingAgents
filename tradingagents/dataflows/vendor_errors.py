@@ -24,7 +24,9 @@ from .china_data import ChinaDataUnavailableError
 from .config import get_config
 from .errors import (
     DataUnavailableError,
+    VendorAccessDeniedError,
     VendorError,
+    VendorNotConfiguredError,
     VendorRateLimitError,
 )
 from .fred import FredNotConfiguredError
@@ -47,6 +49,36 @@ try:
     from curl_cffi.requests.exceptions import RequestException as CurlCffiRequestException
 except Exception:  # pragma: no cover - curl_cffi is an indirect yfinance dependency
     CurlCffiRequestException = ()
+
+
+def public_vendor_reason_code(exc: Exception) -> str:
+    """Return a stable, non-sensitive reason code for a provider failure."""
+
+    if isinstance(exc, WindAuthError):
+        return "provider_auth_failed"
+    if isinstance(exc, WindQuotaError):
+        return "provider_quota_exhausted"
+    if isinstance(exc, (WindRateLimitError, VendorRateLimitError)):
+        return "provider_rate_limited"
+    if isinstance(exc, WindNetworkError):
+        return "provider_network_failed"
+    if isinstance(exc, VendorAccessDeniedError) or _http_status_code(exc) == 403:
+        return "provider_access_denied"
+
+    text = str(exc).lower()
+    if any(token in text for token in ("no access", "permission", "权限", "access denied", "forbidden")):
+        return "provider_access_denied"
+    if any(token in text for token in ("proxy", "network", "connection", "timed out", "timeout", "网络")):
+        return "provider_network_failed"
+    if any(token in text for token in ("quota", "余额", "额度", "daily limit")):
+        return "provider_quota_exhausted"
+    if any(token in text for token in ("rate limit", "too many requests", "限流", "频率")):
+        return "provider_rate_limited"
+    if isinstance(exc, VendorNotConfiguredError):
+        return "provider_not_configured"
+    if isinstance(exc, ValueError):
+        return "provider_invalid_request"
+    return "provider_request_failed"
 
 
 def _record_vendor_success(vendor: str, method: str, args: tuple[Any, ...]) -> None:

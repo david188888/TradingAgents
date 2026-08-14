@@ -403,6 +403,15 @@ def build_role_report_contract(role: str, registry: SkillRegistry | None = None)
     active_registry = registry or SkillRegistry()
     schema = active_registry.report_artifact_schema(role)
     fields = ", ".join(schema.model_fields)
+    fundamentals_hint = ""
+    if role == "fundamentals_analyst":
+        fundamentals_hint = (
+            " Use schema_version exactly as the string \"1\". limitations, red_flags, "
+            "and cycle_evidence must be JSON arrays. Every numeric financial metric, "
+            "including every dupont_components value, must be an object with value, unit, "
+            "source_ref, and availability; do not emit a bare number or prose in a metric field. "
+            "confidence must be a number from 0 to 1."
+        )
     return (
         "\n\n## Public methodology scorecard\n"
         "After the human-readable report, append one fenced JSON object exactly as "
@@ -411,7 +420,9 @@ def build_role_report_contract(role: str, registry: SkillRegistry | None = None)
         "and explicit limitations. Never include private reasoning, a prompt, draft "
         "text, tool traces, credentials, or hidden chain-of-thought. The accepted "
         f"top-level fields are: {fields}. Use explicit unavailable markers instead "
-        "of inventing numbers.\n"
+        "of inventing numbers."
+        + fundamentals_hint
+        + "\n"
     )
 
 

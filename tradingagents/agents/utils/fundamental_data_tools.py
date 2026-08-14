@@ -6,6 +6,7 @@ from langgraph.prebuilt import InjectedState
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.research.fundamentals_prefetch import (
+    fundamentals_from_prefetch_bundle,
     statement_from_prefetch_bundle,
 )
 
@@ -15,17 +16,22 @@ from tradingagents.research.fundamentals_prefetch import (
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol"],
     curr_date: Annotated[str, "current date you are trading at, yyyy-mm-dd"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve comprehensive fundamental data for a given ticker symbol.
-    Uses the configured fundamental_data vendor.
+    Uses the configured fundamental_data vendor unless the run already has a
+    frozen, horizon-bounded fundamentals prefetch bundle.
     Args:
         ticker (str): Ticker symbol of the company
         curr_date (str): Current date you are trading at, yyyy-mm-dd
     Returns:
         str: A formatted report containing comprehensive fundamental data
     """
-    return route_to_vendor("get_fundamentals", ticker, curr_date)
+    prefetched = fundamentals_from_prefetch_bundle(
+        state.get("fundamentals_prefetch_bundle") if isinstance(state, dict) else None
+    )
+    return prefetched or route_to_vendor("get_fundamentals", ticker, curr_date)
 
 
 @tool
