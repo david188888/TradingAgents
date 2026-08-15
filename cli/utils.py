@@ -464,6 +464,47 @@ def ask_anthropic_effort() -> str | None:
     ).ask()
 
 
+def ask_deepseek_thinking() -> str:
+    """Ask whether to enable DeepSeek V4 thinking mode.
+
+    Enabled is the fork's default (max-effort reasoning). Disabled routes
+    to the non-thinking path: tool_choice and temperature are supported.
+    """
+    return questionary.select(
+        "DeepSeek Thinking Mode:",
+        choices=[
+            questionary.Choice("Enabled (default, max-effort reasoning)", "enabled"),
+            questionary.Choice("Disabled (faster, tool_choice allowed)", "disabled"),
+        ],
+        style=questionary.Style([
+            ("selected", "fg:cyan noinherit"),
+            ("highlighted", "fg:cyan noinherit"),
+            ("pointer", "fg:cyan noinherit"),
+        ]),
+    ).ask()
+
+
+def ask_deepseek_effort() -> str | None:
+    """Ask for DeepSeek reasoning effort when thinking mode is enabled.
+
+    The API accepts low/medium/high/xhigh/max (medium and xhigh map to
+    high); we expose the common range. Defaults to max.
+    """
+    return questionary.select(
+        "DeepSeek Reasoning Effort:",
+        choices=[
+            questionary.Choice("Max (default, deepest)", "max"),
+            questionary.Choice("High (balanced)", "high"),
+            questionary.Choice("Low (faster)", "low"),
+        ],
+        style=questionary.Style([
+            ("selected", "fg:cyan noinherit"),
+            ("highlighted", "fg:cyan noinherit"),
+            ("pointer", "fg:cyan noinherit"),
+        ]),
+    ).ask()
+
+
 def ask_gemini_thinking_config() -> str | None:
     """Ask for Gemini thinking configuration.
 

@@ -24,6 +24,9 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_GOOGLE_THINKING_LEVEL":   "google_thinking_level",
     "TRADINGAGENTS_OPENAI_REASONING_EFFORT": "openai_reasoning_effort",
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
+    "TRADINGAGENTS_DEEPSEEK_THINKING":       "deepseek_thinking",
+    "TRADINGAGENTS_DEEPSEEK_REASONING_EFFORT": "deepseek_reasoning_effort",
+    "TRADINGAGENTS_LLM_MAX_TOKENS":          "llm_max_tokens",
     "TRADINGAGENTS_EVIDENCE_GATE_ENABLED":   "evidence_gate_enabled",
     "TRADINGAGENTS_EVIDENCE_STOP_ON_FAIL":   "evidence_stop_on_fail",
     "TRADINGAGENTS_NEWS_MIN_COMPANY_ITEMS":  "news_min_company_items",
@@ -102,6 +105,21 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
+    # DeepSeek V4 thinking mode: "enabled" or "disabled". This fork now
+    # defaults to ENABLED with max reasoning effort (the API default is
+    # enabled with effort=high; we go one step further and set effort=max).
+    # While thinking is enabled, temperature/top_p are ignored by the API
+    # and reasoning_content must be echoed back (handled by the client);
+    # tool_choice is only supported in the non-thinking path.
+    "deepseek_thinking": "enabled",
+    # DeepSeek reasoning effort: "low", "high", or "max" (medium/xhigh are
+    # mapped to high by the API). Defaults to "max" for the deepest
+    # reasoning on the V4 Pro deep-think path.
+    "deepseek_reasoning_effort": "max",
+    # Upper bound for a single model response (output tokens). None leaves
+    # each provider at its default; DeepSeek V4 supports up to 384K output
+    # and recommends a sane max_tokens to avoid truncated JSON reports.
+    "llm_max_tokens": None,
     # Sampling temperature forwarded to every provider when set. None leaves
     # each provider at its own default.
     "temperature": None,
@@ -353,6 +371,7 @@ def validate_config(config: dict) -> list[str]:
         "max_tool_calls_per_turn",
         "max_tool_messages_in_context",
         "llm_max_retries",
+        "llm_max_tokens",
     ):
         value = config.get(key)
         if value is None or value == "":
@@ -362,4 +381,26 @@ def validate_config(config: dict) -> list[str]:
                 problems.append(f"{key} must be non-negative")
         except (TypeError, ValueError):
             problems.append(f"{key} must be an integer, got {value!r}")
+    thinking = config.get("deepseek_thinking")
+    if thinking is not None and str(thinking).strip().lower() not in (
+        "enabled",
+        "disabled",
+        "",
+    ):
+        problems.append(
+            f"deepseek_thinking must be 'enabled' or 'disabled', got {thinking!r}"
+        )
+    effort = config.get("deepseek_reasoning_effort")
+    if effort is not None and str(effort).strip().lower() not in (
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "",
+    ):
+        problems.append(
+            "deepseek_reasoning_effort must be one of low/medium/high/xhigh/max, "
+            f"got {effort!r}"
+        )
     return problems

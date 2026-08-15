@@ -45,12 +45,25 @@ class ModelCapabilities:
     requires_reasoning_split: bool = False
 
 
-# DeepSeek's thinking models accept the ``tools`` array but reject the
-# ``tool_choice`` parameter (official Oh My Pi integration guide and the
-# 400 response in issue #678). Their official tool-calling examples
-# (api-docs.deepseek.com/guides/tool_calls) pass ``tools=[...]`` without
-# ``tool_choice`` — we mirror that pattern by setting supports_tool_choice
-# to False and letting the client suppress the kwarg.
+# DeepSeek's thinking models accept the ``tools`` array but reject a
+# function-spec ``tool_choice`` (official Oh My Pi integration guide, the
+# 400 response in issue #678, and a direct probe on 2026-08-15:
+# "Thinking mode does not support this tool_choice"). Their official
+# tool-calling examples (api-docs.deepseek.com/guides/tool_calls) pass
+# ``tools=[...]`` without ``tool_choice`` — we mirror that pattern by
+# setting supports_tool_choice to False and letting the client suppress the
+# kwarg. NOTE: in non-thinking mode the same V4 models DO accept a
+# function-spec tool_choice (probed 2026-08-15); DeepSeekChatOpenAI flips
+# this flag at runtime when thinking is disabled (see _get_capabilities).
+#
+# response_format json_schema (strict mode, Beta) returned
+# "This response_format type is unavailable now" on 2026-08-15, so
+# supports_json_schema stays False for now; json_object mode is the only
+# supported response_format.
+#
+# frequency_penalty / presence_penalty are DEPRECATED in the current API
+# ("This parameter is no longer supported. It will not take effect if you
+# pass it to the API.") — do not forward them from user config.
 _DEEPSEEK_THINKING = ModelCapabilities(
     supports_tool_choice=False,
     supports_json_mode=True,

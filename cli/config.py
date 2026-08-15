@@ -62,6 +62,8 @@ def build_configured_selections(
         "google_thinking_level": run.get("google_thinking_level"),
         "openai_reasoning_effort": run.get("openai_reasoning_effort"),
         "anthropic_effort": run.get("anthropic_effort"),
+        "deepseek_thinking": run.get("deepseek_thinking"),
+        "deepseek_reasoning_effort": run.get("deepseek_reasoning_effort"),
         "output_language": run.get("output_language", "Chinese"),
         "checkpoint_enabled": bool(run.get("checkpoint_enabled", False)),
         "save_report": bool(run.get("save_report", True)),

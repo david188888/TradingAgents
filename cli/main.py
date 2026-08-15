@@ -33,6 +33,8 @@ from cli.run_observer import CliRunObserver
 from cli.stats_handler import StatsCallbackHandler
 from cli.utils import (
     ask_anthropic_effort,
+    ask_deepseek_effort,
+    ask_deepseek_thinking,
     ask_gemini_thinking_config,
     ask_glm_region,
     ask_minimax_region,
@@ -539,12 +541,16 @@ def get_user_selections(cli_config: dict | None = None):
     thinking_level = None
     reasoning_effort = None
     anthropic_effort = None
+    deepseek_thinking = None
+    deepseek_reasoning_effort = None
 
     provider_lower = selected_llm_provider.lower()
     if provider_from_env:
         thinking_level = DEFAULT_CONFIG["google_thinking_level"]
         reasoning_effort = DEFAULT_CONFIG["openai_reasoning_effort"]
         anthropic_effort = DEFAULT_CONFIG["anthropic_effort"]
+        deepseek_thinking = DEFAULT_CONFIG["deepseek_thinking"]
+        deepseek_reasoning_effort = DEFAULT_CONFIG["deepseek_reasoning_effort"]
     elif provider_lower == "google":
         thinking_level = thinking_value_or_prompt(
             "TRADINGAGENTS_GOOGLE_THINKING_LEVEL", "google_thinking_level",
@@ -563,6 +569,17 @@ def get_user_selections(cli_config: dict | None = None):
             "Claude effort level", "步骤 8：Effort Level",
             "配置 Claude effort level", ask_anthropic_effort,
         )
+    elif provider_lower == "deepseek":
+        deepseek_thinking = thinking_value_or_prompt(
+            "TRADINGAGENTS_DEEPSEEK_THINKING", "deepseek_thinking",
+            "DeepSeek thinking 模式", "步骤 8：Thinking Mode",
+            "配置 DeepSeek thinking mode（enabled/disabled）", ask_deepseek_thinking,
+        )
+        deepseek_reasoning_effort = thinking_value_or_prompt(
+            "TRADINGAGENTS_DEEPSEEK_REASONING_EFFORT", "deepseek_reasoning_effort",
+            "DeepSeek reasoning effort", "步骤 8：Reasoning Effort",
+            "配置 DeepSeek reasoning effort（low/high/max）", ask_deepseek_effort,
+        )
 
     return {
         "ticker": selected_ticker,
@@ -577,6 +594,8 @@ def get_user_selections(cli_config: dict | None = None):
         "google_thinking_level": thinking_level,
         "openai_reasoning_effort": reasoning_effort,
         "anthropic_effort": anthropic_effort,
+        "deepseek_thinking": deepseek_thinking,
+        "deepseek_reasoning_effort": deepseek_reasoning_effort,
         "output_language": output_language,
         "checkpoint_enabled": False,
         "save_report": True,

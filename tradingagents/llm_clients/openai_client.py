@@ -1,7 +1,7 @@
 import os
 import re
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI
 
 from .api_key_env import get_api_key_env
 from .base_client import BaseLLMClient, normalize_content
-from .capabilities import get_capabilities
+from .capabilities import ModelCapabilities, get_capabilities
 from .validators import validate_model
 
 
@@ -22,10 +22,11 @@ class NormalizedChatOpenAI(ChatOpenAI):
     consistent downstream handling.
 
     ``with_structured_output`` consults the per-model capability table
-    (``capabilities.get_capabilities``) to pick the method and to decide
-    whether ``tool_choice`` may be sent. Models that reject ``tool_choice``
-    (e.g. DeepSeek V4 and reasoner — per their official tool-calling
-    guide) still bind the schema as a tool, but no ``tool_choice``
+    (``capabilities.get_capabilities`` via ``_get_capabilities``) to pick
+    the method and to decide whether ``tool_choice`` may be sent. Models
+    that reject ``tool_choice`` in the current mode (e.g. DeepSeek V4 in
+    thinking mode — per their official tool-calling guide and a direct
+    probe) still bind the schema as a tool, but no ``tool_choice``
     parameter is sent.
 
     Provider-specific quirks beyond structured-output (e.g. DeepSeek's
@@ -36,8 +37,17 @@ class NormalizedChatOpenAI(ChatOpenAI):
     def invoke(self, input, config=None, **kwargs):
         return normalize_content(super().invoke(input, config, **kwargs))
 
+    def _get_capabilities(self) -> ModelCapabilities:
+        """Capabilities for this client's current runtime mode.
+
+        Base implementation is purely model-name driven; subclasses that
+        switch behavior at runtime (e.g. DeepSeek thinking on/off) override
+        this to return mode-adjusted capabilities.
+        """
+        return get_capabilities(self.model_name)
+
     def with_structured_output(self, schema, *, method=None, **kwargs):
-        caps = get_capabilities(self.model_name)
+        caps = self._get_capabilities()
         if caps.preferred_structured_method == "none":
             raise NotImplementedError(
                 f"{self.model_name} has no structured-output method available; "
@@ -113,10 +123,30 @@ class DeepSeekChatOpenAI(NormalizedChatOpenAI):
     ``_create_chat_result`` captures it on receive and
     ``_get_request_payload`` re-attaches it on send.
 
-    Tool-choice handling for V4 and reasoner — those models reject the
-    ``tool_choice`` parameter — is handled by the capability dispatch in
-    ``NormalizedChatOpenAI.with_structured_output``, not here.
+    Tool-choice handling for V4 thinking mode — those requests reject a
+    function-spec ``tool_choice`` (400 "Thinking mode does not support
+    this tool_choice", probed 2026-08-15) — is handled by the capability
+    dispatch in ``NormalizedChatOpenAI.with_structured_output``. In
+    non-thinking mode the same V4 models DO accept ``tool_choice``, so
+    ``_get_capabilities`` flips ``supports_tool_choice`` at runtime based
+    on the ``thinking`` setting carried in ``extra_body``.
     """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        body = kwargs.get("extra_body") or {}
+        thinking = body.get("thinking") or {}
+        # Absent thinking config means the API default: thinking ENABLED.
+        self._thinking_enabled = thinking.get("type") != "disabled"
+
+    def _get_capabilities(self) -> ModelCapabilities:
+        caps = get_capabilities(self.model_name)
+        if not self._thinking_enabled and not caps.supports_tool_choice:
+            # Non-thinking path accepts a function-spec tool_choice
+            # (probed 2026-08-15), so structured output can bind it and
+            # get a more deterministic schema pick.
+            return replace(caps, supports_tool_choice=True)
+        return caps
 
     def _get_request_payload(self, input_, *, stop=None, **kwargs):
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
@@ -184,6 +214,7 @@ class MinimaxChatOpenAI(NormalizedChatOpenAI):
 _PASSTHROUGH_KWARGS = (
     "timeout", "max_retries", "reasoning_effort", "temperature",
     "api_key", "callbacks", "http_client", "http_async_client",
+    "max_tokens",
 )
 
 # OpenAI's ``reasoning_effort`` is only accepted by reasoning models — the GPT-5
@@ -193,9 +224,19 @@ _PASSTHROUGH_KWARGS = (
 _OPENAI_REASONING_MODEL = re.compile(r"^(gpt-5|o[1-9])")
 
 
-def _supports_reasoning_effort(model: str) -> bool:
-    """Whether the (native OpenAI) model accepts ``reasoning_effort``."""
-    return bool(_OPENAI_REASONING_MODEL.match(model.lower().strip()))
+def _supports_reasoning_effort(model: str, provider: str | None = None) -> bool:
+    """Whether ``model`` accepts the ``reasoning_effort`` parameter.
+
+    Native OpenAI reasoning models accept it. DeepSeek V4 accepts
+    ``reasoning_effort`` ([low, high, max], default high) as a top-level
+    parameter when thinking mode is enabled — it is ignored outside that
+    mode, but sending it is harmless (DeepSeek ignores unsupported
+    params rather than 400; probe 2026-08-15).
+    """
+    normalized = model.lower().strip()
+    if bool(_OPENAI_REASONING_MODEL.match(normalized)):
+        return True
+    return provider == "deepseek"
 
 
 @dataclass(frozen=True)
@@ -292,6 +333,13 @@ class OpenAIClient(BaseLLMClient):
         spec = OPENAI_COMPATIBLE_PROVIDERS.get(self.provider)
         chat_cls = NormalizedChatOpenAI
 
+        # DeepSeek thinking mode is configurable via ``thinking`` kwarg
+        # (dict like {"type": "enabled"} / {"type": "disabled"}); absent
+        # config falls back to this fork's default (thinking enabled with
+        # max effort, see DEFAULT_CONFIG). The non-thinking path is available
+        # via TRADINGAGENTS_DEEPSEEK_THINKING=disabled / CLI choice.
+        deepseek_thinking = self.kwargs.get("thinking")
+
         if spec is not None:
             chat_cls = spec.chat_class
 
@@ -333,19 +381,34 @@ class OpenAIClient(BaseLLMClient):
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
 
+        # DeepSeek thinking mode ignores temperature/top_p (per the official
+        # Thinking Mode guide; they are accepted but have no effect). Drop them
+        # when thinking is enabled so users are not misled by silent no-ops.
+        thinking_enabled = bool(
+            deepseek_thinking and deepseek_thinking.get("type") != "disabled"
+        )
+
         # Forward user-provided kwargs
         for key in _PASSTHROUGH_KWARGS:
             if key not in self.kwargs:
                 continue
-            if key == "reasoning_effort" and not _supports_reasoning_effort(self.model):
+            if key == "reasoning_effort" and not _supports_reasoning_effort(
+                self.model, self.provider
+            ):
+                continue
+            if key in ("temperature", "top_p") and thinking_enabled:
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
-        # DeepSeek: disable thinking mode by default (this fork uses the
-        # non-thinking path; DeepSeekChatOpenAI handles reasoning_content).
+        # DeepSeek: enable thinking by default (this fork's default is max-effort
+        # thinking; DeepSeekChatOpenAI handles the reasoning_content round-trip).
+        # Opt out with thinking={"type": "disabled"} for the non-thinking path
+        # (tool_choice + temperature supported).
         if self.provider == "deepseek":
             llm_kwargs.setdefault("extra_body", {})
-            llm_kwargs["extra_body"].setdefault("thinking", {"type": "disabled"})
+            llm_kwargs["extra_body"].setdefault(
+                "thinking", deepseek_thinking or {"type": "enabled"}
+            )
 
         # The subclass (provider quirks) comes from the registry spec.
         return chat_cls(**llm_kwargs)

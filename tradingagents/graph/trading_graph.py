@@ -205,6 +205,17 @@ class TradingAgentsGraph:
             if effort:
                 kwargs["effort"] = effort
 
+        elif provider == "deepseek":
+            # DeepSeek V4 thinking mode toggle ("enabled"/"disabled").
+            thinking = self.config.get("deepseek_thinking")
+            if thinking and str(thinking).strip().lower() == "enabled":
+                kwargs["thinking"] = {"type": "enabled"}
+            # reasoning_effort is honored by the API in thinking mode;
+            # it is ignored (harmlessly) in non-thinking mode.
+            effort = self.config.get("deepseek_reasoning_effort")
+            if effort:
+                kwargs["reasoning_effort"] = str(effort).strip().lower()
+
         # Sampling temperature is cross-provider: forward it whenever set.
         # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
         # string ("0.2") works the same as a programmatic float.
@@ -217,6 +228,12 @@ class TradingAgentsGraph:
         max_retries = self.config.get("llm_max_retries")
         if max_retries is not None and max_retries != "":
             kwargs["max_retries"] = _coerce_max_retries(max_retries)
+
+        # Output-token cap is cross-provider (DeepSeek V4 supports up to 384K
+        # and recommends a sane max_tokens so long JSON reports do not truncate).
+        max_tokens = self.config.get("llm_max_tokens")
+        if max_tokens is not None and max_tokens != "":
+            kwargs["max_tokens"] = int(max_tokens)
 
         return kwargs
 
