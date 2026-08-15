@@ -23,9 +23,11 @@ _FIELD_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
         "net_income": (
             "n_income_attr_p",
             "归属于母公司股东的净利润",
+            "归属于母公司所有者的净利润",
             "归母净利润",
         ),
         "gross_profit": ("gross_profit", "毛利", "营业毛利"),
+        "operating_cost": ("operating_cost", "营业成本"),
     },
     "cash_flow": {
         "operating_cash_flow": (
@@ -40,8 +42,10 @@ _FIELD_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
             "total_hldr_eqy_exc_min_int",
             "total_hldr_eqy_inc_min_int",
             "total_hldr_eqy",
-            "股东权益合计",
+            "归属于母公司股东权益合计",
+            "所有者权益(或股东权益)合计",
             "所有者权益合计",
+            "股东权益合计",
         ),
     },
 }
@@ -77,7 +81,11 @@ def observations_from_fundamentals_bundle(
         if not isinstance(result, Mapping):
             continue
         frequency = str(result.get("frequency") or "")
-        if frequency not in {"quarterly", "annual"}:
+        if frequency != "annual":
+            # A-share interim statements are cumulative (YTD). Without an
+            # explicit single-period split, publishing them as quarterly values
+            # would produce wrong ratios and false YoY. Keep them unavailable
+            # until a provider exposes a verified split.
             continue
         for statement in result.get("statements", ()):
             if not isinstance(statement, Mapping) or statement.get("status") not in {"ok", "partial"}:
@@ -89,11 +97,10 @@ def observations_from_fundamentals_bundle(
             source_id = str(statement.get("source_id") or "")
             if not source_id.startswith(("tushare.", "sina.")):
                 continue
-            if frequency == "quarterly" and "# Period basis: single_period" not in str(statement.get("data") or ""):
-                continue
             data_text = str(statement.get("data") or "")
             if "# Monetary raw unit: CNY" not in data_text or "# Monetary normalization formula: raw_value / 100000000" not in data_text:
                 continue
+            fetched_at = _fetched_date(data_text)
             for row in _csv_rows(data_text):
                 row_ticker = _first_value(row, ("ts_code", "代码", "股票代码"))
                 if source_id.startswith("tushare."):
@@ -105,10 +112,31 @@ def observations_from_fundamentals_bundle(
 
                 period = _parse_date(_first_value(row, _PERIOD_ALIASES))
                 filing_date = _parse_date(_first_value(row, _FILING_ALIASES))
-                if period is None or filing_date is None or filing_date > analysis_cutoff:
+                if period is None or not period.isoformat().endswith("-12-31"):
+                    # Annual statements only: a full-year period must end on
+                    # 12-31, otherwise the row is an interim cumulative report.
+                    continue
+                if filing_date is None:
+                    # Sina does not expose an announcement date. Only accept
+                    # data fetched on the analysis day itself, because the
+                    # fetch time is a conservative upper bound of disclosure.
+                    if fetched_at is None or fetched_at != analysis_cutoff:
+                        continue
+                    filing_date = analysis_cutoff
+                if filing_date > analysis_cutoff:
                     continue
                 for metric_id, field_names in aliases.items():
+                    if metric_id == "operating_cost":
+                        # Helper column used for gross_profit derivation only.
+                        continue
                     value = _parse_number(_first_value(row, field_names))
+                    if metric_id == "gross_profit" and value is None:
+                        revenue_value = _parse_number(_first_value(row, ("营业收入", "revenue")))
+                        cost_value = _parse_number(
+                            _first_value(row, ("营业成本", "operating_cost"))
+                        )
+                        if revenue_value is not None and cost_value is not None:
+                            value = revenue_value - cost_value
                     if value is None:
                         continue
                     observations.append(
@@ -134,6 +162,16 @@ def observations_from_fundamentals_bundle(
             key=lambda item: (item.metric_id, item.period, item.frequency),
         )
     )
+
+
+def _fetched_date(rendered: str) -> date | None:
+    match = re.search(r"# Data retrieved on:\s*(\d{4}-\d{2}-\d{2})", rendered)
+    if match:
+        try:
+            return date.fromisoformat(match.group(1))
+        except ValueError:
+            return None
+    return None
 
 
 def _csv_rows(rendered: str) -> tuple[dict[str, str], ...]:
