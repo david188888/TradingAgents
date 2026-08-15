@@ -26,13 +26,14 @@ Relevant implementations are [`analysis_cutoff.py`](../../tradingagents/research
 
 The Research Manager emits a candidate draft. [`research/case_assembly.py`](../../tradingagents/research/case_assembly.py) resolves evidence and coverage keys, drops claims that cannot be safely resolved, computes eligibility/data quality, and returns a schema-valid `ResearchCaseV2` or an honest partial/fail-stop case.
 
-The execution commit path publishes `research-case-v2` with current-run provenance and a committed sequence. See [`execution/runner.py`](../../tradingagents/execution/runner.py) and [`execution/output_publisher.py`](../../tradingagents/execution/output_publisher.py). After `run.completed`, [`web/manager.py`](../../tradingagents/web/manager.py) may publish `thesis-diff-v1` as a best-effort derived artifact. [`research/thesis_diff.py`](../../tradingagents/research/thesis_diff.py) compares the same ticker and horizon structurally; a failed diff does not change the completed run or Research Case.
+The execution commit path publishes `research-case-v2` with current-run provenance and a provider-neutral `research-package-v1` fact layer. The package carries the code-owned metric dictionary, evidence labels, and explicit unknowns; it does not fabricate numeric observations when the current provider bundle cannot be transformed safely. See [`execution/runner.py`](../../tradingagents/execution/runner.py), [`research/research_package.py`](../../tradingagents/research/research_package.py), and [`execution/output_publisher.py`](../../tradingagents/execution/output_publisher.py). After `run.completed`, [`web/manager.py`](../../tradingagents/web/manager.py) may publish `thesis-diff-v1` as a best-effort derived artifact. [`research/thesis_diff.py`](../../tradingagents/research/thesis_diff.py) compares the same ticker and horizon structurally; a failed diff does not change the completed run or Research Case.
 
 ## Reader Projection And Degradation
 
 `GET /api/runs/{run_id}/reader` is implemented by [`web/reader_projection.py`](../../tradingagents/web/reader_projection.py) and validated by [`web/reader_models.py`](../../tradingagents/web/reader_models.py):
 
 - `typed`: a readable `ResearchCaseV2` projection with research tilt, claims, scenarios, review items, analyst cards, coverage, omissions, optional thesis diff, and bounded audit counts.
+- `research-package-v1`: a separate read-only structured package at `/api/runs/{run_id}/reader/package` for metric definitions, point-in-time observations, peer comparisons, logic edges, and portable Agent consumption. Its absence or partial unknowns never upgrades a Reader conclusion.
 - `legacy`: a historical run without a typed case; it remains explicitly legacy and does not fabricate typed fields.
 - `unavailable`: a typed case is missing, unreadable, or unsupported; the response carries a stable reason code and audit counts.
 

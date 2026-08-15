@@ -10,9 +10,11 @@ import type {
 } from "../../api/contracts";
 import { useCompanion } from "../../hooks/useCompanion";
 import { useReader } from "../../hooks/useReader";
+import { useResearchPackage } from "../../hooks/useResearchPackage";
 import { CompanionPanel } from "./CompanionPanel";
 import type { CompanionPanelMode } from "./CompanionPanel";
 import { ThesisDiffSection } from "./ThesisDiffSection";
+import { ResearchPackageSection } from "./ResearchPackageSection";
 import type { AuditOpenHandler } from "./AuditCenter";
 
 export interface ReaderSurfaceProps {
@@ -308,6 +310,7 @@ function TypedSurface({
   const surfaceRef = useRef<HTMLElement>(null);
   const wideCompanion = useWideCompanion();
   const companion = useCompanion(reader.run_id, selection);
+  const { researchPackage } = useResearchPackage(reader.run_id);
   useDrawerBackgroundInert(companionMode === "drawer", layoutRef);
   useEffect(() => {
     const surface = surfaceRef.current as (HTMLElement & { inert: boolean }) | null;
@@ -403,6 +406,7 @@ function TypedSurface({
       ) : null}
 
       <ThesisDiffSection diff={reader.thesis_diff} evidenceRefs={reader.evidence_refs} />
+      {researchPackage ? <ResearchPackageSection researchPackage={researchPackage} /> : null}
 
       <section className="reader-section reader-section--claims">
         <h3>事实</h3>
@@ -592,7 +596,7 @@ export function ReaderSurface({ runId, onOpenAudit }: ReaderSurfaceProps): JSX.E
         {error instanceof Error && (error as { status?: number }).status === 404 ? (
           <p className="reader-state-text">该运行暂无 Reader 投影</p>
         ) : (
-          <p className="reader-state-text">{error.message}</p>
+          <p className="reader-state-text">暂时无法读取 Reader 投影，请稍后重试</p>
         )}
       </section>
     );

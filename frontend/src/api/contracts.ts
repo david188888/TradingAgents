@@ -26,6 +26,7 @@ export const API = {
   run: (run_id: string) => `/api/runs/${run_id}`,
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
   reader: (run_id: string) => `/api/runs/${run_id}/reader`,
+  readerPackage: (run_id: string) => `/api/runs/${run_id}/reader/package`,
   readerCompanion: (run_id: string) => `/api/runs/${run_id}/reader/companion`,
   audit: (run_id: string) => `/api/runs/${run_id}/audit`,
   auditDetail: (run_id: string) => `/api/runs/${run_id}/audit/detail`,
@@ -1220,6 +1221,113 @@ export interface ReaderUnavailableV1DTO {
   ticker: string | null;
   reason_code: "research_case_unavailable" | "reader_projection_failed" | "unsupported_research_case_major";
   audit_entry: ReaderAuditEntryDTO;
+}
+
+export interface ResearchEvidenceRefDTO {
+  ref_id: string;
+  run_id: string;
+  source_label: string;
+  resolution_status: "available" | "unavailable";
+}
+
+export interface MetricDefinitionDTO {
+  metric_id: string;
+  label_zh: string;
+  label_en: string;
+  plain_explanation: string;
+  formula_text: string;
+  unit: string;
+  interpretation_mode: "higher_is_better" | "lower_is_better" | "descriptive";
+  higher_is_better: boolean | null;
+  required_inputs: string[];
+  validity_conditions: string[];
+  pitfalls: string[];
+  source_capabilities: string[];
+}
+
+export interface MetricObservationDTO {
+  observation_id: string;
+  run_id: string;
+  metric_id: string;
+  entity_id: string;
+  period: string;
+  as_of: string;
+  frequency: string;
+  value: number | null;
+  unit: string;
+  availability: "available" | "partial" | "unavailable" | "not_applicable";
+  unavailable_reason: string | null;
+  source_evidence_ref_ids: string[];
+  point_in_time: boolean;
+  observation_kind: "observed" | "derived";
+}
+
+export interface ResearchPackageDTO {
+  schema_version: "research-package-v1";
+  package_id: string;
+  run_id: string;
+  ticker: string;
+  target_entity_id: string | null;
+  analysis_cutoff: string;
+  created_at: string;
+  evidence_refs: ResearchEvidenceRefDTO[];
+  metric_definitions: MetricDefinitionDTO[];
+  observations: MetricObservationDTO[];
+  formula_evaluations: Array<{
+    evaluation_id: string;
+    run_id: string;
+    metric_id: string;
+    formula: string;
+    input_observation_ids: string[];
+    output_observation: MetricObservationDTO;
+    status: "available" | "unavailable";
+    limitations: string[];
+  }>;
+  peer_sets: Array<{
+    peer_set_id: string;
+    run_id: string;
+    target_entity_id: string;
+    selection_method: "user_specified" | "deterministic_rule" | "unavailable";
+    criteria: string[];
+    as_of: string;
+    member_entity_ids: string[];
+    source_evidence_ref_ids: string[];
+    excluded_candidates: Array<{ entity_id: string; reason_code: string }>;
+    unavailable_reason: string | null;
+  }>;
+  comparisons: Array<{
+    comparison_id: string;
+    run_id: string;
+    metric_id: string;
+    peer_set_id: string;
+    target_observation_id: string;
+    peer_observation_ids: string[];
+    period: string;
+    as_of: string;
+    unit: string;
+    target_value: number | null;
+    peer_median: number | null;
+    target_percentile: number | null;
+    target_rank: number | null;
+    sample_size: number;
+    availability: "available" | "partial" | "unavailable" | "not_applicable";
+    unavailable_reason: string | null;
+  }>;
+  logic_edges: Array<{
+    edge_id: string;
+    run_id: string;
+    from_node: string;
+    to_node: string;
+    status: "supported" | "conditional" | "blocked" | "contradicted";
+    input_observation_ids: string[];
+    supporting_claim_keys: string[];
+    evidence_ref_ids: string[];
+    assumptions: string[];
+    missing_evidence: string[];
+    next_validation: string;
+    invalidation: string;
+  }>;
+  unknowns: string[];
 }
 
 export type ReaderResponseDTO =

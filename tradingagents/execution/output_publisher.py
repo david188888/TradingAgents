@@ -17,6 +17,7 @@ from pydantic import BaseModel
 DERIVED_PUBLIC_CONTRACTS = frozenset(
     {
         "research-case-v2",
+        "research-package-v1",
         "thesis-diff-v1",
     }
 )

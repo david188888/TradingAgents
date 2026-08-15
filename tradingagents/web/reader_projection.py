@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 _TYPED_MODES = frozenset({"company_research", "holding_review"})
 _RESEARCH_CASE_CONTRACT = "research-case-v2"
+_RESEARCH_PACKAGE_CONTRACT = "research-package-v1"
 
 _IMPACT_LABELS = {
     "supports": "支持当前研究结论",
@@ -40,6 +41,10 @@ _IMPACT_LABELS = {
     "limits": "限制当前结论的适用范围或置信度",
     "neutral": "暂不改变当前研究结论",
 }
+
+
+class ResearchPackageNotFound(LookupError):
+    """The public research package is not available for the current run."""
 
 
 class CompanionNotFound(LookupError):
@@ -86,6 +91,41 @@ def project_reader(store: RunStore, run_id: str) -> dict:
 
     model = _project_legacy(snapshot.run_id, snapshot.ticker, snapshot.analysis_date, snapshot.final_signal, audit)
     return model.model_dump(mode="json")
+
+
+def _latest_research_package(events) -> str | None:
+    """Return the highest committed research-package-v1 artifact."""
+    best: tuple[int, str] | None = None
+    for event in events:
+        if event.type != "artifact.written":
+            continue
+        payload = event.payload
+        if payload.get("public_contract") != _RESEARCH_PACKAGE_CONTRACT:
+            continue
+        sequence = payload.get("committed_sequence")
+        artifact_id = payload.get("artifact_id")
+        if isinstance(sequence, int) and isinstance(artifact_id, str) and (
+            best is None or sequence > best[0]
+        ):
+            best = (sequence, artifact_id)
+    return best[1] if best is not None else None
+
+
+def project_research_package(store: RunStore, run_id: str) -> dict:
+    """Return the validated package without provider or model calls."""
+    from tradingagents.research.research_package import ResearchPackageV1
+
+    snapshot = store.read_snapshot(run_id)
+    artifact_id = _latest_research_package(store.read_events(run_id))
+    if artifact_id is None:
+        raise ResearchPackageNotFound(run_id)
+    try:
+        package = ResearchPackageV1.model_validate_json(store.read_artifact(run_id, artifact_id))
+    except Exception as exc:  # noqa: BLE001 - stable public 404 boundary
+        raise ResearchPackageNotFound(run_id) from exc
+    if package.run_id != run_id or package.ticker != snapshot.ticker:
+        raise ResearchPackageNotFound(run_id)
+    return package.model_dump(mode="json")
 
 
 def _latest_research_case(events) -> str | None:

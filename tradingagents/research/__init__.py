@@ -5,14 +5,35 @@ that a strategy conclusion can be inspected and replayed independently from
 the model that described the underlying evidence.
 """
 
+from .conversation_export import export_research_bundle, package_sha256
+from .conversation_models import (
+    ConversationAnchorV1,
+    ConversationMessageV1,
+    ConversationThreadV1,
+)
+from .conversation_store import ConversationStore, new_thread_id
 from .dossier import ResearchDossier, build_research_dossier, render_research_dossier
 from .holding_review import build_holding_review_summary, holding_review_quote_from_bundle
+from .logic_loop import evaluate_logic_edge
+from .metric_catalog import METRIC_CATALOG, all_metric_definitions, metric_definition
+from .metric_engine import calculate_metric, calculate_roe, calculate_yoy
+from .metric_models import (
+    FormulaEvaluationV1,
+    LogicEdgeV1,
+    MetricComparisonV1,
+    MetricDefinitionV1,
+    MetricObservationV1,
+    PeerSetV1,
+)
+from .metric_provider_adapter import observations_from_fundamentals_bundle
+from .peer_set import PeerCandidateV1, build_peer_set, compare_metric
 from .price_coverage import (
     AdjustedPriceCapability,
     adjusted_price_capability_dict,
     assess_adjusted_price_capability,
     bundle_for_analyst,
 )
+from .research_package import ResearchEvidenceRefV1, ResearchPackageV1, research_package_from_case
 from .strategy import (
     StrategyConsensus,
     StrategySignal,
@@ -20,9 +41,36 @@ from .strategy import (
 )
 
 __all__ = [
+    "ConversationAnchorV1",
+    "ConversationMessageV1",
+    "ConversationStore",
+    "ConversationThreadV1",
+    "export_research_bundle",
+    "new_thread_id",
+    "package_sha256",
     "ResearchDossier",
     "build_research_dossier",
     "render_research_dossier",
+    "ResearchEvidenceRefV1",
+    "ResearchPackageV1",
+    "research_package_from_case",
+    "MetricDefinitionV1",
+    "MetricObservationV1",
+    "MetricComparisonV1",
+    "FormulaEvaluationV1",
+    "LogicEdgeV1",
+    "PeerSetV1",
+    "PeerCandidateV1",
+    "METRIC_CATALOG",
+    "metric_definition",
+    "all_metric_definitions",
+    "calculate_metric",
+    "calculate_yoy",
+    "calculate_roe",
+    "build_peer_set",
+    "compare_metric",
+    "observations_from_fundamentals_bundle",
+    "evaluate_logic_edge",
     "build_holding_review_summary",
     "holding_review_quote_from_bundle",
     "AdjustedPriceCapability",

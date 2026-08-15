@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
@@ -9,7 +11,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from tradingagents.dataflows.target_context import clear_target_ticker
-from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+from tradingagents.dataflows.ticker_utils import is_a_share_ticker, normalize_ticker_symbol
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
     AnalysisRequest,
@@ -46,6 +48,46 @@ from tradingagents.runtime.contracts import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _latest_fundamentals_bundle(observer: Any) -> Mapping[str, Any] | None:
+    """Read the latest committed public fundamentals bundle for this run."""
+    candidates = []
+    for event in observer.store.read_events(observer.run_id):
+        if (
+            event.type == "artifact.written"
+            and event.status == "committed"
+            and event.payload.get("state_key") == "fundamentals_prefetch_bundle"
+            and isinstance(event.payload.get("artifact_id"), str)
+        ):
+            candidates.append(event)
+    for event in sorted(
+        candidates,
+        key=lambda item: (
+            int(item.payload.get("committed_sequence") or -1),
+            item.sequence,
+            str(item.payload.get("artifact_id")),
+        ),
+        reverse=True,
+    ):
+        artifact_id = str(event.payload["artifact_id"])
+        try:
+            raw = observer.store.read_artifact(observer.run_id, artifact_id)
+            expected_hash = str(event.payload.get("content_sha256") or "")
+            if expected_hash and hashlib.sha256(raw).hexdigest() != expected_hash:
+                continue
+            value = json.loads(raw)
+        except (OSError, TypeError, ValueError):
+            continue
+        if not isinstance(value, Mapping) or not value.get("ticker"):
+            continue
+        try:
+            if normalize_ticker_symbol(str(value["ticker"])) != normalize_ticker_symbol(observer.store.read_snapshot(observer.run_id).ticker):
+                continue
+        except ValueError:
+            continue
+        return value
+    return None
 
 
 def _assemble_research_case_or_fallback(
@@ -995,6 +1037,23 @@ class AnalysisRunner:
                     observer,
                     contract="research-case-v2",
                     value=research_case,
+                    graph_task_id=commit.graph_task_id,
+                    checkpoint_event_id=marker.event_id,
+                    committed_sequence=marker.sequence,
+                    promoted=promoted_derived,
+                )
+                from tradingagents.research.research_package import research_package_from_case
+
+                research_package = research_package_from_case(
+                    research_case,
+                    analysis_cutoff=datetime.fromisoformat(snapshot.analysis_date).date(),
+                    created_at=research_case.as_of,
+                    fundamentals_bundle=_latest_fundamentals_bundle(observer),
+                )
+                promote_derived_public_artifact(
+                    observer,
+                    contract="research-package-v1",
+                    value=research_package,
                     graph_task_id=commit.graph_task_id,
                     checkpoint_event_id=marker.event_id,
                     committed_sequence=marker.sequence,

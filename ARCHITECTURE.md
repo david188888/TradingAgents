@@ -45,9 +45,14 @@ public request selects that branch. This routing is defined in `graph/setup.py`;
 do not infer it from an older report layout or UI projection.
 
 Research runs use a deterministic evidence registry and data-window plan to
-assemble `ResearchCaseV2` from a validated draft when possible. Failures retain
-an explicit partial or fail-stop artifact rather than pretending complete
-coverage. The thesis-diff code compares committed research cases; both derived
+assemble `ResearchCaseV2` from a validated draft when possible. The same typed
+run also promotes a `research-package-v1` artifact after the research case
+commit. The package is a public, provider-neutral fact layer containing the
+code-owned metric dictionary, current-run evidence labels, and explicit
+unknowns; structured observations, peer comparisons, and logic edges are added
+only when their inputs pass point-in-time and evidence validation. Failures
+retain an explicit partial or fail-stop artifact rather than pretending complete
+coverage. The thesis-diff code compares committed research cases; derived
 artifacts are promoted only after durable graph commit barriers.
 
 ## Publication And Projections
@@ -59,7 +64,8 @@ durable run store, reconciliation, resume fingerprints, and final report
 publication.
 
 The FastAPI adapter exposes raw run/artifact access plus read-only projections:
-the Reader (`/api/runs/{id}/reader`), run view, audit views, and market views.
+the Reader (`/api/runs/{id}/reader`), the structured package
+(`/api/runs/{id}/reader/package`), run view, audit views, and market views.
 `frontend/src/api/contracts.ts` is the TypeScript facade for those wire
 contracts. The client consumes server-projected data; it does not define the
 domain schema or recover unavailable evidence by making provider calls.

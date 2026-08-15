@@ -121,7 +121,7 @@ export function CompanionPanel({
         ) : error ? (
           <div className="companion-state companion-state--error">
             <strong>{unavailable ? "该伴读内容当前不可用" : "暂时无法读取伴读内容"}</strong>
-            {!unavailable ? <p>{error.message}</p> : null}
+            {!unavailable ? <p>暂时无法读取公开伴读内容，请稍后重试</p> : null}
             {!unavailable ? (
               <button type="button" className="companion-retry" onClick={onRetry}>
                 重试

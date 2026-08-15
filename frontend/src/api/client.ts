@@ -24,6 +24,7 @@ import type {
   RecentRunsPageDTO,
   RunViewEnvelopeDTO,
   ReaderResponseDTO,
+  ResearchPackageDTO,
   RunCreateRequestDTO,
   RunSnapshotDTO,
   RunSummaryDTO,
@@ -173,6 +174,15 @@ export function getReader(
 ): Promise<ReaderResponseDTO> {
   assertRunId(run_id);
   return request<ReaderResponseDTO>("GET", API.reader(run_id), undefined, signal);
+}
+
+/** GET /api/runs/{run_id}/reader/package */
+export function getResearchPackage(
+  run_id: string,
+  signal?: AbortSignal,
+): Promise<ResearchPackageDTO> {
+  assertRunId(run_id);
+  return request<ResearchPackageDTO>("GET", API.readerPackage(run_id), undefined, signal);
 }
 
 /** GET /api/runs/{run_id}/reader/companion?kind=...&id=... */

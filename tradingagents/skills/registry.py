@@ -41,6 +41,7 @@ _KNOWN_ROLES = frozenset(
         "bull_researcher",
         "bear_researcher",
         "portfolio_manager",
+        "research_manager",
     }
 )
 
@@ -67,6 +68,7 @@ ROLE_SKILL_NAMES: Mapping[str, tuple[str, ...]] = {
         "tam-adj-peg",
     ),
     "portfolio_manager": ("buy-side-equity-research-memo",),
+    "research_manager": ("evidence-bound-research-interoperability",),
 }
 
 # These rules are deliberately code-owned just like ``ROLE_SKILL_NAMES``.
@@ -134,6 +136,16 @@ ROLE_SKILL_TRIGGER_PATTERNS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
         "buy-side-equity-research-memo": (
             "decision", "portfolio", "risk", "scenario", "catalyst", "monitor", "投资组合", "风险",
             "情景", "催化", "跟踪", "决策",
+        ),
+    },
+    "research_manager": {
+        "evidence-bound-research-interoperability": (
+            "company", "stock", "ticker", "run", "run_id", "package", "thread",
+            "metric", "peer", "logic", "edge", "claim", "evidence", "history",
+            "conversation", "question", "anchor", "export", "manifest", "research",
+            "公司", "个股", "股票", "代码", "分析", "研究", "运行", "研究包",
+            "线程", "对话", "问题", "指标", "同行", "逻辑", "边", "结论", "证据",
+            "历史", "锚点", "导出", "清单",
         ),
     },
 }
