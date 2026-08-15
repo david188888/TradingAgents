@@ -5,13 +5,6 @@ that a strategy conclusion can be inspected and replayed independently from
 the model that described the underlying evidence.
 """
 
-from .conversation_export import export_research_bundle, package_sha256
-from .conversation_models import (
-    ConversationAnchorV1,
-    ConversationMessageV1,
-    ConversationThreadV1,
-)
-from .conversation_store import ConversationStore, new_thread_id
 from .dossier import ResearchDossier, build_research_dossier, render_research_dossier
 from .holding_review import build_holding_review_summary, holding_review_quote_from_bundle
 from .logic_loop import evaluate_logic_edge
@@ -33,6 +26,7 @@ from .price_coverage import (
     assess_adjusted_price_capability,
     bundle_for_analyst,
 )
+from .public_hash import canonical_json_bytes, package_sha256
 from .research_package import ResearchEvidenceRefV1, ResearchPackageV1, research_package_from_case
 from .strategy import (
     StrategyConsensus,
@@ -41,12 +35,7 @@ from .strategy import (
 )
 
 __all__ = [
-    "ConversationAnchorV1",
-    "ConversationMessageV1",
-    "ConversationStore",
-    "ConversationThreadV1",
-    "export_research_bundle",
-    "new_thread_id",
+    "canonical_json_bytes",
     "package_sha256",
     "ResearchDossier",
     "build_research_dossier",

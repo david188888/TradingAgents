@@ -38,7 +38,7 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 
 - [A-share data capabilities](operations/a-share-data-capabilities.md): A-share supplemental data sources, fallback, coverage, and unavailable semantics.
 - [Observability and replay](operations/observability-replay.md): replay / audit / privacy boundaries.
-- [Research package interoperability](operations/research-package-interoperability.md): isolated public conversation storage and portable export boundary.
+- [Research package interoperability](operations/research-package-interoperability.md): external Agent consumption contract over the public research-package and reader fact layer.
 - [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
 
 ## Integrations

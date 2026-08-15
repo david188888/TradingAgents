@@ -140,12 +140,12 @@ ROLE_SKILL_TRIGGER_PATTERNS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
     },
     "research_manager": {
         "evidence-bound-research-interoperability": (
-            "company", "stock", "ticker", "run", "run_id", "package", "thread",
+            "company", "stock", "ticker", "run", "run_id", "package",
             "metric", "peer", "logic", "edge", "claim", "evidence", "history",
-            "conversation", "question", "anchor", "export", "manifest", "research",
+            "question", "anchor", "research",
             "公司", "个股", "股票", "代码", "分析", "研究", "运行", "研究包",
-            "线程", "对话", "问题", "指标", "同行", "逻辑", "边", "结论", "证据",
-            "历史", "锚点", "导出", "清单",
+            "问题", "指标", "同行", "逻辑", "边", "结论", "证据",
+            "历史", "锚点",
         ),
     },
 }

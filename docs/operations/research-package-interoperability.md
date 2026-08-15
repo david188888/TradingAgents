@@ -1,38 +1,38 @@
 # Research Package Interoperability
 
-Status: Current — this page documents the isolated public conversation/export
-boundary. The machine-owned models are in
-`tradingagents/research/conversation_models.py`, and the append-only file
-implementation is in `conversation_store.py`.
+Status: Current — this page documents how an external Agent (Proma, Codex,
+etc.) consumes a completed TradingAgents run through the public research-package
+and reader fact layer. The machine-owned package contract lives in
+`tradingagents/research/research_package.py`; canonical public hashing lives in
+`tradingagents/research/public_hash.py`.
 
 ## Boundary
 
-A conversation is anchored to one `run_id` and one public research-package
-schema/hash. It stores only a user question, an assistant answer, public
-anchors, evidence reference IDs, availability, refusal reason, and next public
-validation steps. The store does not accept prompts, raw tool arguments or
-results, credentials, hidden reasoning, or arbitrary run state.
+TradingAgents does not host a local conversation thread API and does not store
+question/answer transcripts. The server exposes a read-only fact layer:
 
-Each thread starts with a validated header and appends messages with contiguous
-sequence numbers. Repeating the same message at an existing sequence is
-idempotent; a different duplicate or a sequence gap is a conflict. Existing
-run history and research artifacts are not rewritten.
+- `GET /api/runs` (and `?view=recent`) lists runs for identity resolution.
+- `GET /api/runs/{run_id}/reader/package` returns the validated
+  `research-package-v1` projection for one run.
+- `GET /api/runs/{run_id}/reader` returns the public reader projection with
+  claims, analyst cards, `thesis_diff`, and review/omission fields.
+- `GET /api/runs/{run_id}/reader/companion?kind=...&id=...` returns stable
+  detail for a selected claim/evidence/role/risk item.
+- `GET /api/runs/{run_id}/evidence-refs/{ref_id}` resolves one evidence ref.
 
-## Portable bundle
+The dialogue context belongs to the external Agent session. Every answer is
+re-derived from the current public fact layer, never from an append-only
+transcript. Prompts, raw tool arguments or results, credentials, hidden
+reasoning, and unrelated run state never cross this boundary.
 
-`export_research_bundle()` writes a new directory containing:
+## Canonical package hashing
 
-- `manifest.json`: export schema, run/thread/package anchors, analysis cutoff,
-  data quality, non-trading boundary, and SHA-256/byte-size metadata for every
-  other file.
-- `research-package.json`: machine-readable public package projection.
-- `research-package.md`: readable projection with the same public JSON.
-- `metric-dictionary.json`: optional public definitions.
-- `sources.json`: optional public source metadata.
-- `conversation.jsonl`: the thread header followed by messages in sequence.
-
-The exporter recomputes the package hash and refuses a mismatch. A destination
-must be new or empty; it never overwrites an existing export.
+`package_sha256(package)` and `canonical_json_bytes(package)` in
+`tradingagents/research/public_hash.py` compute a deterministic SHA-256 over the
+public JSON projection. The canonical form rejects private fields before
+hashing, so the digest never depends on non-public payloads. An external Agent
+records `package_sha256` as the anchor for every factual answer and uses the
+same canonical projection to verify any external copy of the package.
 
 ## Agent consumption
 
@@ -45,8 +45,8 @@ order:
    local RunStore and match a confirmed ticker. A name-only match is a
    candidate, not an identity. Ambiguous candidates require a clarification.
 2. Read `/api/runs/{run_id}/reader/package` and validate
-   `research-package-v1`. For an export, verify all `manifest.json` file hashes
-   and the package hash before reading `research-package.json`.
+   `research-package-v1`. Record `package_sha256` via
+   `tradingagents.research.public_hash`.
 3. Use `/api/runs/{run_id}/reader` for public claims, analyst cards, omissions,
    and `thesis_diff`; use `/reader/companion` for stable selected claim/evidence
    details and `/evidence-refs/{ref_id}` for evidence resolution.
@@ -55,16 +55,11 @@ order:
    The canonical anchor forms are documented in the Skill and include
    `metric:{metric_id}`, `observation_id`, `evaluation_id`, `peer_set_id`,
    `comparison_id`, `edge_id`, and `evidence_refs[*].ref_id`.
-5. Restore conversation history through the local thread API:
-   `GET /api/runs/{run_id}/threads` lists threads,
-   `GET /api/runs/{run_id}/threads/{thread_id}` reads one, and
-   `POST /api/runs/{run_id}/threads/{thread_id}/messages` appends a public
-   question/answer pair. Export through
-   `GET /api/runs/{run_id}/threads/{thread_id}/export` and verify the returned
-   ZIP manifest before consuming `conversation.jsonl`. The JSONL files under
-   `~/.tradingagents/web/runs/{run_id}/conversations/thread_*.jsonl` are the
-   storage implementation only; an absent thread is explicitly unavailable,
-   not evidence that an answer is false.
+5. Answer the question directly from the selected package, reader projection,
+   and resolved evidence. TradingAgents does not host a conversation thread
+   API; the external Agent session owns question/answer context, and the
+   public fact layer is the only lookup authority. Do not scan run files
+   directly.
 
 Every answer binds to one `run_id` and package SHA-256, and cites the relevant
 stable anchors plus evidence ref IDs. `analysis_cutoff` is consumed as a date,

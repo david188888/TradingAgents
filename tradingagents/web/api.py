@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
-import zipfile
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import date, datetime, timezone
-from io import BytesIO
+from datetime import date
 from math import isfinite
 from pathlib import Path
 from typing import Any, Literal
@@ -28,21 +25,6 @@ from tradingagents.execution.models import AnalysisRequest, HoldingContext
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
 from tradingagents.presets import load_preset_catalog
-from tradingagents.research.conversation_export import (
-    ExportPrivacyError,
-    export_research_bundle,
-    package_sha256,
-)
-from tradingagents.research.conversation_models import ConversationThreadV1
-from tradingagents.research.conversation_store import (
-    ConversationConflict,
-    ConversationStore,
-    ConversationStoreCorruption,
-    ConversationStoreError,
-    ThreadAlreadyExists,
-    ThreadNotFound,
-    new_thread_id,
-)
 
 from .audit_models import AuditSelection
 from .audit_projection import (
@@ -54,7 +36,6 @@ from .audit_projection import (
 )
 from .broker import EventBroker, Keepalive, SubscriptionClosed
 from .connectivity import YahooUnavailableError
-from .conversation import answer_from_package
 from .manager import (
     ActiveRunConflict,
     LegacyResumeNormalizationFailed,
@@ -78,8 +59,6 @@ from .reader_projection import (
 from .schemas import (
     RESEARCH_DEPTHS,
     SUPPORTED_OUTPUT_LANGUAGES,
-    ConversationMessageCreateRequest,
-    ConversationThreadCreateRequest,
     HoldingInputRequest,
     PortfolioRequest,
     RunCreateRequest,
@@ -270,8 +249,6 @@ def create_app(
     app.state.store = selected_store
     app.state.broker = selected_broker
     app.state.manager = selected_manager
-    selected_conversations = ConversationStore(run_store=selected_store)
-    app.state.conversation_store = selected_conversations
     app.state.environment = selected_environment
     app.state.checkpoint_available = checkpoint_available
     app.state.static_dir = assets_root
@@ -324,31 +301,6 @@ def create_app(
             "history_corrupted",
             "Stored run history failed an integrity check.",
         )
-
-    @app.exception_handler(ThreadNotFound)
-    async def handle_thread_not_found(_request: Request, _exc: ThreadNotFound):
-        return _error_response(404, "thread_not_found", "The requested conversation thread was not found.")
-
-    @app.exception_handler(ThreadAlreadyExists)
-    async def handle_thread_exists(_request: Request, _exc: ThreadAlreadyExists):
-        return _error_response(409, "thread_already_exists", "The conversation thread already exists.")
-
-    @app.exception_handler(ConversationStoreCorruption)
-    async def handle_conversation_corruption(_request: Request, _exc: ConversationStoreCorruption):
-        return _error_response(500, "conversation_corrupted", "Stored conversation history failed an integrity check.")
-
-    @app.exception_handler(ConversationStoreError)
-    async def handle_conversation_store_error(_request: Request, _exc: ConversationStoreError):
-        return _error_response(500, "conversation_storage_unavailable", "Conversation history is temporarily unavailable.")
-
-    @app.exception_handler(ExportPrivacyError)
-    async def handle_export_privacy_error(_request: Request, _exc: ExportPrivacyError):
-        return _error_response(500, "conversation_export_unavailable", "The public research export is unavailable.")
-
-
-    @app.exception_handler(ConversationConflict)
-    async def handle_conversation_conflict(_request: Request, _exc: ConversationConflict):
-        return _error_response(409, "conversation_conflict", "The conversation append conflicts with stored history.")
 
     @app.exception_handler(ActiveRunConflict)
     async def handle_active_conflict(_request: Request, exc: ActiveRunConflict):
@@ -443,145 +395,6 @@ def create_app(
             request_model,
             configured_keys=configured_keys,
         ).as_dict()
-
-    def _conversation_package(run_id: str) -> tuple[dict[str, Any], str]:
-        try:
-            package = project_research_package(selected_store, run_id)
-        except ResearchPackageNotFound as exc:
-            raise ApiBoundaryError(
-                404,
-                "research_package_unavailable",
-                "The public research package is not available for this run.",
-            ) from exc
-        return package, package_sha256(package)
-
-    def _assert_conversation_binding(
-        run_id: str,
-        thread: ConversationThreadV1,
-    ) -> tuple[dict[str, Any], str]:
-        snapshot = selected_store.read_snapshot(run_id)
-        package, actual_hash = _conversation_package(run_id)
-        if thread.run_id != run_id or thread.package_sha256 != actual_hash:
-            raise ApiBoundaryError(
-                409,
-                "conversation_package_mismatch",
-                "The conversation is bound to a different research package.",
-                fields=("run_id", "package_sha256"),
-            )
-        if thread.ticker is not None and thread.ticker != snapshot.ticker:
-            raise ApiBoundaryError(409, "conversation_binding_mismatch", "The thread ticker does not match the run.", fields=("ticker",))
-        package_entity = package.get("target_entity_id")
-        if thread.target_entity_id is not None and thread.target_entity_id != package_entity:
-            raise ApiBoundaryError(
-                409,
-                "conversation_binding_mismatch",
-                "The thread target entity does not match the research package.",
-                fields=("target_entity_id",),
-            )
-        return package, actual_hash
-
-    @app.post("/api/runs/{run_id}/threads", status_code=201)
-    def create_conversation_thread(
-        run_id: str,
-        body: ConversationThreadCreateRequest,
-    ) -> dict[str, Any]:
-        snapshot = selected_store.read_snapshot(run_id)
-        package, actual_hash = _conversation_package(run_id)
-        target_entity_id = body.target_entity_id or package.get("target_entity_id")
-        if body.package_sha256 != actual_hash:
-            raise ApiBoundaryError(409, "conversation_package_mismatch", "The supplied package is not the current run package.", fields=("package_sha256",))
-        if body.ticker != snapshot.ticker or body.ticker != package.get("ticker"):
-            raise ApiBoundaryError(409, "conversation_binding_mismatch", "The supplied ticker does not match the run package.", fields=("ticker",))
-        if target_entity_id != package.get("target_entity_id"):
-            raise ApiBoundaryError(409, "conversation_binding_mismatch", "The supplied target entity does not match the run package.", fields=("target_entity_id",))
-        now = _utc_public_timestamp()
-        thread = ConversationThreadV1(
-            thread_id=new_thread_id(),
-            run_id=run_id,
-            package_schema_version=str(package.get("schema_version") or "research-package-v1"),
-            package_sha256=actual_hash,
-            ticker=body.ticker,
-            target_entity_id=target_entity_id,
-            created_at=now,
-            updated_at=now,
-        )
-        return selected_conversations.create_thread(thread).model_dump(mode="json")
-
-    @app.get("/api/runs/{run_id}/threads")
-    def list_conversation_threads(run_id: str) -> list[dict[str, Any]]:
-        _conversation_package(run_id)
-        result: list[dict[str, Any]] = []
-        for thread in selected_conversations.list_threads(run_id):
-            _assert_conversation_binding(run_id, thread)
-            result.append(thread.model_dump(mode="json"))
-        return result
-
-    @app.get("/api/runs/{run_id}/threads/{thread_id}")
-    def get_conversation_thread(run_id: str, thread_id: str) -> dict[str, Any]:
-        thread = selected_conversations.read_thread(run_id, thread_id)
-        _assert_conversation_binding(run_id, thread)
-        return thread.model_dump(mode="json")
-
-    @app.post("/api/runs/{run_id}/threads/{thread_id}/messages", status_code=201)
-    def append_conversation_message(
-        run_id: str,
-        thread_id: str,
-        body: ConversationMessageCreateRequest,
-    ) -> dict[str, Any]:
-        package, _ = _assert_conversation_binding(
-            run_id, selected_conversations.read_thread(run_id, thread_id)
-        )
-        current = selected_conversations.read_thread(run_id, thread_id)
-        message = answer_from_package(
-            package,
-            sequence=len(current.messages) + 1,
-            question=body.question,
-            request_id=body.request_id,
-        )
-        stored = selected_conversations.append_message(run_id, thread_id, message)
-        return stored.model_dump(mode="json")
-
-    @app.get("/api/runs/{run_id}/threads/{thread_id}/messages")
-    def read_conversation_messages(run_id: str, thread_id: str) -> list[dict[str, Any]]:
-        thread = selected_conversations.read_thread(run_id, thread_id)
-        _assert_conversation_binding(run_id, thread)
-        return [message.model_dump(mode="json") for message in thread.messages]
-
-    @app.api_route("/api/runs/{run_id}/threads/{thread_id}/export", methods=["GET", "POST"])
-    def export_conversation_bundle(
-        run_id: str,
-        thread_id: str,
-        language: str = Query(default="English", min_length=1, max_length=32),
-        data_quality: str = Query(default="unknown", min_length=1, max_length=64),
-    ) -> Response:
-        package, _ = _assert_conversation_binding(
-            run_id, selected_conversations.read_thread(run_id, thread_id)
-        )
-        thread = selected_conversations.read_thread(run_id, thread_id)
-        with tempfile.TemporaryDirectory(prefix="research-export-") as temporary:
-            destination = Path(temporary) / "bundle"
-            export_research_bundle(
-                destination,
-                package=package,
-                thread=thread,
-                metric_dictionary=package.get("metric_definitions"),
-                sources=package.get("evidence_refs"),
-                analysis_cutoff=str(package.get("analysis_cutoff")),
-                language=language,
-                data_quality=data_quality,
-            )
-            payload = BytesIO()
-            with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                for path in sorted(destination.iterdir()):
-                    archive.write(path, arcname=path.name)
-        return Response(
-            content=payload.getvalue(),
-            media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{thread_id}-research-bundle.zip"',
-                "X-Research-Package-SHA256": thread.package_sha256,
-            },
-        )
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
@@ -1338,10 +1151,6 @@ def _safe_mismatch_fields(fields: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(field for field in fields if field in SAFE_RESUME_MISMATCH_FIELDS)
     )
-
-
-def _utc_public_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _error_response(

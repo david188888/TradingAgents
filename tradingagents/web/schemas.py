@@ -19,30 +19,6 @@ RESEARCH_DEPTHS = (1, 3, 5)
 TICKER_PATTERN = re.compile(r"^[A-Za-z0-9._\-^=]{1,32}$")
 
 
-class ConversationThreadCreateRequest(BaseModel):
-    """Public binding required before a thread can read a package."""
-
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    package_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    ticker: str = Field(min_length=1, max_length=32)
-    target_entity_id: str | None = Field(default=None, min_length=1, max_length=120)
-
-
-class ConversationMessageCreateRequest(BaseModel):
-    """A public question and retry identity; no prompt/tool fields are accepted."""
-
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    question: str = Field(min_length=1, max_length=4000)
-    request_id: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=128,
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
-    )
-
-
 class PortfolioPositionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
