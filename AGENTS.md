@@ -55,7 +55,7 @@ workbench; it binds to `127.0.0.1`.
 | --- | --- |
 | Public Python request, result, artifact, or runtime contract | `tradingagents/execution/models.py`, `tradingagents/agents/schemas/`, `tradingagents/runtime/`, consumers and projections |
 | Graph roles, routing, or evidence sequence | `tradingagents/graph/`, `tradingagents/agents/`, `ARCHITECTURE.md` |
-| Vendor capability or A-share source behavior | `tradingagents/dataflows/`, `docs/a-share-data-capabilities.md` |
+| Vendor capability or A-share source behavior | `tradingagents/dataflows/`, `docs/operations/a-share-data-capabilities.md` |
 | Web API, SSE, persistence, or Reader/Audit projection | `tradingagents/web/`, `frontend/src/api/contracts.ts`, relevant frontend consumers |
 | React/TypeScript source | `frontend/AGENTS.md`; rebuild generated assets |
 | Runtime, configuration, CLI, or workflow behavior | `README.md`, `ARCHITECTURE.md`, and focused docs |

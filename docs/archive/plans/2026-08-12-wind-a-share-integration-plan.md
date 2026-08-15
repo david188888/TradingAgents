@@ -1,4 +1,9 @@
-# TradingAgents 接入 Wind AIFin Market 的 A 股数据源方案
+# TradingAgents 接入 Wind AIFin Market 的 A 股数据源方案（历史计划）
+
+- **Status: Archived Plan（冻结于 2026-08-12）**
+- **Do not use this document as evidence of current implementation behavior.**
+- 本文保留 Wind 接入的原始调研、架构决策与分阶段实施方案。当前真实支持的 Wind 能力、配置、路由与限制见 [docs/integrations/wind.md](../../integrations/wind.md)；当前文档入口以 [docs/README.md](../../README.md) 为准。
+- 本文件中的“尚未实现”“需要确认”“建议新增”等时效性描述只代表 2026-08-12 调研时的判断，不代表当前实现状态。
 
 > 状态：Implemented for adjusted-price routing; remaining Wind capabilities stay gated by contract verification
 > 调研日期：2026-08-12（Asia/Shanghai）  

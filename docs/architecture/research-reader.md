@@ -1,5 +1,7 @@
 # Research Reader Architecture
 
+- **Status: Current**（current-state 文档；graph/契约变化时对照 `tradingagents/graph/setup.py`、`tradingagents/execution/` 与 `tradingagents/web/` 校验）
+
 This page describes the current learning-research Reader path. The public surface is read-only and research-only; it does not create orders, portfolio actions, or investment advice.
 
 ## Entry And Modes

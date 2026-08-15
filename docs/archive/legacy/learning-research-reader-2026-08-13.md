@@ -1,12 +1,14 @@
-# TradingAgents 学习型研究与 Reader
+# TradingAgents 学习型研究与 Reader（历史归档）
 
-**状态：** Legacy composite reference; pending staged decomposition
-**最近核验：** 2026-08-13
-**适用范围：** 学习型公司研究、持仓复盘、Research Case、Thesis Diff、Reader、Companion 与 Audit Center
+- **Status: Historical（冻结于 2026-08-13）**
+- **Do not use this document as evidence of current implementation behavior.**
+- 本文为学习型研究、Reader、契约与开发记录的 Legacy / Historical composite reference，不再是当前架构或 contract 的权威来源。
+- 当前文档入口以 [docs/README.md](../../README.md) 为准；当前事实以代码、测试和 focused current-state docs 为准。
+- 后续禁止继续向本文添加当前 roadmap、开发进度或系统事实。
 
-> **迁移提示：** 本文约 1,800 行正文在 Phase 1 原样保留，供兼容、历史核对和迁移使用。它不再是唯一或权威的架构、契约、状态来源；当前入口见 [docs/README.md](README.md)，当前架构见 [ARCHITECTURE.md](../ARCHITECTURE.md)，机器定义的契约见 [docs/contracts/README.md](contracts/README.md) 与代码。计划、设计和验收记录仍按其文档分类处理，不应覆盖当前实现事实。
+> **迁移说明：** 原 `docs/learning-research-reader.md` 约 1,800 行正文在 2026-08-13 冻结并迁移至 `docs/archive/legacy/`，供兼容、历史核对和迁移使用。它不再是唯一或权威的架构、契约、状态来源；当前入口见 [docs/README.md](../../README.md)，当前架构见 [ARCHITECTURE.md](../../../ARCHITECTURE.md)，机器定义的契约见 [docs/contracts/README.md](../../contracts/README.md) 与代码。计划、设计和验收记录仍按其文档分类处理，不应覆盖当前实现事实。
 
-本文正文保留既有产品边界、系统流程、稳定契约和实现记录。内容移动、拆分或删除属于后续阶段；在此之前，若本文与代码不一致，以代码和测试为准，并在同一修复中更新对应的权威文档。
+本文正文保留既有产品边界、系统流程、稳定契约和实现记录。若本文与代码不一致，以代码和测试为准，并在同一修复中更新对应的权威文档。
 
 ## 1. 产品定位
 

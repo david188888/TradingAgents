@@ -1,5 +1,7 @@
 # Architecture Decisions
 
+- **Status: Current**（ADR 生命周期指引；已接受决策见具体 ADR 文件）
+
 This directory records why a deliberate architecture choice was made. It is not a replacement for current code or the architecture map.
 
 ## Lifecycle

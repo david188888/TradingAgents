@@ -1,5 +1,7 @@
 # Contract Index
 
+- **Status: Current**（契约地图；机器属实的 schema 始终以代码为准）
+
 This page is a map, not a second schema. Python and TypeScript definitions remain the machine-owned truth; do not copy complete field lists into Markdown.
 
 ## Canonical Sources

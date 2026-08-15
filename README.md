@@ -122,10 +122,11 @@ Start with the shortest path for the task at hand:
 
 Focused references:
 
-- [A-share data capabilities](docs/a-share-data-capabilities.md)
-- [Observability and replay](docs/observability-replay.md)
-- [Workbench presets](docs/workbench-presets.md)
-- [Legacy composite reference](docs/learning-research-reader.md) (migration reference; not the canonical ownership map)
+- [A-share data capabilities](docs/operations/a-share-data-capabilities.md)
+- [Observability and replay](docs/operations/observability-replay.md)
+- [Workbench presets](docs/operations/workbench-presets.md)
+- [Wind AIFin Market](docs/integrations/wind.md)
+- [Legacy composite reference](docs/archive/legacy/learning-research-reader-2026-08-13.md) (migration reference; not the canonical ownership map)
 - [Contributing](CONTRIBUTING.md) for validation and documentation-impact rules
 
 Plans and reviews are deliberately kept separate from current-state documentation. Use the [documentation index](docs/README.md) to classify them before relying on their claims.

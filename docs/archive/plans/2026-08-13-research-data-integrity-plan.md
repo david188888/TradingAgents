@@ -1,13 +1,13 @@
 # Research Data Integrity Implementation Plan
 
-**Status:** Completed historical implementation plan; frozen  
-**Design:** `docs/superpowers/specs/2026-08-13-research-data-integrity-design.md`  
-**Execution order:** A -> B -> C -> D -> E -> F -> UI acceptance  
-**Deferred:** model switching, model probes, cross-model evaluation, Agent methodology/debate redesign  
+**Status:** Archived Plan（历史实施计划，已完成）
+**Design:** `docs/archive/designs/2026-08-13-research-data-integrity-design.md`
+**Execution order:** A -> B -> C -> D -> E -> F -> UI acceptance
+**Deferred:** model switching, model probes, cross-model evaluation, Agent methodology/debate redesign
 **Worktree protection:** do not modify the pre-existing uncommitted `research_manager.py`, `DecisionBrief.tsx`, `workbench.css`, or built web assets.
 
-Current behavior and the active roadmap are maintained only in
-[`docs/learning-research-reader.md`](../../learning-research-reader.md).
+> **Do not use this document as evidence of current implementation behavior.**
+> 当前文档入口以 [docs/README.md](../../README.md) 为准；当前事实以代码、测试和 focused current-state docs 为准。
 
 ## Delivery rules
 
@@ -296,7 +296,7 @@ Current behavior and the active roadmap are maintained only in
 
 - Add and whitelist `tests/test_research_policy_matrix.py`.
 - Extend `tradingagents/observability/provenance.py` and relevant audit projection only with already-recorded safe fields.
-- Update `docs/learning-research-reader.md` and `docs/a-share-data-capabilities.md`.
+- Update the legacy `docs/archive/legacy/learning-research-reader-2026-08-13.md` (historical record) and `docs/a-share-data-capabilities.md` as the implementation evolved.
 - Modify `.gitignore` to track all new integrity tests.
 
 ### Tasks

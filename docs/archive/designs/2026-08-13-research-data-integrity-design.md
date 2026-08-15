@@ -1,12 +1,12 @@
 # Research Data Integrity and Eligibility Closure
 
-**Status:** Implemented historical design; frozen  
-**Date:** 2026-08-13  
-**Scope:** First implementation subproject for the learning-oriented TradingAgents roadmap  
+**Status:** Frozen Design（历史设计，已实现）
+**Date:** 2026-08-13
+**Scope:** First implementation subproject for the learning-oriented TradingAgents roadmap
 **Out of scope:** Cross-model portability, model capability probing, cross-model golden evaluation, Agent methodology redesign, debate redesign, ResearchMemory, and Reader layout redesign
 
-Current behavior and the active roadmap are maintained only in
-[`docs/learning-research-reader.md`](../../learning-research-reader.md).
+> **Do not use this document as evidence of current implementation behavior.**
+> 当前文档入口以 [docs/README.md](../../README.md) 为准；当前事实以代码、测试和 focused current-state docs 为准。
 
 ## 1. Purpose
 

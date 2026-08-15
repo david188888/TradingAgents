@@ -1,5 +1,7 @@
 # A 股补充数据能力
 
+- **Status: Current**（current-state 文档；provider 路由变化时对照 `tradingagents/dataflows/registry.py` 与 `tradingagents/default_config.py` 校验）
+
 这些接口是研究补充，而不是行情或基本面的替代。每个结果都会标明实际来源；空结果、SDK 缺失、字段变化、限流或未配置的供应商都会返回类型化的不可用状态，不能被解释为“没有事件”。
 
 | 能力 | 路由方法 | 当前来源 | 输入范围 |

@@ -1,9 +1,9 @@
 # TradingAgents 第一性原理总体评审
 
-日期：2026-08-13
-
-> 状态：已冻结的审计快照，不是现役产品合同。当前实现状态与路线统一维护在
-> [`docs/learning-research-reader.md`](../learning-research-reader.md)。
+- **Status: Historical（历史审计快照，冻结于 2026-08-13）**
+- **Do not use this document as evidence of current implementation behavior.**
+- 本文是一次历史审计快照，不是现役产品合同，也不是 current-state contract。
+- 当前文档入口以 [docs/README.md](../../README.md) 为准；当前事实以代码、测试和 focused current-state docs 为准。
 
 ## 1. 产品目标与非目标
 

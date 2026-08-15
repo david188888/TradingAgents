@@ -1,5 +1,7 @@
 # 可回放运行记录（安全边界）
 
+- **Status: Current**（current-state 文档；运行时行为变化时对照 `tradingagents/observability/` 与 `tradingagents/execution/` 校验）
+
 每个本地分析 run 的目录可以包含三类互补记录：
 
 - `events.jsonl`：版本化、追加式的生命周期事件，是状态和 SSE 回放的权威来源。

@@ -1,5 +1,7 @@
 # Product Context
 
+- **Status: Current**（current-state 文档；行为变化时对照代码与测试校验）
+
 TradingAgents is a local-first, LangGraph-based multi-agent financial research
 framework. This fork prioritizes China A-share research while retaining support
 for other instruments through its configured providers. It is a research tool,
@@ -60,7 +62,7 @@ data source routing, and careful distinction between official disclosures,
 public fallbacks, and unavailable coverage. Market sessions, disclosures, and
 timestamps must be interpreted with the relevant market and declared time
 semantics rather than the machine's locale. See
-[a-share-data-capabilities.md](a-share-data-capabilities.md) for focused
+[operations/a-share-data-capabilities.md](operations/a-share-data-capabilities.md) for focused
 provider behavior.
 
 ## Evidence And Time Boundaries

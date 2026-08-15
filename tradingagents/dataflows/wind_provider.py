@@ -4,7 +4,7 @@ Wraps the official ``wind-mcp-skill`` CLI (pinned 2.0.1) as a transport and
 exposes source-neutral capabilities for A-share indices, China macro EDB series,
 and equity risk metrics.
 
-Design rules (see docs/wind-a-share-data-integration-plan.md):
+Design rules (see docs/integrations/wind.md):
 - The transport calls the CLI via subprocess with ``@file`` params; it never
   re-implements the CLI's routing/validation/error classification.
 - Only one Wind request is in flight at a time (Wind default concurrency is
