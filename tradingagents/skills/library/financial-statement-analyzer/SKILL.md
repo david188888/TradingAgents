@@ -1,12 +1,13 @@
 ---
 name: financial-statement-analyzer
-description: Ground a fundamental view in cash flow, profitability quality, leverage, and explicit red flags.
+description: Ground a fundamental view in cash flow, profitability quality, leverage, and explicit red flags, using decomposable quantitative heuristics where statement inputs exist.
 roles:
   - fundamentals_analyst
 triggers:
   - financial statements are available
   - profitability or governance quality needs assessment
 output_schema:
+  - dupont_components
   - earnings_quality
   - balance_sheet_risk
   - cash_conversion
@@ -22,3 +23,76 @@ Report a compact scorecard: profitability quality, cash conversion, leverage and
 liquidity, working-capital direction, and governance or accounting red flags.
 If a metric cannot be computed from the available statements, mark it unavailable
 rather than estimating it. Do not make a price target from this method alone.
+
+## Methodology reference (advisory heuristics)
+
+The formulas below are deterministic decompositions; the thresholds are
+advisory heuristics from public literature and A-share analyst convention, not
+evidence. Compute a metric only when every input is present in verified
+statements; otherwise report it as unavailable. Cite the statement period for
+each computed value, and never present a heuristic threshold as an observed
+fact about the company.
+
+### Five-factor DuPont decomposition
+
+```
+ROE = (net income / pretax income)          # tax burden
+    x (pretax income / EBIT)                # interest burden
+    x (EBIT / revenue)                      # operating margin
+    x (revenue / total assets)              # asset turnover
+    x (total assets / equity)               # equity multiplier
+```
+
+Track each factor across available periods. A flat ROE whose support shifts
+from margins toward leverage is a deterioration signal, not stability.
+
+### Earnings-quality screens
+
+| Screen | Formula | Advisory threshold |
+|---|---|---|
+| Accrual ratio | (Δ current assets − Δ cash − Δ current liabilities + Δ short-term debt − D&A) / average total assets | >10% of assets: investigate; >15%: low quality |
+| Cash conversion | operating cash flow / net income | <0.8 for 3+ consecutive years: major red flag |
+| Receivables growth | Δ accounts receivable vs Δ revenue | receivables growth >1.5x revenue growth: red flag |
+| Contract liabilities | trend of advances/deferred revenue | sustained decline while revenue grows: possible pull-forward |
+| Non-recurring gap | net income vs net income excl. non-recurring items (扣非) | recurring large gaps, or negative 扣非 with positive net income |
+| Government subsidy reliance | subsidies / net income | >30%: sustainability question |
+
+### Distress and manipulation screens
+
+- Altman Z (manufacturing calibration, Altman 1968):
+  `Z = 1.2·WC/TA + 1.4·RE/TA + 3.3·EBIT/TA + 0.6·MVE/TL + 1.0·Revenue/TA`.
+  Advisory bands: >2.99 safe, 1.81–2.99 grey, <1.81 distress. State which
+  inputs were unavailable rather than improvising proxies.
+- Piotroski F-score (2000): nine binary signals (positive ROA and operating
+  cash flow, improving ROA, OCF exceeding net income, falling long-term
+  leverage ratio, improving current ratio, no share dilution, improving gross
+  margin, improving asset turnover). Report the count and which signals were
+  computable.
+- Beneish M (1999) needs granular notes data; treat as unavailable unless the
+  statement bundle actually carries the required line items.
+
+### A-share red-flag checklist
+
+Financial: revenue growth with persistently negative operating cash flow;
+inventory growth far outpacing cost of sales; construction in progress
+(在建工程) not transferring to fixed assets over long periods; abnormally
+large other receivables (possible related-party fund occupation); high
+commercial-acceptance-bill share in receivables; goodwill above 40% of net
+assets (20–40%: monitor; also flag profit-commitment (对赌) periods about to
+expire); sudden large impairments after a clean streak (potential big-bath);
+recurring same-direction accounting-estimate changes; excessive R&D
+capitalization ratio.
+
+Governance: auditor change or qualified opinion; frequent CFO turnover;
+financial restatements; exchange inquiry letters (问询函); high controlling
+shareholder pledge ratios; buybacks running in parallel with insider selling;
+independent directors dissenting; CSRC investigation; opaque related-party
+transaction pricing.
+
+Also screen off-balance-sheet exposure when disclosures allow: external
+guarantees, controlling-shareholder pledges, pending litigation, and
+wealth-management or asset-management product investments.
+
+Sources: DuPont decomposition; Altman (1968); Piotroski (2000); Beneish (1999);
+A-share conventions adapted from the finskills China-market methodology
+reference (Apache-2.0). These are reasoning aids, not verified facts.

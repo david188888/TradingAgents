@@ -9,6 +9,9 @@ references.
 
 - `cli/`: Typer commands and interactive terminal adapter.
 - `tradingagents/`: Python package. See [tradingagents/AGENTS.md](tradingagents/AGENTS.md).
+- `tradingagents/skills/`: fork-local research-methodology library (Markdown skills with a
+  code-owned role mapping). Not upstream content; role selection is code-owned and must not
+  be changed by Markdown edits or presets. See `tradingagents/skills/registry.py`.
 - `frontend/`: React workbench source. See [frontend/AGENTS.md](frontend/AGENTS.md).
 - `tradingagents/web/static/`: generated SPA assets served by the Python package.
 - `tests/`, frontend test files/configuration, and `frontend/e2e/`: optional
@@ -56,6 +59,7 @@ workbench; it binds to `127.0.0.1`.
 | Public Python request, result, artifact, or runtime contract | `tradingagents/execution/models.py`, `tradingagents/agents/schemas/`, `tradingagents/runtime/`, consumers and projections |
 | Graph roles, routing, or evidence sequence | `tradingagents/graph/`, `tradingagents/agents/`, `ARCHITECTURE.md` |
 | Vendor capability or A-share source behavior | `tradingagents/dataflows/`, `docs/operations/a-share-data-capabilities.md` |
+| Research methodology skills or role mapping | `tradingagents/skills/registry.py` (code-owned) and `tradingagents/skills/library/`; keep threshold heuristics labeled advisory |
 | Web API, SSE, persistence, or Reader/Audit projection | `tradingagents/web/`, `frontend/src/api/contracts.ts`, relevant frontend consumers |
 | React/TypeScript source | `frontend/AGENTS.md`; rebuild generated assets |
 | Runtime, configuration, CLI, or workflow behavior | `README.md`, `ARCHITECTURE.md`, and focused docs |
