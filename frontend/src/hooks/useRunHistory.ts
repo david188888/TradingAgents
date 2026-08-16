@@ -7,8 +7,8 @@
  * order without client-side sorting or dedup.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { RunSummaryDTO } from "../api/contracts";
-import { deleteRun, listRecentRuns } from "../api/client";
+import type { DeleteAllRunsResultDTO, RunSummaryDTO } from "../api/contracts";
+import { deleteAllRuns, deleteRun, listRecentRuns } from "../api/client";
 
 export interface UseRunHistoryResult {
   runs: RunSummaryDTO[];
@@ -16,6 +16,8 @@ export interface UseRunHistoryResult {
   error: Error | null;
   refresh: () => Promise<void>;
   removeRun: (run_id: string) => Promise<boolean>;
+  /** Bulk-clear all persisted runs (the active run is kept by the server). */
+  clearAll: () => Promise<DeleteAllRunsResultDTO | null>;
 }
 
 export function useRunHistory(): UseRunHistoryResult {
@@ -67,5 +69,19 @@ export function useRunHistory(): UseRunHistoryResult {
     }
   }, []);
 
-  return { runs, loading, error, refresh, removeRun };
+  const clearAll = useCallback(async (): Promise<DeleteAllRunsResultDTO | null> => {
+    try {
+      const result = await deleteAllRuns();
+      // The server keeps the active run; refresh to reflect exactly what remains.
+      if (result.removed > 0 || result.skipped_active) {
+        await refresh();
+      }
+      return result;
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+      return null;
+    }
+  }, [refresh]);
+
+  return { runs, loading, error, refresh, removeRun, clearAll };
 }

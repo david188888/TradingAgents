@@ -43,14 +43,35 @@ export interface RunHistoryProps {
   error: Error | null;
   /** Called after the user confirms deletion of a run. */
   onDeleteRun: (run_id: string) => void;
+  /** Called after the user confirms clearing the whole history. */
+  onClearHistory: () => void;
+  /** True while a bulk clear is in flight so the button can be disabled. */
+  clearing?: boolean;
 }
 
-export function RunHistory({ runs, loading, error, onDeleteRun }: RunHistoryProps): JSX.Element {
+export function RunHistory({
+  runs,
+  loading,
+  error,
+  onDeleteRun,
+  onClearHistory,
+  clearing = false,
+}: RunHistoryProps): JSX.Element {
   const { run_id, selectRun } = useWorkbenchSelection();
 
   const handleDelete = (run: RunSummaryDTO): void => {
     if (window.confirm(`确定删除 ${run.ticker} 的运行记录吗？此操作不可恢复。`)) {
       onDeleteRun(run.run_id);
+    }
+  };
+
+  const handleClear = (): void => {
+    if (
+      window.confirm(
+        "确定清空全部历史记录吗？此操作不可恢复。运行中的分析会被保留。",
+      )
+    ) {
+      onClearHistory();
     }
   };
 
@@ -127,6 +148,16 @@ export function RunHistory({ runs, loading, error, onDeleteRun }: RunHistoryProp
     <section className="history">
       <div className="section-title">
         <h2>最近运行</h2>
+        {runs.length > 0 ? (
+          <button
+            type="button"
+            className="history-clear"
+            onClick={handleClear}
+            disabled={clearing}
+          >
+            {clearing ? "清空中…" : "清空历史"}
+          </button>
+        ) : null}
       </div>
       {error ? (
         <p className="placeholder">加载失败：{error.message}</p>

@@ -535,6 +535,28 @@ def create_app(
     def resume_run(run_id: str) -> dict[str, Any]:
         return selected_manager.resume(run_id).as_dict()
 
+    @app.delete("/api/runs", status_code=200)
+    def delete_all_runs() -> dict[str, Any]:
+        """Delete every persisted run except the currently active analysis.
+
+        Returns ``{"removed": N, "skipped_active": bool}`` so the frontend
+        can report partial success when a run is still executing.  Deleting a
+        run removes its directory and full durable history, so this endpoint
+        is the destructive bulk twin of ``DELETE /api/runs/{run_id}``.
+        """
+        active_id = selected_manager.active_run_id
+        removed = 0
+        for summary in selected_store.list_runs():
+            if summary.run_id == active_id:
+                continue
+            try:
+                selected_store.delete_run(summary.run_id)
+                removed += 1
+            except RunNotFound:
+                # A concurrent deletion can win the race; treat it as removed.
+                continue
+        return {"removed": removed, "skipped_active": active_id is not None}
+
     @app.delete("/api/runs/{run_id}", status_code=204)
     def delete_run(run_id: str) -> Response:
         if selected_manager.active_run_id == run_id:

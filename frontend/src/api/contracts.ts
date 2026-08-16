@@ -466,6 +466,14 @@ export interface RecentRunsPageDTO {
   next_cursor: string | null;
 }
 
+/** DELETE /api/runs bulk-clear result. */
+export interface DeleteAllRunsResultDTO {
+  /** Number of persisted runs actually deleted. */
+  removed: number;
+  /** True when the currently active run was kept because it is executing. */
+  skipped_active: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Read-only market visualisation projection (/api/runs/{run_id}/market-view)
 // ---------------------------------------------------------------------------

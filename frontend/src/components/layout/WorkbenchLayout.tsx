@@ -46,6 +46,7 @@ export function WorkbenchLayout(): JSX.Element {
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditContext, setAuditContext] = useState<AuditEntryContext | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [clearingHistory, setClearingHistory] = useState(false);
   const [expandedStage, setExpandedStage] = useState<JourneyStageId | null>(null);
   const topbarRef = useRef<HTMLElement | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
@@ -176,6 +177,20 @@ export function WorkbenchLayout(): JSX.Element {
     }
   };
 
+  const handleClearHistory = async (): Promise<void> => {
+    setClearingHistory(true);
+    try {
+      const result = await history.clearAll();
+      // clearAll() already refreshed the list. If every visible run was removed
+      // (no active run survived), drop the current reader selection.
+      if (result !== null && !result.skipped_active && run_id !== null) {
+        selectRun(null);
+      }
+    } finally {
+      setClearingHistory(false);
+    }
+  };
+
   return (
     <div className="app">
       <header
@@ -210,6 +225,8 @@ export function WorkbenchLayout(): JSX.Element {
             loading={history.loading}
             error={history.error}
             onDeleteRun={handleDeleteRun}
+            onClearHistory={handleClearHistory}
+            clearing={clearingHistory}
           />
         </aside>
 

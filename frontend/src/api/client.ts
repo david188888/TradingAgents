@@ -18,6 +18,7 @@ import type {
   CompanionDTO,
   CompanionSelectionDTO,
   ConfigResponseDTO,
+  DeleteAllRunsResultDTO,
   MarketEventDTO,
   MarketEventLayer2DTO,
   MarketViewDTO,
@@ -283,6 +284,22 @@ export async function deleteRun(run_id: string): Promise<void> {
   if (!resp.ok) {
     throw await toApiError(resp);
   }
+}
+
+/**
+ * DELETE /api/runs bulk-clear (200). Removes every persisted run except the
+ * currently active analysis and returns the deletion count plus whether an
+ * active run was kept. Destructive: use only after explicit user confirmation.
+ */
+export async function deleteAllRuns(): Promise<DeleteAllRunsResultDTO> {
+  const resp = await fetch(`${API_BASE}${API.runs}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    throw await toApiError(resp);
+  }
+  return (await resp.json()) as DeleteAllRunsResultDTO;
 }
 
 /** GET /api/runs/{run_id}/artifacts */
