@@ -36,6 +36,8 @@ from .health import (
     RATE_LIMIT_COOLDOWN_SECONDS,
     TRANSIENT_FAILURE_COOLDOWN_SECONDS,
 )
+from .bocha_news import BochaUnavailableError
+from .doubao_news import DoubaoUnavailableError
 from .tavily_news import TavilyUnavailableError
 from .wind_provider import (
     WindAuthError,

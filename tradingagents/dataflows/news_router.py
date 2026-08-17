@@ -5,12 +5,27 @@ configured vendor is tried and successes are curated into one
 source-labelled package, with a keyless official-exchange fallback for
 A-share tickers. The cache is owned by one explicit run scope so results
 are not reused across runs.
+
+When ``news_parallel_fetch_enabled`` is set (default), the vendor HTTP
+calls fan out concurrently over a small thread pool.  Correctness rules
+for the fan-out:
+
+* Only the vendor call (plus its in-call raw capture) runs in a worker.
+* Each worker receives a ``contextvars.copy_context()`` snapshot so the
+  observation context and attempt refs set by the router stay visible to
+  ``capture_vendor_raw`` / progress correlation inside the thread.
+* All shared-state mutation - provenance attempt counters, the health
+  registry, progress events, result collection - happens on the main
+  thread, in configured-vendor order, so event streams and fallback
+  semantics stay deterministic and identical to serial execution.
 """
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -44,10 +59,113 @@ logger = logging.getLogger("tradingagents.dataflows.news_router")
 
 # News results may be reused only inside one explicitly owned analysis run.
 # The localhost process is long-lived, so module lifetime is not a run boundary.
+# News results may be reused only inside one explicitly owned analysis run.
+# The localhost process is long-lived, so module lifetime is not a run boundary.
 @dataclass(frozen=True)
 class _NewsCacheEntry:
     result: str
     origin: CacheOrigin
+
+
+@dataclass
+class _VendorOutcome:
+    """One vendor attempt's terminal state, processed on the main thread."""
+
+    vendor: str
+    attempt: Any  # VendorAttemptRef
+    result: Any = None
+    error: BaseException | None = None
+
+
+def _run_vendor_attempt(
+    method: str,
+    vendor: str,
+    attempt: Any,
+    args: tuple[Any, ...],
+    call_kwargs: dict[str, Any],
+    provenance: DataRequestObservation,
+    ctx: contextvars.Context,
+) -> Any:
+    """Worker-body: run only the vendor call inside a copied context."""
+
+    def _call() -> Any:
+        with provenance.attempt_scope(attempt):
+            return VENDOR_METHODS[method][vendor](*args, **call_kwargs)
+
+    return ctx.run(_call)
+
+
+def _run_vendor_attempt_inline(
+    method: str,
+    vendor: str,
+    attempt: Any,
+    args: tuple[Any, ...],
+    call_kwargs: dict[str, Any],
+    provenance: DataRequestObservation,
+) -> _VendorOutcome:
+    """Serial path: same worker body, executed on the calling thread."""
+    try:
+        result = _run_vendor_attempt(
+            method, vendor, attempt, args, call_kwargs, provenance, contextvars.copy_context()
+        )
+        return _VendorOutcome(vendor=vendor, attempt=attempt, result=result)
+    except Exception as exc:
+        return _VendorOutcome(vendor=vendor, attempt=attempt, error=exc)
+
+
+def _fan_out_vendor_calls(
+    method: str,
+    plan: list[tuple[str, Any, dict[str, Any]]],
+    args: tuple[Any, ...],
+    provenance: DataRequestObservation,
+) -> dict[str, Future]:
+    """Dispatch vendor calls concurrently, preserving per-vendor context."""
+    cfg = get_config()
+    max_workers = max(1, int(cfg.get("news_parallel_max_workers", 4)))
+    executor = ThreadPoolExecutor(
+        max_workers=min(max_workers, len(plan)), thread_name_prefix="news-fetch"
+    )
+    try:
+        futures: dict[str, Future] = {}
+        for vendor, attempt, call_kwargs in plan:
+            ctx = contextvars.copy_context()
+            futures[vendor] = executor.submit(
+                _run_vendor_attempt,
+                method,
+                vendor,
+                attempt,
+                args,
+                call_kwargs,
+                provenance,
+                ctx,
+            )
+        # Wait for every submitted task so worker threads have finished all
+        # shared-state-adjacent work (raw capture) before phase 3 reads it.
+        # Exceptions stay stored on the futures: phase 3 (_collect_outcome)
+        # owns failure semantics, so a worker error must not re-raise here.
+        for future in futures.values():
+            try:
+                future.result()
+            except BaseException:
+                pass
+        return futures
+    finally:
+        executor.shutdown(wait=True)
+
+
+def _collect_outcome(vendor: str, future: Future) -> _VendorOutcome:
+    try:
+        return _VendorOutcome(vendor=vendor, attempt=None, result=future.result())
+    except BaseException as exc:  # noqa: BLE001 - router records all failures
+        return _VendorOutcome(vendor=vendor, attempt=None, error=exc)
+
+
+def _config_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 _news_result_cache: dict[tuple, _NewsCacheEntry] = {}
@@ -113,6 +231,9 @@ def _route_news_to_vendors(
     successes: list[tuple[str, Any]] = []
     errors: list[tuple[str, Exception | str]] = []
 
+    # ---- Phase 1 (serial): validate vendors, check cooldowns, open attempts.
+    # All shared-state mutation stays on this thread in configured order.
+    plan: list[tuple[str, Any, dict[str, Any]]] = []
     for vendor in configured_vendors:
         if vendor not in VENDOR_METHODS[method]:
             message = f"vendor does not support {method}"
@@ -158,12 +279,30 @@ def _route_news_to_vendors(
             continue
 
         attempt = _provenance.start_attempt(vendor, fallback_chain=tuple(configured_vendors))
-        try:
-            with _provenance.attempt_scope(attempt):
-                _emit_data_progress("start", method, vendor, args)
-                call_kwargs = _news_vendor_kwargs(method, vendor, kwargs)
-                result = VENDOR_METHODS[method][vendor](*args, **call_kwargs)
-        except Exception as exc:
+        _emit_data_progress("start", method, vendor, args)
+        plan.append((vendor, attempt, _news_vendor_kwargs(method, vendor, kwargs)))
+
+    # ---- Phase 2 (parallel fan-out): run the vendor HTTP calls concurrently.
+    futures: dict[str, Future] = {}
+    if plan:
+        parallel = (
+            _config_bool(get_config().get("news_parallel_fetch_enabled", True))
+            and len(plan) > 1
+        )
+        if parallel:
+            futures = _fan_out_vendor_calls(method, plan, args, _provenance)
+
+    # ---- Phase 3 (serial): collect outcomes in configured order with the
+    # same success/error/empty semantics as the previous serial loop.
+    for vendor, attempt, call_kwargs in plan:
+        if vendor in futures:
+            outcome = _collect_outcome(vendor, futures[vendor])
+        else:
+            outcome = _run_vendor_attempt_inline(
+                method, vendor, attempt, args, call_kwargs, _provenance
+            )
+        if outcome.error is not None:
+            exc = outcome.error
             artifact_id = _provenance.fail(attempt, exc)
             _record_vendor_failure(vendor, method, args, exc)
             _emit_data_progress(
@@ -178,9 +317,10 @@ def _route_news_to_vendors(
             errors.append((vendor, exc))
             continue
 
+        result = outcome.result
         if _is_error_news_result(result):
             message = _summarize_error_news_result(result)
-            artifact_id = _provenance.fail(attempt, message)
+            artifact_id = _provenance.fail(attempt, result)
             _emit_data_progress(
                 "failure",
                 method,
@@ -195,7 +335,7 @@ def _route_news_to_vendors(
 
         if _is_empty_news_result(result):
             message = _summarize_empty_news_result(result)
-            artifact_id = _provenance.fail(attempt, message)
+            artifact_id = _provenance.fail(attempt, result)
             _emit_data_progress(
                 "failure",
                 method,
@@ -207,6 +347,7 @@ def _route_news_to_vendors(
             )
             errors.append((vendor, message))
             continue
+
         artifact_id = _provenance.succeed(attempt, result)
         _record_vendor_success(vendor, method, args)
         _emit_data_progress(

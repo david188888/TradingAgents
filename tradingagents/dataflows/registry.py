@@ -26,6 +26,10 @@ from .alpha_vantage import (
     get_stock as get_alpha_vantage_stock,
 )
 from .alpha_vantage_stock import get_adjusted_stock as get_alpha_vantage_adjusted_stock
+from .bocha_news import (
+    get_global_news_bocha,
+    get_news_bocha,
+)
 from .china_capabilities import (
     get_a_share_interactive_answers,
     get_a_share_interactive_questions,
@@ -81,6 +85,10 @@ from .eastmoney import (
     get_a_share_capital_flow,
     get_a_share_capital_flow_sina,
     get_a_share_margin_financing,
+)
+from .doubao_news import (
+    get_global_news_doubao,
+    get_news_doubao,
 )
 from .eastmoney_news import get_news_eastmoney
 from .fred import get_macro_data as get_fred_macro_data
@@ -247,6 +255,8 @@ VENDOR_LIST = [
     "sina",
     "local",
     "tavily",
+    "doubao",
+    "bocha",
     "yfinance",
     "fred",
     "alpha_vantage",
@@ -285,6 +295,8 @@ VENDOR_MARKETS: dict[str, frozenset[str]] = {
     # request while preserving its non-A-share fallback role.
     "alpha_vantage": frozenset({"global"}),
     "tavily": frozenset({"a_share", "global"}),
+    "doubao": frozenset({"a_share", "global"}),
+    "bocha": frozenset({"a_share", "global"}),
 }
 
 # Mapping of methods to their vendor-specific implementations
@@ -347,6 +359,14 @@ VENDOR_METHODS = {
     # news_data
     "get_news": {
         "tavily": get_news_tavily,
+        # Doubao Global search - ByteDance/Volcengine web search with strong
+        # Chinese and English coverage.  Supports both A-share and global
+        # tickers; no server-side date filter (client-side filtering applied).
+        "doubao": get_news_doubao,
+        # Bocha web search - domestic Chinese Bing-compatible search API.
+        # Supports both A-share and global tickers with optional server-side
+        # date filtering (freshness; defaults to noLimit per vendor guidance).
+        "bocha": get_news_bocha,
         # Keyless domestic A-share company-news fallback (search-api-web).
         # yfinance/alpha_vantage are global-only and skipped for A-share tickers,
         # so this is the natural second source before exchange announcements.
@@ -360,6 +380,8 @@ VENDOR_METHODS = {
     },
     "get_global_news": {
         "tavily": get_global_news_tavily,
+        "doubao": get_global_news_doubao,
+        "bocha": get_global_news_bocha,
         "yfinance": get_global_news_yfinance,
         "alpha_vantage": get_alpha_vantage_global_news,
     },

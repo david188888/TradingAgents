@@ -164,7 +164,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "core_stock_apis": "mootdx,yfinance,tushare,akshare,alpha_vantage",  # Options: mootdx, yfinance, tushare, akshare, alpha_vantage (mootdx = A-share only, TCP 7709 no IP ban; akshare removed from the runtime chain but kept in config so an explicit override stays valid)
         "technical_indicators": "local,yfinance",  # Options: local (A-share stockstats over mootdx/tushare), alpha_vantage, yfinance
         "fundamental_data": "tushare,akshare,alpha_vantage",  # A-share fundamentals: Tushare -> AKShare; Sina is used only for the three statements below
-        "news_data": "tavily,eastmoney,yfinance,alpha_vantage",  # Options: tavily, eastmoney (A-share keyless), alpha_vantage, yfinance
+        "news_data": "tavily,doubao,bocha,eastmoney,yfinance,alpha_vantage",  # Options: tavily, doubao (ByteDance search, needs DOUBAO_SEARCH_API_KEY), bocha (Bocha web search, needs BOCHA_API_KEY), eastmoney (A-share keyless), alpha_vantage, yfinance
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         # Optional A-share research supplements.  Their failures degrade to a
         # source-labelled unavailable result and do not affect core OHLCV.
@@ -204,22 +204,27 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # Historical trend analysis must never fall back to raw OHLCV.
         "get_adjusted_price_history": "wind,tushare,akshare,yfinance,alpha_vantage",
         # News uses one shared company-news chain; the router filters vendors
-        # by market. Global news has its own method-compatible chain.
-        "get_news": "tavily,eastmoney,yfinance,alpha_vantage",
-        "get_global_news": "tavily,yfinance,alpha_vantage",
+        # by market. Global news has its own method-compatible chain.  The
+        # three search providers (tavily/doubao/bocha) fan out in parallel
+        # when configured (news_parallel_fetch_enabled).
+        "get_news": "tavily,doubao,bocha,eastmoney,yfinance,alpha_vantage",
+        "get_global_news": "tavily,doubao,bocha,yfinance,alpha_vantage",
         # Interactive Q&A is registered in the broad specialty category, whose
         # default is EastMoney; pin these two AKShare-only methods explicitly.
         "get_a_share_interactive_questions": "akshare",
         "get_a_share_interactive_answers": "akshare",
     },
     # Tavily news search controls. Defaults intentionally keep API usage low.
+    # Search providers return 8 results by default: search APIs charge per
+    # query (not per result), and 3 sources x 8 items gives the curator's
+    # 10-item cap enough headroom for cross-source dedup and confirmation.
     "halt_on_missing_data": True,
     "a_share_yfinance_min_coverage_ratio": 0.6,
     "a_share_yfinance_min_rows": 3,
     "a_share_yfinance_min_fundamental_fields": 5,
     "akshare_adjust": "",
     "tavily_search_depth": "basic",
-    "tavily_max_results": 5,
+    "tavily_max_results": 8,
     "tavily_topic": "news",
     "tavily_company_news_topic": "news",
     "tavily_company_fallback_topic": "finance",
@@ -246,12 +251,74 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "tavily_company_exclude_domains": [],
     "tavily_global_include_domains": [],
     "tavily_global_exclude_domains": [],
+    # Doubao (豆包搜索 Global 版) news search controls.
+    # Requires DOUBAO_SEARCH_API_KEY or DOUBAO_SEARCH_API_KEYS env var.
+    # The Global API has no server-side date filter — query templates
+    # embed the date window and results are filtered client-side.
+    "doubao_max_results": 8,
+    "doubao_max_snippet_length": 800,
+    "doubao_icp_host_only": False,  # restrict to ICP-registered domestic sites only
+    "doubao_company_news_query_template": (
+        '"{ticker}" "{company_name}" stock market news earnings revenue guidance analyst rating'
+    ),
+    "doubao_a_share_news_query_template": (
+        '"{ticker}" "{plain_ticker}" "{company_name}" 股票 公告 业绩 财报 经营 市场 新闻'
+    ),
+    "doubao_global_news_query": (
+        "global financial markets macro economy central bank inflation interest rate "
+        "earnings commodities geopolitical risk outlook"
+    ),
+    # Bocha (博查) Web Search controls.
+    # Requires BOCHA_API_KEY or BOCHA_API_KEYS env var.
+    # freshness: noLimit (vendor-recommended; ranking rewrites time context,
+    # client-side date filter applies) or "window" (strict server-side
+    # YYYY-MM-DD..YYYY-MM-DD filter), or oneDay/oneWeek/oneMonth/oneYear.
+    "bocha_max_results": 8,
+    "bocha_summary": True,  # include the longer text summary in results
+    "bocha_freshness": "noLimit",
+    "bocha_include_domains": [],
+    "bocha_exclude_domains": [],
+    "bocha_company_include_domains": [],
+    "bocha_company_exclude_domains": [],
+    "bocha_global_include_domains": [],
+    "bocha_global_exclude_domains": [],
+    "bocha_company_news_query_template": (
+        '"{company_name}" stock market news earnings revenue guidance analyst rating'
+    ),
+    "bocha_a_share_news_query_template": (
+        # Bocha is a general-purpose Chinese engine: unquoted company-name-first
+        # queries recall far better than multi-term quoted ticker queries.
+        '"{company_name}" {plain_ticker} 股票 新闻'
+    ),
+    "bocha_global_news_query": (
+        # Chinese-first query: Bocha's Chinese corpus (eastmoney/jrj/cls daily
+        # digests) is far stronger than its English long-tail coverage.
+        "全球金融市场 宏观经济 央行 利率 最新消息"
+    ),
+    # News vendor fan-out.  When enabled and multiple news vendors are
+    # configured, their HTTP calls run concurrently (thread pool) while all
+    # bookkeeping - provenance attempts, health registry, progress events -
+    # stays ordered and single-threaded.
+    "news_parallel_fetch_enabled": True,
+    "news_parallel_max_workers": 4,
     # When ordinary company-news providers cannot return A-share coverage,
     # query the existing public SSE/SZSE announcement adapter as a clearly
     # labelled source-priority fallback.  It is not used for global news and
     # is never a silent substitute when ordinary news already succeeded.
     "a_share_news_official_fallback_enabled": True,
     "news_curator_max_items": 10,
+    # Fuzzy dedup catches the same article republished across sites with
+    # slightly different titles.  L2 runs after L1 (exact URL / exact title).
+    # Similarity uses bi-directional title-bigram containment (the fraction
+    # of the shorter title's character pairs that also appear in the longer),
+    # which is more robust than Jaccard for rewrites.  min_overlap_bigrams
+    # prevents short titles from coincidentally matching.  The time window
+    # restricts comparisons to items published within +/- N days so unrelated
+    # articles sharing a few words are not falsely merged.
+    "news_fuzzy_dedup_enabled": True,
+    "news_fuzzy_dedup_title_threshold": 0.5,
+    "news_fuzzy_dedup_time_window_days": 2,
+    "news_fuzzy_dedup_min_overlap_bigrams": 5,
     # A-share sentiment analyst: include the dragon-tiger list (短线资金活跃度)
     # as an optional sentiment block. Disable for a longer-horizon read where
     # short-term hot-money signals are noise.

@@ -50,6 +50,10 @@ def _is_error_news_result(result: Any) -> bool:
 def _summarize_empty_news_result(result: Any) -> str:
     if isinstance(result, dict) and result.get("source") == "tavily":
         return "Tavily returned no results"
+    if isinstance(result, dict) and result.get("source") == "doubao":
+        return "Doubao returned no results"
+    if isinstance(result, dict) and result.get("source") == "bocha":
+        return "Bocha returned no results"
     return str(result).strip()[:300] or "empty result"
 
 
@@ -165,6 +169,12 @@ def _is_relevant_news_item(
 def _extract_news_items(vendor: str, result: Any) -> list[dict[str, Any]]:
     if isinstance(result, dict) and result.get("source") == "tavily":
         return [dict(item, source="tavily") for item in result.get("items", [])]
+
+    if isinstance(result, dict) and result.get("source") == "doubao":
+        return [dict(item, source="doubao") for item in result.get("items", [])]
+
+    if isinstance(result, dict) and result.get("source") == "bocha":
+        return [dict(item, source="bocha") for item in result.get("items", [])]
 
     if isinstance(result, (dict, list)):
         return _extract_json_news_items(vendor, result)
@@ -340,15 +350,61 @@ def _news_market_timezone() -> tzinfo:
 
 
 def _dedupe_news_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    deduped = []
-    seen = set()
-    for item in sorted(items, key=lambda x: str(x.get("published") or ""), reverse=True):
+    """Two-layer deduplication: exact match first, then fuzzy title+time match.
+
+    L1 (exact): URL normalised (strip query/hash); if no URL, exact title
+    normalised.  O(n) and zero false positives.
+
+    L2 (fuzzy, optional): character bigram Jaccard similarity on normalised
+    titles, combined with a publication-time window so unrelated articles
+    sharing some words are not falsely merged.  Runs *after* L1 so the
+    comparison budget is already reduced.
+    """
+    ordered = sorted(items, key=lambda x: str(x.get("published") or ""), reverse=True)
+
+    # ---- L1: exact dedup ----
+    l1_deduped: list[dict[str, Any]] = []
+    seen_l1: set[str] = set()
+    for item in ordered:
         key = _news_dedupe_key(item)
-        if key in seen:
+        if key in seen_l1:
             continue
-        seen.add(key)
-        deduped.append(item)
-    return deduped
+        seen_l1.add(key)
+        l1_deduped.append(item)
+
+    # ---- L2: fuzzy dedup (optional, config-gated) ----
+    cfg = get_config()
+    if not _config_bool(cfg.get("news_fuzzy_dedup_enabled", True)):
+        return l1_deduped
+
+    threshold = float(cfg.get("news_fuzzy_dedup_title_threshold", 0.5))
+    time_window_days = int(cfg.get("news_fuzzy_dedup_time_window_days", 2))
+    min_overlap = int(cfg.get("news_fuzzy_dedup_min_overlap_bigrams", 5))
+
+    l2_deduped: list[dict[str, Any]] = []
+    kept_bigrams: list[frozenset[str] | None] = []
+    kept_times: list[datetime | None] = []
+
+    for item in l1_deduped:
+        bigrams = _title_bigrams(item.get("title"))
+        pub_time = _parse_date_best_effort(item.get("published", ""))
+        is_dup = False
+        for i, kept_bg in enumerate(kept_bigrams):
+            if kept_bg is None or bigrams is None:
+                continue
+            if not _within_time_window(pub_time, kept_times[i], time_window_days):
+                continue
+            sim = _title_similarity(bigrams, kept_bg, min_overlap)
+            if sim >= threshold:
+                is_dup = True
+                break
+        if is_dup:
+            continue
+        l2_deduped.append(item)
+        kept_bigrams.append(bigrams)
+        kept_times.append(pub_time)
+
+    return l2_deduped
 
 
 def _news_dedupe_key(item: dict[str, Any]) -> str:
@@ -357,6 +413,80 @@ def _news_dedupe_key(item: dict[str, Any]) -> str:
         return re.sub(r"[?#].*$", "", url)
     title = str(item.get("title") or "").lower()
     return re.sub(r"[^a-z0-9一-鿿]+", "", title)[:120]
+
+
+def _normalize_title_for_fuzzy(title: object) -> str:
+    """Normalise a title for fuzzy comparison.
+
+    Lowercase, strip punctuation/symbols, collapse whitespace.  Preserves
+    CJK characters so Chinese titles still produce meaningful bigrams.
+    """
+    text = str(title or "").lower()
+    text = re.sub(r"[^a-z0-9\s一-鿿]+", " ", text)
+    return re.sub(r"\s+", "", text).strip()
+
+
+def _title_bigrams(title: object) -> frozenset[str] | None:
+    """Return character bigrams of a normalised title, or None if too short."""
+    norm = _normalize_title_for_fuzzy(title)
+    if len(norm) < 2:
+        return None
+    return frozenset(norm[i : i + 2] for i in range(len(norm) - 1))
+
+
+def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    union = len(a | b)
+    if union == 0:
+        return 0.0
+    return inter / union
+
+
+def _title_similarity(
+    a: frozenset[str], b: frozenset[str], min_overlap: int = 5
+) -> float:
+    """Title similarity using bi-directional containment (max of both sides).
+
+    Containment is more robust than Jaccard for republished articles where one
+    site adds or removes a few words: it asks "what fraction of the shorter
+    title's character pairs also appear in the longer one?" rather than
+    penalising length asymmetry.
+
+    Returns 0.0 when the overlap is below ``min_overlap`` bigrams so very
+    short titles cannot coincidentally trigger a false merge.
+    """
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    if inter < min_overlap:
+        return 0.0
+    smaller = min(len(a), len(b))
+    if smaller == 0:
+        return 0.0
+    return inter / smaller
+
+
+def _within_time_window(
+    a: datetime | None, b: datetime | None, window_days: int
+) -> bool:
+    """Two published times count as 'same event window' if both are known and
+    within ``window_days`` of each other.  If either is unknown, we still let
+    the fuzzy comparison run (safer to compare than to silently merge), but
+    callers may choose a different strategy.
+    """
+    if a is None or b is None:
+        return True
+    return abs((a - b).days) <= window_days
+
+
+def _config_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _format_curated_news(
@@ -381,7 +511,9 @@ def _format_curated_news(
     if len(successes) >= 2:
         llm = create_llm_from_config()
         attach_cross_source_info(items, llm)
+    raw_count = len(items)
     curated = _dedupe_news_items(items)[:max_items]
+    dedup_removed = raw_count - len(_dedupe_news_items(items))
     attach_credibility(curated)
     cred_summary = credibility_summary(curated)
     cs_summary = cross_source_summary(curated) if len(successes) >= 2 else {"confirmed": 0, "single_source": 0}
@@ -398,6 +530,13 @@ def _format_curated_news(
     ]
     if stale_count:
         sections.append(f"Timeliness: {stale_count} item(s) filtered as outside the {start_date}~{end_date} window.")
+    if dedup_removed:
+        fuzzy_enabled = _config_bool(cfg.get("news_fuzzy_dedup_enabled", True))
+        sections.append(
+            f"Deduplication: {dedup_removed} item(s) removed "
+            f"({'exact + fuzzy' if fuzzy_enabled else 'exact match only'}) "
+            f"before curator cap."
+        )
     if low_relevance_count:
         sections.append(
             f"Relevance: {low_relevance_count} item(s) marked low-relevance "
