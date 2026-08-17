@@ -32,8 +32,13 @@ class AnalystDefinition:
     tool_node_id: str
     report_key: str
     icon_id: str
-    # Matches the code-owned methodology role.  YAML may select this analyst
-    # but cannot replace its skill pool or inject arbitrary skill text.
+    # Read-only declaration that maps this YAML-selectable analyst to its
+    # code-owned methodology role (a ``ROLE_SKILL_NAMES`` key in
+    # ``tradingagents.skills.registry``).  It is metadata only: runtime skill
+    # wiring lives in each analyst source via ``build_role_skill_prompt`` and is
+    # enforced by ``test_analyst_prompts_use_only_their_static_skill_mapping``.
+    # Nothing reads this field to drive selection; YAML presets cannot replace a
+    # skill pool or inject arbitrary skill text.
     skill_role: str
 
     def as_api_option(self) -> dict[str, object]:
@@ -44,6 +49,7 @@ class AnalystDefinition:
             "description": self.description,
             "investing_style": self.investing_style,
             "order": self.order,
+            "skill_role": self.skill_role,
         }
 
 

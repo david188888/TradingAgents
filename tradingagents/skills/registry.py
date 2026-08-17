@@ -68,6 +68,11 @@ ROLE_SKILL_NAMES: Mapping[str, tuple[str, ...]] = {
         "tam-adj-peg",
     ),
     "portfolio_manager": ("buy-side-equity-research-memo",),
+    # Interface-level binding, not a runtime prompt injection.  The skill is a
+    # read-only lookup contract for EXTERNAL agents (Proma/Codex/...): it routes
+    # a company research question to an existing run/package/reader via the web
+    # API.  The in-graph Research Manager consumes evidence/claim state directly
+    # and intentionally never calls build_role_skill_prompt for this role.
     "research_manager": ("evidence-bound-research-interoperability",),
 }
 
