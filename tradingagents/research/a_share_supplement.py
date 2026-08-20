@@ -64,6 +64,9 @@ _CAPABILITY_BUDGETS: dict[
         ("interactive_questions", "get_a_share_interactive_questions", 6_000),
         ("cls_telegraph", "get_cls_telegraph", 5_000),
         ("industry_research_reports", "industry_research_qtype1", 2_000),
+        # a-stock-data v3.7.0 supplement: valuation history + adjust factors
+        ("valuation_history", "get_a_share_valuation_history", 6_000),
+        ("adjust_factors", "get_a_share_adjust_factors", 2_000),
     ),
     "long": (
         ("capital_flow", "get_a_share_capital_flow", 8_000),
@@ -76,6 +79,14 @@ _CAPABILITY_BUDGETS: dict[
         ("concept_blocks", "get_a_share_concept_blocks", 4_000),
         ("interactive_questions", "get_a_share_interactive_questions", 6_000),
         ("industry_research_reports", "industry_research_qtype1", 2_000),
+        # a-stock-data v3.7.0 supplement: full research-depth set
+        ("adjust_factors", "get_a_share_adjust_factors", 2_000),
+        ("valuation_history", "get_a_share_valuation_history", 8_000),
+        ("listing_history", "get_a_share_listing_history", 2_000),
+        ("chip_distribution", "get_a_share_chip_distribution", 3_000),
+        ("sw_industry_history", "get_sw_industry_history", 5_000),
+        ("china_social_financing", "get_china_social_financing", 5_000),
+        ("china_pmi", "get_china_pmi", 3_000),
     ),
 }
 

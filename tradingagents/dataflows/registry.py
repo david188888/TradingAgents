@@ -14,6 +14,15 @@ working while new code imports directly from this module.
 
 import logging
 
+from .a_stock_v37 import (
+    get_a_share_adjust_factors,
+    get_a_share_chip_distribution,
+    get_a_share_listing_history,
+    get_a_share_valuation_history,
+    get_china_pmi,
+    get_china_social_financing,
+    get_sw_industry_history,
+)
 from .alpha_vantage import (
     get_balance_sheet as get_alpha_vantage_balance_sheet,
     get_cashflow as get_alpha_vantage_cashflow,
@@ -240,6 +249,18 @@ TOOLS_CATEGORIES = {
         "description": "Optional iWenCai natural-language query capability",
         "tools": ["search_a_share_iwencai"],
     },
+    "a_share_v37_supplement": {
+        "description": "a-stock-data v3.7.0 supplement endpoints: adjust factors, valuation history, listing dates, chip distribution, SW industry history, China macro (PBC/NBS)",
+        "tools": [
+            "get_a_share_adjust_factors",
+            "get_a_share_valuation_history",
+            "get_a_share_listing_history",
+            "get_a_share_chip_distribution",
+            "get_sw_industry_history",
+            "get_china_social_financing",
+            "get_china_pmi",
+        ],
+    },
     "a_share_telegraph": {
         "description": "CLS telegraph capability; unavailable unless a reviewed signer is configured",
         "tools": ["get_cls_telegraph"],
@@ -266,6 +287,10 @@ VENDOR_LIST = [
     "iwencai",
     "cls",
     "wind",
+    "baostock",
+    "swsresearch",
+    "pbc",
+    "nbs",
 ]
 
 # Vendor market capability matrix.
@@ -297,6 +322,12 @@ VENDOR_MARKETS: dict[str, frozenset[str]] = {
     "tavily": frozenset({"a_share", "global"}),
     "doubao": frozenset({"a_share", "global"}),
     "bocha": frozenset({"a_share", "global"}),
+    # a-stock-data v3.7.0 supplement sources are A-share only (baostock does
+    # not serve BSE segments; the adapters degrade per-method for those).
+    "baostock": frozenset({"a_share"}),
+    "swsresearch": frozenset({"a_share"}),
+    "pbc": frozenset({"a_share"}),
+    "nbs": frozenset({"a_share"}),
 }
 
 # Mapping of methods to their vendor-specific implementations
@@ -396,6 +427,14 @@ VENDOR_METHODS = {
     "get_china_macro_indicators": {
         "akshare": get_china_macro_indicators,
     },
+    # a-stock-data v3.7.0 supplement endpoints (zero-key direct sources)
+    "get_a_share_adjust_factors": {"sina": get_a_share_adjust_factors},
+    "get_a_share_valuation_history": {"baostock": get_a_share_valuation_history},
+    "get_a_share_listing_history": {"baostock": get_a_share_listing_history},
+    "get_a_share_chip_distribution": {"baostock": get_a_share_chip_distribution},
+    "get_sw_industry_history": {"swsresearch": get_sw_industry_history},
+    "get_china_social_financing": {"pbc": get_china_social_financing},
+    "get_china_pmi": {"nbs": get_china_pmi},
     # Optional, zero-key supplemental A-share capabilities.  They are kept
     # separate from OHLCV so a changed public endpoint cannot poison core
     # price/fundamental routing.

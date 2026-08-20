@@ -16,6 +16,7 @@ from tradingagents.dataflows.coverage import CoveredText, PriceSeriesCoverageV1
 
 from .config import get_config
 from .ticker_utils import (
+    infer_a_share_exchange,
     is_a_share_ticker,
     to_akshare_prefixed_symbol,
     to_akshare_symbol,
@@ -464,9 +465,15 @@ _SINA_STATEMENT_REPORT_TYPES = {
 
 
 def _sina_statement_prefix(ticker: str) -> str:
-    """Pick the exchange prefix Sina's financial report endpoint expects."""
+    """Pick the exchange prefix Sina's financial report endpoint expects.
+
+    Derived from the normalized exchange (SH/SZ/BJ), mirroring a-stock-data
+    ``get_prefix``: SH ETFs (5xx), SH B-shares (900x) and SH mainboard (6xx)
+    route to ``sh``, BSE 92/8/4 segments to ``bj``, everything else to ``sz``.
+    """
     code = to_akshare_symbol(ticker)
-    return "sh" if code.startswith(("5", "6", "9")) else "sz"
+    exchange = infer_a_share_exchange(code)
+    return "sh" if exchange == "SH" else "bj" if exchange == "BJ" else "sz"
 
 
 def _get_sina_statement_direct(
@@ -512,7 +519,7 @@ def _get_sina_statement_direct(
             f"Sina {title} request failed for {paper_code}: {exc}"
         ) from exc
     report_list = (
-        payload.get("result", {}).get("data", {}).get("report_list", {}) or {}
+        ((payload.get("result") or {}).get("data") or {}).get("report_list") or {}
     )
     if not report_list:
         raise ChinaDataUnavailableError(

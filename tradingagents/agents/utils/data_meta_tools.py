@@ -232,6 +232,34 @@ def _china_macro(_symbol: str, _curr_date: str, _request: str) -> str:
     return route_to_vendor("get_china_macro_indicators", "gdp,cpi,pmi,money_supply,lpr")
 
 
+def _adjust_factors(symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_adjust_factors", symbol, "qfq")
+
+
+def _valuation_history(symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_valuation_history", symbol)
+
+
+def _listing_history(symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_listing_history", symbol)
+
+
+def _chip_distribution(symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_a_share_chip_distribution", symbol)
+
+
+def _sw_industry_history(_symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_sw_industry_history")
+
+
+def _china_social_financing(_symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_china_social_financing")
+
+
+def _china_pmi(_symbol: str, _curr_date: str, _request: str) -> str:
+    return route_to_vendor("get_china_pmi")
+
+
 _CAPABILITIES: tuple[Capability, ...] = (
     Capability("verified_market_snapshot", "verified_market_snapshot", "market", _market_snapshot, default=True),
     Capability(
@@ -269,6 +297,14 @@ _CAPABILITIES: tuple[Capability, ...] = (
     Capability("macro_cpi", "get_macro_indicators", "news", _macro_cpi, ("cpi", "inflation", "通胀")),
     Capability("macro_rates", "get_macro_indicators", "news", _macro_rates, ("rate", "rates", "利率", "fed", "美联储")),
     Capability("china_macro", "get_china_macro_indicators", "news", _china_macro, ("中国宏观", "中国经济", "中国通胀", "中国pmi", "经济周期", "景气"), True),
+    # a-stock-data v3.7.0 supplement capabilities (zero-key direct sources)
+    Capability("adjust_factors", "get_a_share_adjust_factors", "fundamentals", _adjust_factors, ("复权", "前复权", "后复权", "qfq", "hfq", "adjust factor"), True),
+    Capability("valuation_history", "get_a_share_valuation_history", "fundamentals", _valuation_history, ("历史估值", "估值历史", "pe历史", "pb历史", "valuation history"), True),
+    Capability("listing_history", "get_a_share_listing_history", "fundamentals", _listing_history, ("上市日", "退市日", "上市时间", "退市", "ipo date", "listing"), True),
+    Capability("chip_distribution", "get_a_share_chip_distribution", "fundamentals", _chip_distribution, ("筹码分布", "筹码成本", "获利比例", "平均成本", "cyq", "chip"), True),
+    Capability("sw_industry_history", "get_sw_industry_history", "fundamentals", _sw_industry_history, ("申万", "行业变迁", "行业历史", "sw industry"), True),
+    Capability("china_social_financing", "get_china_social_financing", "news", _china_social_financing, ("社融", "社会融资", "social financing"), True),
+    Capability("china_pmi", "get_china_pmi", "news", _china_pmi, ("中国pmi", "制造业pmi", "pmi指数"), True),
 )
 
 

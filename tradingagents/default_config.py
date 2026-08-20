@@ -183,6 +183,11 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "a_share_specialty_data": "eastmoney",
         "a_share_query_data": "iwencai",
         "a_share_telegraph": "cls",
+        # a-stock-data v3.7.0 supplement endpoints; each method pins one
+        # zero-key direct source (sina factors, baostock history/CYQ/listing,
+        # swsresearch industry history, pbc/nbs macro).  baostock does not
+        # serve BSE segments; those degrade per-method.
+        "a_share_v37_supplement": "sina,baostock,swsresearch,pbc,nbs",
         # Wind AIFin Market is the premium primary; EastMoney is the keyless
         # fallback for index snapshot/history when Wind is unavailable.
         "wind_index_data": "wind,eastmoney",
@@ -213,6 +218,15 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # default is EastMoney; pin these two AKShare-only methods explicitly.
         "get_a_share_interactive_questions": "akshare",
         "get_a_share_interactive_answers": "akshare",
+        # a-stock-data v3.7.0 supplement endpoints pin a single zero-key source;
+        # category default (a_share_v37_supplement) is a superset safety net.
+        "get_a_share_adjust_factors": "sina",
+        "get_a_share_valuation_history": "baostock",
+        "get_a_share_listing_history": "baostock",
+        "get_a_share_chip_distribution": "baostock",
+        "get_sw_industry_history": "swsresearch",
+        "get_china_social_financing": "pbc",
+        "get_china_pmi": "nbs",
     },
     # Tavily news search controls. Defaults intentionally keep API usage low.
     # Search providers return 8 results by default: search APIs charge per

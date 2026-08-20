@@ -23,7 +23,12 @@ from .china_data import ChinaDataUnavailableError
 from .coverage import CoveredText, SourceCoverageV1
 from .eastmoney import EASTMONEY_DATACENTER_URL, em_get
 from .errors import NoMarketDataError, VendorHTTPError
-from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare_symbol
+from .ticker_utils import (
+    infer_a_share_exchange,
+    is_a_share_ticker,
+    normalize_ticker_symbol,
+    to_akshare_symbol,
+)
 
 SSE_ANNOUNCEMENT_URL = "https://query.sse.com.cn/security/stock/queryCompanyBulletin.do"
 SZSE_ANNOUNCEMENT_URL = "https://www.szse.cn/api/disc/announcement/annList"
@@ -386,9 +391,14 @@ def _cninfo_orgid(code: str) -> str:
             _CNINFO_ORGID_MAP = {}
     if code in _CNINFO_ORGID_MAP:
         return _CNINFO_ORGID_MAP[code]
-    if code.startswith("6"):
+    # Fallback orgId prefix follows the instrument's exchange: SH ETFs (5xx)
+    # and SH B-shares (900x) are Shanghai, while only the 92/8/4 BSE segments
+    # are Beijing -- a bare ``startswith(("8","9","4"))`` test would mis-route
+    # 900x B-shares to gsbj (mirrors a-stock-data v3.7.0 #46 routing).
+    exchange = infer_a_share_exchange(code)
+    if exchange == "SH":
         return f"gssh0{code}"
-    if code.startswith(("8", "9", "4")):
+    if exchange == "BJ":
         return f"gsbj0{code}"
     return f"gssz0{code}"
 

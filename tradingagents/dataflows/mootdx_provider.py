@@ -10,7 +10,7 @@ The mootdx 0.11.x library carries a BESTIP bug where a fresh install leaves
 ``tdx_client()`` below probes a server list with a *real one-bar fetch*
 (not just a TCP handshake, which is a false positive -- broken servers
 handshake then return an empty body) and reuses the first server that
-actually returns data.  See a-stock-data SKILL.md §1.1 + V3.4.1.
+actually returns data.  See a-stock-data SKILL.md §1.1 + V3.7.1.
 """
 
 from __future__ import annotations

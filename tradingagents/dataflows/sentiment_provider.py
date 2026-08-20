@@ -76,7 +76,12 @@ def get_a_share_hot_concept(ticker: str) -> str:
     if not is_a_share_ticker(canonical):
         raise ChinaDataUnavailableError(f"{ticker} is not recognized as an A-share ticker.")
     code = to_akshare_symbol(canonical)
-    prefix = "SH" if code.startswith("6") else "SZ"
+    # EastMoney emappdata srcSecurityCode takes an uppercase exchange prefix
+    # (SH/SZ/BJ).  Derive it from the normalized canonical suffix, not the bare
+    # code's first digit -- ``startswith("6")`` would mis-route SH ETFs
+    # (51x/588x), SH B-shares (900x) and BSE codes to SZ (mirrors a-stock-data
+    # v3.7.0 #46: ``get_prefix(code).upper()`` in §10.2).
+    prefix = {"SH": "SH", "SS": "SH", "SZ": "SZ", "BJ": "BJ"}[canonical.split(".")[-1]]
     try:
         resp = requests.post(
             _EM_HOT_CONCEPT_URL,

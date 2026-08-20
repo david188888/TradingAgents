@@ -891,7 +891,12 @@ def get_a_share_concept_blocks(ticker: str) -> str:
     self-describing; EastMoney does not separate industry/concept/region.
     """
     code = _require_a_share_code(ticker)
-    market_code = 1 if code.startswith("6") else 0
+    # EastMoney push2 secid: Shanghai=1, Shenzhen/Beijing=0.  Derive the market
+    # from the normalized canonical ticker, not the bare code's first digit --
+    # ``startswith("6")`` would mis-route SH ETFs (51x/588x) and SH B-shares
+    # (900x) to Shenzhen, mirroring a-stock-data v3.7.0 #46 (em_market_code).
+    canonical = normalize_ticker_symbol(ticker)
+    market_code = 1 if canonical.endswith((".SS", ".SH")) else 0
     payload = em_get(
         _SLIST_URL,
         params={
@@ -928,7 +933,7 @@ def get_a_share_concept_blocks(ticker: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Key-stock monitor pool + intraday price anomaly (a-stock-data v3.6.0 §8.4/§8.5)
+# Key-stock monitor pool + intraday price anomaly (a-stock-data v3.7.1 §8.4/§8.5)
 # ---------------------------------------------------------------------------
 
 _CN_TZ = timezone(timedelta(hours=8))
