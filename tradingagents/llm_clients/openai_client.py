@@ -151,12 +151,25 @@ class DeepSeekChatOpenAI(NormalizedChatOpenAI):
     def _get_request_payload(self, input_, *, stop=None, **kwargs):
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
         outgoing = payload.get("messages", [])
+        # Echo back real reasoning_content from prior DeepSeek assistant turns so
+        # multi-turn thinking-mode conversations round-trip correctly.
         for message_dict, message in zip(outgoing, _input_to_messages(input_), strict=False):
             if not isinstance(message, AIMessage):
                 continue
             reasoning = message.additional_kwargs.get("reasoning_content")
             if reasoning is not None:
                 message_dict["reasoning_content"] = reasoning
+        # DeepSeek thinking mode rejects ANY assistant message that lacks
+        # reasoning_content (probed 2026-08-21): prompts that inject static data
+        # bundles as assistant turns (e.g. prefetched adjusted-price / A-share
+        # supplement messages) fail with HTTP 400 "reasoning_content ... must be
+        # passed back". Give such assistant turns an empty reasoning_content so
+        # the request passes validation; real reasoning_content (set above) is
+        # preserved untouched.
+        if self._thinking_enabled:
+            for message_dict in outgoing:
+                if message_dict.get("role") == "assistant":
+                    message_dict.setdefault("reasoning_content", "")
         return payload
 
     def _create_chat_result(self, response, generation_info=None):

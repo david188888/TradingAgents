@@ -237,7 +237,7 @@ class BatchCreateRequest(BaseModel):
         return self
 
 
-
+class ArtifactMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     artifact_id: str
