@@ -177,6 +177,7 @@ export interface Report {
  */
 export type ApplicationStatus =
   | "created"
+  | "queued"
   | "running"
   | "cancel_requested"
   | "completed"

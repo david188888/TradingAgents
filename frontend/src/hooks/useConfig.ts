@@ -74,6 +74,7 @@ export interface UseConfigResult {
   configured_keys: Record<string, boolean>;
 
   buildRequest: () => RunCreateRequestDTO | null;
+  buildRequestForTicker: (ticker: string) => RunCreateRequestDTO | null;
   validationError: string | null;
 }
 
@@ -241,6 +242,26 @@ export function useConfig(): UseConfigResult {
     }
   }
 
+  function buildRequestForTicker(value: string): RunCreateRequestDTO | null {
+    if (config === null || (validationError !== null && validationError !== "请输入股票代码")) return null;
+    const normalizedTicker = value.trim();
+    if (!normalizedTicker) return null;
+    return {
+      ticker: normalizedTicker,
+      analysis_date: analysisDate,
+      selected_analysts: [...selectedAnalysts],
+      research_depth: researchDepth,
+      mode: "company_research",
+      horizon,
+      llm_provider: llmProvider,
+      quick_think_llm: quickThinkLlm,
+      deep_think_llm: deepThinkLlm,
+      output_language: outputLanguage,
+      checkpoint_enabled: checkpointEnabled,
+      asset_type: null,
+    };
+  }
+
   function buildRequest(): RunCreateRequestDTO | null {
     if (config === null || validationError !== null) return null;
     const orderedAnalysts = [...selectedAnalysts];
@@ -327,6 +348,7 @@ export function useConfig(): UseConfigResult {
     deepOptions,
     configured_keys,
     buildRequest,
+    buildRequestForTicker,
     validationError,
   };
 }

@@ -224,6 +224,8 @@ function applyEvent(state: ReducerState, event: PersistedEventDTO): ReducerState
 function applyKnownEvent(state: ReducerState, event: PersistedEventDTO): ReducerState {
   const p = event.payload;
   switch (event.type) {
+    case "run.queued":
+      return { ...state, meta: { ...state.meta, status: "queued" } };
     case "run.started":
       return applyRunStarted(state, event, p);
     case "run.cancel_requested":

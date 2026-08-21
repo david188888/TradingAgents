@@ -40,6 +40,7 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [Observability and replay](operations/observability-replay.md): replay / audit / privacy boundaries.
 - [Research package interoperability](operations/research-package-interoperability.md): external Agent consumption contract over the public research-package and reader fact layer.
 - [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
+- [Web batch analysis](operations/web-batch-analysis.md): 1-8 company batch research, global FIFO scheduler, concurrency, lifecycle, and notification limits.
 
 ## Integrations
 

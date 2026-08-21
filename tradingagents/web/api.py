@@ -18,15 +18,18 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 
 from tradingagents.analysts import ANALYST_CONFIG
+from tradingagents.dataflows.company_resolution import resolve_input_candidates
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.models import AnalysisRequest, HoldingContext
+from tradingagents.runtime.run_models import generate_run_id
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
 from tradingagents.presets import load_preset_catalog
 
 from .audit_models import AuditSelection
+from .batch_models import BatchItem
 from .audit_projection import (
     AuditItemNotFound,
     AuditSummaryStale,
@@ -59,6 +62,8 @@ from .reader_projection import (
 from .schemas import (
     RESEARCH_DEPTHS,
     SUPPORTED_OUTPUT_LANGUAGES,
+    BatchCreateRequest,
+    BatchValidateRequest,
     HoldingInputRequest,
     PortfolioRequest,
     RunCreateRequest,
@@ -361,6 +366,100 @@ def create_app(
             checkpoint_available=checkpoint_available,
         )
 
+    @app.post("/api/batches/validate")
+    def validate_batch(body: BatchValidateRequest) -> dict[str, Any]:
+        items = [_resolve_batch_input(raw, index) for index, raw in enumerate(body.inputs)]
+        return {"items": items, "count": len(items), "max_items": 8}
+
+    @app.get("/api/batches")
+    def list_batches() -> list[dict[str, Any]]:
+        return [batch.as_dict() for batch in selected_manager.list_batches()]
+
+    @app.get("/api/batches/{batch_id}")
+    def get_batch(batch_id: str) -> dict[str, Any]:
+        return selected_manager.batch(batch_id).as_dict()
+
+    @app.post("/api/batches", status_code=201)
+    def create_batch(body: BatchCreateRequest) -> dict[str, Any]:
+        configured_keys = _configured_keys(selected_environment)
+        prepared: list[tuple[AnalysisRequest, Any]] = []
+        seen_tickers: set[str] = set()
+        for index, entry in enumerate(body.entries):
+            resolved = _resolve_batch_input(entry.input, index)
+            canonical = str(resolved["ticker"])
+            if canonical in seen_tickers:
+                raise ApiBoundaryError(
+                    422,
+                    "duplicate_ticker",
+                    "The batch contains duplicate companies after normalization.",
+                    fields=(f"entries.{index}.input",),
+                )
+            seen_tickers.add(canonical)
+            config = entry.config
+            request_body = RunCreateRequest(
+                ticker=canonical,
+                analysis_date=config.analysis_date,
+                selected_analysts=config.selected_analysts,
+                research_depth=config.research_depth,
+                mode="company_research",
+                horizon=config.horizon,
+                llm_provider=config.llm_provider,
+                quick_think_llm=config.quick_think_llm,
+                deep_think_llm=config.deep_think_llm,
+                output_language=config.output_language,
+                checkpoint_enabled=config.checkpoint_enabled,
+                asset_type=config.asset_type,
+            )
+            connectivity_check(canonical)
+            request_model, _ = _analysis_request(
+                request_body,
+                selected_environment,
+                checkpoint_available=checkpoint_available,
+            )
+            prepared.append(
+                (
+                    request_model,
+                    BatchItem(
+                        input_value=entry.input,
+                        company_name=str(resolved["company_name"]),
+                        ticker=canonical,
+                        market=str(resolved["market"]),
+                        run_id=generate_run_id(),
+                        ordinal=index,
+                        config=request_body.model_dump(mode="json"),
+                    ),
+                )
+            )
+        batch = selected_manager.start_batch(
+            tuple(prepared),
+            configured_keys=configured_keys,
+            concurrency=body.concurrency,
+        )
+        return batch.as_dict()
+
+    @app.post("/api/batches/{batch_id}/cancel", status_code=202)
+    def cancel_batch(batch_id: str) -> dict[str, Any]:
+        return selected_manager.cancel_batch(batch_id).as_dict()
+
+    @app.delete("/api/batches/{batch_id}", status_code=204)
+    def delete_batch(batch_id: str) -> Response:
+        batch = selected_manager.batch(batch_id)
+        if batch.status in {"queued", "running"}:
+            raise ApiBoundaryError(409, "batch_active", "An active batch cannot be deleted.")
+        selected_store.delete_batch(batch_id)
+        return Response(status_code=204)
+
+    @app.get("/api/scheduler")
+    def get_scheduler() -> dict[str, int]:
+        return {"concurrency": selected_manager.max_concurrency, "maximum": 3}
+
+    @app.put("/api/scheduler", status_code=200)
+    def update_scheduler(payload: dict[str, Any]) -> dict[str, int]:
+        value = payload.get("concurrency")
+        if not isinstance(value, int) or isinstance(value, bool) or value not in (1, 2, 3):
+            raise ApiBoundaryError(422, "invalid_concurrency", "concurrency must be 1, 2, or 3.", fields=("concurrency",))
+        return {"concurrency": selected_manager.set_concurrency(value), "maximum": 3}
+
     @app.get("/api/runs")
     def list_runs(
         view: str | None = Query(default=None),
@@ -544,10 +643,14 @@ def create_app(
         run removes its directory and full durable history, so this endpoint
         is the destructive bulk twin of ``DELETE /api/runs/{run_id}``.
         """
-        active_id = selected_manager.active_run_id
+        active_ids = set(getattr(selected_manager, "active_run_ids", ()))
+        if not active_ids:
+            legacy_active = getattr(selected_manager, "active_run_id", None)
+            if legacy_active:
+                active_ids.add(legacy_active)
         removed = 0
         for summary in selected_store.list_runs():
-            if summary.run_id == active_id:
+            if summary.run_id in active_ids:
                 continue
             try:
                 selected_store.delete_run(summary.run_id)
@@ -555,11 +658,16 @@ def create_app(
             except RunNotFound:
                 # A concurrent deletion can win the race; treat it as removed.
                 continue
-        return {"removed": removed, "skipped_active": active_id is not None}
+        return {"removed": removed, "skipped_active": bool(active_ids)}
 
     @app.delete("/api/runs/{run_id}", status_code=204)
     def delete_run(run_id: str) -> Response:
-        if selected_manager.active_run_id == run_id:
+        active_ids = set(getattr(selected_manager, "active_run_ids", ()))
+        if not active_ids:
+            legacy_active = getattr(selected_manager, "active_run_id", None)
+            if legacy_active:
+                active_ids.add(legacy_active)
+        if run_id in active_ids:
             raise ApiBoundaryError(
                 409,
                 "run_active",
@@ -700,6 +808,24 @@ def create_app(
         )
 
     return app
+
+
+def _resolve_batch_input(raw: str, index: int) -> dict[str, str]:
+    candidates = resolve_input_candidates(raw)
+    if len(candidates) != 1:
+        code = "company_not_found" if not candidates else "company_ambiguous"
+        message = (
+            "The company input could not be resolved to a unique instrument."
+            if not candidates
+            else "The company input matched multiple instruments; use a ticker or a more precise name."
+        )
+        raise ApiBoundaryError(422, code, message, fields=(f"entries.{index}.input",))
+    company_name, raw_ticker = candidates[0]
+    canonical = normalize_symbol(normalize_ticker_symbol(raw_ticker))
+    if not canonical:
+        raise ApiBoundaryError(422, "company_not_found", "The company input has no valid ticker.", fields=(f"entries.{index}.input",))
+    market = "A-share" if canonical.endswith((".SS", ".SH", ".SZ", ".BJ")) else "global"
+    return {"input": raw.strip(), "company_name": company_name, "ticker": canonical, "market": market}
 
 
 def _analysis_request(

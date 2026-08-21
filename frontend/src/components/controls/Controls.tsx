@@ -8,6 +8,8 @@
  * .primary.running) where they exist.
  */
 import { useState } from "react";
+import { BatchControls } from "./BatchControls";
+import { requestCompletionNotificationPermission } from "../../hooks/useCompletionNotifications";
 import { useConfig } from "../../hooks/useConfig";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { ApiError, createRun, cancelRun } from "../../api/client";
@@ -28,6 +30,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
   const [apiError, setApiError] = useState<string | null>(null);
   const [vpnMessage, setVpnMessage] = useState<string | null>(null);
   const [starting, setStarting] = useState<boolean>(false);
+  const [analysisMode, setAnalysisMode] = useState<"single" | "batch">("single");
 
   const runActive =
     store.stream.status === "live" ||
@@ -40,6 +43,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
     setApiError(null);
     setVpnMessage(null);
     setStarting(true);
+    void requestCompletionNotificationPermission();
     createRun(req)
       .then((snap) => {
         store.selectRun(snap.run_id);
@@ -68,13 +72,30 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
       });
   }
 
+  if (analysisMode === "batch") {
+    return (
+      <>
+        <div className="analysis-mode-tabs" role="tablist" aria-label="分析模式">
+          <button type="button" className="mode-tab" onClick={() => setAnalysisMode("single")}>单公司</button>
+          <button type="button" className="mode-tab active" aria-selected="true">批量分析</button>
+        </div>
+        <BatchControls cfg={cfg} refreshHistory={refreshHistory} onSelectRun={store.selectRun} />
+      </>
+    );
+  }
+
   const startDisabled =
     cfg.validationError !== null || runActive || starting || cfg.loading;
 
   return (
-    <div className="controls">
-      <div className="eyebrow">New analysis</div>
-      <div className="section-title">
+    <>
+      <div className="analysis-mode-tabs" role="tablist" aria-label="分析模式">
+        <button type="button" className="mode-tab active" aria-selected="true">单公司</button>
+        <button type="button" className="mode-tab" onClick={() => setAnalysisMode("batch")}>批量分析</button>
+      </div>
+      <div className="controls">
+        <div className="eyebrow">New analysis</div>
+        <div className="section-title">
         <h2>分析输入</h2>
       </div>
 
@@ -450,6 +471,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

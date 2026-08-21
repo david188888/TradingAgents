@@ -14,6 +14,7 @@ RUN_ID_PATTERN = re.compile(r"^run_\d{8}T\d{12}Z_[0-9a-f]{8}$")
 RUN_STATUSES = frozenset(
     {
         "created",
+        "queued",
         "running",
         "cancel_requested",
         "completed",

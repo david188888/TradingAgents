@@ -29,12 +29,13 @@ const STATUS_BADGES: Record<RunStatusLiteral, StatusBadge> = {
   failed: { className: "fail", color: "var(--red)", label: "失败", dot: false },
   cancelled: { className: "", color: "var(--muted)", label: "已取消", dot: false },
   interrupted: { className: "", color: "var(--gold)", label: "已中断", dot: false },
+  queued: { className: "", color: "var(--muted)", label: "排队中", dot: false },
   running: { className: "", color: "var(--gold)", label: "运行中", dot: true },
   cancel_requested: { className: "", color: "var(--gold)", label: "取消中", dot: false },
   created: { className: "", color: "var(--muted)", label: "已创建", dot: false },
 };
 
-const ACTIVE_STATUSES = new Set<RunStatusLiteral>(["created", "running", "cancel_requested"]);
+const ACTIVE_STATUSES = new Set<RunStatusLiteral>(["created", "queued", "running", "cancel_requested"]);
 const FAILED_GROUP_LIMIT = 3;
 
 export interface RunHistoryProps {

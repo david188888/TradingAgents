@@ -163,7 +163,81 @@ class RunCreateRequest(BaseModel):
         return self
 
 
-class ArtifactMetadata(BaseModel):
+class BatchRunConfigRequest(BaseModel):
+    """Full frozen company-research configuration for one batch item."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    analysis_date: str
+    selected_analysts: tuple[str, ...] = ANALYST_WIRE_KEYS
+    research_depth: Literal[1, 3, 5] = 1
+    horizon: Literal["short", "medium", "long"] = "medium"
+    llm_provider: str = Field(min_length=1, max_length=64)
+    quick_think_llm: str = Field(min_length=1, max_length=256)
+    deep_think_llm: str = Field(min_length=1, max_length=256)
+    output_language: str = "English"
+    checkpoint_enabled: bool = False
+    asset_type: Literal["stock", "crypto"] | None = None
+
+    @field_validator("analysis_date")
+    @classmethod
+    def validate_analysis_date(cls, value: str) -> str:
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("analysis_date must use YYYY-MM-DD") from exc
+        if parsed > date.today():
+            raise ValueError("analysis_date cannot be in the future")
+        return value
+
+    @field_validator("selected_analysts")
+    @classmethod
+    def validate_analysts(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("at least one analyst is required")
+        unknown = sorted(set(value) - set(ANALYST_WIRE_KEYS))
+        if unknown:
+            raise ValueError(f"unknown analyst keys: {', '.join(unknown)}")
+        if len(value) != len(set(value)):
+            raise ValueError("selected_analysts must not contain duplicates")
+        return value
+
+    @field_validator("output_language")
+    @classmethod
+    def validate_language(cls, value: str) -> str:
+        if value not in SUPPORTED_OUTPUT_LANGUAGES:
+            raise ValueError("unsupported output language")
+        return value
+
+
+class BatchEntryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    input: str = Field(min_length=1, max_length=128)
+    config: BatchRunConfigRequest
+
+
+class BatchValidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    inputs: tuple[str, ...] = Field(min_length=1, max_length=8)
+
+
+class BatchCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entries: tuple[BatchEntryRequest, ...] = Field(min_length=1, max_length=8)
+    concurrency: Literal[1, 2, 3] = 3
+
+    @model_validator(mode="after")
+    def validate_unique_inputs(self) -> BatchCreateRequest:
+        normalized = [item.input.strip().casefold() for item in self.entries]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("batch inputs must not contain duplicates")
+        return self
+
+
+
     model_config = ConfigDict(extra="forbid")
 
     artifact_id: str

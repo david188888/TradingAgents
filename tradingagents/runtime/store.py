@@ -18,6 +18,7 @@ from tradingagents.observability.canonical import canonical_business_value
 from tradingagents.observability.events import ArtifactRef, PersistedEvent, RunEventDraft
 from tradingagents.observability.redaction import redact_recursive
 
+from tradingagents.web.batch_models import BatchSnapshot, validate_batch_id
 from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
 
 ARTIFACT_KIND_DIRECTORIES = {
@@ -346,13 +347,71 @@ class RunStore:
             reverse=True,
         )
 
-    def delete_run(self, run_id: str) -> None:
-        """Delete a run's persisted directory and its entire durable history.
+    def create_batch(self, snapshot: BatchSnapshot) -> BatchSnapshot:
+        batches_dir = self.root / "batches"
+        batches_dir.mkdir(parents=True, exist_ok=True)
+        path = batches_dir / f"{snapshot.batch_id}.json"
+        with self._global_lock:
+            if path.exists():
+                raise RunAlreadyExists(snapshot.batch_id)
+            self._write_bytes_atomic(
+                path,
+                canonical_business_value(snapshot.as_dict()).bytes + b"\n",
+            )
+            self._fsync_directory(batches_dir)
+        return snapshot
 
-        Raises :class:`RunNotFound` if the run does not exist. The caller is
-        responsible for refusing to delete a run that is still actively
-        executing (see ``api.py``); the store only removes committed state.
-        """
+    def read_batch(self, batch_id: str) -> BatchSnapshot:
+        validate_batch_id(batch_id)
+        path = self.root / "batches" / f"{batch_id}.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise RunNotFound(batch_id) from exc
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise RunStoreCorruption(f"invalid batch snapshot for {batch_id}") from exc
+        return BatchSnapshot.from_dict(payload)
+
+    def write_batch_atomic(self, snapshot: BatchSnapshot) -> BatchSnapshot:
+        validate_batch_id(snapshot.batch_id)
+        batches_dir = self.root / "batches"
+        batches_dir.mkdir(parents=True, exist_ok=True)
+        path = batches_dir / f"{snapshot.batch_id}.json"
+        with self._global_lock:
+            if not path.exists():
+                raise RunNotFound(snapshot.batch_id)
+            self._write_bytes_atomic(
+                path,
+                canonical_business_value(snapshot.as_dict()).bytes + b"\n",
+            )
+            self._fsync_directory(batches_dir)
+        return snapshot
+
+    def list_batches(self) -> list[BatchSnapshot]:
+        batches_dir = self.root / "batches"
+        if not batches_dir.is_dir():
+            return []
+        batches: list[BatchSnapshot] = []
+        with self._global_lock:
+            for path in batches_dir.glob("batch_*.json"):
+                try:
+                    batches.append(self.read_batch(path.stem))
+                except (RunNotFound, RunStoreCorruption, ValueError):
+                    continue
+        return sorted(batches, key=lambda batch: (batch.created_at, batch.batch_id), reverse=True)
+
+    def delete_batch(self, batch_id: str) -> None:
+        validate_batch_id(batch_id)
+        path = self.root / "batches" / f"{batch_id}.json"
+        with self._global_lock:
+            try:
+                path.unlink()
+            except FileNotFoundError as exc:
+                raise RunNotFound(batch_id) from exc
+            self._fsync_directory(path.parent)
+
+    def delete_run(self, run_id: str) -> None:
+        """Delete a run's persisted directory and its entire durable history."""
         run_dir = self._run_dir(run_id)
         with self._global_lock, self.lock_for(run_id):
             if not run_dir.is_dir():

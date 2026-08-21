@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import threading
+from collections import deque
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
@@ -18,6 +19,7 @@ from tradingagents.dataflows.interface import news_cache_scope
 from tradingagents.dataflows.progress import DataProgressEvent, progress_sink
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
+from tradingagents.dataflows.company_resolution import resolve_input_candidates
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
@@ -40,7 +42,10 @@ from tradingagents.runtime.contracts import (
     RuntimePolicyVersion,
 )
 
+from tradingagents.runtime.run_models import generate_run_id
+
 from .broker import EventBroker
+from .batch_models import BatchItem, BatchSnapshot
 from .degradations import summarize_data_degradations
 from .projections import RunProjectionPublisher
 from .reports import ReportArtifactWriter, ReportPublicationError
@@ -50,6 +55,7 @@ from .store import RunStore
 TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 RETRYABLE_RUN_STATUSES = TERMINAL_RUN_STATUSES | {"interrupted"}
 ORPHANED_RUN_STATUSES = frozenset({"running", "cancel_requested"})
+QUEUEABLE_RUN_STATUSES = frozenset({"created", "queued"})
 
 
 class ManagedRunner(Protocol):
@@ -144,55 +150,145 @@ class SingleRunManager:
         self.request_resolver = request_resolver
         self.resume_preflight = resume_preflight
         self._guard = threading.RLock()
-        self._active: _ActiveRun | None = None
+        self._active: dict[str, _ActiveRun] = {}
+        self._pending: deque[str] = deque()
+        self._pending_options: dict[str, tuple[bool, Any | None, int | None]] = {}
+        self._max_concurrency = 3
         self._requests: dict[str, AnalysisRequest] = {}
 
     @property
     def active_run_id(self) -> str | None:
         with self._guard:
-            return self._active.run_id if self._active is not None else None
+            return next(iter(self._active), None)
+
+    @property
+    def active_run_ids(self) -> tuple[str, ...]:
+        with self._guard:
+            return tuple(self._active)
+
+    @property
+    def max_concurrency(self) -> int:
+        with self._guard:
+            return self._max_concurrency
+
+    def set_concurrency(self, value: int) -> int:
+        if value not in (1, 2, 3):
+            raise ValueError("concurrency must be between 1 and 3")
+        with self._guard:
+            self._max_concurrency = value
+            self._drain_locked()
+            return value
 
     def start(
         self,
         request: AnalysisRequest,
         *,
         configured_keys: Mapping[str, bool] | None = None,
+        batch_id: str | None = None,
+        batch_ordinal: int | None = None,
+        batch_item: BatchItem | None = None,
     ) -> RunSnapshot:
         normalized = _complete_request(request)
         with self._guard:
-            self._assert_idle()
             snapshot = self._create_run(
                 normalized,
                 configured_keys=configured_keys,
+                batch_id=batch_id,
+                batch_ordinal=batch_ordinal,
+                batch_item=batch_item,
+                queued=bool(self._active) or bool(self._pending),
             )
-            self._launch(snapshot.run_id, normalized, resume=False)
+            self._pending.append(snapshot.run_id)
+            self._drain_locked()
             return self.store.read_snapshot(snapshot.run_id)
+
+    def start_batch(
+        self,
+        requests: tuple[tuple[AnalysisRequest, BatchItem], ...],
+        *,
+        configured_keys: Mapping[str, bool] | None = None,
+        concurrency: int = 3,
+    ) -> BatchSnapshot:
+        if not 1 <= len(requests) <= 8:
+            raise ValueError("batch must contain between 1 and 8 requests")
+        self.set_concurrency(concurrency)
+        with self._guard:
+            batch_items: list[BatchItem] = []
+            for ordinal, (request, item) in enumerate(requests):
+                batch_items.append(
+                    item if item.ordinal == ordinal else replace(item, ordinal=ordinal)
+                )
+            batch = BatchSnapshot.create(items=tuple(batch_items), concurrency=concurrency)
+            self.store.create_batch(batch)
+            for (request, _original_item), item in zip(requests, batch.items, strict=True):
+                snapshot = self._create_run(
+                    _complete_request(request),
+                    configured_keys=configured_keys,
+                    batch_id=batch.batch_id,
+                    batch_ordinal=item.ordinal,
+                    batch_item=item,
+                    run_id=item.run_id,
+                    queued=len(self._active) + len(self._pending) >= self._max_concurrency,
+                )
+                self._pending.append(snapshot.run_id)
+            self._drain_locked()
+            return self.store.read_batch(batch.batch_id)
 
     def cancel(self, run_id: str) -> RunSnapshot:
         with self._guard:
-            active = self._active
-            if active is None or active.run_id != run_id:
-                raise RunNotActive(f"run is not active: {run_id}")
-            if active.phase != "running":
-                raise RunNotActive(f"run is already terminalizing: {run_id}")
+            active = self._active.get(run_id)
+            if active is not None:
+                if active.phase != "running":
+                    raise RunNotActive(f"run is already terminalizing: {run_id}")
+                snapshot = self.store.read_snapshot(run_id)
+                if snapshot.status == "cancel_requested":
+                    return snapshot
+                self.broker.publish(
+                    RunEventDraft(
+                        run_id,
+                        "run.cancel_requested",
+                        {
+                            "run_status": "cancel_requested",
+                            "summary": "Cancellation requested by the local user.",
+                        },
+                        status="cancel_requested",
+                    )
+                )
+                active.token.cancel()
+                return self.store.read_snapshot(run_id)
+
             snapshot = self.store.read_snapshot(run_id)
-            if snapshot.status == "cancel_requested":
-                return snapshot
-            if snapshot.status != "running":
+            if snapshot.status not in {"created", "queued"}:
                 raise RunNotActive(f"run cannot be cancelled from {snapshot.status}")
+            self._pending = deque(item for item in self._pending if item != run_id)
+            self._pending_options.pop(run_id, None)
+            summary = "Analysis cancelled before execution started."
             self.broker.publish(
                 RunEventDraft(
                     run_id,
-                    "run.cancel_requested",
-                    {
-                        "run_status": "cancel_requested",
-                        "summary": "Cancellation requested by the local user.",
-                    },
-                    status="cancel_requested",
+                    "run.cancelled",
+                    {"run_status": "cancelled", "summary": summary},
+                    status="cancelled",
                 )
             )
-            active.token.cancel()
+            self._sync_batch_for_run(run_id)
+            self._drain_locked()
             return self.store.read_snapshot(run_id)
+
+    def cancel_batch(self, batch_id: str) -> BatchSnapshot:
+        with self._guard:
+            batch = self.store.read_batch(batch_id)
+            for item in batch.items:
+                snapshot = self.store.read_snapshot(item.run_id)
+                if snapshot.status in {"created", "queued", "running"}:
+                    self.cancel(item.run_id)
+            return self.store.read_batch(batch_id)
+
+    def batch(self, batch_id: str) -> BatchSnapshot:
+        return self.store.read_batch(batch_id)
+
+    def list_batches(self) -> tuple[BatchSnapshot, ...]:
+        return tuple(self.store.list_batches())
 
     def retry(self, run_id: str) -> RunSnapshot:
         source = self.store.read_snapshot(run_id)
@@ -202,13 +298,13 @@ class SingleRunManager:
             )
         request = self._request_for_snapshot(source)
         with self._guard:
-            self._assert_idle()
             snapshot = self._create_run(
                 request,
                 configured_keys=source.configured_keys,
                 retry_of=source.run_id,
             )
-            self._launch(snapshot.run_id, request, resume=False)
+            self._pending.append(snapshot.run_id)
+            self._drain_locked()
             return self.store.read_snapshot(snapshot.run_id)
 
     def resume(self, run_id: str) -> RunSnapshot:
@@ -219,7 +315,6 @@ class SingleRunManager:
             )
         request = self._request_for_snapshot(snapshot)
         with self._guard:
-            self._assert_idle()
             checkpoint_guard = self._validate_resume(snapshot, request)
             resumed_from = snapshot.latest_sequence
             checkpoint_sequence = _checkpoint_sequence(
@@ -240,13 +335,9 @@ class SingleRunManager:
                     status="running",
                 )
             )
-            self._launch(
-                run_id,
-                request,
-                resume=True,
-                checkpoint_guard_override=checkpoint_guard,
-                resumed_from_sequence=resumed_from,
-            )
+            self._pending.append(run_id)
+            self._pending_options[run_id] = (True, checkpoint_guard, resumed_from)
+            self._drain_locked()
             return self.store.read_snapshot(run_id)
 
     def recover_startup(self) -> tuple[RunSnapshot, ...]:
@@ -313,18 +404,30 @@ class SingleRunManager:
                     )
                 )
                 recovered.append(self.store.read_snapshot(snapshot.run_id))
+            for summary in self.store.list_runs():
+                if summary.status in {"created", "queued"}:
+                    self._requests.setdefault(
+                        summary.run_id,
+                        self._request_for_snapshot(self.store.read_snapshot(summary.run_id)),
+                    )
+                    if summary.run_id not in self._pending:
+                        self._pending.append(summary.run_id)
+            for batch in self.store.list_batches():
+                for item in batch.items:
+                    self._sync_batch_for_run(item.run_id)
+            self._drain_locked()
         return tuple(recovered)
 
     def wait(self, run_id: str, timeout: float | None = None) -> RunSnapshot:
         with self._guard:
-            active = self._active if self._active and self._active.run_id == run_id else None
+            active = self._active.get(run_id)
         if active is not None:
             active.thread.join(timeout)
         return self.store.read_snapshot(run_id)
 
     def _assert_idle(self) -> None:
-        if self._active is not None:
-            raise ActiveRunConflict(self._active.run_id)
+        """Compatibility no-op: the scheduler accepts multiple queued runs."""
+        return
 
     def _create_run(
         self,
@@ -332,6 +435,11 @@ class SingleRunManager:
         *,
         configured_keys: Mapping[str, bool] | None,
         retry_of: str | None = None,
+        batch_id: str | None = None,
+        batch_ordinal: int | None = None,
+        batch_item: BatchItem | None = None,
+        run_id: str | None = None,
+        queued: bool = True,
     ) -> RunSnapshot:
         config = dict(request.effective_config)
         safe_config = prepare_effective_config(config)
@@ -354,39 +462,41 @@ class SingleRunManager:
                 if request.holding_context is not None
                 else None
             ),
+            run_id=run_id,
             retry_of=retry_of,
             metadata={
                 "effective_config": safe_config,
                 "portfolio": asdict(request.portfolio) if request.portfolio is not None else None,
+                **(
+                    {
+                        "batch_id": batch_id,
+                        "batch_ordinal": batch_ordinal,
+                        "batch_input": batch_item.input_value,
+                        "company_name": batch_item.company_name,
+                        "market": batch_item.market,
+                    }
+                    if batch_id is not None and batch_item is not None
+                    else {}
+                ),
             },
         )
         self.store.create_run(snapshot)
-        self.broker.publish(
-            RunEventDraft(
-                snapshot.run_id,
-                "run.started",
-                {
-                    "run_status": "running",
-                    "retry_of": retry_of,
-                    "ticker": snapshot.ticker,
-                    "asset_type": snapshot.asset_type,
-                    "analysis_date": snapshot.analysis_date,
-                    "selected_analysts": list(snapshot.selected_analysts),
-                    "research_depth": snapshot.max_debate_rounds,
-                    "mode": request.mode,
-                    "horizon": request.horizon,
-                    "holding_summary": _holding_summary(request.holding_context),
-                    "max_debate_rounds": snapshot.max_debate_rounds,
-                    "max_risk_discuss_rounds": snapshot.max_risk_discuss_rounds,
-                    "output_language": snapshot.output_language,
-                    "llm_provider": snapshot.llm_provider,
-                    "quick_think_llm": snapshot.quick_think_llm,
-                    "deep_think_llm": snapshot.deep_think_llm,
-                    "checkpoint_enabled": bool(config.get("checkpoint_enabled")),
-                },
-                status="running",
+        if queued:
+            self.broker.publish(
+                RunEventDraft(
+                    snapshot.run_id,
+                    "run.queued",
+                    {
+                        "run_status": "queued",
+                        "summary": "Analysis is queued for execution.",
+                        "ticker": snapshot.ticker,
+                        "batch_id": batch_id,
+                    },
+                    status="queued",
+                )
             )
-        )
+        else:
+            self._publish_run_started(snapshot.run_id, request)
         self._initialize_roles(snapshot.run_id, request.selected_analysts)
         self._requests[snapshot.run_id] = request
         return self.store.read_snapshot(snapshot.run_id)
@@ -442,13 +552,81 @@ class SingleRunManager:
             daemon=True,
         )
         active = _ActiveRun(run_id, token, thread)
-        self._active = active
+        self._active[run_id] = active
+        snapshot = self.store.read_snapshot(run_id)
+        if snapshot.status in {"created", "queued"}:
+            self._publish_run_started(run_id, request)
+        self._sync_batch_for_run(run_id)
         try:
             thread.start()
         except BaseException as exc:
-            self._active = None
+            self._active.pop(run_id, None)
             self._finish_failure(run_id, exc)
+            self._drain_locked()
             raise
+
+    def _publish_run_started(self, run_id: str, request: AnalysisRequest) -> None:
+        snapshot = self.store.read_snapshot(run_id)
+        self.broker.publish(
+            RunEventDraft(
+                run_id,
+                "run.started",
+                {
+                    "run_status": "running",
+                    "ticker": snapshot.ticker,
+                    "asset_type": snapshot.asset_type,
+                    "analysis_date": snapshot.analysis_date,
+                    "selected_analysts": list(snapshot.selected_analysts),
+                    "research_depth": snapshot.max_debate_rounds,
+                    "mode": request.mode,
+                    "horizon": request.horizon,
+                    "holding_summary": _holding_summary(request.holding_context),
+                    "max_debate_rounds": snapshot.max_debate_rounds,
+                    "max_risk_discuss_rounds": snapshot.max_risk_discuss_rounds,
+                    "output_language": snapshot.output_language,
+                    "llm_provider": snapshot.llm_provider,
+                    "quick_think_llm": snapshot.quick_think_llm,
+                    "deep_think_llm": snapshot.deep_think_llm,
+                    "checkpoint_enabled": bool(request.effective_config.get("checkpoint_enabled")),
+                },
+                status="running",
+            )
+        )
+
+    def _drain_locked(self) -> None:
+        while len(self._active) < self._max_concurrency and self._pending:
+            run_id = self._pending.popleft()
+            snapshot = self.store.read_snapshot(run_id)
+            if snapshot.status not in {"created", "queued", "running"}:
+                continue
+            request = self._request_for_snapshot(snapshot)
+            resume, guard, resumed_from = self._pending_options.pop(run_id, (False, None, None))
+            self._launch(
+                run_id,
+                request,
+                resume=resume,
+                checkpoint_guard_override=guard,
+                resumed_from_sequence=resumed_from,
+            )
+
+    def _sync_batch_for_run(self, run_id: str) -> None:
+        snapshot = self.store.read_snapshot(run_id)
+        batch_id = snapshot.metadata.get("batch_id")
+        if not isinstance(batch_id, str):
+            return
+        try:
+            batch = self.store.read_batch(batch_id)
+            next(item for item in batch.items if item.run_id == run_id)
+        except (RunNotFound, StopIteration):
+            return
+        error_message = snapshot.error_message if snapshot.status == "failed" else None
+        updated = batch.with_item_status(
+            run_id,
+            snapshot.status if snapshot.status in {"queued", "running", "completed", "failed", "cancelled", "interrupted"} else "queued",
+            error_message=error_message,
+        )
+        if updated != batch:
+            self.store.write_batch_atomic(updated)
 
     def _worker(
         self,
@@ -521,13 +699,14 @@ class SingleRunManager:
                 self._finish_failure(run_id, exc)
         finally:
             with self._guard:
-                if self._active is not None and self._active.run_id == run_id:
-                    self._active = None
+                self._active.pop(run_id, None)
+                self._sync_batch_for_run(run_id)
+                self._drain_locked()
 
     def _begin_terminalization(self, run_id: str) -> str:
         with self._guard:
-            active = self._active
-            if active is not None and active.run_id == run_id:
+            active = self._active.get(run_id)
+            if active is not None:
                 active.phase = "terminalizing"
             return self.store.read_snapshot(run_id).status
 

@@ -130,6 +130,31 @@ def _yahoo_search(query: str) -> tuple[str, ...]:
     return tuple(us_symbols + other_symbols)
 
 
+def resolve_input_candidates(raw: str) -> tuple[tuple[str, str], ...]:
+    """Return all unique ``(display_name, canonical_ticker)`` candidates."""
+    if not isinstance(raw, str):
+        return ()
+    value = raw.strip()
+    if not value:
+        return ()
+    local = normalize_symbol(normalize_ticker_symbol(value))
+    if local != value.upper():
+        return ((value, local),)
+    if _HAS_CJK.search(value):
+        candidates: list[tuple[str, str]] = []
+        for name, code in _sina_suggest(value):
+            if code and code.isdigit() and len(code) == 6:
+                pair = (name, normalize_ticker_symbol(code))
+                if pair not in candidates:
+                    candidates.append(pair)
+        return tuple(candidates)
+    if value.isascii() and not value.isupper() and _COMPANY_NAME_LIKE.fullmatch(value):
+        return tuple((value, symbol) for symbol in dict.fromkeys(_yahoo_search(value)))
+    if _PLAIN_TICKER.fullmatch(value):
+        return ((value, value.upper()),)
+    return ()
+
+
 def resolve_company_name(name: str) -> str | None:
     """Resolve a company name (Chinese or English) to a canonical symbol.
 
@@ -156,38 +181,6 @@ def resolve_company_name(name: str) -> str | None:
 
 
 def resolve_input_to_ticker(raw: str) -> str:
-    """Resolve any user input (code form or company name) to a canonical symbol.
-
-    Never raises.  Returns the canonical symbol, the best-effort fallback, or an
-    empty string when the input cannot be interpreted at all.
-    """
-    if not isinstance(raw, str):
-        return ""
-    value = raw.strip()
-    if not value:
-        return ""
-
-    # 1. Local code form (zero network): if normalization changed the input, it
-    #    was a code (688825 -> 688825.SS, BTCUSD -> BTC-USD, XAUUSD -> GC=F).
-    local = normalize_symbol(normalize_ticker_symbol(value))
-    if local != value.upper():
-        return local
-
-    # 2. Company-name resolution (network, cached).  CJK input is definitely a
-    #    name; a mixed-case ASCII input that survived local normalization (e.g.
-    #    Apple, Microsoft) is also tried.  All-upper ASCII (AAPL, TSLA) and any
-    #    code-shaped input stay on the zero-network path.
-    if _HAS_CJK.search(value) or (
-        value.isascii()
-        and not value.isupper()
-        and _COMPANY_NAME_LIKE.fullmatch(value)
-    ):
-        resolved = resolve_company_name(value)
-        if resolved:
-            return resolved
-
-    # 3. Fallback: keep the plain upper-cased input when it still looks like a
-    #    ticker, so offline runs preserve the old behaviour.
-    if _PLAIN_TICKER.fullmatch(value):
-        return value.upper()
-    return ""
+    """Resolve any user input to the first canonical candidate for compatibility."""
+    candidates = resolve_input_candidates(raw)
+    return candidates[0][1] if candidates else ""

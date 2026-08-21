@@ -11,6 +11,10 @@
  */
 import type {
   ApiErrorResponse,
+  BatchCreateRequestDTO,
+  BatchSnapshotDTO,
+  BatchValidationDTO,
+  SchedulerDTO,
   ArtifactMetadataDTO,
   AuditDetailDTO,
   AuditSelectionDTO,
@@ -47,13 +51,20 @@ export type ConfigPayload = ConfigResponseDTO;
  * malformed id can never reach the URL builder.
  */
 const SAFE_RUN_ID = /^[A-Za-z0-9_-]+$/;
+const SAFE_BATCH_ID = /^batch_[A-Za-z0-9_-]+$/;
 
 function assertRunId(run_id: string): void {
   if (!SAFE_RUN_ID.test(run_id)) {
     throw new RangeError(`Refusing to interpolate invalid run_id: ${run_id}`);
   }
-
 }
+
+function assertBatchId(batch_id: string): void {
+  if (!SAFE_BATCH_ID.test(batch_id)) {
+    throw new RangeError(`Refusing to interpolate invalid batch_id: ${batch_id}`);
+  }
+}
+
 
 /**
  * Error thrown for every non-2xx response. Mirrors ApiErrorDetail from
@@ -252,7 +263,51 @@ export function createRun(body: RunCreateRequestDTO): Promise<RunSnapshotDTO> {
   return request<RunSnapshotDTO>("POST", API.runs, body);
 }
 
-/** POST /api/runs/{run_id}/cancel (202). Throws ApiError on 409 run_not_active. */
+/** POST /api/batches/validate */
+export function validateBatch(inputs: string[]): Promise<BatchValidationDTO> {
+  return request<BatchValidationDTO>("POST", API.batchValidate, { inputs });
+}
+
+/** POST /api/batches */
+export function createBatch(body: BatchCreateRequestDTO): Promise<BatchSnapshotDTO> {
+  return request<BatchSnapshotDTO>("POST", API.batches, body);
+}
+
+/** GET /api/batches */
+export function listBatches(): Promise<BatchSnapshotDTO[]> {
+  return request<BatchSnapshotDTO[]>("GET", API.batches);
+}
+
+/** GET /api/batches/{batch_id} */
+export function getBatch(batch_id: string): Promise<BatchSnapshotDTO> {
+  assertBatchId(batch_id);
+  return request<BatchSnapshotDTO>("GET", API.batch(batch_id));
+}
+
+/** POST /api/batches/{batch_id}/cancel */
+export function cancelBatch(batch_id: string): Promise<BatchSnapshotDTO> {
+  assertBatchId(batch_id);
+  return request<BatchSnapshotDTO>("POST", API.batchCancel(batch_id));
+}
+
+/** DELETE /api/batches/{batch_id} */
+export async function deleteBatch(batch_id: string): Promise<void> {
+  assertBatchId(batch_id);
+  const resp = await fetch(`${API_BASE}${API.batchDelete(batch_id)}`, { method: "DELETE", headers: { Accept: "application/json" } });
+  if (!resp.ok) throw await toApiError(resp);
+}
+
+
+export function getScheduler(): Promise<SchedulerDTO> {
+  return request<SchedulerDTO>("GET", API.scheduler);
+}
+
+/** PUT /api/scheduler */
+export function setSchedulerConcurrency(concurrency: 1 | 2 | 3): Promise<SchedulerDTO> {
+  return request<SchedulerDTO>("PUT", API.scheduler, { concurrency });
+}
+
+
 export function cancelRun(run_id: string): Promise<RunSnapshotDTO> {
   assertRunId(run_id);
   return request<RunSnapshotDTO>("POST", API.cancel(run_id));

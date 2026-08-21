@@ -16,6 +16,7 @@ import { RunDisclosure } from "./RunDisclosure";
 import { DebateTimeline } from "../timeline/DebateTimeline";
 import { StageDetail } from "../timeline/StageDetail";
 import type { JourneyStageId } from "../../api/contracts";
+import { notifyRun } from "../../hooks/useCompletionNotifications";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { useRunHistory } from "../../hooks/useRunHistory";
 
@@ -144,6 +145,17 @@ export function WorkbenchLayout(): JSX.Element {
     const wasLive = previousStatus.current !== null && !TERMINAL_RUN_STATUSES.has(previousStatus.current);
     if (current && wasLive && TERMINAL_RUN_STATUSES.has(current)) {
       void history.refresh();
+      if (state?.meta.run_id && state.meta.ticker) {
+        notifyRun(
+          {
+            run_id: state.meta.run_id,
+            status: current as "completed" | "failed" | "cancelled" | "interrupted",
+            ticker: state.meta.ticker,
+            error_message: state.meta.error_message,
+          },
+          () => selectRun(state.meta.run_id),
+        );
+      }
     }
     previousStatus.current = current;
   }, [history.refresh, state?.meta.status]);

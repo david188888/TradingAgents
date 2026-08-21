@@ -23,6 +23,12 @@ export const SERVER_HTTP_BASE = "";
 export const API = {
   config: "/api/config",
   runs: "/api/runs",
+  batches: "/api/batches",
+  batchValidate: "/api/batches/validate",
+  batch: (batch_id: string) => `/api/batches/${batch_id}`,
+  batchCancel: (batch_id: string) => `/api/batches/${batch_id}/cancel`,
+  batchDelete: (batch_id: string) => `/api/batches/${batch_id}`,
+  scheduler: "/api/scheduler",
   run: (run_id: string) => `/api/runs/${run_id}`,
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
   reader: (run_id: string) => `/api/runs/${run_id}/reader`,
@@ -192,12 +198,66 @@ export interface RunCreateRequestDTO {
   portfolio?: PortfolioDTO | null;
 }
 
-// ---------------------------------------------------------------------------
-// Run snapshot + summary + artifact metadata (run_models.py / schemas.py)
-// ---------------------------------------------------------------------------
+export interface BatchResolvedItemDTO {
+  input: string;
+  company_name: string;
+  ticker: string;
+  market: string;
+}
+
+export interface BatchValidationDTO {
+  items: BatchResolvedItemDTO[];
+  count: number;
+  max_items: number;
+}
+
+export interface BatchEntryDTO {
+  input: string;
+  config: Omit<RunCreateRequestDTO, "ticker" | "mode" | "holding" | "portfolio">;
+}
+
+export interface BatchCreateRequestDTO {
+  entries: BatchEntryDTO[];
+  concurrency: 1 | 2 | 3;
+}
+
+export type BatchItemStatusDTO = "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+export type BatchStatusDTO = "queued" | "running" | "completed" | "partial" | "failed" | "cancelled";
+
+export interface BatchItemDTO extends BatchResolvedItemDTO {
+  run_id: string;
+  ordinal: number;
+  status: BatchItemStatusDTO;
+  error_message?: string | null;
+  config: Record<string, unknown>;
+}
+
+export interface BatchSnapshotDTO {
+  batch_id: string;
+  status: BatchStatusDTO;
+  created_at: string;
+  updated_at: string;
+  concurrency: 1 | 2 | 3;
+  items: BatchItemDTO[];
+  completed_count: number;
+  failed_count: number;
+  cancelled_count: number;
+  running_count: number;
+  queued_count: number;
+  interrupted_count: number;
+  summary?: string | null;
+}
+
+export interface SchedulerDTO {
+  concurrency: 1 | 2 | 3;
+  maximum: 3;
+}
+
+
 
 export type RunStatusLiteral =
   | "created"
+  | "queued"
   | "running"
   | "cancel_requested"
   | "completed"
