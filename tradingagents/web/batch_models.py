@@ -114,7 +114,7 @@ class BatchSnapshot:
             else item
             for item in self.items
         )
-        counts = {key: 0 for key in ("completed", "failed", "cancelled", "running", "queued", "interrupted")}
+        counts = dict.fromkeys(("completed", "failed", "cancelled", "running", "queued", "interrupted"), 0)
         for item in items:
             counts[item.status] += 1
         if counts["completed"] == len(items):

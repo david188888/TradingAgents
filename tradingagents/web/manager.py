@@ -19,7 +19,6 @@ from tradingagents.dataflows.interface import news_cache_scope
 from tradingagents.dataflows.progress import DataProgressEvent, progress_sink
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
-from tradingagents.dataflows.company_resolution import resolve_input_candidates
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
@@ -42,15 +41,13 @@ from tradingagents.runtime.contracts import (
     RuntimePolicyVersion,
 )
 
-from tradingagents.runtime.run_models import generate_run_id
-
-from .broker import EventBroker
 from .batch_models import BatchItem, BatchSnapshot
+from .broker import EventBroker
 from .degradations import summarize_data_degradations
 from .projections import RunProjectionPublisher
 from .reports import ReportArtifactWriter, ReportPublicationError
 from .run_models import RunSnapshot, utc_timestamp
-from .store import RunStore
+from .store import RunNotFound, RunStore
 
 TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 RETRYABLE_RUN_STATUSES = TERMINAL_RUN_STATUSES | {"interrupted"}
@@ -214,7 +211,7 @@ class SingleRunManager:
         self.set_concurrency(concurrency)
         with self._guard:
             batch_items: list[BatchItem] = []
-            for ordinal, (request, item) in enumerate(requests):
+            for ordinal, (_request, item) in enumerate(requests):
                 batch_items.append(
                     item if item.ordinal == ordinal else replace(item, ordinal=ordinal)
                 )

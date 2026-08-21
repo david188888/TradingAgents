@@ -17,8 +17,8 @@ from typing import Any
 from tradingagents.observability.canonical import canonical_business_value
 from tradingagents.observability.events import ArtifactRef, PersistedEvent, RunEventDraft
 from tradingagents.observability.redaction import redact_recursive
-
 from tradingagents.web.batch_models import BatchSnapshot, validate_batch_id
+
 from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
 
 ARTIFACT_KIND_DIRECTORIES = {
