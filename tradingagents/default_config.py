@@ -93,7 +93,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # This fork is A-share-first and defaults to DeepSeek (no OpenAI key needed).
     # Override per-environment via TRADINGAGENTS_LLM_PROVIDER / TRADINGAGENTS_*_LLM.
     "llm_provider": "deepseek",
-    "deep_think_llm": "deepseek-v4-pro",
+    "deep_think_llm": "deepseek-v4-flash",
     "quick_think_llm": "deepseek-v4-flash",
     # When None, each provider's client falls back to its own default endpoint
     # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
@@ -113,9 +113,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # tool_choice is only supported in the non-thinking path.
     "deepseek_thinking": "enabled",
     # DeepSeek reasoning effort: "low", "high", or "max" (medium/xhigh are
-    # mapped to high by the API). Defaults to "max" for the deepest
-    # reasoning on the V4 Pro deep-think path.
-    "deepseek_reasoning_effort": "max",
+    # mapped to high by the API). Defaults to "high" (the API default) for
+    # cost-efficient reasoning on the V4 Flash deep-think path.
+    "deepseek_reasoning_effort": "high",
     # Upper bound for a single model response (output tokens). None leaves
     # each provider at its default; DeepSeek V4 supports up to 384K output
     # and recommends a sane max_tokens to avoid truncated JSON reports.
