@@ -255,6 +255,7 @@ frontend/blob-report/
 output/
 
 # Local AI tooling (not part of the project)
+.agents/
 .claude/
 .codex/
 

@@ -30,8 +30,9 @@ not an execution or account-management product.
 `tradingagents` and `tradingagents analyze` currently construct a
 `company_research` request. A `holding_review` requires an explicit holding
 context and is created through the Web/API request boundary; the CLI does not
-collect that context. The local workbench is a FastAPI/SSE adapter that serves
-its bundled frontend on loopback only.
+collect that context. Batch creation of company-research runs is likewise
+Web-only; the CLI does not create batches. The local workbench is a FastAPI/SSE
+adapter that serves its bundled frontend on loopback only.
 
 ## Non-Goals
 
