@@ -90,14 +90,14 @@ from .china_specialty_em import (
     get_a_share_stock_monitor_em,
 )
 from .config import get_config
+from .doubao_news import (
+    get_global_news_doubao,
+    get_news_doubao,
+)
 from .eastmoney import (
     get_a_share_capital_flow,
     get_a_share_capital_flow_sina,
     get_a_share_margin_financing,
-)
-from .doubao_news import (
-    get_global_news_doubao,
-    get_news_doubao,
 )
 from .eastmoney_news import get_news_eastmoney
 from .fred import get_macro_data as get_fred_macro_data

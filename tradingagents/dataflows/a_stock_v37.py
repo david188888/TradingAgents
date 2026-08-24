@@ -23,7 +23,6 @@ from __future__ import annotations
 import io
 import json
 import re
-from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -31,7 +30,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .china_capabilities import AshareCapabilityUnavailableError, CapabilityReport
+from .china_capabilities import AshareCapabilityUnavailableError
 from .china_data import ChinaDataUnavailableError
 from .ticker_utils import (
     infer_a_share_exchange,
@@ -346,7 +345,9 @@ def chip_distribution(df: pd.DataFrame, grid_size: int = 300, decay: float = 1.0
         "concentration_90": float((p95 - p05) / (p95 + p05)) if p95 + p05 else None,
         "concentration_70": float((p85 - p15) / (p85 + p15)) if p85 + p15 else None,
         "peak_price": float(grid[peak_i]),
-        "histogram": [(float(pp), float(cc)) for pp, cc in zip(grid, chips) if cc > 1e-6],
+        "histogram": [
+            (float(pp), float(cc)) for pp, cc in zip(grid, chips, strict=False) if cc > 1e-6
+        ],
     }
 
 

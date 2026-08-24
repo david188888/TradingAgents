@@ -26,7 +26,7 @@ import contextvars
 import logging
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -144,10 +144,8 @@ def _fan_out_vendor_calls(
         # Exceptions stay stored on the futures: phase 3 (_collect_outcome)
         # owns failure semantics, so a worker error must not re-raise here.
         for future in futures.values():
-            try:
+            with suppress(BaseException):
                 future.result()
-            except BaseException:
-                pass
         return futures
     finally:
         executor.shutdown(wait=True)
