@@ -1,0 +1,22 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"data\":{\"data\":[{\"columns\":[{\"name\":\"Wind代码\",\"type\":\"string\"},{\"name\":\"证券简称\",\"type\":\"string\"},{\"name\":\"过去1年的BETA\",\"type\":\"number\"},{\"name\":\"过去1年的最大回撤\",\"type\":\"number\",\"unit\":\"%\"}],\"rows\":[[\"300750.SZ\",\"宁德时代\",0.8767,-24.1826]]}]},\"error\":null}"
+    }
+  ],
+  "isError": false,
+  "cli_meta": {
+    "schema_version": "1.0",
+    "server_type": "stock_data",
+    "tool_name": "get_risk_metrics",
+    "completeness": "not_asserted",
+    "tables": [
+      {
+        "path": "$.data.data[0]",
+        "actual_row_count": 1
+      }
+    ],
+    "warnings": []
+  }
+}

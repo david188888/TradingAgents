@@ -259,18 +259,9 @@ output/
 .claude/
 .codex/
 
-# Tests, dev-only assets, and e2e scaffolding are kept local-only;
-# the public fork stays clean and only ships runnable code + key docs (2026-08)
-/tests/*
-/tests/web/*
+# Tests and e2e scaffolding are tracked since 2026-08 (validation runs locally,
+# gated by pre-commit Ruff); the entries below remain local-only.
 /assets/
-/frontend/src/**/*.test.ts
-/frontend/src/**/*.test.tsx
-/frontend/src/test/
-/frontend/vitest.config.ts
-/frontend/playwright.config.ts
-/frontend/e2e/*
-/scripts/e2e_server.py
 
 # Local planning / docs (kept local-only, not pushed)
 /CHANGELOG.md

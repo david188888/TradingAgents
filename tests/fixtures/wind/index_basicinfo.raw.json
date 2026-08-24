@@ -1,0 +1,22 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"data\":{\"data\":[{\"columns\":[{\"name\":\"Wind代码\",\"type\":\"string\"},{\"name\":\"证券简称\",\"type\":\"string\"},{\"name\":\"发布机构\",\"type\":\"string\"},{\"name\":\"发布日期\",\"type\":\"date\"},{\"name\":\"成份个数\",\"type\":\"number\",\"unit\":\"个\"}],\"rows\":[[\"000300.SH\",\"沪深300\",\"中证指数有限公司\",\"2005-04-08\",300]]}]},\"error\":null}"
+    }
+  ],
+  "isError": false,
+  "cli_meta": {
+    "schema_version": "1.0",
+    "server_type": "index_data",
+    "tool_name": "get_index_basicinfo",
+    "completeness": "not_asserted",
+    "tables": [
+      {
+        "path": "$.data.data[0]",
+        "actual_row_count": 1
+      }
+    ],
+    "warnings": []
+  }
+}

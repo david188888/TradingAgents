@@ -1,0 +1,17 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"data\":{\"code\":0,\"data\":[{\"meta\":{\"code\":\"M5567876\",\"enName\":\"China: GDP: Current Prices\",\"name\":\"中国:GDP:现价:当季值\",\"enSource\":\"National Bureau of Statistics of China\",\"source\":\"国家统计局\",\"enUnit\":\"CNY 100mn\",\"unit\":\"亿元\",\"enFreq\":\"quarterly\",\"freq\":\"季\",\"enMagnitude\":\"100mn \",\"magnitude\":\"亿\",\"enCurrency\":\"CNY\",\"currency\":\"人民币\",\"updateDate\":\"20260720\"}},{\"meta\":{\"code\":\"M0001395\",\"enName\":\"China: GDP: Current Prices\",\"name\":\"中国:GDP:现价\",\"enSource\":\"National Bureau of Statistics of China\",\"source\":\"国家统计局\",\"enUnit\":\"CNY 100mn\",\"unit\":\"亿元\",\"enFreq\":\"yearly\",\"freq\":\"年\",\"enMagnitude\":\"100mn \",\"magnitude\":\"亿\",\"enCurrency\":\"CNY\",\"currency\":\"人民币\",\"updateDate\":\"20260602\"}},{\"meta\":{\"code\":\"M5567889\",\"enName\":\"China: GDP: Constant Prices\",\"name\":\"中国:GDP:不变价:当季值\",\"enSource\":\"National Bureau of Statistics of China\",\"source\":\"国家统计局\",\"enUnit\":\"CNY 100mn\",\"unit\":\"亿元\",\"enFreq\":\"quarterly\",\"freq\":\"季\",\"enMagnitude\":\"100mn \",\"magnitude\":\"亿\",\"enCurrency\":\"CNY\",\"currency\":\"人民币\",\"updateDate\":\"20260720\"}},{\"meta\":{\"code\":\"M5785610\",\"enName\":\"China: GDP: Constant Prices\",\"name\":\"中国:GDP:不变价\",\"enSource\":\"National Bureau of Statistics of China\",\"source\":\"国家统计局\",\"enUnit\":\"CNY 100mn\",\"unit\":\"亿元\",\"enFreq\":\"yearly\",\"freq\":\"年\",\"enMagnitude\":\"100mn \",\"magnitude\":\"亿\",\"enCurrency\":\"CNY\",\"currency\":\"人民币\",\"updateDate\":\"20260122\"}}]},\"error\":null}"
+    }
+  ],
+  "isError": false,
+  "cli_meta": {
+    "schema_version": "1.0",
+    "server_type": "economic_data",
+    "tool_name": "natural_language_get_edb_data",
+    "completeness": "not_asserted",
+    "tables": [],
+    "warnings": []
+  }
+}
