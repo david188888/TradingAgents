@@ -28,7 +28,7 @@ npm --prefix frontend run build
 npm --prefix frontend run test:e2e
 ```
 
-The public CI currently runs clean-install smoke, full Ruff, the web typecheck/build/wheel smoke path, and the `docs` job (`python scripts/check_agent_docs.py`). The pytest, Vitest, and Playwright E2E commands above are local validation only: their tests/configuration/scaffolding are ignored or local-only in this fork, so a fresh public clone does not guarantee that those files exist. Passing them locally is useful evidence, not a public CI guarantee.
+There is no remote CI in this fork. The commit gate is pre-commit: install it once with `pip install pre-commit && pre-commit install`, and Ruff runs against every `git commit`. Test assets (pytest, Vitest, and Playwright specs plus their configs) are tracked in the repository, so the validation commands above all work on a fresh clone. Passing the relevant checks locally is the bar for merging; `python scripts/check_agent_docs.py` must be run manually when documentation surfaces change.
 
 After changing `frontend/src/`, `npm --prefix frontend run build` must be run and the generated `tradingagents/web/static/` output must remain in sync. Do not edit generated assets by hand.
 
@@ -48,4 +48,4 @@ If a change has no documentation impact, state `No documentation impact` in the 
 
 Keep changes scoped, explain compatibility implications, and include the commands used for validation. Do not commit local secrets, ignored test artifacts, run-store data, generated caches, or unrelated dirty files. A clean documentation diff should pass `git diff --check`.
 
-Before handing off, verify `git status --short`, inspect the complete diff, and confirm that any changed public surface has both consumer updates and a current documentation pointer. Do not claim a local-only test is part of public CI unless the workflow proves it.
+Before handing off, verify `git status --short`, inspect the complete diff, and confirm that any changed public surface has both consumer updates and a current documentation pointer. Do not bypass or weaken the pre-commit Ruff gate to land a change.

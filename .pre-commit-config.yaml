@@ -1,0 +1,9 @@
+# Commit gate for this fork: Ruff lint only (no formatter — see
+# [tool.ruff.lint] comment in pyproject.toml for why formatting is deferred).
+# Keep `rev` in sync with the ruff version pinned in the local dev environment.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff
+        args: [--fix]
