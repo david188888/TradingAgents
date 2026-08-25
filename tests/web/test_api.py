@@ -17,7 +17,6 @@ from tradingagents.observability.events import RunEventDraft
 from tradingagents.web.batch_models import BatchItem, BatchSnapshot
 from tradingagents.web.broker import EventBroker
 from tradingagents.web.manager import (
-    ActiveRunConflict,
     ResumeRunConflict,
     RunNotActive,
     RunNotResumable,
@@ -465,9 +464,8 @@ def test_create_normalizes_portfolio_symbols_before_manager(api):
     assert response.status_code == 201
     request, _configured_keys = manager.calls[0][1]
     assert request.ticker == "600519.SS"
-    # A legacy portfolio is converted into a HoldingContext (source-tagged)
-    # and never attached to the request as a portfolio object.
-    assert request.portfolio is None
+    # A legacy portfolio is converted into a HoldingContext (source-tagged);
+    # the request model has no portfolio object anymore.
     assert request.holding_context is not None
     assert request.holding_context.ticker == "600519.SS"
     assert request.holding_context.quantity == 200
@@ -796,7 +794,6 @@ def test_cancel_retry_and_resume_delegate_to_manager_with_expected_http_semantic
 @pytest.mark.parametrize(
     ("operation", "error", "code"),
     [
-        ("start", ActiveRunConflict("run_20260718T000000000000Z_aaaaaaaa"), "active_run_conflict"),
         ("cancel", RunNotActive("not active"), "run_not_active"),
         ("retry", RunNotRetryable("not retryable"), "run_not_retryable"),
         ("resume", RunNotResumable("no checkpoint"), "run_not_resumable"),
@@ -812,10 +809,7 @@ def test_lifecycle_conflicts_have_stable_safe_409_errors(
     source = _snapshot(status="interrupted")
     store.create_run(source)
     manager.errors[operation] = error
-    if operation == "start":
-        response = client.post("/api/runs", json=VALID_RUN_BODY)
-    else:
-        response = client.post(f"/api/runs/{source.run_id}/{operation}")
+    response = client.post(f"/api/runs/{source.run_id}/{operation}")
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == code

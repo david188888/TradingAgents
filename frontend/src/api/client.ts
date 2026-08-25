@@ -23,9 +23,6 @@ import type {
   CompanionSelectionDTO,
   ConfigResponseDTO,
   DeleteAllRunsResultDTO,
-  MarketEventDTO,
-  MarketEventLayer2DTO,
-  MarketViewDTO,
   RecentRunsPageDTO,
   RunViewEnvelopeDTO,
   ReaderResponseDTO,
@@ -256,7 +253,7 @@ export function getRun(run_id: string): Promise<RunSnapshotDTO> {
 }
 
 /**
- * POST /api/runs (201). Throws ApiError on 409 (active_run_conflict) or 422
+ * POST /api/runs (201). Throws ApiError on 422
  * (validation_error / unsupported_provider / missing_configuration / etc.).
  */
 export function createRun(body: RunCreateRequestDTO): Promise<RunSnapshotDTO> {
@@ -363,33 +360,6 @@ export function listArtifacts(
 ): Promise<ArtifactMetadataDTO[]> {
   assertRunId(run_id);
   return request<ArtifactMetadataDTO[]>("GET", API.artifacts(run_id));
-}
-
-/**
- * GET the run's local chart projection.  The server only reads artifacts that
- * were already captured by this run; it never issues a new market-data call.
- * The sequence version gives browser caches a new immutable-ish key as the
- * append-only event log grows.
- */
-export function getMarketView(
-  run_id: string,
-  sequence?: number,
-  signal?: AbortSignal,
-): Promise<MarketViewDTO> {
-  assertRunId(run_id);
-  return request<MarketViewDTO>("GET", API.marketView(run_id, sequence), undefined, signal);
-}
-
-/**
- * Read an already-cached public Layer 2 conclusion for one marker.  The
- * server intentionally does not invoke a data vendor or model on cache miss.
- */
-export function getMarketEventLayer2(
-  run_id: string,
-  event: Pick<MarketEventDTO, "artifact_id" | "timestamp" | "title">,
-): Promise<MarketEventLayer2DTO> {
-  assertRunId(run_id);
-  return request<MarketEventLayer2DTO>("GET", API.marketEventLayer2(run_id, event));
 }
 
 /**

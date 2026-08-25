@@ -3,11 +3,10 @@
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yfinance as yf
 from langgraph.prebuilt import ToolNode
 
 # Import the abstract tool methods from agent_utils
@@ -48,9 +47,7 @@ from tradingagents.reporting import write_report_tree
 
 from .conditional_logic import ConditionalLogic
 from .propagation import Propagator
-from .reflection import Reflector
 from .setup import GraphSetup
-from .signal_processing import SignalProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +117,6 @@ class TradingAgentsGraph:
         # Initialize components
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
-            max_risk_discuss_rounds=self.config["max_risk_discuss_rounds"],
         )
         self.graph_setup = GraphSetup(
             self.quick_thinking_llm,
@@ -132,8 +128,6 @@ class TradingAgentsGraph:
         self.propagator = Propagator(
             max_recur_limit=self.config.get("max_recur_limit", 100),
         )
-        self.reflector = Reflector(self.quick_thinking_llm)
-        self.signal_processor = SignalProcessor(self.quick_thinking_llm)
 
         # State tracking
         self.curr_state = None
@@ -206,112 +200,6 @@ class TradingAgentsGraph:
             ),
         }
 
-    def _resolve_benchmark(self, ticker: str) -> str:
-        """Pick the benchmark ticker for alpha calculation against ``ticker``.
-
-        ``config["benchmark_ticker"]`` overrides everything when set; otherwise
-        the suffix map matches the ticker's exchange suffix (e.g. ``.T`` for
-        Tokyo). US-listed tickers without a dotted suffix fall through to the
-        empty-suffix entry (SPY by default). Unrecognised suffixes (including
-        US tickers with dots like ``BRK.B``) also fall back to the empty-suffix
-        entry, which is the right default because the alpha calculation works
-        in USD.
-        """
-        explicit = self.config.get("benchmark_ticker")
-        if explicit:
-            return explicit
-        benchmark_map = self.config.get("benchmark_map", {})
-        ticker_upper = ticker.upper()
-        for suffix, benchmark in benchmark_map.items():
-            if suffix and ticker_upper.endswith(suffix.upper()):
-                return benchmark
-        return benchmark_map.get("", "SPY")
-
-    def _fetch_returns(
-        self, ticker: str, trade_date: str, holding_days: int = 5,
-        benchmark: str = "SPY",
-    ) -> tuple[float | None, float | None, int | None]:
-        """Fetch raw and alpha return for ticker over holding_days from trade_date.
-
-        ``benchmark`` is the index used as the alpha baseline (resolved by the
-        caller via ``_resolve_benchmark``). Returns ``(raw_return, alpha_return,
-        actual_holding_days)`` or ``(None, None, None)`` if price data is
-        unavailable (too recent, delisted, or network error).
-        """
-        from tradingagents.dataflows.symbol_utils import normalize_symbol
-
-        try:
-            start = datetime.strptime(trade_date, "%Y-%m-%d")
-            end = start + timedelta(days=holding_days + 7)  # buffer for weekends/holidays
-            end_str = end.strftime("%Y-%m-%d")
-
-            # Normalize so the realized-return lookup hits the same instrument
-            # the analysis priced (e.g. XAUUSD -> GC=F) (#984). The benchmark is
-            # already a canonical Yahoo symbol from ``_resolve_benchmark``.
-            stock = yf.Ticker(normalize_symbol(ticker)).history(start=trade_date, end=end_str)
-            bench = yf.Ticker(benchmark).history(start=trade_date, end=end_str)
-
-            if len(stock) < 2 or len(bench) < 2:
-                return None, None, None
-
-            actual_days = min(holding_days, len(stock) - 1, len(bench) - 1)
-            raw = float(
-                (stock["Close"].iloc[actual_days] - stock["Close"].iloc[0])
-                / stock["Close"].iloc[0]
-            )
-            bench_ret = float(
-                (bench["Close"].iloc[actual_days] - bench["Close"].iloc[0])
-                / bench["Close"].iloc[0]
-            )
-            alpha = raw - bench_ret
-            return raw, alpha, actual_days
-        except Exception as e:
-            logger.warning(
-                "Could not resolve outcome for %s on %s vs %s (will retry next run): %s",
-                ticker, trade_date, benchmark, e,
-            )
-            return None, None, None
-
-    def _resolve_pending_entries(self, ticker: str) -> None:
-        """Resolve pending log entries for ticker at the start of a new run.
-
-        Fetches returns for each same-ticker pending entry, generates reflections,
-        then writes all updates in a single atomic batch write to avoid redundant I/O.
-        Skips entries whose price data is not yet available (too recent or delisted).
-
-        Trade-off: only same-ticker entries are resolved per run.  Entries for
-        other tickers accumulate until that ticker is run again.
-        """
-        pending = [e for e in self.memory_log.get_pending_entries() if e["ticker"] == ticker]
-        if not pending:
-            return
-
-        benchmark = self._resolve_benchmark(ticker)
-        updates = []
-        for entry in pending:
-            raw, alpha, days = self._fetch_returns(
-                ticker, entry["date"], benchmark=benchmark,
-            )
-            if raw is None:
-                continue  # price not available yet — try again next run
-            reflection = self.reflector.reflect_on_final_decision(
-                final_decision=entry.get("decision", ""),
-                raw_return=raw,
-                alpha_return=alpha,
-                benchmark_name=benchmark,
-            )
-            updates.append({
-                "ticker": ticker,
-                "trade_date": entry["date"],
-                "raw_return": raw,
-                "alpha_return": alpha,
-                "holding_days": days,
-                "reflection": reflection,
-            })
-
-        if updates:
-            self.memory_log.batch_update_with_outcomes(updates)
-
     def resolve_instrument_context(self, ticker: str, asset_type: str = "stock") -> str:
         """Resolve ticker identity once and return the full instrument context.
 
@@ -367,13 +255,6 @@ class TradingAgentsGraph:
             f"horizon={horizon}",
         ])
 
-    def propagate(self, company_name, trade_date, asset_type: str = "stock"):
-        """Compatibility tuple adapter over the shared AnalysisRunner."""
-        result = self.run_analysis(
-            self._analysis_request(company_name, trade_date, asset_type),
-        )
-        return result.final_state, result.final_signal
-
     def run_analysis(
         self,
         request: AnalysisRequest,
@@ -398,22 +279,6 @@ class TradingAgentsGraph:
             checkpoint_guard=checkpoint_guard,
         )
 
-    def _analysis_request(
-        self,
-        company_name: str,
-        trade_date,
-        asset_type: str,
-    ) -> AnalysisRequest:
-        return AnalysisRequest(
-            ticker=company_name,
-            analysis_date=str(trade_date),
-            asset_type=asset_type,
-            selected_analysts=tuple(self.selected_analysts),
-            max_debate_rounds=int(self.config["max_debate_rounds"]),
-            max_risk_discuss_rounds=int(self.config["max_risk_discuss_rounds"]),
-            effective_config=dict(self.config),
-        )
-
     def save_reports(self, final_state, ticker, save_path=None) -> Path:
         """Write the markdown report tree for a completed run, like the CLI does.
 
@@ -428,13 +293,6 @@ class TradingAgentsGraph:
                 / f"{safe_ticker_component(ticker)}_{stamp}"
             )
         return write_report_tree(final_state, ticker, save_path)
-
-    def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
-        """Backward-compatible private adapter retained for downstream callers."""
-        result = self.run_analysis(
-            self._analysis_request(company_name, trade_date, asset_type),
-        )
-        return result.final_state, result.final_signal
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file.
@@ -462,9 +320,6 @@ class TradingAgentsGraph:
                     "judge_decision"
                 ],
             },
-            "trader_investment_decision": final_state.get(
-                "trader_investment_plan", "(not applicable: learning mode)"
-            ),
             "risk_debate_state": {
                 "aggressive_history": risk_state.get("aggressive_history", ""),
                 "conservative_history": risk_state.get("conservative_history", ""),
@@ -488,7 +343,3 @@ class TradingAgentsGraph:
         log_path = directory / f"full_states_log_{trade_date}.json"
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(self.log_states_dict[str(trade_date)], f, indent=4)
-
-    def process_signal(self, full_signal):
-        """Process a signal to extract the core decision."""
-        return self.signal_processor.process_signal(full_signal)

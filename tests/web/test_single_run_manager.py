@@ -21,7 +21,6 @@ from tradingagents.observability.provenance import current_provenance_observer
 from tradingagents.observability.roles import ROLE_REGISTRY
 from tradingagents.web.broker import EventBroker
 from tradingagents.web.manager import (
-    ActiveRunConflict,
     RunNotResumable,
     SingleRunManager,
 )
@@ -413,14 +412,10 @@ def test_two_concurrent_submissions_both_queue_and_complete(tmp_path):
     manager, store, _broker, factory = _manager(tmp_path, runner_a, runner_b)
     barrier = threading.Barrier(3)
     results: list[RunSnapshot] = []
-    conflicts: list[ActiveRunConflict] = []
 
     def submit(ticker: str) -> None:
         barrier.wait()
-        try:
-            results.append(manager.start(_request(ticker)))
-        except ActiveRunConflict as exc:
-            conflicts.append(exc)
+        results.append(manager.start(_request(ticker)))
 
     first = threading.Thread(target=submit, args=("AAPL",))
     second = threading.Thread(target=submit, args=("MSFT",))
@@ -432,7 +427,6 @@ def test_two_concurrent_submissions_both_queue_and_complete(tmp_path):
 
     assert not first.is_alive() and not second.is_alive()
     assert len(results) == 2
-    assert len(conflicts) == 0
     for snapshot in results:
         assert manager.wait(snapshot.run_id, timeout=3).status == "completed"
     assert len(store.list_runs()) == 2

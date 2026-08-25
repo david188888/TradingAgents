@@ -15,9 +15,6 @@ import pytest
 
 from tradingagents.agents.researchers.bear_researcher import _build_bear_prompt
 from tradingagents.agents.researchers.bull_researcher import _build_bull_prompt
-from tradingagents.agents.risk_mgmt.aggressive_debator import _build_aggressive_prompt
-from tradingagents.agents.risk_mgmt.conservative_debator import _build_conservative_prompt
-from tradingagents.agents.risk_mgmt.neutral_debator import _build_neutral_prompt
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -33,21 +30,6 @@ def _base_prompt_kwargs(**overrides):
         "fundamentals_report": "fundamentals ok",
         "history": "",
         "skill_prompt": "",
-        "language_instruction": "",
-    }
-    base.update(overrides)
-    return base
-
-
-def _base_risk_prompt_kwargs(**overrides):
-    base = {
-        "trader_decision": "BUY 100 shares",
-        "instrument_context": "Ticker: TEST",
-        "market_research_report": "market ok",
-        "sentiment_report": "sentiment ok",
-        "news_report": "news ok",
-        "fundamentals_report": "fundamentals ok",
-        "history": "",
         "language_instruction": "",
     }
     base.update(overrides)
@@ -259,75 +241,6 @@ def test_bear_stored_body_has_no_label_composed_history_does():
     assert new_state["current_response"] == "bear argument text"
     assert not new_state["bear_history"].strip().startswith("Bear Analyst:")
     assert "Bear Analyst: bear argument text" in new_state["history"]
-
-
-# --- Risk debators ----------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_aggressive_opening_prompt_has_no_opposing_lines():
-    prompt = _build_aggressive_prompt(
-        **_base_risk_prompt_kwargs(
-            conservative_response="",
-            neutral_response="",
-        )
-    )
-    assert "last conservative" not in prompt.lower()
-    assert "last neutral" not in prompt.lower()
-
-
-@pytest.mark.unit
-def test_aggressive_rebuttal_prompt_includes_opposing_arguments():
-    prompt = _build_aggressive_prompt(
-        **_base_risk_prompt_kwargs(
-            conservative_response="conservative says no",
-            neutral_response="neutral says maybe",
-        )
-    )
-    assert "conservative says no" in prompt
-    assert "neutral says maybe" in prompt
-
-
-@pytest.mark.unit
-def test_aggressive_prompt_has_no_moderator_framing():
-    prompt = _build_aggressive_prompt(
-        **_base_risk_prompt_kwargs(
-            conservative_response="x",
-            neutral_response="y",
-        )
-    )
-    lower = prompt.lower()
-    assert "the moderator's" not in lower
-    assert "dear moderator" not in lower
-    assert "mr. moderator" not in lower
-
-
-@pytest.mark.unit
-def test_conservative_prompt_has_no_moderator_framing():
-    prompt = _build_conservative_prompt(
-        **_base_risk_prompt_kwargs(
-            aggressive_response="x",
-            neutral_response="y",
-        )
-    )
-    lower = prompt.lower()
-    assert "the moderator's" not in lower
-    assert "dear moderator" not in lower
-    assert "mr. moderator" not in lower
-
-
-@pytest.mark.unit
-def test_neutral_prompt_has_no_moderator_framing():
-    prompt = _build_neutral_prompt(
-        **_base_risk_prompt_kwargs(
-            aggressive_response="x",
-            conservative_response="y",
-        )
-    )
-    lower = prompt.lower()
-    assert "the moderator's" not in lower
-    assert "dear moderator" not in lower
-    assert "mr. moderator" not in lower
 
 
 # --- Foreign-attribution detector (reusable for rendering guard) ------------

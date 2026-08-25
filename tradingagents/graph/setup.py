@@ -8,20 +8,16 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from tradingagents.agents import (
-    create_aggressive_debator,
     create_bear_researcher,
     create_bull_researcher,
-    create_conservative_debator,
     create_evidence_steward,
     create_fundamentals_analyst,
     create_market_analyst,
     create_msg_delete,
-    create_neutral_debator,
     create_news_analyst,
     create_portfolio_manager,
     create_research_manager,
     create_sentiment_analyst,
-    create_trader,
 )
 from tradingagents.agents.utils.a_share_supplement_tools import (
     create_a_share_supplement_prefetch_node,
@@ -57,23 +53,10 @@ DEBATE_PATH_MAP = {
     "Bear Researcher": "Bear Researcher",
     "Research Manager": "Research Manager",
 }
-RISK_ANALYSIS_PATH_MAP = {
-    "Aggressive Analyst": "Aggressive Analyst",
-    "Conservative Analyst": "Conservative Analyst",
-    "Neutral Analyst": "Neutral Analyst",
-    "Portfolio Manager": "Portfolio Manager",
-}
-POST_RESEARCH_PATH_MAP = {
-    "Trader": "Trader",
-    "Portfolio Manager": "Portfolio Manager",
-}
 
 _COMPACTED_DEBATE_STATE_KEYS = {
     "Bull Researcher": "investment_debate_state",
     "Bear Researcher": "investment_debate_state",
-    "Aggressive Analyst": "risk_debate_state",
-    "Neutral Analyst": "risk_debate_state",
-    "Conservative Analyst": "risk_debate_state",
 }
 
 
@@ -96,13 +79,6 @@ def _public_debate_summary(llm: Any, older_turns: str) -> str:
     )
     content = getattr(response, "content", response)
     return content if isinstance(content, str) else ""
-
-
-def _route_after_research(state: AgentState) -> str:
-    """Keep learning runs out of the legacy transaction-decision subgraph."""
-    if state.get("mode") in {"company_research", "holding_review"}:
-        return "Portfolio Manager"
-    return "Trader"
 
 
 def _compact_debate_node(node_name: str, node: Any, llm: Any):
@@ -283,12 +259,6 @@ class GraphSetup:
             self.deep_thinking_llm,
             use_default_report_lenses=True,
         )
-        trader_node = create_trader(self.quick_thinking_llm)
-
-        # Create risk analysis nodes
-        aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
-        neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
-        conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
         portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
 
         # Create workflow
@@ -380,14 +350,6 @@ class GraphSetup:
         workflow.add_node(
             "Research Manager", role_node("Research Manager", research_manager_node)
         )
-        workflow.add_node("Trader", role_node("Trader", trader_node))
-        workflow.add_node(
-            "Aggressive Analyst", role_node("Aggressive Analyst", aggressive_analyst)
-        )
-        workflow.add_node("Neutral Analyst", role_node("Neutral Analyst", neutral_analyst))
-        workflow.add_node(
-            "Conservative Analyst", role_node("Conservative Analyst", conservative_analyst)
-        )
         workflow.add_node(
             "Portfolio Manager", role_node("Portfolio Manager", portfolio_manager_node)
         )
@@ -438,19 +400,11 @@ class GraphSetup:
                 self.conditional_logic.should_continue_debate,
                 DEBATE_PATH_MAP,
             )
-        workflow.add_conditional_edges(
-            "Research Manager",
-            _route_after_research,
-            POST_RESEARCH_PATH_MAP,
-        )
-        workflow.add_edge("Trader", "Aggressive Analyst")
-        # All three risk edges share the complete RISK_ANALYSIS_PATH_MAP (#1088).
-        for risk_node in ("Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"):
-            workflow.add_conditional_edges(
-                risk_node,
-                self.conditional_logic.should_continue_risk_analysis,
-                RISK_ANALYSIS_PATH_MAP,
-            )
+        # The learning-only graph runs Research Manager straight into the
+        # Portfolio Manager: the legacy Trader/risk-debator subgraph has been
+        # retired, and PM's learning path closes each run with the
+        # research-review verdict.
+        workflow.add_edge("Research Manager", "Portfolio Manager")
 
         workflow.add_edge("Portfolio Manager", END)
 

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from tradingagents.execution.models import AnalysisRequest
+from tradingagents.execution.models import AnalysisRequest, HoldingContext
 from tradingagents.execution.runner import PreparedInitialContext
 from tradingagents.observability.canonical import (
     AGENT_STATE_SCHEMA_SHA256,
@@ -22,7 +22,6 @@ from tradingagents.observability.canonical import (
     canonical_sha256,
 )
 from tradingagents.observability.events import EVENT_SCHEMA_VERSION
-from tradingagents.portfolio import PortfolioContext, Position
 from tradingagents.runtime.contracts import RuntimeContractSelection
 from tradingagents.web.fingerprint import (
     CheckpointIncompatible,
@@ -110,8 +109,9 @@ def _request(
     ticker: str = " aapl ",
     selected_analysts: tuple[str, ...] = ("news", "market"),
     effective_config: dict[str, Any] | None = None,
-    portfolio: Any = None,
+    holding_context: Any = None,
     horizon: str = "medium",
+    mode: Any = "company_research",
 ) -> AnalysisRequest:
     return AnalysisRequest(
         ticker=ticker,
@@ -120,6 +120,7 @@ def _request(
         max_debate_rounds=2,
         max_risk_discuss_rounds=3,
         horizon=horizon,
+        mode=mode,
         effective_config=effective_config
         or {
             "llm_provider": "openai",
@@ -127,7 +128,7 @@ def _request(
             "max_tokens": 2048,
             "backend_url": "https://api.example.com/v1?trace=discarded",
         },
-        portfolio=portfolio,
+        holding_context=holding_context,
     )
 
 
@@ -480,7 +481,6 @@ def test_resume_fingerprint_document_has_the_exact_approved_top_level_shape():
             "horizon": "medium",
             "max_debate_rounds": 2,
             "max_risk_discuss_rounds": 3,
-            "portfolio": None,
             "holding_context": None,
         },
         "effective_config": {
@@ -534,7 +534,7 @@ def test_resume_fingerprint_document_has_the_exact_approved_top_level_shape():
     }
     assert fingerprint.sha256 == canonical_sha256(fingerprint.document)
     assert fingerprint.sha256 == (
-        "d45fca186bf32816f7dd2d2d12fe9b7bed014af97ab0e520fe003f5f3830af68"
+        "cc5d8b1126cc10313629c3dcba060a9b869f4fadc6b53e9b73b138834d25bd7b"
     )
 
 
@@ -677,24 +677,25 @@ def test_request_initial_context_and_state_schema_mutations_are_incompatible():
     )
 
 
-def test_portfolio_constraint_mutation_is_incompatible_with_resume():
-    original = _build(
-        _request(
-            portfolio=PortfolioContext(
-                cash=100_000,
-                positions=(Position("AAPL", 10, 100),),
-                mark_prices={"AAPL": 120},
-            )
+def test_holding_constraint_mutation_is_incompatible_with_resume():
+    def holding(average_cost: float) -> HoldingContext:
+        return HoldingContext(
+            ticker="AAPL",
+            quantity=10,
+            average_cost=average_cost,
+            cash=100_000,
+            total_account_value=None,
+            currency="USD",
+            facts_as_of="2026-07-18",
+            original_thesis=None,
+            source="user_provided",
         )
+
+    original = _build(
+        _request(holding_context=holding(100), mode="holding_review")
     )
     changed = _build(
-        _request(
-            portfolio=PortfolioContext(
-                cash=100_000,
-                positions=(Position("AAPL", 10, 100),),
-                mark_prices={"AAPL": 121},
-            )
-        )
+        _request(holding_context=holding(101), mode="holding_review")
     )
 
     assert compare_resume_fingerprints(original, changed).mismatch_categories == (

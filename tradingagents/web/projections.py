@@ -22,7 +22,6 @@ from tradingagents.portfolio import ConvictionSignal, aggregate_risk_convictions
 from tradingagents.research import build_holding_review_summary
 
 from .debate_summary import DEBATE_SUMMARY_LOCATOR, ensure_debate_summary
-from .market_view import build_market_view
 from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
 from .store import RunNotFound, RunStore, RunStoreCorruption, RunStoreError
 
@@ -228,7 +227,6 @@ def build_run_view(store: RunStore, run_id: str) -> dict[str, Any]:
     status = "ready" if reader_brief is not None else "legacy_fallback"
     if snapshot.status not in TERMINAL_STATUSES and reader_brief is None:
         status = "partial"
-    market_version = _market_projection_version(store, run_id, events)
     workflow = build_workflow(events)
     debate_journey = build_debate_journey(workflow, events, reader_brief)
     debate_summary = _read_debate_summary(store, run_id, snapshot)
@@ -251,7 +249,6 @@ def build_run_view(store: RunStore, run_id: str) -> dict[str, Any]:
             "debate_summary": debate_summary,
             "section_index": _section_index(events, complete_report),
             "data_quality": quality,
-            "market_projection_version": market_version,
             "available_audit_counts": _audit_counts(events),
             "legacy_fallback": (
                 {
@@ -813,24 +810,6 @@ def _audit_counts(events: Iterable[PersistedEvent]) -> dict[str, int]:
             counts["reports"] += 1
     counts["turns"] = len(seen_turns)
     return counts
-
-
-def _market_projection_version(store: RunStore, run_id: str, events: list[PersistedEvent]) -> int:
-    try:
-        coverage = build_market_view(store, run_id).get("coverage", {})
-    except Exception:
-        return 0
-    source_ids = set(coverage.get("bar_source_artifact_ids", [])) | set(coverage.get("event_source_artifact_ids", []))
-    if not source_ids:
-        return 0
-    return max(
-        (
-            event.sequence
-            for event in events
-            if event.type == "artifact.written" and event.payload.get("artifact_id") in source_ids
-        ),
-        default=0,
-    )
 
 
 def _latest_report_artifact(events: Iterable[PersistedEvent], report_kind: str) -> str | None:

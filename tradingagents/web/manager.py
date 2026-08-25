@@ -22,7 +22,6 @@ from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
-    LEARNING_MODES,
     AnalysisCancelled,
     AnalysisRequest,
     AnalysisResult,
@@ -81,12 +80,6 @@ StartupReconciler = Callable[[RunSnapshot, DurableRunObserver], None]
 
 class RunManagerError(RuntimeError):
     pass
-
-
-class ActiveRunConflict(RunManagerError):
-    def __init__(self, active_run_id: str):
-        self.active_run_id = active_run_id
-        super().__init__(f"another analysis is active: {active_run_id}")
 
 
 class RunNotActive(RunManagerError):
@@ -464,7 +457,6 @@ class SingleRunManager:
             retry_of=retry_of,
             metadata={
                 "effective_config": safe_config,
-                "portfolio": asdict(request.portfolio) if request.portfolio is not None else None,
                 **(
                     {
                         "batch_id": batch_id,
@@ -1495,13 +1487,6 @@ def _default_resume_preflight(
         if not owner.config.get("checkpoint_enabled"):
             raise RunNotResumable("checkpoint resume is disabled")
         owner.ticker = request.ticker
-        # Mirror AnalysisRunner.run: learning modes never resolve pending
-        # reflection entries (research narratives are not trade outcomes).
-        if (
-            runner.runtime_contract.policy_version == "horizon-policy-v2"
-            and request.mode not in LEARNING_MODES
-        ):
-            owner._resolve_pending_entries(request.ticker)
         initial_context = runner.prepare_initial_context(request)
         access = checkpoint_access(
             owner.config["data_cache_dir"],

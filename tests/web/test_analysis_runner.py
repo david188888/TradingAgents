@@ -12,7 +12,6 @@ from tradingagents.execution.models import (
     CancellationToken,
 )
 from tradingagents.execution.runner import AnalysisRunner, CheckpointAuthorization
-from tradingagents.portfolio import FeatureContribution, FeatureContributionArtifact
 from tradingagents.web.fingerprint import FingerprintCheckpointGuard
 from tradingagents.web.run_models import RunSnapshot, generate_run_id
 from tradingagents.web.store import RunStore
@@ -74,8 +73,6 @@ def _owner(*, checkpoint_enabled=False, debug=False):
     owner.workflow = MagicMock()
     owner.propagator = MagicMock()
     owner.memory_log = MagicMock()
-    owner.signal_processor = MagicMock()
-    owner._resolve_pending_entries = MagicMock(side_effect=lambda ticker: events.append("pending"))
     owner.resolve_instrument_context = MagicMock(
         side_effect=lambda ticker, asset: events.append("identity") or "Apple identity"
     )
@@ -83,10 +80,6 @@ def _owner(*, checkpoint_enabled=False, debug=False):
     owner._log_state = MagicMock(side_effect=lambda date, state: events.append("state_log"))
     owner.memory_log.get_past_context.side_effect = (
         lambda ticker: events.append("past_context") or "prior lesson"
-    )
-    owner.memory_log.store_decision.side_effect = lambda **kwargs: events.append("decision")
-    owner.signal_processor.process_signal.side_effect = (
-        lambda signal: events.append("signal") or "BUY"
     )
     owner.propagator.create_initial_state.return_value = {"input": True}
     owner.propagator.get_graph_args.return_value = {"stream_mode": "values"}
@@ -108,17 +101,12 @@ def test_runner_returns_success_object_and_preserves_completion_order():
     # Learning modes always terminate with the research-only signal.
     assert result.final_signal == "research_only"
     assert owner.curr_state is final_state
-    # Learning modes never route the decision through signal processing and
-    # never write into the reflection memory (no pending resolution, no
-    # stored decision).
     assert events == [
         "past_context",
         "identity",
         "graph",
         "state_log",
     ]
-    owner._resolve_pending_entries.assert_not_called()
-    owner.memory_log.store_decision.assert_not_called()
     owner.propagator.create_initial_state.assert_called_once_with(
         "AAPL",
         "2026-07-18",
@@ -129,45 +117,6 @@ def test_runner_returns_success_object_and_preserves_completion_order():
         past_context="prior lesson",
         instrument_context="Apple identity",
         analysis_cutoff=ANY,
-    )
-
-
-def test_runner_only_injects_feature_drivers_from_typed_numeric_artifact():
-    owner, _events = _owner()
-    owner.graph.invoke.return_value = {"final_trade_decision": "Rating: Hold"}
-    artifact = FeatureContributionArtifact(
-        artifact_id="calc:factor-model:2026-07-18",
-        producer="factor-model-v2",
-        methodology_ref="docs/factor-model-v2.md#normalization",
-        as_of_date="2026-07-18",
-        contributions=(
-            FeatureContribution(
-                "cash_flow",
-                -2.0,
-                0.7,
-                "risk",
-                "dataset:financials:2026-07-18",
-            ),
-        ),
-    )
-
-    AnalysisRunner(owner).run(_request(feature_contribution_artifact=artifact))
-
-    owner.graph.invoke.assert_called_once_with(
-        {
-            "input": True,
-            "feature_contributions": [
-                {
-                    "feature": "cash_flow",
-                    "z_score": -2.0,
-                    "importance": 0.7,
-                    "direction": "risk",
-                    "evidence_ref": "dataset:financials:2026-07-18",
-                    "source_artifact_id": "calc:factor-model:2026-07-18",
-                }
-            ],
-        },
-        stream_mode="values",
     )
 
 
@@ -206,10 +155,7 @@ def test_runner_preserves_original_failure_and_skips_completion_side_effects():
     assert exc_info.value is original
     assert owner.curr_state is None
     assert events == ["past_context", "identity"]
-    owner._resolve_pending_entries.assert_not_called()
     owner._log_state.assert_not_called()
-    owner.memory_log.store_decision.assert_not_called()
-    owner.signal_processor.process_signal.assert_not_called()
 
 
 def test_cancellation_is_checked_before_graph_and_after_stream_boundaries():
@@ -236,7 +182,6 @@ def test_cancellation_is_checked_before_graph_and_after_stream_boundaries():
         AnalysisRunner(owner).run(_request(), cancellation_token=token)
     assert after.value.partial_state == partial
     owner._log_state.assert_not_called()
-    owner.memory_log.store_decision.assert_not_called()
 
 
 def test_observed_execution_forwards_context_and_callbacks_without_double_sources():

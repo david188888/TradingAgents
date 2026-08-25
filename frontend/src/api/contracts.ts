@@ -42,16 +42,6 @@ export const API = {
   artifacts: (run_id: string) => `/api/runs/${run_id}/artifacts`,
   artifact: (run_id: string, artifact_id: string) =>
     `/api/runs/${run_id}/artifacts/${artifact_id}`,
-  /** Read-only projection of already persisted OHLCV/news artifacts. */
-  marketView: (run_id: string, sequence?: number) =>
-    `/api/runs/${run_id}/market-view${sequence != null ? `?v=${sequence}` : ""}`,
-  /** Read-only lookup of a public cached Layer 2 review for a captured marker. */
-  marketEventLayer2: (run_id: string, event: Pick<MarketEventDTO, "artifact_id" | "timestamp" | "title">) =>
-    `/api/runs/${run_id}/market-view/layer2?${new URLSearchParams({
-      artifact_id: event.artifact_id,
-      timestamp: event.timestamp,
-      title: event.title,
-    }).toString()}`,
   events: (run_id: string, after?: number) =>
     `/api/runs/${run_id}/events${after != null ? `?after=${after}` : ""}`,
   recentRuns: (limit = 20, cursor?: string) =>
@@ -503,7 +493,6 @@ export interface RunViewEnvelopeDTO {
     debate_summary: DebateSummaryEnvelopeDTO;
     section_index: Array<{ section_id: string; label: string; availability: string; artifact_ids: string[]; turn_ids: string[] }>;
     data_quality: DataQualityDTO;
-    market_projection_version: number;
     available_audit_counts: { turns: number; prompts: number; tool_calls: number; data_calls: number; artifacts: number; reports: number };
     legacy_fallback: { final_signal: string | null; portfolio_artifact_id: string | null; complete_report_artifact_id: string | null } | null;
   };
@@ -532,63 +521,6 @@ export interface DeleteAllRunsResultDTO {
   removed: number;
   /** True when the currently active run was kept because it is executing. */
   skipped_active: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Read-only market visualisation projection (/api/runs/{run_id}/market-view)
-// ---------------------------------------------------------------------------
-
-/** A validated OHLCV record captured during the run; never a synthetic quote. */
-export interface MarketBarDTO {
-  timestamp: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
-  artifact_id: string;
-}
-
-/** A dated research/news record captured during the run. */
-export interface MarketEventDTO {
-  timestamp: string;
-  title: string;
-  artifact_id: string;
-  url?: string;
-  source?: string;
-  sentiment?: string;
-  score?: number;
-}
-
-export interface MarketViewCoverageDTO {
-  bar_source_artifact_ids: string[];
-  event_source_artifact_ids: string[];
-  skipped_artifact_count: number;
-  as_of_sequence: number;
-}
-
-/** The endpoint only reads existing artifacts and can validly return no bars. */
-export interface MarketViewDTO {
-  bars: MarketBarDTO[];
-  events: MarketEventDTO[];
-  coverage: MarketViewCoverageDTO;
-}
-
-/** Only the public fields that the durable Layer 2 cache permits. */
-export interface Layer2ConclusionDTO {
-  conclusion: string;
-  evidence_gaps: string[];
-  material_risks: string[];
-  source_ids: string[];
-}
-
-export interface MarketEventLayer2DTO {
-  /** A miss is normal: the chart must not start a vendor/model call. */
-  status: "cached" | "not_available";
-  event: Pick<MarketEventDTO, "artifact_id" | "timestamp" | "title">;
-  trigger: { reasons: string[]; cache_key: string };
-  cache_configured: boolean;
-  conclusion?: Layer2ConclusionDTO;
 }
 
 // ---------------------------------------------------------------------------

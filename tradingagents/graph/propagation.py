@@ -93,7 +93,6 @@ class Propagator:
             "clamp_events": [],
             "execution_outcome": None,
             "holding_review_summary": None,
-            "feature_contributions": [],
             "context_compaction_facts": [],
         }
         if observation_context is not None:

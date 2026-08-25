@@ -9,7 +9,6 @@ import tradingagents.agents.analysts.fundamentals_analyst as fundamentals_analys
 import tradingagents.agents.analysts.market_analyst as market_analyst
 import tradingagents.agents.analysts.news_analyst as news_analyst
 import tradingagents.agents.analysts.sentiment_analyst as sentiment_analyst
-import tradingagents.agents.managers.portfolio_manager as portfolio_manager
 import tradingagents.agents.researchers.bear_researcher as bear_researcher
 import tradingagents.agents.researchers.bull_researcher as bull_researcher
 from tradingagents.observability.context import ObservationContext, observation_scope
@@ -212,7 +211,6 @@ def test_methodology_artifact_uses_existing_observer_only_when_context_is_active
         (sentiment_analyst, "sentiment_analyst"),
         (bull_researcher, "bull_researcher"),
         (bear_researcher, "bear_researcher"),
-        (portfolio_manager, "portfolio_manager"),
     ],
 )
 def test_analyst_prompts_use_only_their_static_skill_mapping(module, role):

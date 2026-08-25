@@ -30,22 +30,13 @@ from tradingagents.research.claim_registry import (  # noqa: F401 - facade re-ex
 )
 
 from ._common import (  # noqa: F401  - facade re-export
-    _NULLISH_FLOAT,
     ModelClaimInput,
     PortfolioRating,
-    TraderAction,
-    _coerce_optional_float,
 )
 from ._learning_research import (
     HoldingThesisAssessment,
     LearningResearchSummary,
     render_learning_research_summary,
-)
-from ._portfolio import (  # noqa: F401  - facade re-export
-    DecisionDriver,
-    PortfolioDecision,
-    PortfolioReaderFields,
-    render_pm_decision,
 )
 from ._research import (  # noqa: F401  - facade re-export
     ResearchDelegationTask,
@@ -76,15 +67,8 @@ from ._research_case_draft import (
     ScenarioDraft,
     render_learning_case_draft,
 )
-from ._risk import (  # noqa: F401  - facade re-export
-    RiskDebateSignal,
-)
 from ._sentiment import (  # noqa: F401  - facade re-export
     SentimentBand,
     SentimentReport,
     render_sentiment_report,
-)
-from ._trader import (  # noqa: F401  - facade re-export
-    TraderProposal,
-    render_trader_proposal,
 )

@@ -2785,6 +2785,33 @@ td.input-ref {
   color: var(--muted);
 }
 
+.failed-run-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.resumable-run-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 8px 0 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.resumable-run-copy p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
 /* ==========================================================================
    Main — debate journey timeline (L1)
    ========================================================================== */

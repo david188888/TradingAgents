@@ -192,7 +192,7 @@ def test_production_v2_fingerprint_bytes_are_frozen() -> None:
     )
     assert "runtime_contract" not in fingerprint.document
     assert fingerprint.sha256 == (
-        "d45fca186bf32816f7dd2d2d12fe9b7bed014af97ab0e520fe003f5f3830af68"
+        "cc5d8b1126cc10313629c3dcba060a9b869f4fadc6b53e9b73b138834d25bd7b"
     )
 
 

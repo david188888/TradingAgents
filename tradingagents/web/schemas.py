@@ -9,7 +9,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tradingagents.execution.models import ANALYST_WIRE_KEYS
-from tradingagents.portfolio import PortfolioContext, PortfolioLimits, Position
 
 SUPPORTED_OUTPUT_LANGUAGES = (
     "English",
@@ -59,23 +58,6 @@ class PortfolioRequest(BaseModel):
     mark_prices: dict[str, float] = Field(default_factory=dict)
     currency: str = "CNY"
     limits: PortfolioLimitsRequest = Field(default_factory=PortfolioLimitsRequest)
-
-    def to_domain(self) -> PortfolioContext:
-        return PortfolioContext(
-            cash=self.cash,
-            positions=tuple(
-                Position(
-                    ticker=position.ticker,
-                    quantity=position.quantity,
-                    average_cost=position.average_cost,
-                    sellable_quantity=position.sellable_quantity,
-                )
-                for position in self.positions
-            ),
-            mark_prices=self.mark_prices,
-            currency=self.currency.upper(),
-            limits=PortfolioLimits(**self.limits.model_dump()),
-        )
 
 
 class HoldingInputRequest(BaseModel):

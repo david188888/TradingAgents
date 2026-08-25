@@ -355,7 +355,6 @@ def _build_resume_fingerprint_for_test(
             "horizon": request.horizon,
             "max_debate_rounds": request.max_debate_rounds,
             "max_risk_discuss_rounds": request.max_risk_discuss_rounds,
-            "portfolio": asdict(request.portfolio) if request.portfolio is not None else None,
             "holding_context": (
                 asdict(request.holding_context)
                 if request.holding_context is not None

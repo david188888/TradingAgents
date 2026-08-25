@@ -40,7 +40,6 @@ from .batch_models import BatchItem
 from .broker import EventBroker, Keepalive, SubscriptionClosed
 from .connectivity import YahooUnavailableError
 from .manager import (
-    ActiveRunConflict,
     LegacyResumeNormalizationFailed,
     ResumeRunConflict,
     RunNotActive,
@@ -48,8 +47,6 @@ from .manager import (
     RunNotRetryable,
     SingleRunManager,
 )
-from .market_layer2 import build_market_event_layer2_view
-from .market_view import build_market_view
 from .projections import InvalidCursor, RunProjectionPublisher, recent_runs_page
 from .reader_models import CompanionSelection
 from .reader_projection import (
@@ -305,15 +302,6 @@ def create_app(
             500,
             "history_corrupted",
             "Stored run history failed an integrity check.",
-        )
-
-    @app.exception_handler(ActiveRunConflict)
-    async def handle_active_conflict(_request: Request, exc: ActiveRunConflict):
-        return _error_response(
-            409,
-            "active_run_conflict",
-            "Another analysis is already active.",
-            active_run_id=exc.active_run_id,
         )
 
     @app.exception_handler(RunNotActive)
@@ -717,50 +705,6 @@ def create_app(
             media_type=str(metadata[artifact_id]["media_type"]),
             headers={"Content-Length": str(len(content))},
         )
-
-    @app.get("/api/runs/{run_id}/market-view")
-    def market_view(run_id: str) -> JSONResponse:
-        """Project already-captured OHLCV/news records for the local chart.
-
-        This endpoint is intentionally read-only: it never makes a provider
-        request, so an empty payload is an honest degradation when a run has
-        no chartable artifacts.  A short private cache is safe because the
-        projection is pinned to append-only run records.
-        """
-        selected_store.read_snapshot(run_id)
-        return JSONResponse(
-            build_market_view(selected_store, run_id),
-            headers={"Cache-Control": "private, max-age=60"},
-        )
-
-    @app.get("/api/runs/{run_id}/market-view/layer2")
-    def market_event_layer2(
-        run_id: str,
-        artifact_id: str = Query(min_length=1, max_length=512),
-        timestamp: str = Query(min_length=1, max_length=64),
-        title: str = Query(min_length=1, max_length=280),
-    ) -> JSONResponse:
-        """Read a public cached Layer 2 conclusion for a captured marker.
-
-        This endpoint must stay read-only.  It revalidates the supplied marker
-        against persisted artifacts and never invokes a vendor or deep model
-        after a chart click; a cache miss is an expected, explicit result.
-        """
-        selected_store.read_snapshot(run_id)
-        payload = build_market_event_layer2_view(
-            selected_store,
-            run_id,
-            artifact_id=artifact_id,
-            timestamp=timestamp,
-            title=title,
-        )
-        if payload is None:
-            raise ApiBoundaryError(
-                404,
-                "market_event_not_found",
-                "The requested chart event was not captured by this run.",
-            )
-        return JSONResponse(payload, headers={"Cache-Control": "private, max-age=60"})
 
     @app.get("/api/runs/{run_id}/events")
     async def stream_events(

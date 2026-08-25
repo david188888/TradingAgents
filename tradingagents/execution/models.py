@@ -10,7 +10,6 @@ from threading import Event
 from typing import Any, Literal
 
 from tradingagents.analysts import ANALYST_WIRE_KEYS
-from tradingagents.portfolio import FeatureContributionArtifact, PortfolioContext
 
 ResearchMode = Literal["company_research", "holding_review"]
 # Typed learning modes produce research narratives, not trade outcomes: they
@@ -94,8 +93,6 @@ class AnalysisRequest:
     selected_analysts: tuple[str, ...] = ANALYST_WIRE_KEYS
     max_debate_rounds: int = 1
     max_risk_discuss_rounds: int = 1
-    portfolio: PortfolioContext | None = None
-    feature_contribution_artifact: FeatureContributionArtifact | None = None
     effective_config: Mapping[str, Any] = field(default_factory=dict)
     horizon: Literal["short", "medium", "long"] = "medium"
     mode: ResearchMode = "company_research"

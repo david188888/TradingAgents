@@ -12,10 +12,12 @@ import {
 import { DecisionBrief } from "../reader/DecisionBrief";
 import { ReaderSurface } from "../reader/ReaderSurface";
 import { FailedRunView } from "../reader/FailedRunView";
+import { ResumableRunBar } from "../reader/ResumableRunBar";
 import { RunDisclosure } from "./RunDisclosure";
 import { DebateTimeline } from "../timeline/DebateTimeline";
 import { StageDetail } from "../timeline/StageDetail";
 import type { JourneyStageId } from "../../api/contracts";
+import { resumeRun, retryRun } from "../../api/client";
 import { notifyRun } from "../../hooks/useCompletionNotifications";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { useRunHistory } from "../../hooks/useRunHistory";
@@ -203,6 +205,23 @@ export function WorkbenchLayout(): JSX.Element {
     }
   };
 
+  const handleRetryRun = async (): Promise<void> => {
+    if (run_id === null) return;
+    const retried = await retryRun(run_id);
+    await history.refresh();
+    selectRun(retried.run_id);
+  };
+
+  const handleResumeRun = async (): Promise<void> => {
+    if (run_id === null) return;
+    await resumeRun(run_id);
+    await history.refresh();
+    // The run keeps its id but leaves the terminal set; re-select it so the
+    // live stream reconnects and the stale terminal projection is refetched.
+    selectRun(null);
+    selectRun(run_id);
+  };
+
   return (
     <div className="app">
       <header
@@ -269,7 +288,7 @@ export function WorkbenchLayout(): JSX.Element {
             </>
           ) : view.view ? (
             view.view.view.run.status === "failed" ? (
-              <FailedRunView envelope={view.view} onOpenAudit={openAudit} />
+              <FailedRunView envelope={view.view} onOpenAudit={openAudit} onRetry={handleRetryRun} />
             ) : view.view.view.run.status === "completed" ? (
               <>
                 <DecisionBrief envelope={view.view} onOpenAudit={openAudit} />
@@ -293,6 +312,9 @@ export function WorkbenchLayout(): JSX.Element {
               /* Terminal but neither completed nor failed (cancelled /
                  interrupted historical run): the honest fallback. */
               <>
+                {view.view.view.run.status === "interrupted" ? (
+                  <ResumableRunBar onResume={handleResumeRun} />
+                ) : null}
                 <DecisionBrief envelope={view.view} onOpenAudit={openAudit} />
               </>
             )
