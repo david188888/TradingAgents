@@ -362,4 +362,7 @@ def build_app() -> Any:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(build_app(), host="127.0.0.1", port=8771)
+    # Default matches frontend/playwright.config.ts baseURL (and the
+    # reader-harness route mocks pinned to the same origin).
+    port = int(os.environ.get("TRADINGAGENTS_E2E_PORT", "4173"))
+    uvicorn.run(build_app(), host="127.0.0.1", port=port)
