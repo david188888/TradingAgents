@@ -432,7 +432,21 @@ def _route_news_to_vendors(
     details = (
         "; ".join(f"{vendor}: {err}" for vendor, err in errors) or "no news vendors configured"
     )
+    return _no_curated_news_sentinel(method, details)
+
+
+def _no_curated_news_sentinel(method: str, details: str) -> str:
     return f"No curated news found for '{method}'. Source status: {details}."
+
+
+def _is_news_failure_result(result: object) -> bool:
+    """True when the routed package is the all-sources-failed sentinel.
+
+    Transient outages must not be cached: the run-scoped cache has no TTL,
+    so freezing this sentinel would serve the failure text to every later
+    identical call in the same run even after sources recover.
+    """
+    return isinstance(result, str) and result.startswith("No curated news found for '")
 
 
 def _news_vendor_kwargs(

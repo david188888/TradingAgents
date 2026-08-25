@@ -75,6 +75,11 @@ class RunStore:
         self._global_lock = threading.RLock()
         self._locks_guard = threading.Lock()
         self._run_locks: dict[str, threading.RLock] = {}
+        # Process-local per-run latest-sequence watermarks. Every
+        # events.jsonl writer goes through this store instance under the
+        # per-run lock, so the cache stays exact between calls; without it
+        # each append/read re-scans the whole jsonl (O(N²) across a run).
+        self._sequence_watermarks: dict[str, int] = {}
 
     def lock_for(self, run_id: str) -> threading.RLock:
         validate_run_id(run_id)
@@ -109,6 +114,21 @@ class RunStore:
                 raise
         return snapshot
 
+    def _last_event_sequence_cached(self, run_id: str, run_dir: Path) -> int:
+        """Watermark over the run's last persisted event sequence.
+
+        The full events.jsonl scan runs once per run per process; afterwards
+        the in-memory watermark is maintained by append_event. Same-run
+        reads and appends serialize on the per-run lock, so a cached value
+        is never observed mid-append. delete_run evicts the entry.
+        """
+        cached = self._sequence_watermarks.get(run_id)
+        if cached is not None:
+            return cached
+        sequence = self._last_event_sequence(run_dir)
+        self._sequence_watermarks[run_id] = sequence
+        return sequence
+
     def read_snapshot(self, run_id: str) -> RunSnapshot:
         run_dir = self._run_dir(run_id)
         with self.lock_for(run_id):
@@ -117,7 +137,7 @@ class RunStore:
             except (OSError, json.JSONDecodeError, TypeError) as exc:
                 raise RunStoreCorruption(f"invalid run snapshot for {run_id}") from exc
             snapshot = RunSnapshot.from_dict(payload)
-            latest_event = self._last_event_sequence(run_dir)
+            latest_event = self._last_event_sequence_cached(run_id, run_dir)
             if latest_event > snapshot.latest_sequence:
                 snapshot = replace(
                     snapshot,
@@ -165,7 +185,10 @@ class RunStore:
                 if not isinstance(draft.payload.get("completed_at"), str):
                     raise RunStoreError("run.completed requires completed_at")
             snapshot = self.read_snapshot(draft.run_id)
-            sequence = max(snapshot.latest_sequence, self._last_event_sequence(run_dir)) + 1
+            sequence = max(
+                snapshot.latest_sequence,
+                self._last_event_sequence_cached(draft.run_id, run_dir),
+            ) + 1
             redacted_payload = redact_recursive(draft.payload)
             payload = dict(redacted_payload.value)
             if redacted_payload.manifest:
@@ -188,6 +211,10 @@ class RunStore:
                 handle.write(serialized)
                 os.fsync(handle.fileno())
             self._fsync_directory(run_dir)
+            # Advance before any post-write validation can raise: the event
+            # is durable on disk, so the watermark must reflect it even if
+            # this call ends in RunStoreError.
+            self._sequence_watermarks[draft.run_id] = sequence
 
             status = snapshot.status
             if event.type.startswith("run.") and isinstance(payload.get("run_status"), str):
@@ -417,6 +444,7 @@ class RunStore:
             if not run_dir.is_dir():
                 raise RunNotFound(run_id)
             shutil.rmtree(run_dir)
+            self._sequence_watermarks.pop(run_id, None)
             self._fsync_directory(self.root)
 
     def write_fixed_json(self, run_id: str, locator: str, value: Any) -> None:

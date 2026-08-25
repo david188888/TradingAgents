@@ -268,3 +268,69 @@ def test_registry_rejects_symlinked_skill(tmp_path):
 
     with pytest.raises(SkillValidationError, match="symlinks"):
         SkillRegistry(library).load("test-skill")
+
+
+def test_parse_cache_invalidates_when_skill_content_changes(tmp_path):
+    # The process-level parse cache keys on (path, size, mtime_ns): a content
+    # rewrite must be picked up even within one process, not frozen.
+    from pathlib import Path as _Path
+
+    library = tmp_path / "library"
+    skill_dir = library / "test-skill"
+    skill_dir.mkdir(parents=True)
+    frontmatter = (
+        "name: test-skill\ndescription: x\nroles: [market_analyst]\n"
+        "triggers: [a]\noutput_schema: [b]"
+    )
+    path = skill_dir / "SKILL.md"
+    path.write_text(f"---\n{frontmatter}\n---\nshort body\n", encoding="utf-8")
+    registry = SkillRegistry(library)
+
+    first = registry.load("test-skill")
+
+    # Rewrite with a different length so the stat cache key changes even if
+    # filesystem timestamp granularity swallows the fast rewrite.
+    path.write_text(
+        f"---\n{frontmatter}\n---\na much longer body than before\n", encoding="utf-8"
+    )
+    second = registry.load("test-skill")
+
+    assert isinstance(first.source, _Path)
+    assert first.body.strip() == "short body"
+    assert second.body.strip() == "a much longer body than before"
+
+
+def test_rendered_skill_prompt_is_bounded_by_injection_budget():
+    from pathlib import Path
+
+    from tradingagents.skills.registry import LoadedSkill, SkillFrontmatter
+
+    loaded = tuple(
+        LoadedSkill(
+            SkillFrontmatter(
+                name=f"s{i}",
+                description="d",
+                roles=("market_analyst",),
+                triggers=("t",),
+                output_schema=(),
+            ),
+            "x" * 9000,
+            Path("."),
+        )
+        for i in range(3)
+    )
+
+    class _StubRegistry:
+        def summaries_for_role(self, role):
+            return tuple(skill.frontmatter for skill in loaded)
+
+        def select_for_role(self, role, *, trigger_text, max_skills=1):
+            return loaded[:max_skills]
+
+    prompt = build_role_skill_prompt(
+        "market_analyst", _StubRegistry(), trigger_text="t", max_skills=3
+    )
+
+    assert "[methodology excerpt truncated]" in prompt
+    # Catalogue stays fully visible; only the bodies section is bounded.
+    assert all(f"- s{i}: d" in prompt for i in range(3))

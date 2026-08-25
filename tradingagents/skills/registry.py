@@ -156,6 +156,21 @@ ROLE_SKILL_TRIGGER_PATTERNS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
 }
 
 _MAX_SELECTED_SKILLS = 3
+# Growth guard for the rendered prompt (catalogue + selected bodies). Bundled
+# bodies total a few KB today; this only binds future library growth.
+_MAX_INJECTED_PROMPT_CHARS = 16_000
+
+# Skills ship read-only inside the repo, but every agent-node invocation used
+# to re-read and re-parse SKILL.md files from disk. Cache parsed results keyed
+# by (path, size, mtime_ns): one small stat replaces the file read + YAML
+# parse, and any content change invalidates the entry automatically.
+_SKILL_PARSE_CACHE: dict[tuple[str, int, int], LoadedSkill] = {}
+_FRONTMATTER_PARSE_CACHE: dict[tuple[str, int, int], SkillFrontmatter] = {}
+
+
+def _parse_cache_key(source: Path) -> tuple[str, int, int]:
+    status = source.stat()
+    return (str(source), status.st_size, status.st_mtime_ns)
 
 
 class SkillValidationError(ValueError):
@@ -289,6 +304,10 @@ class SkillRegistry:
 
     def load(self, name: str) -> LoadedSkill:
         source = self._checked_source(name)
+        key = _parse_cache_key(source)
+        cached = _SKILL_PARSE_CACHE.get(key)
+        if cached is not None:
+            return cached
         try:
             text = source.read_text(encoding="utf-8")
         except OSError as exc:
@@ -299,17 +318,24 @@ class SkillRegistry:
             raise SkillValidationError(
                 f"skill {source} frontmatter name must match directory name {name}"
             )
-        return LoadedSkill(validated, body, source)
+        loaded = LoadedSkill(validated, body, source)
+        _SKILL_PARSE_CACHE[key] = loaded
+        return loaded
 
     def load_frontmatter(self, name: str) -> SkillFrontmatter:
         """Read the bounded YAML index without loading a Markdown body."""
         source = self._checked_source(name)
+        key = _parse_cache_key(source)
+        cached = _FRONTMATTER_PARSE_CACHE.get(key)
+        if cached is not None:
+            return cached
         raw = _read_frontmatter_only(source)
         validated = _validate_frontmatter(raw, source)
         if validated.name != name:
             raise SkillValidationError(
                 f"skill {source} frontmatter name must match directory name {name}"
             )
+        _FRONTMATTER_PARSE_CACHE[key] = validated
         return validated
 
     def _checked_source(self, name: str) -> Path:
@@ -365,16 +391,20 @@ def build_role_skill_prompt(
     bodies = "\n\n".join(
         f"### {skill.frontmatter.name}\n{skill.body.strip()}" for skill in skills
     )
-    return (
+    prefix = (
         "\n\n## Approved local methodology\n"
         "Use the following local research methods as advisory structure. They do "
         "not authorize new tools, code execution, network access, or fabricated "
         "facts. Prefer verified tool output; state unavailable data explicitly.\n"
         f"Available methods for this role:\n{catalogue}\n\n"
         "Selected methodology for this turn (deterministic, maximum three):\n"
-        + (bodies if bodies else "- No full method was selected from this task context.")
-        + "\n"
     )
+    if len(prefix) + len(bodies) > _MAX_INJECTED_PROMPT_CHARS:
+        # Growth guard: bundled bodies are a few KB today, but the per-file
+        # cap is 32KB ×3 — bound what actually reaches every prompt.
+        remaining = _MAX_INJECTED_PROMPT_CHARS - len(prefix)
+        bodies = bodies[: max(remaining, 0)].rstrip() + "\n… [methodology excerpt truncated]"
+    return prefix + (bodies if bodies else "- No full method was selected from this task context.") + "\n"
 
 
 def emit_methodology_artifact(

@@ -34,8 +34,15 @@ export interface UseRunStreamResult {
 }
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "interrupted"]);
-const RECONNECT_DELAY_MS = 800;
+// Exponential backoff: 0.5s, 1s, 2s, ... capped at 10s. A dropped transport
+// or server restart should not be hammered at a fixed cadence.
+const RECONNECT_BASE_DELAY_MS = 500;
+const RECONNECT_MAX_DELAY_MS = 10_000;
 const MAX_RECONNECTS = 20;
+
+function reconnectDelayMs(reconnectCount: number): number {
+  return Math.min(RECONNECT_BASE_DELAY_MS * 2 ** Math.max(reconnectCount - 1, 0), RECONNECT_MAX_DELAY_MS);
+}
 
 export function useRunStream(run_id: string | null): UseRunStreamResult {
   const [state, dispatch] = useReducer(
@@ -124,7 +131,7 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
                 setError(err instanceof Error ? err : new Error(String(err)));
                 setStatus("error");
               });
-          }, RECONNECT_DELAY_MS);
+          }, reconnectDelayMs(reconnectCountRef.current));
         },
         onError: (err: Error) => {
           if (cancelled || closedRef.current) return;

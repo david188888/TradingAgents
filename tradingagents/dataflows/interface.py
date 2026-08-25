@@ -57,6 +57,7 @@ from .news_curator import (  # noqa: F401  - re-exported for callers that import
 # tests working.
 from .news_router import (
     _build_news_cache_key,
+    _is_news_failure_result,
     _news_cache_namespace,  # noqa: F401 - facade re-export (tests access via interface)
     _news_result_cache,
     _NewsCacheEntry,
@@ -138,7 +139,13 @@ def route_to_vendor(method: str, *args, **kwargs):
         provenance.request_failed(exc)
         raise
     origin = provenance.complete(result)
-    if cache_key is not None and (not provenance.active or origin is not None):
+    if (
+        cache_key is not None
+        and (not provenance.active or origin is not None)
+        # The all-sources-failed sentinel must stay uncached: a transient
+        # outage would otherwise be frozen for the rest of the run.
+        and not _is_news_failure_result(result)
+    ):
         _news_result_cache[cache_key] = _NewsCacheEntry(
             result=result,
             origin=origin or CacheOrigin((), (), time.monotonic()),

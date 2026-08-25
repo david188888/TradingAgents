@@ -199,3 +199,30 @@ class TestNewsResultCache:
 
         assert result != "untraceable stale result"
         assert call_count["n"] == 1
+
+    def test_all_source_failure_sentinel_is_not_cached(self, monkeypatch):
+        # A transient all-source outage must not freeze the run-scoped cache:
+        # the failure sentinel is served once, but a later call re-fetches
+        # and gets the recovered result.
+        call_count = {"n": 0}
+
+        def flaky_news(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return ""  # empty result → curated as total outage
+            return "news result after recovery"
+
+        monkeypatch.setattr(interface, "get_vendor", lambda cat, method=None: "tavily")
+        monkeypatch.setitem(
+            interface.VENDOR_METHODS,
+            "get_news",
+            {"tavily": flaky_news},
+        )
+
+        first = route_to_vendor("get_news", "AAPL", "2026-05-01", "2026-05-07")
+        second = route_to_vendor("get_news", "AAPL", "2026-05-01", "2026-05-07")
+
+        assert first.startswith("No curated news found for 'get_news'")
+        # Second call re-fetched and curated the recovered result.
+        assert "news result after recovery" in second
+        assert call_count["n"] == 2

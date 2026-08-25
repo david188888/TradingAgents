@@ -169,7 +169,7 @@ describe("useRunStream Bug 1: onClose reconnect preserves state", () => {
       mocks.getHandlers()!.onClose();
     });
 
-    // 推进超过 RECONNECT_DELAY_MS（800ms）
+    // 推进超过首档退避延迟（500ms）
     await act(async () => {
       await vi.advanceTimersByTimeAsync(900);
     });

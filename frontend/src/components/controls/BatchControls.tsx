@@ -70,12 +70,31 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
   }, [batch]);
   useEffect(() => {
     if (batch === null || TERMINAL_BATCH_STATUSES.has(batch.status)) return;
-    const timer = window.setInterval(() => {
+    // Background tabs do not need 1.2s polling: pause while hidden and
+    // refresh once immediately on return so status stays current.
+    const fetchBatch = (): void => {
       void getBatch(batch.batch_id)
         .then(setBatch)
         .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
-    }, 1200);
-    return () => window.clearInterval(timer);
+    };
+    let timer: number | null = null;
+    const handleVisibility = (): void => {
+      if (document.visibilityState === "visible") {
+        fetchBatch();
+        if (timer === null) timer = window.setInterval(fetchBatch, 1200);
+      } else if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    };
+    if (document.visibilityState === "visible") {
+      timer = window.setInterval(fetchBatch, 1200);
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (timer !== null) window.clearInterval(timer);
+    };
   }, [batch]);
 
   const resolvedInputs = useMemo(

@@ -311,8 +311,18 @@ claim_key 示例（严格遵守四段，每段必须以小写字母开头、只�
             + "\n\n函数调用不可用或输出未通过校验。请只返回一个合法 JSON 对象，键必须严格匹配 LearningResearchCaseDraft；不要使用 Markdown 代码块、解释或其他文字。"
         )
     if draft is None:
-        logger.warning("Research Manager: falling back; no valid structured draft produced")
-        return _render_learning_summary_fallback(state, llm, evidence_status)
+        # Compute budget: the draft tier has already spent its three LLM
+        # turns (structured + self-correction + plain-JSON recovery). A
+        # backend that failed all three would likely burn three more in
+        # the summary tier on the same long prompt, so degrade straight to
+        # the explicit abstention instead of launching a second chain.
+        # (Providers with no structured-output support never reach this
+        # branch — they enter the summary tier directly above.)
+        logger.warning(
+            "Research Manager: learning draft budget exhausted after 3 LLM calls; "
+            "degrading to the explicit abstention without the summary tier"
+        )
+        return _learning_research_fallback(evidence_status), None, None
     return render_learning_case_draft(draft), draft, None
 
 

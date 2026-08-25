@@ -118,6 +118,42 @@ def test_append_event_is_redacted_durable_and_strictly_sequenced(tmp_path):
     assert [event.sequence for event in store.read_events(snapshot.run_id, after=1)] == [2]
 
 
+def test_sequence_watermark_scans_disk_once_per_run(tmp_path, monkeypatch):
+    # Perf contract behind the O(N²) fix: every append used to rescan the
+    # whole events.jsonl (twice). The process-local watermark must reduce
+    # the full scan to one per run per store instance while sequences stay
+    # strictly contiguous.
+    from tradingagents.runtime import store as store_module
+
+    scans = {"n": 0}
+    original_scan = store_module.RunStore._last_event_sequence
+
+    def counting_scan(run_dir):
+        scans["n"] += 1
+        return original_scan(run_dir)
+
+    monkeypatch.setattr(
+        store_module.RunStore, "_last_event_sequence", staticmethod(counting_scan)
+    )
+
+    store = RunStore(tmp_path)
+    snapshot = store.create_run(_snapshot())
+    for index in range(3):
+        store.append_event(
+            RunEventDraft(snapshot.run_id, "future.tick", {"index": index})
+        )
+    view = store.read_snapshot(snapshot.run_id)
+
+    assert view.latest_sequence == 3
+    assert scans["n"] == 1  # exactly one full scan; appends trust the watermark
+    assert [event.sequence for event in store.read_events(snapshot.run_id)] == [1, 2, 3]
+
+    # A fresh instance (restart) rebuilds its own watermark from disk.
+    restarted = RunStore(tmp_path)
+    assert restarted.read_snapshot(snapshot.run_id).latest_sequence == 3
+    assert scans["n"] == 2
+
+
 def test_concurrent_appends_allocate_one_contiguous_sequence(tmp_path):
     store = RunStore(tmp_path)
     snapshot = store.create_run(_snapshot())

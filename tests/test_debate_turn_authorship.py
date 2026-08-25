@@ -108,6 +108,31 @@ def test_bull_prompt_forbids_self_label():
     assert "no self-label" in prompt.lower() or "do not prepend a speaker label" in prompt.lower()
 
 
+@pytest.mark.unit
+def test_bull_opening_keeps_reports_verbatim_but_rebuttal_bounds_them():
+    oversized = "x" * 1500 + "REPORT_TAIL"
+    opening = _build_bull_prompt(
+        **_base_prompt_kwargs(
+            opposing_response="", history="", market_research_report=oversized
+        )
+    )
+    rebuttal = _build_bull_prompt(
+        **_base_prompt_kwargs(
+            opposing_response="bear case",
+            history="Bear Analyst: bear case",
+            market_research_report=oversized,
+        )
+    )
+    # Opening turn reads the full report; the rebuttal turn pays only the
+    # shared lens budget because reports never change within a run.
+    assert oversized in opening
+    assert "REPORT_TAIL" not in rebuttal
+    assert "[excerpt truncated]" in rebuttal
+    # Label structure stays identical across turns.
+    assert "Market research report:" in opening
+    assert "Market research report:" in rebuttal
+
+
 # --- Bear researcher -------------------------------------------------------
 
 
@@ -129,6 +154,28 @@ def test_bear_rebuttal_prompt_includes_opposing_argument():
     )
     assert "bull says buy" in prompt
     assert "last bull analyst argument" in prompt.lower()
+
+
+@pytest.mark.unit
+def test_bear_opening_keeps_reports_verbatim_but_rebuttal_bounds_them():
+    oversized = "y" * 1500 + "REPORT_TAIL"
+    opening = _build_bear_prompt(
+        **_base_prompt_kwargs(
+            opposing_response="", history="", news_report=oversized
+        )
+    )
+    rebuttal = _build_bear_prompt(
+        **_base_prompt_kwargs(
+            opposing_response="bull case",
+            history="Bull Analyst: bull case",
+            news_report=oversized,
+        )
+    )
+    assert oversized in opening
+    assert "REPORT_TAIL" not in rebuttal
+    assert "[excerpt truncated]" in rebuttal
+    assert "Latest world affairs news:" in opening
+    assert "Latest world affairs news:" in rebuttal
 
 
 @pytest.mark.unit

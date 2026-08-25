@@ -4,6 +4,7 @@ from tradingagents.agents.utils.agent_utils import (
 )
 from tradingagents.evaluation.source_alignment import render_source_alignment_summary
 from tradingagents.research import render_research_dossier
+from tradingagents.research.delegation import bounded_public_report_text
 from tradingagents.skills import (
     build_role_skill_prompt,
     build_skill_trigger_context,
@@ -28,6 +29,20 @@ def _build_bear_prompt(
 ) -> str:
     """Build the bear researcher prompt, branching on opening vs rebuttal turn."""
     is_opening = not opposing_response.strip()
+
+    # Mirror of the bull researcher: reports are static per run, so opening
+    # turns embed them verbatim and rebuttals read bounded excerpts (shared
+    # lens budget) instead of re-sending four full reports every turn.
+    if is_opening:
+        reports_section = f"""{alignment_line}Market research report: {market_research_report}
+Social media sentiment report: {sentiment_report}
+Latest world affairs news: {news_report}
+{fundamentals_label}: {fundamentals_report}"""
+    else:
+        reports_section = f"""{alignment_line}Market research report: {bounded_public_report_text(market_research_report)}
+Social media sentiment report: {bounded_public_report_text(sentiment_report)}
+Latest world affairs news: {bounded_public_report_text(news_report)}
+{fundamentals_label}: {bounded_public_report_text(fundamentals_report)}"""
 
     if is_opening:
         task_section = f"""Your task is to deliver the opening bear case against investing in the {target_label}. Present a well-reasoned argument emphasizing risks, challenges, and negative indicators.
@@ -59,10 +74,7 @@ Key points to focus on:
 
 Resources available:
 {instrument_context}
-{alignment_line}Market research report: {market_research_report}
-Social media sentiment report: {sentiment_report}
-Latest world affairs news: {news_report}
-{fundamentals_label}: {fundamentals_report}
+{reports_section}
 {history_line}{opposing_line}Use the information above to deliver your argument.
 """ + language_instruction + skill_prompt
 

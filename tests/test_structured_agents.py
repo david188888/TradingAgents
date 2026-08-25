@@ -298,13 +298,52 @@ class TestResearchManagerAgent:
         for tier in ("Buy", "Overweight", "Hold", "Underweight", "Sell"):
             assert f"**{tier}**" in prompt, f"missing {tier} in prompt"
 
-    def test_learning_mode_uses_validated_summary_when_claim_draft_is_unavailable(self):
+    def test_learning_draft_budget_exhaustion_degrades_to_abstention(self):
+        # Budget: the draft tier spends at most 3 LLM calls (structured +
+        # self-correction + plain-JSON recovery). When all three fail, the
+        # node degrades to the explicit abstention instead of launching the
+        # summary tier's own three-call chain on the same long prompt.
         plan_structured = MagicMock()
         draft_structured = MagicMock()
         draft_structured.invoke.side_effect = [
             "I will correct the validation errors.",
             "I will now submit the corrected draft.",
         ]
+        summary_structured = MagicMock()
+        llm = MagicMock()
+        llm.with_structured_output.side_effect = [
+            plan_structured,
+            draft_structured,
+            summary_structured,
+        ]
+        llm.invoke.return_value = MagicMock(content="not json")
+        manager = create_research_manager(llm)
+        state = {
+            **_make_rm_state(),
+            "mode": "company_research",
+            "evidence_status": "PASS",
+            "market_report": "市场材料。",
+            "fundamentals_report": "基本面材料。",
+            "news_report": "新闻材料。",
+            "sentiment_report": "情绪材料。",
+        }
+
+        result = manager(state)
+
+        assert "insufficient_evidence" in result["investment_plan"]
+        assert "draft" not in result["research_case_candidate"]
+        # No validated synthesis -> nothing promoted to the reader.
+        assert "reader_public_output" not in result
+        # Draft tier spent exactly its 3-call budget; summary tier untouched.
+        assert draft_structured.invoke.call_count == 2
+        assert llm.invoke.call_count == 1
+        summary_structured.invoke.assert_not_called()
+
+    def test_learning_summary_tier_stays_primary_when_draft_binding_unavailable(self):
+        # A provider without function-calling support never enters the draft
+        # tier at all: the smaller LearningResearchSummary contract remains
+        # its primary recovery path (this is not the budget-exhaustion case).
+        plan_structured = MagicMock()
         summary = LearningResearchSummary(
             research_tilt="cautious",
             confidence=0.62,
@@ -323,7 +362,7 @@ class TestResearchManagerAgent:
         llm = MagicMock()
         llm.with_structured_output.side_effect = [
             plan_structured,
-            draft_structured,
+            NotImplementedError("provider unsupported"),
             summary_structured,
         ]
         manager = create_research_manager(llm)

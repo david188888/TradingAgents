@@ -257,12 +257,22 @@ def build_default_report_lens_context(state: Mapping[str, Any]) -> str:
     )
 
 
-def _bounded_public_report_excerpt(role_name: str, report: str) -> str:
-    """Normalise a public report without retaining an unbounded raw transcript."""
+def bounded_public_report_text(report: str) -> str:
+    """Whitespace-normalise a report and bound it to the shared lens budget.
+
+    Debate rebuttal turns reuse this so every consumer of published analyst
+    reports pays the same per-report character cost instead of re-reading
+    full transcripts that never change within a run.
+    """
     normalized = " ".join(report.split())
     if len(normalized) <= _MAX_REPORT_LENS_CHARS:
-        return f"{role_name}: {normalized}"
-    return f"{role_name}: {normalized[:_MAX_REPORT_LENS_CHARS].rstrip()} … [excerpt truncated]"
+        return normalized
+    return f"{normalized[:_MAX_REPORT_LENS_CHARS].rstrip()} … [excerpt truncated]"
+
+
+def _bounded_public_report_excerpt(role_name: str, report: str) -> str:
+    """Normalise a public report without retaining an unbounded raw transcript."""
+    return f"{role_name}: {bounded_public_report_text(report)}"
 
 
 def _validate_requests(
