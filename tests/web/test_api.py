@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.observability.events import RunEventDraft
+from tradingagents.web.batch_models import BatchItem, BatchSnapshot
 from tradingagents.web.broker import EventBroker
 from tradingagents.web.manager import (
     ActiveRunConflict,
@@ -116,6 +117,9 @@ class RecordingManager:
         self.store.create_run(snapshot)
         self.active_run_id = snapshot.run_id
         return snapshot
+
+    def list_batches(self):
+        return tuple(self.store.list_batches())
 
     def cancel(self, run_id: str) -> RunSnapshot:
         self.calls.append(("cancel", run_id))
@@ -702,6 +706,69 @@ def test_delete_all_runs_is_idempotent_on_empty_store(api):
     response = client.delete("/api/runs")
     assert response.status_code == 200
     assert response.json() == {"removed": 0, "skipped_active": False}
+
+
+def _batch_item(run_id: str, ordinal: int, ticker: str = "AAPL") -> BatchItem:
+    return BatchItem(
+        input_value=ticker,
+        company_name=f"Company {ticker}",
+        ticker=ticker,
+        market="global",
+        run_id=run_id,
+        ordinal=ordinal,
+    )
+
+
+def test_delete_all_runs_also_clears_finished_batch_manifests(api):
+    client, store, _manager = api
+    done_run = _snapshot(status="completed")
+    store.create_run(done_run)
+    batch = BatchSnapshot.create(items=(_batch_item(done_run.run_id, 0),)).evolve(
+        status="completed"
+    )
+    store.create_batch(batch)
+
+    response = client.delete("/api/runs")
+
+    assert response.status_code == 200
+    assert response.json() == {"removed": 1, "skipped_active": False}
+    assert client.get("/api/runs").json() == []
+    # The manifest would otherwise keep referencing runs that no longer exist.
+    assert client.get("/api/batches").json() == []
+
+
+def test_delete_all_runs_preserves_the_active_batch_and_its_members(api):
+    client, store, manager = api
+    running = _snapshot(status="running")
+    queued_member = _snapshot(ticker="MSFT", status="created")
+    store.create_run(running)
+    store.create_run(queued_member)
+    manager.active_run_id = running.run_id
+    active_batch = BatchSnapshot.create(
+        items=(
+            _batch_item(running.run_id, 0),
+            _batch_item(queued_member.run_id, 1, ticker="MSFT"),
+        ),
+    ).evolve(status="running")
+    store.create_batch(active_batch)
+
+    finished_run = _snapshot(ticker="NVDA", status="failed")
+    store.create_run(finished_run)
+    finished_batch = BatchSnapshot.create(
+        items=(_batch_item(finished_run.run_id, 0, ticker="NVDA"),),
+    ).evolve(status="failed")
+    store.create_batch(finished_batch)
+
+    response = client.delete("/api/runs")
+
+    assert response.status_code == 200
+    assert response.json() == {"removed": 1, "skipped_active": True}
+    remaining_runs = {item["run_id"] for item in client.get("/api/runs").json()}
+    assert remaining_runs == {running.run_id, queued_member.run_id}
+    # The active batch survives intact; deleting its queued-but-unlaunched
+    # member would corrupt it, so the whole subtree is protected.
+    remaining_batches = [item["batch_id"] for item in client.get("/api/batches").json()]
+    assert remaining_batches == [active_batch.batch_id]
 
 
 def test_cancel_retry_and_resume_delegate_to_manager_with_expected_http_semantics(api):

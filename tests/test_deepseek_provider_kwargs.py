@@ -1,4 +1,4 @@
-"""Tests for provider-specific kwargs in TradingAgentsGraph._get_provider_kwargs.
+"""Tests for provider-specific kwargs in llm_clients.provider_kwargs.
 
 Covers the DeepSeek thinking/effort wiring (P2/P3) and the cross-provider
 max_tokens cap (P4).
@@ -6,7 +6,7 @@ max_tokens cap (P4).
 
 import pytest
 
-from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 
 
 @pytest.mark.unit
@@ -15,9 +15,7 @@ class TestDeepSeekProviderKwargs:
         from tradingagents.default_config import DEFAULT_CONFIG
 
         config = {**DEFAULT_CONFIG, "llm_provider": "deepseek", **overrides}
-        graph = TradingAgentsGraph.__new__(TradingAgentsGraph)
-        graph.config = config
-        return TradingAgentsGraph._get_provider_kwargs(graph)
+        return provider_llm_kwargs(config)
 
     def test_default_uses_enabled_thinking_with_high_effort(self):
         # Fork default: thinking enabled + high reasoning effort (7ac8ce5).
@@ -55,9 +53,7 @@ class TestMaxTokensProviderKwargs:
         from tradingagents.default_config import DEFAULT_CONFIG
 
         config = {**DEFAULT_CONFIG, "llm_provider": "deepseek", **overrides}
-        graph = TradingAgentsGraph.__new__(TradingAgentsGraph)
-        graph.config = config
-        return TradingAgentsGraph._get_provider_kwargs(graph)
+        return provider_llm_kwargs(config)
 
     def test_max_tokens_forwarded(self):
         assert self._kwargs_for(llm_max_tokens=16384)["max_tokens"] == 16384

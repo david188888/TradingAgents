@@ -326,3 +326,53 @@ class TestFormatCuratedNewsIntegration:
 
         # With only 1 source, cross-source detection is skipped
         assert "Cross-source: 0 confirmed" in result
+
+
+# ---------------------------------------------------------------------------
+# create_llm_from_config provider-kwargs forwarding
+# ---------------------------------------------------------------------------
+
+
+def test_create_llm_from_config_forwards_provider_kwargs(monkeypatch):
+    """Side-channel LLMs honor the same provider settings as the main graph.
+
+    Before this contract existed, evidence/news auxiliary calls silently
+    ignored deepseek thinking/effort and max_tokens and ran on SDK defaults.
+    """
+    import tradingagents.llm_clients as llm_clients
+    from tradingagents.dataflows.consistency import create_llm_from_config
+
+    captured = {}
+
+    class _FakeClient:
+        def get_llm(self):
+            return "fake-llm"
+
+    def _factory(provider, model, base_url=None, **kwargs):
+        captured.update(kwargs)
+        return _FakeClient()
+
+    monkeypatch.setattr(llm_clients, "create_llm_client", _factory)
+    set_config(
+        {
+            "llm_provider": "deepseek",
+            "quick_think_llm": "deepseek-v4-flash",
+            "deepseek_thinking": "enabled",
+            "deepseek_reasoning_effort": "high",
+            "llm_max_tokens": 16384,
+            "temperature": 0.2,
+        }
+    )
+
+    assert create_llm_from_config() == "fake-llm"
+    assert captured["thinking"] == {"type": "enabled"}
+    assert captured["reasoning_effort"] == "high"
+    assert captured["max_tokens"] == 16384
+    assert captured["temperature"] == 0.2
+
+
+def test_create_llm_from_config_returns_none_without_provider(monkeypatch):
+    from tradingagents.dataflows.consistency import create_llm_from_config
+
+    set_config({"llm_provider": "", "quick_think_llm": ""})
+    assert create_llm_from_config() is None

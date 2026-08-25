@@ -845,7 +845,11 @@ class TestLegacyRemoval:
             create_portfolio_manager(mock_llm, memory=MagicMock())
 
     def test_full_pipeline_no_regression(self, tmp_path):
-        """propagate() completes and stores the decision after the redesign."""
+        """propagate() completes but stores no decision after the redesign.
+
+        propagate() runs in a typed learning mode, and learning modes never
+        write research narratives into the trading-reflection memory.
+        """
         import functools
 
         fake_state = {
@@ -897,7 +901,5 @@ class TestLegacyRemoval:
         assert result[0] is fake_state
         # Learning-mode pipeline terminates with the research-only signal.
         assert result[1] == "research_only"
-        entries = mock_graph.memory_log.load_entries()
-        assert len(entries) == 1
-        assert entries[0]["ticker"] == "NVDA"
-        assert entries[0]["pending"] is True
+        # ... and never stores a pending reflection entry.
+        assert mock_graph.memory_log.load_entries() == []

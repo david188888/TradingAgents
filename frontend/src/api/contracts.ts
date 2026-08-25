@@ -652,6 +652,14 @@ export interface RunCancelRequestedPayload {
   run_status: "cancel_requested";
 }
 
+/** run.queued: accepted but waiting for a concurrency slot (batch or busy manager). */
+export interface RunQueuedPayload {
+  run_status: "queued";
+  summary?: string | null;
+  ticker?: string;
+  batch_id?: string | null;
+}
+
 export interface RunTerminalPayload {
   run_status: RunStatusLiteral;
   summary?: string | null;
@@ -972,6 +980,7 @@ export interface ArtifactWrittenPayload {
 export type EventPayloadByType =
   | { type: "run.started"; payload: RunStartedPayload }
   | { type: "run.cancel_requested"; payload: RunCancelRequestedPayload }
+  | { type: "run.queued"; payload: RunQueuedPayload }
   | { type: "run.completed"; payload: RunTerminalPayload }
   | { type: "run.failed"; payload: RunTerminalPayload }
   | { type: "run.cancelled"; payload: RunTerminalPayload }
@@ -997,6 +1006,7 @@ export type EventPayloadByType =
   | { type: "model.started"; payload: ModelStartedPayload }
   | { type: "model.completed"; payload: ModelEndedPayload }
   | { type: "model.failed"; payload: ModelEndedPayload }
+  | { type: "model.interrupted"; payload: ModelEndedPayload }
   | { type: "input.state_snapshot"; payload: InputStateSnapshotPayload }
   | { type: "input.config_snapshot"; payload: InputConfigSnapshotPayload }
   | { type: "input.prompt_snapshot"; payload: InputPromptSnapshotPayload }
@@ -1005,6 +1015,7 @@ export type EventPayloadByType =
   | { type: "tool.execution_started"; payload: ToolExecutionStartedPayload }
   | { type: "tool.execution_completed"; payload: ToolExecutionCompletedPayload }
   | { type: "tool.execution_failed"; payload: ToolExecutionFailedPayload }
+  | { type: "tool.execution_interrupted"; payload: ToolExecutionFailedPayload }
   | { type: "tool.committed"; payload: ToolCommittedPayload }
   | { type: "tool.cancelled"; payload: ToolCancelledPayload }
   | { type: "tool.cross_ticker_query"; payload: ToolCrossTickerQueryPayload }

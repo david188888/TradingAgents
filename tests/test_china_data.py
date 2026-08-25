@@ -148,14 +148,15 @@ def test_route_to_vendor_raises_when_required_data_is_unavailable(monkeypatch):
 
 def test_route_to_vendor_returns_sentinel_when_all_vendors_in_cooldown(monkeypatch):
     """When every vendor is in cooldown, a halt-on-missing method must return
-    a NO_DATA_AVAILABLE sentinel, not raise.  A cooldown is transient and the
-    agent should report 'unavailable' rather than crash the whole turn."""
+    a NO_DATA_AVAILABLE sentinel, not raise.  A cooldown reflects a PRIOR
+    transient failure - nothing new was learned this call - so halting the
+    whole run would turn one rate limit into a dead analysis."""
     import time as _time
 
     from tradingagents.dataflows.health import Cooldown, VendorHealthKey
 
     fake_cooldown = Cooldown(
-        key=VendorHealthKey("yfinance", "a_share", "get_indicators"),
+        key=VendorHealthKey("yfinance", "global", "get_indicators"),
         reason="rate_limit",
         retry_at=_time.monotonic() + 60.0,
     )
@@ -173,7 +174,9 @@ def test_route_to_vendor_returns_sentinel_when_all_vendors_in_cooldown(monkeypat
     )
     set_config({"halt_on_missing_data": True})
 
-    result = interface.route_to_vendor("get_indicators", "600519.SS", "2026-01-01", "2026-01-31")
+    # A global ticker keeps yfinance inside the routing chain (A-share
+    # tickers skip it at the capability matrix before cooldowns are read).
+    result = interface.route_to_vendor("get_indicators", "AAPL", "2026-01-01", "2026-01-31")
 
     assert result.startswith("NO_DATA_AVAILABLE:")
     assert "cooldown" in result.lower()

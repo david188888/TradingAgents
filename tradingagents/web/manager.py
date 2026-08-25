@@ -22,6 +22,7 @@ from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
+    LEARNING_MODES,
     AnalysisCancelled,
     AnalysisRequest,
     AnalysisResult,
@@ -593,7 +594,12 @@ class SingleRunManager:
     def _drain_locked(self) -> None:
         while len(self._active) < self._max_concurrency and self._pending:
             run_id = self._pending.popleft()
-            snapshot = self.store.read_snapshot(run_id)
+            try:
+                snapshot = self.store.read_snapshot(run_id)
+            except RunNotFound:
+                # Deleted between enqueue and drain (e.g. bulk clear): drop
+                # it instead of crashing the scheduling path for later runs.
+                continue
             if snapshot.status not in {"created", "queued", "running"}:
                 continue
             request = self._request_for_snapshot(snapshot)
@@ -607,14 +613,16 @@ class SingleRunManager:
             )
 
     def _sync_batch_for_run(self, run_id: str) -> None:
-        snapshot = self.store.read_snapshot(run_id)
-        batch_id = snapshot.metadata.get("batch_id")
-        if not isinstance(batch_id, str):
-            return
         try:
+            snapshot = self.store.read_snapshot(run_id)
+            batch_id = snapshot.metadata.get("batch_id")
+            if not isinstance(batch_id, str):
+                return
             batch = self.store.read_batch(batch_id)
             next(item for item in batch.items if item.run_id == run_id)
         except (RunNotFound, StopIteration):
+            # The run or its batch manifest vanished concurrently (bulk
+            # clear); batch sync is best-effort, so degrade to a no-op.
             return
         error_message = snapshot.error_message if snapshot.status == "failed" else None
         updated = batch.with_item_status(
@@ -1487,7 +1495,12 @@ def _default_resume_preflight(
         if not owner.config.get("checkpoint_enabled"):
             raise RunNotResumable("checkpoint resume is disabled")
         owner.ticker = request.ticker
-        if runner.runtime_contract.policy_version == "horizon-policy-v2":
+        # Mirror AnalysisRunner.run: learning modes never resolve pending
+        # reflection entries (research narratives are not trade outcomes).
+        if (
+            runner.runtime_contract.policy_version == "horizon-policy-v2"
+            and request.mode not in LEARNING_MODES
+        ):
             owner._resolve_pending_entries(request.ticker)
         initial_context = runner.prepare_initial_context(request)
         access = checkpoint_access(

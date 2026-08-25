@@ -1,5 +1,3 @@
-import hashlib
-import json
 
 import pytest
 
@@ -96,7 +94,7 @@ def test_data_quality_deduplicates_repeated_capabilities():
     assert quality["unavailable_capabilities"] == ["dragon_tiger"]
 
 
-def test_run_view_is_a_cached_legacy_shell_without_markdown_parsing(tmp_path):
+def test_run_view_builds_degraded_learning_brief_without_typed_outputs(tmp_path):
     store = RunStore(tmp_path / "runs")
     run = store.create_run(_snapshot(run_id="run_20260803T040404000000Z_dddddddd"))
     store.append_event(RunEventDraft(run.run_id, "run.started", {"run_status": "running"}))
@@ -105,13 +103,19 @@ def test_run_view_is_a_cached_legacy_shell_without_markdown_parsing(tmp_path):
     first = publisher.read_or_rebuild_view(run.run_id)
     second = publisher.read_or_rebuild_view(run.run_id)
 
-    assert first["projection_status"] == "partial"
+    # Learning runs get an on-site degraded brief, so the projection reads
+    # as "ready" even before any typed learning summary is committed.
+    assert first["projection_status"] == "ready"
+    assert first["reason_code"] is None
     assert first["source_sequence"] == 1
-    assert first["view"]["brief"] == {
-        "availability": "unavailable",
-        "reason_code": "legacy_no_typed_outputs",
-        "value": None,
-    }
+    brief = first["view"]["brief"]
+    assert brief["availability"] == "partial"
+    assert brief["reason_code"] is None
+    value = brief["value"]
+    assert value["learning_summary"] is None
+    assert value["research_rating"] is None
+    assert value["omissions"] == ["research_case.typed_output_missing"]
+    assert value["execution"]["reason_code"] == "learning_mode_no_execution"
     assert first == second
     assert (tmp_path / "runs" / run.run_id / "projections" / "run-view-v1.json").is_file()
 
@@ -152,7 +156,7 @@ def test_debate_journey_measures_rounds_from_completed_turns(tmp_path):
     }
 
 
-def test_reader_brief_uses_committed_public_outputs_without_markdown_parsing(tmp_path):
+def test_reader_brief_ignores_trading_shaped_outputs_without_markdown_parsing(tmp_path):
     store = RunStore(tmp_path / "runs")
     run = store.create_run(_snapshot(run_id="run_20260803T060606000000Z_ffffffff"))
     portfolio = store.store_artifact(
@@ -212,84 +216,79 @@ def test_reader_brief_uses_committed_public_outputs_without_markdown_parsing(tmp
 
     view = RunProjectionPublisher(store).read_or_rebuild_view(run.run_id)
 
+    assert view["projection_status"] == "ready"
+    assert view["view"]["brief"]["availability"] == "partial"
     brief = view["view"]["brief"]["value"]
-    assert brief["availability"] == "partial"
-    assert brief["research_rating"] == "Overweight"
-    assert brief["price_target"] == 210.0
-    assert brief["analyst_cards"][0]["lens"] == "market"
+    # Trading-shaped portfolio/research artifacts are NOT promoted into a
+    # learning run's brief: only a committed learning_research_summary is.
+    assert brief["research_rating"] is None
+    assert brief["price_target"] is None
+    assert brief["analyst_cards"] == []
     assert brief["executive_summary"] is None
-    assert "executive_summary_missing" in brief["omissions"]
+    assert brief["omissions"] == ["research_case.typed_output_missing"]
+    # Markdown prose fields never leak into the projection either way.
     assert "This Markdown-compatible field" not in str(brief)
 
 
 
-def test_reader_brief_promotes_only_claims_with_committed_same_run_refs(tmp_path):
+def test_reader_brief_promotes_committed_learning_summary(tmp_path):
+    """A committed learning_research_summary artifact is the one typed output
+    that feeds the learning brief: its research_tilt becomes research_rating
+    and the remaining gap (evidence refs) stays visible in omissions."""
     store = RunStore(tmp_path / "runs")
     run = store.create_run(_snapshot(run_id="run_20260803T070707000000Z_11111111"))
-    evidence = store.store_artifact(run.run_id, kind="data", value={"fact": "committed"})
+    summary = {
+        "research_tilt": "cautious",
+        "confidence": 0.7,
+        "facts": ["Gross margin expanded for two consecutive quarters."],
+        "inferences": [],
+        "unknowns": [],
+        "catalysts": ["Q3 earnings release"],
+        "invalidation_conditions": ["Margin reverses below prior-year level"],
+        "upside": {"title": "u", "condition": "c", "implication": "i"},
+        "base": {"title": "b", "condition": "c", "implication": "i"},
+        "downside": {"title": "d", "condition": "c", "implication": "i"},
+        "holding_thesis_assessment": None,
+        "next_review": "next quarter",
+    }
+    research = store.store_artifact(
+        run.run_id,
+        kind="public-research",
+        value={
+            "schema_version": 1,
+            "run_id": run.run_id,
+            "turn_id": "research_turn",
+            "committed_sequence": 2,
+            "kind": "learning_research_summary",
+            "summary": summary,
+        },
+    )
     store.append_event(
         RunEventDraft(
             run.run_id,
             "artifact.written",
             {
-                "artifact_id": evidence.artifact_id,
-                "kind": evidence.kind,
-                "media_type": evidence.media_type,
-                "content_sha256": evidence.content_sha256,
-                "byte_size": evidence.byte_size,
-                "locator": evidence.locator,
+                "artifact_id": research.artifact_id,
+                "kind": research.kind,
+                "media_type": research.media_type,
+                "content_sha256": research.content_sha256,
+                "byte_size": research.byte_size,
+                "locator": research.locator,
+                "turn_id": "research_turn",
+                "graph_task_id": "task_research",
+                "public_output_kind": "research",
             },
         )
     )
-    ref_id = hashlib.sha256(
-        json.dumps({"kind": "artifact", "artifact_id": evidence.artifact_id}, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
-    claim = {"text": "Committed public fact.", "evidence_ref_ids": [ref_id]}
-    research = store.store_artifact(
-        run.run_id,
-        kind="public-research",
-        value={
-            "schema_version": 1, "run_id": run.run_id, "turn_id": "research_turn", "committed_sequence": 2,
-            "recommendation": "Overweight", "rationale": "", "strategic_actions": "",
-            "strategy_signals": [{"strategy_id": "market", "conviction": 0.2, "confidence": 0.7, "abstain": False, "rationale": "", "key_findings": [claim]}],
-            "public_digest": {"agreed_facts": [claim], "key_disagreements": [], "changed_views": [], "remaining_uncertainties": []},
-        },
-    )
-    portfolio = store.store_artifact(
-        run.run_id,
-        kind="public-portfolio",
-        value={
-            "schema_version": 1, "run_id": run.run_id, "turn_id": "portfolio_turn", "committed_sequence": 3,
-            "rating": "Overweight", "price_target": None, "time_horizon": None,
-            "execution_action": "Hold", "requested_quantity": 0,
-            "top_drivers": [{"label": claim["text"], "evidence_ref_ids": [ref_id], "direction": "positive", "importance": 0.8}],
-            "reader_fields": {"executive_summary": claim, "catalysts": [], "invalidation_conditions": []},
-        },
-    )
-    for artifact, turn_id, kind in ((research, "research_turn", "research"), (portfolio, "portfolio_turn", "portfolio")):
-        store.append_event(
-            RunEventDraft(
-                run.run_id,
-                "artifact.written",
-                {
-                    "artifact_id": artifact.artifact_id,
-                    "kind": artifact.kind,
-                    "media_type": artifact.media_type,
-                    "content_sha256": artifact.content_sha256,
-                    "byte_size": artifact.byte_size,
-                    "locator": artifact.locator,
-                    "turn_id": turn_id,
-                    "public_output_kind": kind,
-                },
-            )
-        )
 
-    brief = RunProjectionPublisher(store).read_or_rebuild_view(run.run_id)["view"]["brief"]["value"]
+    view = RunProjectionPublisher(store).read_or_rebuild_view(run.run_id)
+    brief = view["view"]["brief"]["value"]
 
-    assert brief["executive_summary"]["text"] == "Committed public fact."
-    assert brief["drivers"][0]["evidence_ref_ids"] == [ref_id]
-    assert brief["analyst_cards"][0]["findings"][0]["claim_id"]
-    assert brief["evidence_refs"][0]["target"]["artifact_id"] == evidence.artifact_id
+    assert view["projection_status"] == "ready"
+    assert brief["availability"] == "partial"
+    assert brief["research_rating"] == "cautious"
+    assert brief["learning_summary"] == summary
+    assert brief["omissions"] == ["research_case.evidence_refs_unavailable"]
 
 
 

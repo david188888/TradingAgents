@@ -54,6 +54,16 @@ class TestShouldSkipVendorForSymbol:
     def test_global_ticker_keeps_alpha_vantage(self):
         assert _should_skip_vendor_for_symbol("get_stock_data", "alpha_vantage", ("AAPL",)) is False
 
+    def test_indicators_follow_the_market_matrix(self):
+        # get_indicators must be market-filtered like the other core methods:
+        # an unfiltered chain sent A-share indicator calls to yfinance /
+        # alpha_vantage, burning doomed requests into rate-limit cooldowns
+        # while the local (mootdx -> tushare) chain was the intended source.
+        assert _should_skip_vendor_for_symbol("get_indicators", "yfinance", ("600519.SH",)) is True
+        assert _should_skip_vendor_for_symbol("get_indicators", "alpha_vantage", ("600519.SH",)) is True
+        assert _should_skip_vendor_for_symbol("get_indicators", "local", ("600519.SH",)) is False
+        assert _should_skip_vendor_for_symbol("get_indicators", "yfinance", ("AAPL",)) is False
+
     def test_non_ticker_capability_never_skipped(self):
         # get_global_news is not in _A_SHARE_TICKER_CAPABILITIES -> no market filter
         assert _should_skip_vendor_for_symbol("get_global_news", "tavily", ("2026-07-23",)) is False

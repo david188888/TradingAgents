@@ -111,5 +111,53 @@ class RouterHandlesBaseTypesTests(unittest.TestCase):
             interface.route_to_vendor("get_stock_data", "AAPL", "2026-01-01", "2026-01-10")
 
 
+@pytest.mark.unit
+class RateLimitSignalTests(unittest.TestCase):
+    """Wrapped exceptions must not lose the rate-limit signal.
+
+    tushare reports quota exhaustion as a plain-text message and the china
+    adapters wrap everything in ChinaDataUnavailableError; without signal
+    preservation the cooldown table stayed at 0s and retries hammered the
+    throttled provider.
+    """
+
+    def test_tushare_throttle_text_maps_to_rate_limit_cooldown(self):
+        from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+        from tradingagents.dataflows.health import RATE_LIMIT_COOLDOWN_SECONDS
+        from tradingagents.dataflows.vendor_errors import _cooldown_for_exception
+
+        wrapped = ChinaDataUnavailableError(
+            "Tushare daily request failed for 600519.SH: 抱歉，您每分钟最多访问该接口1次"
+        )
+        seconds, reason = _cooldown_for_exception(wrapped)
+        self.assertEqual(seconds, RATE_LIMIT_COOLDOWN_SECONDS)
+        self.assertEqual(reason, "rate_limit")
+
+    def test_wrapped_429_cause_chain_maps_to_rate_limit_cooldown(self):
+        import requests as _requests
+
+        from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+        from tradingagents.dataflows.health import RATE_LIMIT_COOLDOWN_SECONDS
+        from tradingagents.dataflows.vendor_errors import _cooldown_for_exception
+
+        http_429 = _requests.HTTPError("429 Client Error: Too Many Requests")
+        http_429.response = _requests.Response()
+        http_429.response.status_code = 429
+        wrapped = ChinaDataUnavailableError("Tushare qfq request failed")
+        wrapped.__cause__ = http_429
+        seconds, reason = _cooldown_for_exception(wrapped)
+        self.assertEqual(seconds, RATE_LIMIT_COOLDOWN_SECONDS)
+        self.assertEqual(reason, "rate_limit")
+
+    def test_plain_china_unavailable_stays_uncooled(self):
+        from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+        from tradingagents.dataflows.vendor_errors import _cooldown_for_exception
+
+        seconds, _reason = _cooldown_for_exception(
+            ChinaDataUnavailableError("Tushare returned no daily data for 600519.SH.")
+        )
+        self.assertEqual(seconds, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

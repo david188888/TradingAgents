@@ -81,12 +81,9 @@ def test_run_graph_returns_legacy_tuple_and_preserves_side_effect_order():
     )
     graph.graph.invoke.assert_called_once_with(initial_state, stream_mode="updates")
     graph._log_state.assert_called_once_with("2026-07-17", final_state)
-    graph.memory_log.store_decision.assert_called_once_with(
-        ticker="AAPL",
-        trade_date="2026-07-17",
-        final_trade_decision="Rating: Buy",
-        context_facts=(),
-    )
+    # Learning modes never write into the reflection memory.
+    graph._resolve_pending_entries.assert_not_called()
+    graph.memory_log.store_decision.assert_not_called()
     # Typed learning modes never reach the trader signal pipeline.
     graph.signal_processor.process_signal.assert_not_called()
     graph.save_reports.assert_not_called()
@@ -135,7 +132,7 @@ def test_propagate_is_thin_tuple_adapter_and_preserves_runner_failure(fails):
     assert request.selected_analysts == ("market",)
 
 
-def test_success_clears_checkpoint_after_state_and_memory_are_persisted():
+def test_success_clears_checkpoint_after_state_is_persisted():
     graph = _bare_graph(checkpoint_enabled=True)
     graph.memory_log.get_past_context.return_value = ""
     graph.propagator.create_initial_state.return_value = {"input": True}
@@ -156,7 +153,8 @@ def test_success_clears_checkpoint_after_state_and_memory_are_persisted():
         TradingAgentsGraph._run_graph(graph, "AAPL", "2026-07-17")
 
     graph._log_state.assert_called_once()
-    graph.memory_log.store_decision.assert_called_once()
+    # Learning modes never write into the reflection memory.
+    graph.memory_log.store_decision.assert_not_called()
     clear.assert_called_once_with(
         "/tmp/tradingagents-test-cache",
         "AAPL",

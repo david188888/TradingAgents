@@ -43,6 +43,7 @@ from tradingagents.execution.models import (
 )
 from tradingagents.execution.runner import AnalysisRunner
 from tradingagents.llm_clients import create_llm_client
+from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 from tradingagents.reporting import write_report_tree
 
 from .conditional_logic import ConditionalLogic
@@ -52,24 +53,6 @@ from .setup import GraphSetup
 from .signal_processing import SignalProcessor
 
 logger = logging.getLogger(__name__)
-
-
-def _coerce_max_retries(value):
-    """Validate an ``llm_max_retries`` value to a non-negative int.
-
-    Accepts an int or a numeric string (env vars arrive as strings). Rejects
-    booleans and negatives loudly so a misconfiguration fails at startup rather
-    than silently disabling retries.
-    """
-    if isinstance(value, bool):
-        raise ValueError(f"llm_max_retries must be an integer, not a boolean: {value!r}")
-    try:
-        n = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"llm_max_retries must be an integer, got {value!r}") from exc
-    if n < 0:
-        raise ValueError(f"llm_max_retries must be >= 0, got {n}")
-    return n
 
 
 class TradingAgentsGraph:
@@ -107,7 +90,7 @@ class TradingAgentsGraph:
         os.makedirs(self.config["results_dir"], exist_ok=True)
 
         # Initialize LLMs with provider-specific thinking configuration
-        llm_kwargs = self._get_provider_kwargs()
+        llm_kwargs = provider_llm_kwargs(self.config)
 
         # Add callbacks to kwargs if provided (passed to LLM constructor)
         if self.callbacks:
@@ -184,58 +167,6 @@ class TradingAgentsGraph:
                 "invalid TradingAgents configuration:\n- "
                 + "\n- ".join(problems)
             )
-
-    def _get_provider_kwargs(self) -> dict[str, Any]:
-        """Get provider-specific kwargs for LLM client creation."""
-        kwargs = {}
-        provider = self.config.get("llm_provider", "").lower()
-
-        if provider == "google":
-            thinking_level = self.config.get("google_thinking_level")
-            if thinking_level:
-                kwargs["thinking_level"] = thinking_level
-
-        elif provider == "openai":
-            reasoning_effort = self.config.get("openai_reasoning_effort")
-            if reasoning_effort:
-                kwargs["reasoning_effort"] = reasoning_effort
-
-        elif provider == "anthropic":
-            effort = self.config.get("anthropic_effort")
-            if effort:
-                kwargs["effort"] = effort
-
-        elif provider == "deepseek":
-            # DeepSeek V4 thinking mode toggle ("enabled"/"disabled").
-            thinking = self.config.get("deepseek_thinking")
-            if thinking and str(thinking).strip().lower() == "enabled":
-                kwargs["thinking"] = {"type": "enabled"}
-            # reasoning_effort is honored by the API in thinking mode;
-            # it is ignored (harmlessly) in non-thinking mode.
-            effort = self.config.get("deepseek_reasoning_effort")
-            if effort:
-                kwargs["reasoning_effort"] = str(effort).strip().lower()
-
-        # Sampling temperature is cross-provider: forward it whenever set.
-        # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
-        # string ("0.2") works the same as a programmatic float.
-        temperature = self.config.get("temperature")
-        if temperature is not None and temperature != "":
-            kwargs["temperature"] = float(temperature)
-
-        # SDK retry budget is cross-provider. Forward it only when explicitly set
-        # so each provider keeps its own default (usually 2) otherwise (#1091).
-        max_retries = self.config.get("llm_max_retries")
-        if max_retries is not None and max_retries != "":
-            kwargs["max_retries"] = _coerce_max_retries(max_retries)
-
-        # Output-token cap is cross-provider (DeepSeek V4 supports up to 384K
-        # and recommends a sane max_tokens so long JSON reports do not truncate).
-        max_tokens = self.config.get("llm_max_tokens")
-        if max_tokens is not None and max_tokens != "":
-            kwargs["max_tokens"] = int(max_tokens)
-
-        return kwargs
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
         """Create tool nodes, adding premium Wind tools only when enabled."""

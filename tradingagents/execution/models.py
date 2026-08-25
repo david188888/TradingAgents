@@ -13,6 +13,9 @@ from tradingagents.analysts import ANALYST_WIRE_KEYS
 from tradingagents.portfolio import FeatureContributionArtifact, PortfolioContext
 
 ResearchMode = Literal["company_research", "holding_review"]
+# Typed learning modes produce research narratives, not trade outcomes: they
+# must not write into the trading-reflection memory (see AnalysisRunner).
+LEARNING_MODES: frozenset[str] = frozenset({"company_research", "holding_review"})
 HoldingSource = Literal["user_provided", "legacy_portfolio"]
 
 

@@ -25,7 +25,7 @@ from tradingagents.web.manager import (
     RunNotResumable,
     SingleRunManager,
 )
-from tradingagents.web.run_models import RunSnapshot
+from tradingagents.web.run_models import RunSnapshot, generate_run_id
 from tradingagents.web.store import RunStore
 
 pytestmark = pytest.mark.unit
@@ -962,3 +962,29 @@ def test_browser_subscription_disconnect_never_cancels_active_run(tmp_path):
         assert manager.wait(started.run_id, timeout=3).status == "completed"
 
     asyncio.run(scenario())
+
+
+def test_drain_skips_a_run_deleted_before_launch(tmp_path):
+    """A run deleted between enqueue and drain must not kill the scheduler.
+
+    Bulk-clear can remove a queued run while it still sits in the pending
+    deque; one RunNotFound escaping _drain_locked would crash the scheduling
+    path for every later run.
+    """
+    manager, _store, _broker, factory = _manager(tmp_path)
+
+    with manager._guard:
+        manager._pending.append(generate_run_id())
+        manager._drain_locked()
+
+    assert factory.calls == []
+    assert not manager._pending
+
+
+def test_sync_batch_for_run_tolerates_a_deleted_run(tmp_path):
+    """Batch sync is a best-effort side channel: a concurrently deleted run
+    (or its batch manifest) must degrade to a no-op, never surface as a run
+    failure on the worker thread."""
+    manager, _store, _broker, _factory = _manager(tmp_path)
+
+    manager._sync_batch_for_run(generate_run_id())

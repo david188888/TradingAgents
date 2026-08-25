@@ -208,6 +208,11 @@ def _route_to_vendor_impl(
     incomplete_primary: tuple[str, Any, str] | None = None
     last_no_data: NoMarketDataError | None = None
     first_error: Exception | None = None
+    # Vendors skipped because a prior failure put them in cooldown.  A
+    # cooldown is not fresh evidence about the data: when EVERY vendor was
+    # skipped this way (nothing new attempted or failed), the tail degrades
+    # to a retry-later sentinel instead of raising under halt semantics.
+    cooldown_skips = 0
     # True once a transient error (rate limit / network) pulled in a vendor
     # outside the explicit chain. When the whole chain still fails after that,
     # we surface an aggregated DataUnavailableError rather than re-raising the
@@ -254,6 +259,7 @@ def _route_to_vendor_impl(
                 vendor_call_id=attempt.vendor_call_id,
             )
             recoverable_errors.append((vendor, DataSourceUnavailableError(reason)))
+            cooldown_skips += 1
             # A stored cooldown only represents a prior transient failure. It
             # gets the same implicit safety-net fallback as a live 429/network
             # failure, even when the user explicitly selected one primary.
@@ -502,6 +508,23 @@ def _route_to_vendor_impl(
         # Optional categories degrade to a sentinel so the analysis proceeds.
         if not _should_halt_on_missing_data(method):
             return _format_vendor_unavailable_message(method, recoverable_errors, category)
+        # Pure cooldown exhaustion: every vendor was skipped for a PRIOR
+        # transient failure and nothing new was attempted.  A cooldown is
+        # temporary by definition, so halting a whole run on it would turn
+        # one rate limit into a dead analysis; degrade to an instructive
+        # sentinel instead (the cooldown table itself already limits retry
+        # pressure on the throttled provider).
+        if len(recoverable_errors) == cooldown_skips:
+            details = "; ".join(
+                f"{vendor}: {_summarize_vendor_error(exc)}"
+                for vendor, exc in recoverable_errors
+            )
+            return (
+                f"NO_DATA_AVAILABLE: All configured data vendors for '{method}' "
+                f"(category: {category}) are temporarily cooling down after "
+                f"transient failures: {details}. Report the data as unavailable "
+                "and retry later — do not estimate or fabricate values."
+            )
         # Core category: a single configured vendor that fails with no fallback
         # tried must surface its real error (a broken primary should be loud,
         # not silently repackaged). When more than one vendor was tried - either

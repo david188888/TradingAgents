@@ -134,9 +134,9 @@ def _cooldown_for_exception(exc: Exception) -> tuple[float, str]:
     cooldown: access policies can be endpoint-specific and must not poison a
     provider forever.  Other non-transient errors also remain uncooled.
     """
-    status_code = _http_status_code(exc)
-    if isinstance(exc, (VendorRateLimitError, YFRateLimitError, WindRateLimitError)) or status_code == 429:
+    if _carries_rate_limit_signal(exc):
         return RATE_LIMIT_COOLDOWN_SECONDS, "rate_limit"
+    status_code = _http_status_code(exc)
     if isinstance(exc, WindAuthError):
         return MANUAL_RECOVERY_COOLDOWN_SECONDS, "wind_auth"
     if isinstance(exc, WindQuotaError):
@@ -168,6 +168,33 @@ def _http_status_code(exc: Exception) -> int | None:
         return response_status_code
     match = re.search(r"\bHTTP\s+(\d{3})\b", str(exc), flags=re.IGNORECASE)
     return int(match.group(1)) if match else None
+
+
+# tushare reports quota exhaustion as a plain-text API message with no HTTP
+# status at all (e.g. "抱歉，您每分钟最多访问该接口X次"), so text matching is
+# the only portable signal.  Wrapped errors (ChinaDataUnavailableError & co.)
+# embed the original text, and their ``__cause__`` chain may carry the typed
+# exception, so both surfaces are checked.
+_TUSHARE_THROTTLE_PATTERN = re.compile(r"(?:每分钟|每小时|每天)最多访问该接口")
+
+
+def _carries_rate_limit_signal(exc: Exception, _depth: int = 0) -> bool:
+    """True when the exception carries a rate-limit signal.
+
+    Checks the exception itself, then its ``__cause__`` chain: wrapper
+    exceptions historically dropped the transport signal, which left rate
+    limits without any cooldown (hammering the provider after a 429).
+    """
+    if isinstance(exc, (VendorRateLimitError, YFRateLimitError, WindRateLimitError)):
+        return True
+    if _http_status_code(exc) == 429:
+        return True
+    if _TUSHARE_THROTTLE_PATTERN.search(str(exc)):
+        return True
+    cause = exc.__cause__
+    if cause is not None and cause is not exc and _depth < 3:
+        return _carries_rate_limit_signal(cause, _depth=_depth + 1)
+    return False
 
 
 def _is_missing_required_data_result(result: Any) -> bool:

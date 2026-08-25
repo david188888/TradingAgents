@@ -9,9 +9,10 @@ describe("App shell", () => {
     expect(screen.getByText(/Research Console/)).toBeInTheDocument();
     // The localhost pill is the distinct local-safety affordance in the topbar.
     expect(screen.getByText(/● localhost/)).toBeInTheDocument();
-    // The three persistent columns exist with their approved headings.
+    // The persistent columns exist with their approved headings.
     expect(screen.getByRole("heading", { name: "分析输入" })).toBeInTheDocument();
-    // Right column starts with an explicit turn-selection audit empty state.
-    expect(screen.getByText("选择一个发言查看完整审计信息")).toBeInTheDocument();
+    // With no run selected the main surface shows the reader empty state;
+    // the audit rail is opt-in (mounted only when opened), not permanent.
+    expect(screen.getByText("选择一次运行")).toBeInTheDocument();
   });
 });

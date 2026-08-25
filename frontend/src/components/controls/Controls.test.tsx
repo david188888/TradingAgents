@@ -344,56 +344,8 @@ describe("Controls", () => {
     });
   });
 
-  it("sends a validated current-ticker portfolio constraint when enabled", async () => {
-    mockClient.getConfig.mockResolvedValue(makeConfig());
-    mockClient.createRun.mockResolvedValue(makeSnapshot());
-    render(<Controls />);
-
-    await waitForConfig();
-    fireEvent.change(screen.getByLabelText("股票代码"), {
-      target: { value: "600519" },
-    });
-    fireEvent.click(screen.getByLabelText("启用当前标的的组合约束"));
-    fireEvent.change(screen.getByLabelText("可用现金（CNY）"), {
-      target: { value: "100000" },
-    });
-    fireEvent.change(screen.getByLabelText("参考价格"), {
-      target: { value: "1500" },
-    });
-    fireEvent.change(screen.getByLabelText("持仓数量"), {
-      target: { value: "200" },
-    });
-    fireEvent.change(screen.getByLabelText("可卖数量"), {
-      target: { value: "100" },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /开始分析/ })).not.toBeDisabled();
-    });
-    fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
-
-    await waitFor(() => expect(mockClient.createRun).toHaveBeenCalledTimes(1));
-    expect(mockClient.createRun.mock.calls[0][0].portfolio).toEqual({
-      cash: 100000,
-      positions: [
-        {
-          ticker: "600519",
-          quantity: 200,
-          average_cost: 1500,
-          sellable_quantity: 100,
-        },
-      ],
-      mark_prices: { "600519": 1500 },
-      currency: "CNY",
-      limits: {
-        max_position_weight: 0.1,
-        lot_size: 100,
-        fee_rate: 0.0005,
-        minimum_fee: 0,
-        allow_short: false,
-      },
-    });
-  });
+  // The per-ticker portfolio constraint UI was intentionally removed with the
+  // learning-mode pivot (dual-mode controls); no portfolio fields are sent.
 
   it("shows a VPN modal when a global ticker is blocked by the yfinance preflight", async () => {
     const { ApiError } = await import("../../api/client");

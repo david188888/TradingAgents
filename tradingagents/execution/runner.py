@@ -14,6 +14,7 @@ from tradingagents.dataflows.target_context import clear_target_ticker
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker, normalize_ticker_symbol
 from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.execution.models import (
+    LEARNING_MODES,
     AnalysisRequest,
     AnalysisResult,
     CancellationToken,
@@ -396,7 +397,13 @@ class AnalysisRunner:
 
         owner = self.owner
         owner.ticker = request.ticker
-        if self.runtime_contract.policy_version == "horizon-policy-v2":
+        # Learning-research runs never resolve pending reflection entries:
+        # those entries describe trade outcomes, and reflecting on research
+        # narratives would write fabricated "lessons" back into memory.
+        if (
+            self.runtime_contract.policy_version == "horizon-policy-v2"
+            and request.mode not in LEARNING_MODES
+        ):
             owner._resolve_pending_entries(request.ticker)
         token.raise_if_cancelled()
 
@@ -523,12 +530,16 @@ class AnalysisRunner:
 
         owner.curr_state = final_state
         owner._log_state(request.analysis_date, final_state)
-        owner.memory_log.store_decision(
-            ticker=request.ticker,
-            trade_date=request.analysis_date,
-            final_trade_decision=final_state["final_trade_decision"],
-            context_facts=final_state.get("context_compaction_facts", ()),
-        )
+        # Learning-research runs must not store a pending decision: their
+        # "decision" is a research narrative, not a trade whose outcome can
+        # be reflected on later (storing one pollutes future past_context).
+        if request.mode not in LEARNING_MODES:
+            owner.memory_log.store_decision(
+                ticker=request.ticker,
+                trade_date=request.analysis_date,
+                final_trade_decision=final_state["final_trade_decision"],
+                context_facts=final_state.get("context_compaction_facts", ()),
+            )
         observer = getattr(observation_context, "observer", None)
         record_cycle = getattr(observer, "record_cycle", None)
         if callable(record_cycle):
@@ -547,7 +558,7 @@ class AnalysisRunner:
 
         signal = (
             "research_only"
-            if request.mode in {"company_research", "holding_review"}
+            if request.mode in LEARNING_MODES
             else self._process_signal(final_state["final_trade_decision"])
         )
         return AnalysisResult(final_state=final_state, final_signal=signal)

@@ -642,15 +642,28 @@ def create_app(
         can report partial success when a run is still executing.  Deleting a
         run removes its directory and full durable history, so this endpoint
         is the destructive bulk twin of ``DELETE /api/runs/{run_id}``.
+        Finished batch manifests are cleared too; an active batch is kept
+        intact together with its member runs (a half-deleted batch would
+        reference runs that no longer exist).
         """
         active_ids = set(getattr(selected_manager, "active_run_ids", ()))
         if not active_ids:
             legacy_active = getattr(selected_manager, "active_run_id", None)
             if legacy_active:
                 active_ids.add(legacy_active)
+        active_batches: set[str] = set()
+        protected_run_ids: set[str] = set()
+        for batch in selected_store.list_batches():
+            if batch.status in {"queued", "running"}:
+                active_batches.add(batch.batch_id)
+                protected_run_ids.update(item.run_id for item in batch.items)
         removed = 0
+        skipped_active = bool(active_ids)
         for summary in selected_store.list_runs():
             if summary.run_id in active_ids:
+                continue
+            if summary.run_id in protected_run_ids:
+                skipped_active = True
                 continue
             try:
                 selected_store.delete_run(summary.run_id)
@@ -658,7 +671,15 @@ def create_app(
             except RunNotFound:
                 # A concurrent deletion can win the race; treat it as removed.
                 continue
-        return {"removed": removed, "skipped_active": bool(active_ids)}
+        for batch in selected_store.list_batches():
+            if batch.batch_id in active_batches:
+                continue
+            try:
+                selected_store.delete_batch(batch.batch_id)
+            except RunNotFound:
+                # A concurrent deletion can win the race; nothing to do.
+                continue
+        return {"removed": removed, "skipped_active": skipped_active}
 
     @app.delete("/api/runs/{run_id}", status_code=204)
     def delete_run(run_id: str) -> Response:

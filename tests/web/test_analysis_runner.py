@@ -108,15 +108,17 @@ def test_runner_returns_success_object_and_preserves_completion_order():
     # Learning modes always terminate with the research-only signal.
     assert result.final_signal == "research_only"
     assert owner.curr_state is final_state
-    # Learning modes never route the decision through signal processing.
+    # Learning modes never route the decision through signal processing and
+    # never write into the reflection memory (no pending resolution, no
+    # stored decision).
     assert events == [
-        "pending",
         "past_context",
         "identity",
         "graph",
         "state_log",
-        "decision",
     ]
+    owner._resolve_pending_entries.assert_not_called()
+    owner.memory_log.store_decision.assert_not_called()
     owner.propagator.create_initial_state.assert_called_once_with(
         "AAPL",
         "2026-07-18",
@@ -203,7 +205,8 @@ def test_runner_preserves_original_failure_and_skips_completion_side_effects():
 
     assert exc_info.value is original
     assert owner.curr_state is None
-    assert events == ["pending", "past_context", "identity"]
+    assert events == ["past_context", "identity"]
+    owner._resolve_pending_entries.assert_not_called()
     owner._log_state.assert_not_called()
     owner.memory_log.store_decision.assert_not_called()
     owner.signal_processor.process_signal.assert_not_called()
@@ -583,7 +586,7 @@ def test_rejected_checkpoint_guard_cannot_persist_synthetic_input_observation(tm
         )
 
     assert exc_info.value is original
-    assert events == ["pending", "past_context", "identity"]
+    assert events == ["past_context", "identity"]
     owner.propagator.create_initial_state.assert_not_called()
     open_checkpoint.assert_not_called()
 

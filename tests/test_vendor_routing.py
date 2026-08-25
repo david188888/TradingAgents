@@ -15,6 +15,7 @@ import tradingagents.dataflows.config as config_module
 import tradingagents.default_config as default_config
 from tradingagents.dataflows import interface
 from tradingagents.dataflows.config import set_config
+from tradingagents.dataflows.errors import DataUnavailableError
 from tradingagents.dataflows.symbol_utils import NoMarketDataError
 
 
@@ -72,16 +73,22 @@ class VendorRoutingTests(unittest.TestCase):
         self.assertEqual(result, "AV_DATA")
 
     def test_primary_error_is_logged_not_masked(self):
-        # #989: primary errors + fallback no-data -> NO_DATA, but the failure
-        # must be visible in logs (broken primary not hidden).
+        # #989: primary errors + fallback no-data under halt semantics raise
+        # an aggregate DataUnavailableError naming every vendor, and the real
+        # failure must be visible in logs (broken primary not hidden).
         set_config({"data_vendors": {"core_stock_apis": "yfinance,alpha_vantage"}})
-        with self._route({"yfinance": _raises(ValueError("boom")), "alpha_vantage": _no_data}), \
-                self.assertLogs("tradingagents.dataflows.interface", level="WARNING") as cm:
-            result = interface.route_to_vendor("get_stock_data", "AAPL", "2026-01-01", "2026-01-10")
-        self.assertIn("NO_DATA_AVAILABLE", result)
+        with (
+            self._route({"yfinance": _raises(ValueError("boom")), "alpha_vantage": _no_data}),
+            self.assertLogs("tradingagents.dataflows.interface", level="WARNING") as cm,
+            self.assertRaises(DataUnavailableError) as ctx,
+        ):
+            interface.route_to_vendor("get_stock_data", "AAPL", "2026-01-01", "2026-01-10")
         joined = "\n".join(cm.output)
         self.assertIn("boom", joined)            # the real error surfaced in logs
         self.assertIn("yfinance", joined)
+        # Every tried vendor's reason stays visible in the aggregate message.
+        self.assertIn("yfinance", str(ctx.exception))
+        self.assertIn("alpha_vantage", str(ctx.exception))
 
     def test_unknown_configured_vendor_raises(self):
         set_config({"data_vendors": {"core_stock_apis": "bogus_vendor"}})

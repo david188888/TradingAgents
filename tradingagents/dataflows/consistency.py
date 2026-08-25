@@ -41,12 +41,15 @@ def create_llm_from_config() -> Any | None:
 
     try:
         from tradingagents.llm_clients import create_llm_client
+        from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 
         observer = current_provenance_observer()
         client = create_llm_client(
             provider=provider,
             model=model,
             base_url=cfg.get("backend_url"),
+            # Same thinking/effort/token settings as the primary agents.
+            **provider_llm_kwargs(cfg),
             **({"callbacks": [observer]} if observer is not None else {}),
         )
         return client.get_llm()
