@@ -527,6 +527,64 @@ export interface DeleteAllRunsResultDTO {
 // Error shapes (api.py boundary + schemas.py)
 // ---------------------------------------------------------------------------
 
+/**
+ * Every `detail.code` the backend error envelope can carry, extracted from
+ * api.py's `_error_response` / `ApiBoundaryError` call sites, plus the
+ * client-side "http_error" fallback used when a failure body is not JSON
+ * (e.g. a proxy 502). Pinned by
+ * tests/test_frontend_wire_contract.py::test_api_error_codes_match_backend.
+ */
+export type ApiErrorCode =
+  | "asset_type_mismatch"
+  | "audit_item_not_found"
+  | "audit_summary_stale"
+  | "audit_terminal_required"
+  | "batch_active"
+  | "checkpoint_unavailable"
+  | "companion_not_found"
+  | "company_not_found"
+  | "duplicate_ticker"
+  | "event_cursor_mismatch"
+  | "frontend_unavailable"
+  | "history_corrupted"
+  | "holding_as_of_invalid"
+  | "holding_as_of_mismatch"
+  | "holding_average_cost_invalid"
+  | "holding_cash_invalid"
+  | "holding_currency_invalid"
+  | "holding_legacy_conflict"
+  | "holding_nav_invalid"
+  | "holding_not_allowed"
+  | "holding_quantity_invalid"
+  | "holding_required"
+  | "holding_ticker_mismatch"
+  | "http_error"
+  | "invalid_concurrency"
+  | "invalid_cursor"
+  | "invalid_event_cursor"
+  | "invalid_limit"
+  | "invalid_view"
+  | "legacy_portfolio_not_allowed"
+  | "legacy_resume_normalization_failed"
+  | "legacy_target_position_ambiguous"
+  | "legacy_target_position_invalid"
+  | "legacy_target_position_missing"
+  | "missing_configuration"
+  | "not_found"
+  | "ref_not_found"
+  | "ref_target_missing"
+  | "research_package_unavailable"
+  | "resume_conflict"
+  | "run_active"
+  | "run_not_active"
+  | "run_not_resumable"
+  | "run_not_retryable"
+  | "unsupported_analyst"
+  | "unsupported_model"
+  | "unsupported_provider"
+  | "validation_error"
+  | "yfinance_unreachable";
+
 export interface ApiErrorDetail {
   code: string;
   message: string;

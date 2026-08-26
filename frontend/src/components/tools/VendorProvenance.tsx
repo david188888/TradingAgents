@@ -10,7 +10,7 @@
  * Per spec: derive vendor_calls in-component (state.vendor_calls filtered by
  * turn_id); selectors.ts is NOT modified.
  */
-import { useWorkbenchStore } from "../../state/WorkbenchStore";
+import { useWorkbenchStream } from "../../state/WorkbenchStore";
 import type { VendorCall } from "../../state/model";
 
 export interface VendorProvenanceProps {
@@ -44,7 +44,7 @@ const FAILURE_LABELS: Record<string, string> = {
 export function VendorProvenance({
   turn_id,
 }: VendorProvenanceProps): JSX.Element {
-  const { stream } = useWorkbenchStore();
+  const stream = useWorkbenchStream();
   const state = stream.state;
 
   const calls: VendorCall[] =

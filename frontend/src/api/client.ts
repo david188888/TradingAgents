@@ -10,6 +10,7 @@
  * decoded via explicit type assertions on the parsed JSON.
  */
 import type {
+  ApiErrorCode,
   ApiErrorResponse,
   BatchCreateRequestDTO,
   BatchSnapshotDTO,
@@ -69,13 +70,13 @@ function assertBatchId(batch_id: string): void {
  * mutated.
  */
 export class ApiError extends Error {
-  readonly code: string;
+  readonly code: ApiErrorCode;
   readonly status: number;
   readonly fields: string[];
   readonly active_run_id?: string;
 
   constructor(params: {
-    code: string;
+    code: ApiErrorCode;
     message: string;
     status: number;
     fields?: string[];
@@ -109,7 +110,10 @@ async function toApiError(resp: Response): Promise<ApiError> {
     typeof detail.message === "string"
   ) {
     return new ApiError({
-      code: detail.code,
+      // The wire vocabulary is pinned by test_frontend_wire_contract.py; a
+      // runtime-validated string is narrowed here so the domain sees the
+      // ApiErrorCode union instead of an unbounded string.
+      code: detail.code as ApiErrorCode,
       message: detail.message,
       status: resp.status,
       fields: Array.isArray(detail.fields) ? detail.fields : [],

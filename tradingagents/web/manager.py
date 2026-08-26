@@ -47,7 +47,8 @@ from .degradations import summarize_data_degradations
 from .projections import RunProjectionPublisher
 from .reports import ReportArtifactWriter, ReportPublicationError
 from .run_models import RunSnapshot, utc_timestamp
-from .store import RunNotFound, RunStore
+from .scheduler import RunScheduler
+from .store import RunStore
 
 TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 RETRYABLE_RUN_STATUSES = TERMINAL_RUN_STATUSES | {"interrupted"}
@@ -106,14 +107,6 @@ class LegacyResumeNormalizationFailed(RunNotResumable):
     pass
 
 
-@dataclass
-class _ActiveRun:
-    run_id: str
-    token: CancellationToken
-    thread: threading.Thread
-    phase: str = "running"
-
-
 class SingleRunManager:
     """Own exactly one background analysis and every durable lifecycle edge."""
 
@@ -141,34 +134,37 @@ class SingleRunManager:
         self.request_resolver = request_resolver
         self.resume_preflight = resume_preflight
         self._guard = threading.RLock()
-        self._active: dict[str, _ActiveRun] = {}
-        self._pending: deque[str] = deque()
-        self._pending_options: dict[str, tuple[bool, Any | None, int | None]] = {}
-        self._max_concurrency = 3
+        self.scheduler = RunScheduler(
+            store=store,
+            lock=self._guard,
+            resolve_request=self._request_for_snapshot,
+            thread_target=self._worker,
+            on_admitted=self._on_run_admitted,
+            on_launch_failure=self._finish_failure,
+        )
         self._requests: dict[str, AnalysisRequest] = {}
 
     @property
     def active_run_id(self) -> str | None:
-        with self._guard:
-            return next(iter(self._active), None)
+        return self.scheduler.active_run_id
 
     @property
     def active_run_ids(self) -> tuple[str, ...]:
-        with self._guard:
-            return tuple(self._active)
+        return self.scheduler.active_run_ids
 
     @property
     def max_concurrency(self) -> int:
-        with self._guard:
-            return self._max_concurrency
+        return self.scheduler.max_concurrency
 
     def set_concurrency(self, value: int) -> int:
-        if value not in (1, 2, 3):
-            raise ValueError("concurrency must be between 1 and 3")
-        with self._guard:
-            self._max_concurrency = value
-            self._drain_locked()
-            return value
+        return self.scheduler.set_concurrency(value)
+
+    @property
+    def _pending(self) -> deque[str]:
+        """Compatibility handle for the frozen manager test suite, which
+        drives the FIFO through this attribute; production code must go
+        through ``self.scheduler`` instead."""
+        return self.scheduler.pending
 
     def start(
         self,
@@ -187,10 +183,10 @@ class SingleRunManager:
                 batch_id=batch_id,
                 batch_ordinal=batch_ordinal,
                 batch_item=batch_item,
-                queued=bool(self._active) or bool(self._pending),
+                queued=self.scheduler.queued_by_occupancy(),
             )
-            self._pending.append(snapshot.run_id)
-            self._drain_locked()
+            self.scheduler.queue_run(snapshot.run_id)
+            self.scheduler.drain()
             return self.store.read_snapshot(snapshot.run_id)
 
     def start_batch(
@@ -219,15 +215,15 @@ class SingleRunManager:
                     batch_ordinal=item.ordinal,
                     batch_item=item,
                     run_id=item.run_id,
-                    queued=len(self._active) + len(self._pending) >= self._max_concurrency,
+                    queued=self.scheduler.queued_by_capacity(),
                 )
-                self._pending.append(snapshot.run_id)
-            self._drain_locked()
+                self.scheduler.queue_run(snapshot.run_id)
+            self.scheduler.drain()
             return self.store.read_batch(batch.batch_id)
 
     def cancel(self, run_id: str) -> RunSnapshot:
         with self._guard:
-            active = self._active.get(run_id)
+            active = self.scheduler.active_entry(run_id)
             if active is not None:
                 if active.phase != "running":
                     raise RunNotActive(f"run is already terminalizing: {run_id}")
@@ -251,8 +247,7 @@ class SingleRunManager:
             snapshot = self.store.read_snapshot(run_id)
             if snapshot.status not in {"created", "queued"}:
                 raise RunNotActive(f"run cannot be cancelled from {snapshot.status}")
-            self._pending = deque(item for item in self._pending if item != run_id)
-            self._pending_options.pop(run_id, None)
+            self.scheduler.discard_queued(run_id)
             summary = "Analysis cancelled before execution started."
             self.broker.publish(
                 RunEventDraft(
@@ -262,8 +257,8 @@ class SingleRunManager:
                     status="cancelled",
                 )
             )
-            self._sync_batch_for_run(run_id)
-            self._drain_locked()
+            self.scheduler.sync_batch_for_run(run_id)
+            self.scheduler.drain()
             return self.store.read_snapshot(run_id)
 
     def cancel_batch(self, batch_id: str) -> BatchSnapshot:
@@ -294,8 +289,8 @@ class SingleRunManager:
                 configured_keys=source.configured_keys,
                 retry_of=source.run_id,
             )
-            self._pending.append(snapshot.run_id)
-            self._drain_locked()
+            self.scheduler.queue_run(snapshot.run_id)
+            self.scheduler.drain()
             return self.store.read_snapshot(snapshot.run_id)
 
     def resume(self, run_id: str) -> RunSnapshot:
@@ -326,9 +321,13 @@ class SingleRunManager:
                     status="running",
                 )
             )
-            self._pending.append(run_id)
-            self._pending_options[run_id] = (True, checkpoint_guard, resumed_from)
-            self._drain_locked()
+            self.scheduler.queue_run(
+                run_id,
+                resume=True,
+                checkpoint_guard=checkpoint_guard,
+                resumed_from=resumed_from,
+            )
+            self.scheduler.drain()
             return self.store.read_snapshot(run_id)
 
     def recover_startup(self) -> tuple[RunSnapshot, ...]:
@@ -401,17 +400,16 @@ class SingleRunManager:
                         summary.run_id,
                         self._request_for_snapshot(self.store.read_snapshot(summary.run_id)),
                     )
-                    if summary.run_id not in self._pending:
-                        self._pending.append(summary.run_id)
+                    if not self.scheduler.is_queued(summary.run_id):
+                        self.scheduler.queue_run(summary.run_id)
             for batch in self.store.list_batches():
                 for item in batch.items:
-                    self._sync_batch_for_run(item.run_id)
-            self._drain_locked()
+                    self.scheduler.sync_batch_for_run(item.run_id)
+            self.scheduler.drain()
         return tuple(recovered)
 
     def wait(self, run_id: str, timeout: float | None = None) -> RunSnapshot:
-        with self._guard:
-            active = self._active.get(run_id)
+        active = self.scheduler.active_entry(run_id)
         if active is not None:
             active.thread.join(timeout)
         return self.store.read_snapshot(run_id)
@@ -518,42 +516,12 @@ class SingleRunManager:
                 )
             )
 
-    def _launch(
-        self,
-        run_id: str,
-        request: AnalysisRequest,
-        *,
-        resume: bool,
-        checkpoint_guard_override: Any | None = None,
-        resumed_from_sequence: int | None = None,
-    ) -> None:
-        token = CancellationToken()
-        thread = threading.Thread(
-            target=self._worker,
-            args=(
-                run_id,
-                request,
-                token,
-                resume,
-                checkpoint_guard_override,
-                resumed_from_sequence,
-            ),
-            name=f"tradingagents-{run_id}",
-            daemon=True,
-        )
-        active = _ActiveRun(run_id, token, thread)
-        self._active[run_id] = active
+    def _on_run_admitted(self, run_id: str, request: AnalysisRequest) -> None:
+        """Scheduler hook: publish the started edge and sync the manifest."""
         snapshot = self.store.read_snapshot(run_id)
         if snapshot.status in {"created", "queued"}:
             self._publish_run_started(run_id, request)
-        self._sync_batch_for_run(run_id)
-        try:
-            thread.start()
-        except BaseException as exc:
-            self._active.pop(run_id, None)
-            self._finish_failure(run_id, exc)
-            self._drain_locked()
-            raise
+        self.scheduler.sync_batch_for_run(run_id)
 
     def _publish_run_started(self, run_id: str, request: AnalysisRequest) -> None:
         snapshot = self.store.read_snapshot(run_id)
@@ -584,46 +552,12 @@ class SingleRunManager:
         )
 
     def _drain_locked(self) -> None:
-        while len(self._active) < self._max_concurrency and self._pending:
-            run_id = self._pending.popleft()
-            try:
-                snapshot = self.store.read_snapshot(run_id)
-            except RunNotFound:
-                # Deleted between enqueue and drain (e.g. bulk clear): drop
-                # it instead of crashing the scheduling path for later runs.
-                continue
-            if snapshot.status not in {"created", "queued", "running"}:
-                continue
-            request = self._request_for_snapshot(snapshot)
-            resume, guard, resumed_from = self._pending_options.pop(run_id, (False, None, None))
-            self._launch(
-                run_id,
-                request,
-                resume=resume,
-                checkpoint_guard_override=guard,
-                resumed_from_sequence=resumed_from,
-            )
+        """Frozen-test alias for :meth:`RunScheduler.drain`."""
+        self.scheduler.drain()
 
     def _sync_batch_for_run(self, run_id: str) -> None:
-        try:
-            snapshot = self.store.read_snapshot(run_id)
-            batch_id = snapshot.metadata.get("batch_id")
-            if not isinstance(batch_id, str):
-                return
-            batch = self.store.read_batch(batch_id)
-            next(item for item in batch.items if item.run_id == run_id)
-        except (RunNotFound, StopIteration):
-            # The run or its batch manifest vanished concurrently (bulk
-            # clear); batch sync is best-effort, so degrade to a no-op.
-            return
-        error_message = snapshot.error_message if snapshot.status == "failed" else None
-        updated = batch.with_item_status(
-            run_id,
-            snapshot.status if snapshot.status in {"queued", "running", "completed", "failed", "cancelled", "interrupted"} else "queued",
-            error_message=error_message,
-        )
-        if updated != batch:
-            self.store.write_batch_atomic(updated)
+        """Frozen-test alias for :meth:`RunScheduler.sync_batch_for_run`."""
+        self.scheduler.sync_batch_for_run(run_id)
 
     def _worker(
         self,
@@ -695,17 +629,11 @@ class SingleRunManager:
             if self.store.read_snapshot(run_id).status not in TERMINAL_RUN_STATUSES:
                 self._finish_failure(run_id, exc)
         finally:
-            with self._guard:
-                self._active.pop(run_id, None)
-                self._sync_batch_for_run(run_id)
-                self._drain_locked()
+            self.scheduler.release(run_id)
 
     def _begin_terminalization(self, run_id: str) -> str:
-        with self._guard:
-            active = self._active.get(run_id)
-            if active is not None:
-                active.phase = "terminalizing"
-            return self.store.read_snapshot(run_id).status
+        self.scheduler.mark_terminalizing(run_id)
+        return self.store.read_snapshot(run_id).status
 
     def _finish_success(
         self,

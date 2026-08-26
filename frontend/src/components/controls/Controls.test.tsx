@@ -22,6 +22,10 @@ const mockStore = vi.hoisted(() => ({
 
 vi.mock("../../state/WorkbenchStore", () => ({
   useWorkbenchStore: () => mockStore,
+  // 细粒度订阅从同一聚合 mock 派生；既有用例无需改动。
+  useWorkbenchStream: () => mockStore.stream,
+  useWorkbenchSelection: () => mockStore,
+  useWorkbenchRunView: () => mockStore.view,
 }));
 
 const mockClient = vi.hoisted(() => ({

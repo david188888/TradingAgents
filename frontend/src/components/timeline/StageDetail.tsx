@@ -17,7 +17,7 @@ import type {
   RunViewEnvelopeDTO,
 } from "../../api/contracts";
 import type { ReducerState, Turn } from "../../state/model";
-import { useWorkbenchStore } from "../../state/WorkbenchStore";
+import { useWorkbenchStream } from "../../state/WorkbenchStore";
 import { useArtifact } from "../../hooks/useArtifact";
 import { extractResponse } from "../../domain/responseExtractor";
 import { ROLE_LABELS_ZH } from "../../domain/roles";
@@ -232,7 +232,7 @@ export function StageDetail({
   onOpenAudit,
   onRoleSelected,
 }: StageDetailProps): JSX.Element {
-  const { stream } = useWorkbenchStore();
+  const stream = useWorkbenchStream();
   const summary = envelope.view.debate_summary;
   const value = summary.value;
 

@@ -6,7 +6,13 @@ import { RoleInputPanel } from "./RoleInputPanel";
 const mockStore = vi.hoisted(() => ({ useWorkbenchStore: vi.fn() }));
 const mockClient = vi.hoisted(() => ({ readArtifactText: vi.fn() }));
 
-vi.mock("../../state/WorkbenchStore", () => ({ useWorkbenchStore: mockStore.useWorkbenchStore }));
+vi.mock("../../state/WorkbenchStore", () => ({
+  useWorkbenchStore: mockStore.useWorkbenchStore,
+  // 细粒度订阅从同一聚合 mock 派生；既有 mockReturnValue 用例无需改动。
+  useWorkbenchStream: () => mockStore.useWorkbenchStore().stream,
+  useWorkbenchSelection: () => mockStore.useWorkbenchStore(),
+  useWorkbenchRunView: () => mockStore.useWorkbenchStore().view,
+}));
 vi.mock("../../api/client", () => ({ readArtifactText: mockClient.readArtifactText }));
 
 function meta(run_id = "inspector-run"): RunMeta {

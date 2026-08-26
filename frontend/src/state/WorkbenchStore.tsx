@@ -1,11 +1,16 @@
 /**
  * F2 - Thin React context providing per-run state isolation for the
- * TradingAgents workbench. Holds the currently selected run_id and the live
- * stream handle from useRunStream; F3 components consume via useWorkbenchStore.
+ * TradingAgents workbench. Holds the currently selected run_id plus the live
+ * stream handle and view projection, exposed as three independently
+ * subscribed slices; F3 components consume via useWorkbenchStore (all) or
+ * the fine-grained useWorkbenchSelection / useWorkbenchStream /
+ * useWorkbenchRunView hooks.
  *
- * Minimal: no UI, no selectors, no memoization beyond a stable selectRun.
- * The context value is recreated when run_id or stream changes, which is the
- * desired re-render trigger.
+ * Slices are memoized field-by-field: useRunStream and useRunView return
+ * fresh object literals on every render, so a combined context value would
+ * invalidate every frame and re-render every consumer. Keying each slice's
+ * useMemo on its primitive fields keeps the context reference stable until
+ * that slice's own data actually changes.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -17,15 +22,22 @@ export interface WorkbenchSelectionValue {
   selectRun: (id: string | null) => void;
 }
 
+/** Stream slice: reducer state + transport status, no projection. */
+export type WorkbenchStreamValue = ReturnType<typeof useRunStream>;
+
+/** View slice: server projection envelope + fetch bookkeeping, no stream. */
+export type WorkbenchViewValue = ReturnType<typeof useRunView>;
+
 export interface WorkbenchRunValue {
-  stream: ReturnType<typeof useRunStream>;
-  view: ReturnType<typeof useRunView>;
+  stream: WorkbenchStreamValue;
+  view: WorkbenchViewValue;
 }
 
 export interface WorkbenchStoreValue extends WorkbenchSelectionValue, WorkbenchRunValue {}
 
 const WorkbenchSelectionContext = createContext<WorkbenchSelectionValue | null>(null);
-const WorkbenchRunContext = createContext<WorkbenchRunValue | null>(null);
+const WorkbenchStreamContext = createContext<WorkbenchStreamValue | null>(null);
+const WorkbenchViewContext = createContext<WorkbenchViewValue | null>(null);
 
 export function WorkbenchProvider({
   children,
@@ -62,12 +74,21 @@ export function WorkbenchProvider({
     setRunId(id);
   }, []);
   const selectionValue = useMemo(() => ({ run_id, selectRun }), [run_id, selectRun]);
-  const runValue = useMemo(() => ({ stream, view }), [stream, view]);
+  const streamValue = useMemo(
+    () => ({ state: stream.state, status: stream.status, error: stream.error }),
+    [stream.state, stream.status, stream.error],
+  );
+  const viewValue = useMemo(
+    () => ({ view: view.view, loading: view.loading, error: view.error }),
+    [view.view, view.loading, view.error],
+  );
   return (
     <WorkbenchSelectionContext.Provider value={selectionValue}>
-      <WorkbenchRunContext.Provider value={runValue}>
-        {children}
-      </WorkbenchRunContext.Provider>
+      <WorkbenchStreamContext.Provider value={streamValue}>
+        <WorkbenchViewContext.Provider value={viewValue}>
+          {children}
+        </WorkbenchViewContext.Provider>
+      </WorkbenchStreamContext.Provider>
     </WorkbenchSelectionContext.Provider>
   );
 }
@@ -80,12 +101,26 @@ export function useWorkbenchSelection(): WorkbenchSelectionValue {
   return ctx;
 }
 
-export function useWorkbenchRun(): WorkbenchRunValue {
-  const ctx = useContext(WorkbenchRunContext);
+export function useWorkbenchStream(): WorkbenchStreamValue {
+  const ctx = useContext(WorkbenchStreamContext);
   if (ctx === null) {
-    throw new Error("useWorkbenchRun must be used within a WorkbenchProvider");
+    throw new Error("useWorkbenchStream must be used within a WorkbenchProvider");
   }
   return ctx;
+}
+
+export function useWorkbenchRunView(): WorkbenchViewValue {
+  const ctx = useContext(WorkbenchViewContext);
+  if (ctx === null) {
+    throw new Error("useWorkbenchRunView must be used within a WorkbenchProvider");
+  }
+  return ctx;
+}
+
+export function useWorkbenchRun(): WorkbenchRunValue {
+  // Explicitly nested: the aggregate shape keeps the `stream`/`view` keys
+  // consumers destructure, unlike a spread which would flatten the slices.
+  return { stream: useWorkbenchStream(), view: useWorkbenchRunView() };
 }
 
 export function useWorkbenchStore(): WorkbenchStoreValue {

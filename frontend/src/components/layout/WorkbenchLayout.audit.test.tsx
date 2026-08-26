@@ -5,8 +5,16 @@ import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import type { AuditEntryContext, AuditOpenHandler } from "../reader/AuditCenter";
 import { WorkbenchLayout } from "./WorkbenchLayout";
 
+const mockStoreModule = vi.hoisted(() => ({ useWorkbenchStore: vi.fn() }));
+
 vi.mock("../../hooks/useRunHistory", () => ({ useRunHistory: vi.fn() }));
-vi.mock("../../state/WorkbenchStore", () => ({ useWorkbenchStore: vi.fn() }));
+vi.mock("../../state/WorkbenchStore", () => ({
+  useWorkbenchStore: mockStoreModule.useWorkbenchStore,
+  // 细粒度订阅从同一聚合 mock 派生；既有 mockReturnValue 用例无需改动。
+  useWorkbenchStream: () => mockStoreModule.useWorkbenchStore().stream,
+  useWorkbenchSelection: () => mockStoreModule.useWorkbenchStore(),
+  useWorkbenchRunView: () => mockStoreModule.useWorkbenchStore().view,
+}));
 vi.mock("../controls/Controls", () => ({ Controls: () => null }));
 vi.mock("../history/RunHistory", () => ({ RunHistory: () => null }));
 vi.mock("../inspector/Inspector", () => ({ Inspector: () => null }));

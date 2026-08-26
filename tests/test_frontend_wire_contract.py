@@ -180,3 +180,69 @@ def test_interrupted_and_queued_payloads_cover_backend_requirements():
     for event_type, iface in spot_checks.items():
         missing = required_payload_fields(event_type) - interfaces[iface]
         assert not missing, f"{event_type}: {iface} lacks {sorted(missing)}"
+
+
+# ---------------------------------------------------------------------------
+# Terminal run statuses: useRunStream closes the stream once no further
+# events can arrive. Backend TERMINAL_RUN_STATUSES are final forever; an
+# interrupted run stays quiet until an explicit resume restarts the stream,
+# so the frontend set is exactly the backend set plus "interrupted".
+# ---------------------------------------------------------------------------
+
+
+def test_frontend_terminal_run_statuses_cover_backend_terminal_statuses():
+    from tradingagents.web.manager import TERMINAL_RUN_STATUSES
+
+    ts = _read("hooks/useRunStream.ts")
+    match = re.search(r"TERMINAL_RUN_STATUSES = new Set\(\[(.*?)\]\)", ts, re.S)
+    assert match is not None
+    frontend = set(re.findall(r'"([a-z]+)"', match.group(1)))
+    assert frontend == set(TERMINAL_RUN_STATUSES) | {"interrupted"}
+
+
+def test_api_error_codes_match_backend_vocabulary():
+    """The ApiErrorCode union must carry every detail.code api.py can emit
+    (via _error_response / ApiBoundaryError) plus the client-only
+    http_error fallback for non-JSON failure bodies."""
+    import ast
+
+    source = (REPO / "tradingagents" / "web" / "api.py").read_text(encoding="utf-8")
+    codes: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", None) or getattr(node.func, "attr", "")
+        if name not in {"_error_response", "ApiBoundaryError"}:
+            continue
+        arg = node.args[1] if len(node.args) >= 2 else None
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            codes.add(arg.value)
+        for keyword in node.keywords:
+            if keyword.arg == "code" and isinstance(keyword.value, ast.Constant):
+                codes.add(keyword.value.value)
+
+    ts = _read("api/contracts.ts")
+    block = ts.split("export type ApiErrorCode", 1)[1].split(";", 1)[0]
+    frontend = set(re.findall(r'"([a-z_]+)"', block))
+    assert frontend == codes | {"http_error"}
+
+
+def test_research_mode_horizon_and_asset_type_literals_match_models():
+    """contracts.ts mirrors the AnalysisRequest Literal fields verbatim;
+    widening or narrowing one side without the other fails here."""
+    import typing
+
+    from tradingagents.execution.models import AnalysisRequest
+
+    hints = typing.get_type_hints(AnalysisRequest)
+    expected = {
+        "AssetTypeLiteral": set(typing.get_args(hints["asset_type"])),
+        "ResearchHorizon": set(typing.get_args(hints["horizon"])),
+        "ResearchMode": set(typing.get_args(hints["mode"])),
+    }
+    ts = _read("api/contracts.ts")
+    for type_name, literals in expected.items():
+        match = re.search(rf"export type {type_name} = (.*?);", ts)
+        assert match is not None, type_name
+        frontend = set(re.findall(r'"([a-z_]+)"', match.group(1)))
+        assert frontend == literals, type_name

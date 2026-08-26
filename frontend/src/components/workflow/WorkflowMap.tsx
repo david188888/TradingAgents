@@ -11,7 +11,7 @@
  * edges, avoiding crossing spaghetti on narrow viewports.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useWorkbenchStore } from "../../state/WorkbenchStore";
+import { useWorkbenchStream } from "../../state/WorkbenchStore";
 import { ROLE_REGISTRY } from "../../state/model";
 import type { RoleCard } from "../../state/model";
 import { EDGES, STAGES } from "../../domain/roles";
@@ -41,7 +41,7 @@ export interface WorkflowMapProps {
 }
 
 export function WorkflowMap({ onRoleSelected }: WorkflowMapProps): JSX.Element {
-  const { stream } = useWorkbenchStore();
+  const stream = useWorkbenchStream();
   const state = stream.state;
   const rolesByActor: Record<string, RoleCard> = state?.roles ?? {};
 

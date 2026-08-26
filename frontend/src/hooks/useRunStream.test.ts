@@ -199,3 +199,64 @@ describe("useRunStream Bug 1: onClose reconnect preserves state", () => {
     expect(result.current.status).toBe("closed");
   });
 });
+
+describe("useRunStream symmetric error handling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mocks.getRunMock.mockReset();
+    mocks.closeMock.mockReset();
+    mocks.resetHandlers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fails fast on a 4xx stream error without reconnecting", async () => {
+    mocks.getRunMock.mockResolvedValue(snap("run_4xx", "running", 0));
+    const { result } = renderHook(() => useRunStream("run_4xx"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.getHandlers()).not.toBeNull();
+
+    // eventSource 把非 2xx 包成带 status 的 SseHttpError。
+    await act(async () => {
+      mocks.getHandlers()!.onError(
+        Object.assign(new Error("SSE HTTP 404"), { name: "SseHttpError", status: 404 }),
+      );
+    });
+    expect(result.current.status).toBe("error");
+
+    // 推进远超全部退避窗口：不允许任何重连尝试。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(mocks.getRunMock).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("error");
+  });
+
+  it("recovers a transient stream error through the shared backoff path", async () => {
+    mocks.getRunMock.mockResolvedValue(snap("run_5xx", "running", 0));
+    const { result } = renderHook(() => useRunStream("run_5xx"));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mocks.getHandlers()).not.toBeNull();
+
+    // 无 status 属性的传输层错误：不再直接终局，而是进入与 onClose
+    // 相同的快照判定 + 指数退避路径。
+    await act(async () => {
+      mocks.getHandlers()!.onError(new Error("SSE stream error: socket hang up"));
+    });
+    expect(result.current.status).not.toBe("error");
+
+    mocks.getRunMock.mockResolvedValue(snap("run_5xx", "completed", 0));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+    expect(mocks.getRunMock).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("closed");
+  });
+});

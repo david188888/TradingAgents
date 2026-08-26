@@ -30,6 +30,21 @@ export interface SseSubscription {
   close(): void;
 }
 
+/**
+ * Stream failure with the HTTP status attached. useRunStream uses it to
+ * refuse reconnecting on 4xx responses, which are permanent boundary
+ * rejections (run deleted, malformed id) rather than transient faults.
+ */
+export class SseHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`SSE HTTP ${status}`);
+    this.name = "SseHttpError";
+    this.status = status;
+  }
+}
+
 export function openRunStream(
   run_id: string,
   after: number,
@@ -59,7 +74,7 @@ export function openRunStream(
         signal: controller.signal,
       });
       if (!resp.ok || !resp.body) {
-        if (!closed) handlers.onError?.(new Error(`SSE HTTP ${resp.status}`));
+        if (!closed) handlers.onError?.(new SseHttpError(resp.status));
         return;
       }
       const reader = resp.body.getReader();

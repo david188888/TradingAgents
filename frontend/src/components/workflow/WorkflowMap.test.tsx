@@ -19,6 +19,10 @@ const mockStore = vi.hoisted(() => ({
 
 vi.mock("../../state/WorkbenchStore", () => ({
   useWorkbenchStore: mockStore.useWorkbenchStore,
+  // 细粒度订阅从同一聚合 mock 派生；既有 mockReturnValue 用例无需改动。
+  useWorkbenchStream: () => mockStore.useWorkbenchStore().stream,
+  useWorkbenchSelection: () => mockStore.useWorkbenchStore(),
+  useWorkbenchRunView: () => mockStore.useWorkbenchStore().view,
 }));
 
 const ZH_LABELS: string[] = [

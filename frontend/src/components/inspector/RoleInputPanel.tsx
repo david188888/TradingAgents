@@ -16,7 +16,7 @@ import type {
 } from "../../state/model";
 import { ROLE_REGISTRY } from "../../state/model";
 import { artifactsForTurn } from "../../state/selectors";
-import { useWorkbenchStore } from "../../state/WorkbenchStore";
+import { useWorkbenchSelection, useWorkbenchStream } from "../../state/WorkbenchStore";
 import { useArtifact } from "../../hooks/useArtifact";
 import { SafeMarkdown } from "../shared/SafeMarkdown";
 import { ROLE_LABELS_ZH, stageColorClass } from "../../domain/roles";
@@ -520,7 +520,8 @@ function OutputSection({
 }
 
 export function RoleInputPanel({ turn_id }: RoleInputPanelProps): JSX.Element {
-  const { stream, run_id } = useWorkbenchStore();
+  const stream = useWorkbenchStream();
+  const { run_id } = useWorkbenchSelection();
   const state = stream.state;
 
   if (turn_id === null || state === null || state.turns[turn_id] === undefined) {
