@@ -15,7 +15,9 @@ question/answer transcripts. The server exposes a read-only fact layer:
 - `GET /api/runs/{run_id}/reader/package` returns the validated
   `research-package-v1` projection for one run.
 - `GET /api/runs/{run_id}/reader` returns the public reader projection with
-  claims, analyst cards, `thesis_diff`, and review/omission fields.
+  claims, analyst cards, `thesis_diff`, the deterministic
+  `valuation` assessment (price-position and reference-range chain; see
+  `docs/contracts/valuation-assessment.md`), and review/omission fields.
 - `GET /api/runs/{run_id}/reader/companion?kind=...&id=...` returns stable
   detail for a selected claim/evidence/role/risk item.
 - `GET /api/runs/{run_id}/evidence-refs/{ref_id}` resolves one evidence ref.
@@ -48,8 +50,10 @@ order:
    `research-package-v1`. Record `package_sha256` via
    `tradingagents.research.public_hash`.
 3. Use `/api/runs/{run_id}/reader` for public claims, analyst cards, omissions,
-   and `thesis_diff`; use `/reader/companion` for stable selected claim/evidence
-   details and `/evidence-refs/{ref_id}` for evidence resolution.
+   `thesis_diff`, and the deterministic `valuation` position/reference-range
+   assessment (numbers are code-computed; treat them as pre-verified anchors
+   rather than model output); use `/reader/companion` for stable selected
+   claim/evidence details and `/evidence-refs/{ref_id}` for evidence resolution.
 4. Resolve metrics, observations, formula evaluations, peer sets,
    comparisons, and logic edges by their package IDs, never by array position.
    The canonical anchor forms are documented in the Skill and include

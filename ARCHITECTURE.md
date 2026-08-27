@@ -59,7 +59,8 @@ artifacts are promoted only after durable graph commit barriers.
 
 `observability/` records run events and graph-task candidates. `execution/`
 promotes committed state, public role outputs, evidence bundles, report
-revisions, `research-case-v2`, and `thesis-diff-v1`. `runtime/` owns the
+revisions, `research-case-v2`, `thesis-diff-v1`, and the derived
+`valuation-assessment-v1` position chain artifact. `runtime/` owns the
 durable run store, reconciliation, resume fingerprints, and final report
 publication.
 

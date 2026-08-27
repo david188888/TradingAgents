@@ -14,8 +14,9 @@ references.
   be changed by Markdown edits or presets. See `tradingagents/skills/registry.py`.
 - `frontend/`: React workbench source. See [frontend/AGENTS.md](frontend/AGENTS.md).
 - `tradingagents/web/static/`: generated SPA assets served by the Python package.
-- `tests/`, frontend test files/configuration, and `frontend/e2e/`: optional
-  local-only scaffolding when present; the public fork does not track them.
+- `tests/`, frontend test files, and `frontend/e2e/`: local test scaffolding that is
+  tracked and shipped with the repository since 2026-08 (run them when present; they
+  are not part of the public fresh-clone contract).
 - `docs/`: focused operational references, plans, and reviews. Plans and reviews are not
   current-state architecture sources.
 
