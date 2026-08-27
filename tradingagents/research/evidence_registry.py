@@ -49,11 +49,13 @@ _EVIDENCE_BUNDLE_STATE_KEYS = (
     "news_window_bundle",
     "a_share_supplement_bundle",
     "fundamentals_prefetch_bundle",
+    "valuation_bundle",
 )
 
 _CAPABILITY_BY_STATE_KEY = {
     "adjusted_price_bundle": ("adjusted_price_history",),
     "news_window_bundle": ("company_event_window",),
+    "valuation_bundle": ("valuation_snapshot", "valuation_history"),
 }
 
 

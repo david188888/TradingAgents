@@ -99,6 +99,7 @@ const reader: LearningReaderV2DTO = {
   coverage_refs: [],
   omissions: [],
   thesis_diff: null,
+  valuation: null,
   audit_entry: {
     route: "reader",
     artifact_count: 2,

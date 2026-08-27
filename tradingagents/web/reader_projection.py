@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import cast
 
 from tradingagents.agents.schemas._research_case import ResearchCaseV2
+from tradingagents.research.valuation import ValuationAssessmentV1
 from tradingagents.runtime.store import RunStore
 
 from .reader_models import (
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 _TYPED_MODES = frozenset({"company_research", "holding_review"})
 _RESEARCH_CASE_CONTRACT = "research-case-v2"
 _RESEARCH_PACKAGE_CONTRACT = "research-package-v1"
+_VALUATION_CONTRACT = "valuation-assessment-v1"
 
 _IMPACT_LABELS = {
     "supports": "支持当前研究结论",
@@ -86,6 +88,7 @@ def project_reader(store: RunStore, run_id: str) -> dict:
             case,
             audit,
             _load_thesis_diff(store, run_id, events),
+            _load_valuation(store, run_id, events),
         )
         return model.model_dump(mode="json")
 
@@ -204,11 +207,39 @@ def _load_thesis_diff(store, run_id: str, events) -> dict | None:
         return None
 
 
+def _load_valuation(store, run_id: str, events) -> ValuationAssessmentV1 | None:
+    """Return the highest-sequence valuation-assessment artifact, if any."""
+    best: tuple[int, str] | None = None
+    for event in events:
+        if event.type != "artifact.written":
+            continue
+        payload = event.payload
+        if payload.get("public_contract") != _VALUATION_CONTRACT:
+            continue
+        sequence = payload.get("committed_sequence")
+        artifact_id = payload.get("artifact_id")
+        if (
+            isinstance(sequence, int)
+            and isinstance(artifact_id, str)
+            and (best is None or sequence > best[0])
+        ):
+            best = (sequence, artifact_id)
+    if best is None:
+        return None
+    try:
+        raw = store.read_artifact(run_id, best[1])
+        return ValuationAssessmentV1.model_validate_json(raw)
+    except Exception as exc:  # noqa: BLE001 - reader stays available without valuation
+        logger.warning("failed to read valuation assessment %s: %s", best[1], exc)
+        return None
+
+
 def _project_typed(
     mode: str,
     case: ResearchCaseV2,
     audit: AuditEntryDTO,
     thesis_diff: ThesisDiffDTO | None,
+    valuation: ValuationAssessmentV1 | None,
 ) -> LearningReaderV2:
     evidence_refs = tuple(
         ReaderEvidenceRef(
@@ -241,6 +272,7 @@ def _project_typed(
         coverage_refs=case.coverage_refs,
         omissions=case.omissions,
         thesis_diff=thesis_diff,
+        valuation=valuation,
         audit_entry=audit,
     )
 

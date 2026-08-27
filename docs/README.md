@@ -29,6 +29,7 @@ For any question about current behavior:
 ## Contracts
 
 - [Contract index](contracts/README.md): canonical Python, runtime, web, and frontend sources, plus change propagation rules.
+- [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.
 

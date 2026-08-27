@@ -33,6 +33,7 @@ def test_required_prefetch_chain_is_independent_of_selected_analyst():
         "Adjusted Price Prefetch",
         "News Window Prefetch",
         "Fundamentals Prefetch",
+        "Valuation Evidence Prefetch",
     } <= set(graph.nodes)
     assert (
         "Adjusted Price Prefetch",
@@ -42,4 +43,10 @@ def test_required_prefetch_chain_is_independent_of_selected_analyst():
         "News Window Prefetch",
         "Fundamentals Prefetch",
     ) in graph.edges
-    assert ("Fundamentals Prefetch", "News Analyst") in graph.edges
+    # The valuation node must sit inside the executed chain, not merely be
+    # registered: an isolated LangGraph node never runs.
+    assert (
+        "Fundamentals Prefetch",
+        "Valuation Evidence Prefetch",
+    ) in graph.edges
+    assert ("Valuation Evidence Prefetch", "News Analyst") in graph.edges

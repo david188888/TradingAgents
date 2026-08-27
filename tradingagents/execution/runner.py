@@ -90,6 +90,62 @@ def _latest_fundamentals_bundle(observer: Any) -> Mapping[str, Any] | None:
     return None
 
 
+def _promote_valuation_assessment(
+    observer: Any,
+    *,
+    snapshot: Any,
+    graph_task_id: str,
+    checkpoint_event_id: str,
+    committed_sequence: int,
+    promoted: set[str],
+) -> None:
+    """Compute and publish the deterministic valuation-position artifact.
+
+    The chain is pure code over already committed bundles; sparse evidence
+    degrades to explicit unavailable fields instead of blocking the run.
+    Non-learning snapshots and non-A-share tickers produce no artifact.
+    """
+    from tradingagents.dataflows.ticker_utils import is_a_share_ticker
+    from tradingagents.research.valuation import assess_valuation
+    from tradingagents.research.valuation_inputs import (
+        load_committed_bundle,
+        parse_valuation_inputs,
+    )
+
+    # Realtime-multiple chain is A-share-only; no artifact for other markets.
+    if not is_a_share_ticker(snapshot.ticker):
+        return
+
+    try:
+        cutoff = datetime.fromisoformat(snapshot.analysis_date).date()
+        inputs = parse_valuation_inputs(
+            run_id=observer.run_id,
+            ticker=snapshot.ticker,
+            analysis_cutoff=cutoff,
+            valuation_bundle=load_committed_bundle(observer.store, observer.run_id, "valuation_bundle"),
+            adjusted_price_bundle=load_committed_bundle(
+                observer.store, observer.run_id, "adjusted_price_bundle"
+            ),
+            fundamentals_bundle=_latest_fundamentals_bundle(observer),
+        )
+        if inputs is None:
+            return
+        assessment = assess_valuation(inputs)
+        promote_derived_public_artifact(
+            observer,
+            contract="valuation-assessment-v1",
+            value=assessment,
+            graph_task_id=graph_task_id,
+            checkpoint_event_id=checkpoint_event_id,
+            committed_sequence=committed_sequence,
+            promoted=promoted,
+        )
+    except Exception:  # noqa: BLE001 - valuation is additive and must never break runs
+        logger.warning(
+            "valuation assessment promotion failed for run %s", observer.run_id, exc_info=True
+        )
+
+
 def _assemble_research_case_or_fallback(
     observer: Any,
     snapshot: Any,
@@ -1036,6 +1092,14 @@ class AnalysisRunner:
                     observer,
                     contract="research-package-v1",
                     value=research_package,
+                    graph_task_id=commit.graph_task_id,
+                    checkpoint_event_id=marker.event_id,
+                    committed_sequence=marker.sequence,
+                    promoted=promoted_derived,
+                )
+                _promote_valuation_assessment(
+                    observer,
+                    snapshot=snapshot,
                     graph_task_id=commit.graph_task_id,
                     checkpoint_event_id=marker.event_id,
                     committed_sequence=marker.sequence,

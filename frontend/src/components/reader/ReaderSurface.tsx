@@ -15,6 +15,7 @@ import { CompanionPanel } from "./CompanionPanel";
 import type { CompanionPanelMode } from "./CompanionPanel";
 import { ThesisDiffSection } from "./ThesisDiffSection";
 import { ResearchPackageSection } from "./ResearchPackageSection";
+import { ValuationPositionCard } from "./ValuationPositionCard";
 import type { AuditOpenHandler } from "./AuditCenter";
 
 export interface ReaderSurfaceProps {
@@ -407,6 +408,8 @@ function TypedSurface({
 
       <ThesisDiffSection diff={reader.thesis_diff} evidenceRefs={reader.evidence_refs} />
       {researchPackage ? <ResearchPackageSection researchPackage={researchPackage} /> : null}
+
+      {reader.valuation ? <ValuationPositionCard assessment={reader.valuation} /> : null}
 
       <section className="reader-section reader-section--claims">
         <h3>事实</h3>

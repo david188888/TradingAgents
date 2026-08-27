@@ -78,6 +78,7 @@ class Propagator:
             "adjusted_price_bundle": "",
             "fundamentals_report": "",
             "fundamentals_prefetch_bundle": "",
+            "valuation_bundle": "",
             "sentiment_report": "",
             "a_share_supplement_bundle": "",
             "news_report": "",

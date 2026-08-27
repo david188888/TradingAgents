@@ -128,6 +128,11 @@ def available_candidate_keys(state: Mapping[str, Any]) -> dict[str, list[str]]:
         coverage.extend(f"coverage:{capability}" for capability in supplement_capabilities)
         evidence.append("evidence:supplement_bundle")
 
+    valuation_capabilities = _valuation_result_capabilities(state.get("valuation_bundle"))
+    if valuation_capabilities:
+        coverage.extend(f"coverage:{capability}" for capability in valuation_capabilities)
+        evidence.append("evidence:valuation_bundle")
+
     if _nonempty(state.get("market_report")):
         evidence.append("evidence:market_report")
     if _nonempty(state.get("fundamentals_report")):
@@ -164,6 +169,24 @@ def _parse_json_object(value: object) -> dict[str, Any] | None:
         if isinstance(parsed, dict):
             return parsed
     return None
+
+
+def _valuation_result_capabilities(bundle: object) -> list[str]:
+    """Return the ok result capabilities of a valuation prefetch bundle."""
+    payload = _parse_json_object(bundle)
+    if payload is None:
+        return []
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return []
+    capabilities: list[str] = []
+    for result in results:
+        if not isinstance(result, Mapping) or result.get("status") != "ok":
+            continue
+        capability = result.get("capability")
+        if isinstance(capability, str) and capability:
+            capabilities.append(capability)
+    return capabilities
 
 
 def _supplement_capabilities(bundle: object) -> list[str]:

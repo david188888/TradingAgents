@@ -109,6 +109,10 @@ class AgentState(MessagesState):
         str,
         "Deterministically prefetched horizon-specific financial statements",
     ]
+    valuation_bundle: Annotated[
+        str,
+        "Deterministically prefetched realtime valuation snapshot and multi-year multiple history",
+    ]
     methodology_reports: Annotated[
         dict[str, dict[str, Any]],
         "Validated public analyst methodology scorecards; no prompts or private reasoning",

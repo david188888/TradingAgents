@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
+from datetime import date
 
 from pydantic import ValidationError
 
@@ -158,6 +160,54 @@ Rules: unknown/not_assessed is not bear evidence; industry/comparable evidence c
     return research_manager_node
 
 
+def _render_valuation_context(state) -> str:
+    """Render the deterministic valuation brief, or an empty string.
+
+    The numbers come exclusively from code-run bundles (Tencent snapshot,
+    baostock history, disclosed annuals); the prompt marks them read-only so
+    the model narrates but never rewrites them.  Returns "" when the bundle
+    is absent so callers can skip the block silently.
+    """
+    try:
+        if not state.get("valuation_bundle"):
+            return ""
+        from tradingagents.research.valuation import assess_valuation, render_valuation_brief
+        from tradingagents.research.valuation_inputs import parse_valuation_inputs
+
+        def _bundle(value: object) -> Mapping | None:
+            if isinstance(value, str) and value.strip():
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    return None
+            return value if isinstance(value, Mapping) else None
+
+        cutoff_text = str(state.get("trade_date") or "")[:10]
+        cutoff = date.fromisoformat(cutoff_text)
+        inputs = parse_valuation_inputs(
+            run_id="graph-inference",
+            ticker=str(state.get("company_of_interest") or ""),
+            analysis_cutoff=cutoff,
+            valuation_bundle=_bundle(state.get("valuation_bundle")),
+            adjusted_price_bundle=_bundle(state.get("adjusted_price_bundle")),
+            fundamentals_bundle=_bundle(state.get("fundamentals_prefetch_bundle")),
+        )
+        if inputs is None:
+            return ""
+        brief = render_valuation_brief(assess_valuation(inputs))
+        if not brief:
+            return ""
+        return (
+            "\n**估值定位预计算（代码产出，只读事实输入）：** 以下数字全部由确定性计算链推导，"
+            "引用时保持口径一致，不得改写或重新估算任何数值；不能证明的仍写入 unknowns。\n"
+            + brief
+            + "\n"
+        )
+    except Exception:  # noqa: BLE001 - narrative context must never break synthesis
+        logger.warning("valuation context rendering failed", exc_info=True)
+        return ""
+
+
 def _learning_research_result(state, llm) -> dict:
     """Keep the legacy research judge from emitting a transaction proposal."""
     debate_state = state["investment_debate_state"]
@@ -211,6 +261,7 @@ def _render_learning_research(
     coverage_keys = "、".join(candidate_keys["coverage"]) or "（无可用的 coverage 短 key）"
     evidence_keys = "、".join(candidate_keys["evidence"]) or "（无可用的 evidence 短 key）"
     lenses = "、".join(sorted(CLAIM_LENSES))
+    valuation_context = _render_valuation_context(state)
     prompt = f"""你是学习型公司研究的 Research Manager。请只根据下方已给出的分析师报告和辩论，产出一个结构化、可证据绑定的研究案例草稿（LearningResearchCaseDraft）。
 
 硬性边界：这是学习型研究，不是交易系统。不得输出任何交易、仓位、数量、订单、价格指令或执行时间语义；也不得建议或描述买入、卖出、持有或仓位比例。只产出研究倾向、事实、推论、未知、三种情景、催化剂、失效条件与下一次复核。
@@ -244,6 +295,7 @@ claim_key 四段格式：lens.topic.subject.predicate，全部小写 snake_case�
 新闻报告：{state.get("news_report", "")}
 情绪报告：{state.get("sentiment_report", "")}
 研究辩论：{state.get("investment_debate_state", {}).get("history", "")}
+{valuation_context}
 
 持仓复盘规则：只有在持仓上下文中存在 original_thesis 时才填写 holding_thesis_assessment；
 assessment 必须说明当前证据是 supported、challenged 还是 not_assessable，并给出可观察的当前研究假设。

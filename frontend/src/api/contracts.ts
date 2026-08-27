@@ -1266,7 +1266,84 @@ export interface LearningReaderV2DTO {
   coverage_refs: CoverageRefV1DTO[];
   omissions: string[];
   thesis_diff: ThesisDiffDTO | null;
+  valuation: ValuationAssessmentDTO | null;
   audit_entry: ReaderAuditEntryDTO;
+}
+
+export interface PercentilePointDTO {
+  window_label: string;
+  percentile: number;
+  sample_size: number;
+  excluded_nonpositive: number;
+  bucket:
+    | "undervalued_band"
+    | "lower_mid_band"
+    | "upper_mid_band"
+    | "elevated_band"
+    | "not_assessable";
+}
+
+export interface EarningsBaseDTO {
+  metric_id: "net_income" | "equity";
+  value_yi: number;
+  period: string;
+}
+
+export interface AnchorOutputDTO {
+  anchor_id: string;
+  method_label_zh: string;
+  multiple_kind: "pe_ttm" | "pb_mrq";
+  status: "available" | "partial" | "unavailable";
+  reason_code: string | null;
+  earnings_base: EarningsBaseDTO | null;
+  multiple_low: number | null;
+  multiple_high: number | null;
+  implied_value_low_yi: number | null;
+  implied_value_high_yi: number | null;
+  per_share_low: number | null;
+  per_share_high: number | null;
+  assumptions: string[];
+  invalidation: string | null;
+}
+
+export interface RangeSynthesisDTO {
+  status: "available" | "partial" | "unavailable";
+  reference_low_yi: number | null;
+  reference_high_yi: number | null;
+  per_share_low: number | null;
+  per_share_high: number | null;
+  contributing_anchor_ids: string[];
+  disagreement_note_zh: string | null;
+  method_note_zh: string;
+}
+
+export interface PositionVerdictDTO {
+  range_position: "below_range" | "within_range" | "above_range" | "unavailable";
+  deviation_pct: number | null;
+  overall_label_zh: string;
+  fact_notes_zh: string[];
+}
+
+export interface ValuationAssessmentDTO {
+  schema_version: "valuation-assessment-v1";
+  assessment_id: string;
+  run_id: string;
+  ticker: string;
+  as_of: string;
+  created_at_note: string;
+  current_price: number | null;
+  total_market_cap_yi: number | null;
+  positions: PercentilePointDTO[];
+  week52_position: PercentilePointDTO | null;
+  peer_relation:
+    | "discount_to_peers"
+    | "in_line_with_peers"
+    | "premium_to_peers"
+    | "not_assessable";
+  anchor_outputs: AnchorOutputDTO[];
+  synthesis: RangeSynthesisDTO;
+  verdict: PositionVerdictDTO;
+  input_reasons: string[];
 }
 
 export interface LegacyReaderV1DTO {

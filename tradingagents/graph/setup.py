@@ -30,6 +30,7 @@ from tradingagents.agents.utils.market_data_validation_tools import (
     create_adjusted_price_prefetch_node,
 )
 from tradingagents.agents.utils.news_data_tools import create_news_window_prefetch_node
+from tradingagents.agents.utils.valuation_data_tools import create_valuation_prefetch_node
 from tradingagents.analysts import ANALYST_WIRE_KEYS
 from tradingagents.dataflows.config import get_config
 from tradingagents.observability.roles import ROLES_BY_NODE_ID
@@ -237,6 +238,7 @@ class GraphSetup:
         price_prefetch_node_id = "Adjusted Price Prefetch"
         news_prefetch_node_id = "News Window Prefetch"
         fundamentals_prefetch_node_id = "Fundamentals Prefetch"
+        valuation_prefetch_node_id = "Valuation Evidence Prefetch"
 
         analyst_factories = {
             "market": lambda: create_market_analyst(self.quick_thinking_llm),
@@ -319,6 +321,7 @@ class GraphSetup:
                     include_optional=fundamentals_spec is not None
                 ),
             ),
+            (valuation_prefetch_node_id, create_valuation_prefetch_node()),
         )
         for node_id, prefetch_node in prefetch_nodes:
             if observation_enabled:
@@ -365,7 +368,8 @@ class GraphSetup:
             workflow.add_edge(START, price_prefetch_node_id)
         workflow.add_edge(price_prefetch_node_id, news_prefetch_node_id)
         workflow.add_edge(news_prefetch_node_id, fundamentals_prefetch_node_id)
-        workflow.add_edge(fundamentals_prefetch_node_id, first_node)
+        workflow.add_edge(fundamentals_prefetch_node_id, valuation_prefetch_node_id)
+        workflow.add_edge(valuation_prefetch_node_id, first_node)
 
         # Connect analysts in sequence
         for i, spec in enumerate(plan.specs):

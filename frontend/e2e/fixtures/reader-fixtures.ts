@@ -293,7 +293,6 @@ function makeView(kind: ReaderFixtureKind): RunViewEnvelopeDTO {
       debate_summary: { availability: "unavailable", reason_code: "fixture_not_recorded", value: null },
       section_index: [],
       data_quality: limited ? limitedDataQuality : healthyDataQuality,
-      market_projection_version: 1,
       available_audit_counts: {
         turns: kind === "failed" ? 4 : 12,
         prompts: kind === "legacy" ? 0 : 4,
@@ -488,6 +487,7 @@ const typedReader: LearningReaderV2DTO = {
     ],
   },
   audit_entry: { route: "reader", artifact_count: 5, tool_call_count: 6, degradation_count: 0 },
+  valuation: null,
 };
 
 function makeReader(kind: ReaderFixtureKind): ReaderResponseDTO | null {

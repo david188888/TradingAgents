@@ -25,6 +25,7 @@ from tradingagents.agents.schemas._research_case import (
     ReviewPlan,
     ScenarioSet,
 )
+from tradingagents.research.valuation import ValuationAssessmentV1
 
 ResearchMode = Literal["company_research", "holding_review"]
 
@@ -129,6 +130,8 @@ class LearningReaderV2(_ReaderModel):
     omissions: tuple[str, ...] = ()
     # M3: cross-run thesis diff against the previous same-ticker/horizon case.
     thesis_diff: ThesisDiffDTO | None = None
+    # Deterministic valuation-position chain (price bucket + reference range).
+    valuation: ValuationAssessmentV1 | None = None
     audit_entry: AuditEntryDTO
 
 
