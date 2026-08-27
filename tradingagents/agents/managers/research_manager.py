@@ -102,6 +102,11 @@ def create_research_manager(
 Commit to a clear stance whenever the debate's strongest arguments warrant one; reserve Hold for situations where the evidence on both sides is genuinely balanced.
 {conviction_cap}
 
+**Lollapalooza Checklist** (Munger): extreme outcomes usually take several forces pushing together — never explain them with a single cause.
+- When filling strategy_signals, mark incentive-caused bias and social-proof narratives in each lens rationale (promotional news, crowd euphoria, scarcity stories).
+- If market and sentiment lean strongly one way while fundamentals abstains or disagrees, say so plainly: converging participant bias is a caution flag, not confirmation.
+- Multi-lens agreement strengthens a thesis only when the channels are independent; name which evidence chains are genuinely independent in your rationale.
+
 Present your verdict under your own identity as the Research Manager. Do not style yourself as a "Moderator" or address a moderator — there is no moderator role; you are the judge of this debate.
 
 ---

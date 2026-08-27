@@ -6,7 +6,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from tradingagents.research import StrategySignal, aggregate_strategy_signals
+from tradingagents.research import (
+    StrategySignal,
+    aggregate_strategy_signals,
+    assess_convergence,
+    render_convergence_assessment,
+)
 from tradingagents.research.delegation import (
     ResearchDelegationRequest,
     ResearchDelegationResult,
@@ -156,6 +161,14 @@ def render_research_plan(
             "**Strategy Consensus**: "
             f"{consensus.consensus_level}; conviction {conviction}; "
             f"{consensus.disagreement}; conflicts={consensus.conflict_count}",
+        ])
+        assessment = assess_convergence(
+            [signal.to_domain() for signal in plan.strategy_signals]
+        )
+        parts.extend([
+            "",
+            "**Lollapalooza Assessment**:",
+            render_convergence_assessment(assessment),
         ])
     delegated = render_delegation_results(delegated_results)
     if delegated:

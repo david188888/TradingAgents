@@ -5,6 +5,15 @@ that a strategy conclusion can be inspected and replayed independently from
 the model that described the underlying evidence.
 """
 
+from .convergence import (
+    ConfluenceLevel,
+    ConvergenceAssessment,
+    CrowdDivergenceWarning,
+    ThesisConfluence,
+    WarningSeverity,
+    assess_convergence,
+    render_convergence_assessment,
+)
 from .dossier import ResearchDossier, build_research_dossier, render_research_dossier
 from .holding_review import build_holding_review_summary, holding_review_quote_from_bundle
 from .logic_loop import evaluate_logic_edge
@@ -69,4 +78,11 @@ __all__ = [
     "StrategyConsensus",
     "StrategySignal",
     "aggregate_strategy_signals",
+    "ConfluenceLevel",
+    "ConvergenceAssessment",
+    "CrowdDivergenceWarning",
+    "ThesisConfluence",
+    "WarningSeverity",
+    "assess_convergence",
+    "render_convergence_assessment",
 ]
