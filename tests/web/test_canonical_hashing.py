@@ -219,6 +219,7 @@ def test_business_projection_selects_only_declared_agent_state_channels():
         "sentiment_report",
         "trade_date",
         "trader_investment_plan",
+        "valuation_bundle",
     )
     assert "_observation_commits" not in APPLICATION_STATE_FIELDS
     assert set(first.values) == {"company_of_interest", "messages"}

@@ -151,3 +151,43 @@ def test_unavailable_capability_rows_are_skipped() -> None:
     )
     assert inputs is not None and inputs.snapshot is None
     assert inputs.pe_history  # history capability still parsed
+
+
+def test_wind_kline_time_match_columns_are_parsed() -> None:
+    """Wind get_stock_kline renders TIME/MATCH columns; closes must survive."""
+    csv_text = (
+        "# Adjusted stock data for 600519.SH from 2025-08-13 to 2026-08-27\n"
+        "# Source: wind (stock_data.get_stock_kline, skill 2.0.1)\n"
+        "# Price basis: qfq\n"
+        "\n"
+        "TIME,OPEN,MATCH,HIGH,LOW,TURNOVER,VOLUME,CHANGEHANDRATE,AVPRICE\n"
+        "2025-08-13T00:00:00.000+08:00,20.84,21.64,22.02,20.6,927574874,35797327,11.4011,21.39\n"
+        "2025-08-14T00:00:00.000+08:00,21.5,21.1,21.8,21.0,800000000,32000000,9.8,21.3\n"
+    )
+    bundle = {
+        "adjusted": {
+            "status": "ok",
+            "coverage": {"completeness": "complete"},
+            "data": csv_text,
+        },
+        "quote_snapshot": {
+            "status": "available",
+            "market_price": 1500.0,
+            "price_as_of": "2026-08-20",
+        },
+    }
+    inputs = parse_valuation_inputs(
+        run_id="run-test-3",
+        ticker="600519.SH",
+        analysis_cutoff=CUTOFF,
+        valuation_bundle=None,
+        adjusted_price_bundle=bundle,
+        fundamentals_bundle=None,
+    )
+    assert inputs is not None
+    assert [(day.isoformat(), value) for day, value in inputs.closing_prices] == [
+        ("2025-08-13", 21.64),
+        ("2025-08-14", 21.1),
+    ]
+    # The verified quote bounds the price window and supplies the anchor price.
+    assert inputs.snapshot is None

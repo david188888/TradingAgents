@@ -200,7 +200,7 @@ def derive_application_state_schema(state_type: type) -> ApplicationStateSchema:
 
 
 _FROZEN_V2_SCHEMA_SHA256 = (
-    "0aa01f8a0cca522554920bec7f212e120ba3d1a70032a17ab9f89da1b2b8b6b2"
+    "8aef5655698545c4aa4a1f5a996545f2becbe7bd06c971d1bf2d357f7b82a3c5"
 )
 _FROZEN_V2_APPLICATION_FIELDS = (
     "a_share_supplement_bundle",
@@ -244,6 +244,7 @@ _FROZEN_V2_APPLICATION_FIELDS = (
     "sentiment_report",
     "trade_date",
     "trader_investment_plan",
+    "valuation_bundle",
 )
 _FROZEN_V2_SCHEMA_DOCUMENT = {
     "projection_version": 1,
@@ -301,6 +302,7 @@ _FROZEN_V2_SCHEMA_DOCUMENT = {
         {"name": "sentiment_report", "type": "builtins.str"},
         {"name": "trade_date", "type": "builtins.str"},
         {"name": "trader_investment_plan", "type": "builtins.str"},
+        {"name": "valuation_bundle", "type": "builtins.str"},
     ],
 }
 _AGENT_STATE_SCHEMA_V2 = ApplicationStateSchema(

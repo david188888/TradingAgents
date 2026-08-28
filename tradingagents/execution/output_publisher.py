@@ -19,6 +19,7 @@ DERIVED_PUBLIC_CONTRACTS = frozenset(
         "research-case-v2",
         "research-package-v1",
         "thesis-diff-v1",
+        "valuation-assessment-v1",
     }
 )
 

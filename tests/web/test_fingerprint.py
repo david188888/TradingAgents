@@ -534,14 +534,14 @@ def test_resume_fingerprint_document_has_the_exact_approved_top_level_shape():
     }
     assert fingerprint.sha256 == canonical_sha256(fingerprint.document)
     assert fingerprint.sha256 == (
-        "cc5d8b1126cc10313629c3dcba060a9b869f4fadc6b53e9b73b138834d25bd7b"
+        "fc2fcd10aeccd802cf4a35102989065e711636abe1941950c2353bfda7e34c33"
     )
 
 
 def test_v2_schema_is_frozen_while_v3_scaffold_participates_in_fingerprint():
     assert AGENT_STATE_SCHEMA_SHA256 == AGENT_STATE_SCHEMA_V2_SHA256
     assert AGENT_STATE_SCHEMA_V2_SHA256 == (
-        "0aa01f8a0cca522554920bec7f212e120ba3d1a70032a17ab9f89da1b2b8b6b2"
+        "8aef5655698545c4aa4a1f5a996545f2becbe7bd06c971d1bf2d357f7b82a3c5"
     )
     assert AGENT_STATE_SCHEMA_V3_SHA256 != AGENT_STATE_SCHEMA_V2_SHA256
 

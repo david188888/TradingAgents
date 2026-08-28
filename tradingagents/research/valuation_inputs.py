@@ -129,8 +129,12 @@ def _prices_from_adjusted(adjusted_data: object) -> tuple[tuple[date, float], ..
         rendered = adjusted_data
     items: list[tuple[date, float]] = []
     for row in _csv_rows_from_rendered(rendered):
-        day = _day(row.get("Date"))
+        # Column variants: generic "Date"/"Close" and the Wind kline
+        # "TIME"/"MATCH" settlement pair used by wind.stock_data.get_stock_kline.
+        day = _day(row.get("Date") or row.get("TIME"))
         close = _truthy_number(row.get("Close"))
+        if close is None:
+            close = _truthy_number(row.get("MATCH"))
         if day is not None and close is not None:
             items.append((day, close))
     return tuple(sorted(items, key=lambda item: item[0]))
