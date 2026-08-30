@@ -71,6 +71,21 @@ from margins toward leverage is a deterioration signal, not stability.
 - Beneish M (1999) needs granular notes data; treat as unavailable unless the
   statement bundle actually carries the required line items.
 
+### Price-vs-volume decomposition (cyclical / commodity exposure)
+
+For companies whose revenue tracks a commodity or commodity-like price,
+decompose revenue growth into price and volume contributions before calling
+the growth high-quality. If volume data is unavailable from the statements,
+report the split as indeterminate rather than inferring volume from revenue
+alone. All thresholds below are advisory heuristics:
+
+| Screen | Formula | Advisory signal |
+|---|---|---|
+| Price-driven share | revenue growth split into volume (units/shipments/production) vs realized price | growth mostly price-driven with volume flat or down: late-cycle marker, not durable quality |
+| Gross-margin percentile | current gross margin vs its own 5-year distribution | ≥90th percentile: extreme-profit zone; low PE(TTM) at this point reflects the market pricing mean reversion, not cheapness |
+| Sequential margin inflection | first quarter-over-quarter gross-margin decline after an extreme run | the first sequential decline is itself a downgrade signal even when the absolute margin is at a record high |
+| Inventory-to-revenue | inventory / trailing-twelve-month revenue | >0.5 with inventory roughly doubling year over year: hoarding risk (a price decline hits impairment and demand at the same time), even when headline revenue growth appears to justify the inventory |
+
 ### A-share red-flag checklist
 
 Financial: revenue growth with persistently negative operating cash flow;
