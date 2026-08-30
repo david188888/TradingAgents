@@ -10,6 +10,7 @@ output_schema:
   - thesis
   - scenarios
   - reverse_case
+  - risk_asymmetry
   - catalysts
   - monitoring
 ---
@@ -22,3 +23,15 @@ catalysts and monitoring metrics, with data limitations visible.
 This method does not override deterministic portfolio constraints. A suggested
 order must remain within the legal action set supplied by the system; when no
 action is available, state Hold rather than implying an executable trade.
+
+## Risk asymmetry assessment (advisory)
+
+Close the memo by stating which side risk is asymmetric toward, derived from
+the scenarios and the strongest reverse case rather than from a date or a
+price level. Cite independent supporting observations (e.g., late-cycle
+signals from fundamentals: extreme margins with compressed PE, price-driven
+revenue, inventory hoarding, dense long-agreements, debt-funded demand).
+When multiple independent such signals coexist, say the asymmetry has
+deteriorated and lean conservative, even though the turning point itself is
+not predictable. Never output a specific turning-point date or drawdown
+target as a conclusion.
