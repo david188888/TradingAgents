@@ -150,6 +150,23 @@ class FredFormattingTests(unittest.TestCase):
         self.assertEqual(obs_params["observation_end"], "2025-09-30")
         self.assertEqual(obs_params["observation_start"], "2025-07-02")  # 90d back
 
+    def test_vintage_is_pinned_to_as_of_date(self):
+        # Both the metadata and observations requests must pin the data vintage
+        # to curr_date (realtime_start = realtime_end = curr_date), so a
+        # historical run sees the values published by that date, not later
+        # revisions (upstream #1275).
+        captured = {}
+
+        def _capture(path, params):
+            captured[path] = params
+            return _META if path == "series" else _OBS
+
+        with mock.patch.object(fred, "_request", side_effect=_capture):
+            fred.get_macro_data("unemployment", "2025-09-30", 90)
+        for path in ("series", "series/observations"):
+            self.assertEqual(captured[path]["realtime_start"], "2025-09-30")
+            self.assertEqual(captured[path]["realtime_end"], "2025-09-30")
+
 
 @pytest.mark.unit
 class FredRoutingTests(unittest.TestCase):

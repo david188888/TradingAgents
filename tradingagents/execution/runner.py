@@ -7,7 +7,7 @@ import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from tradingagents.dataflows.target_context import clear_target_ticker
@@ -279,6 +279,22 @@ class RuntimePreparationInputs:
             raise ValueError("runtime preparation inputs are reserved for v3")
         if self.captured_at.tzinfo is None:
             raise ValueError("runtime preparation clock must be timezone-aware")
+
+
+def _memory_as_of(analysis_date: str | None) -> str | None:
+    """Point-in-time cutoff for memory injection (upstream #1251).
+
+    A historical run (analysis date before today) only sees lessons whose
+    outcome was known by the analysis date; a live run (today or a future
+    date) keeps the unrestricted injection. Unparseable dates are treated as
+    live so a malformed input never silently empties the memory context.
+    """
+    if not analysis_date:
+        return None
+    try:
+        return analysis_date if date.fromisoformat(analysis_date) < date.today() else None
+    except ValueError:
+        return None
 
 
 def prepare_v3_research_scaffold(
@@ -627,7 +643,10 @@ class AnalysisRunner:
             )
             analysis_cutoff = scaffold.analysis_cutoff
         else:
-            past_context = owner.memory_log.get_past_context(request.ticker)
+            past_context = owner.memory_log.get_past_context(
+                request.ticker,
+                as_of=_memory_as_of(request.analysis_date),
+            )
             instrument_context = owner.resolve_instrument_context(
                 request.ticker,
                 request.asset_type,

@@ -79,7 +79,7 @@ def _owner(*, checkpoint_enabled=False, debug=False):
     owner._run_signature = MagicMock(return_value="shape")
     owner._log_state = MagicMock(side_effect=lambda date, state: events.append("state_log"))
     owner.memory_log.get_past_context.side_effect = (
-        lambda ticker: events.append("past_context") or "prior lesson"
+        lambda ticker, as_of=None: events.append("past_context") or "prior lesson"
     )
     owner.propagator.create_initial_state.return_value = {"input": True}
     owner.propagator.get_graph_args.return_value = {"stream_mode": "values"}

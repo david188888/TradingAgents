@@ -42,9 +42,26 @@ class TradingMemoryLog:
                 entries.append(parsed)
         return entries
 
-    def get_past_context(self, ticker: str, n_same: int = 5, n_cross: int = 3) -> str:
-        """Return formatted past context string for agent prompt injection."""
+    def get_past_context(
+        self, ticker: str, n_same: int = 5, n_cross: int = 3, as_of: str | None = None
+    ) -> str:
+        """Return formatted past context string for agent prompt injection.
+
+        When ``as_of`` (YYYY-MM-DD) is given, only lessons whose outcome was
+        already known by that date are included — an entry is kept only if it
+        stores a resolution date (``resolved:...``) on or before ``as_of``
+        (upstream #1251). Entries without a resolution date cannot be proven
+        point-in-time, so a historical run conservatively excludes them; the
+        local write side is retired, so this affects only legacy logs.
+        ``as_of=None`` (live runs) keeps injecting every resolved lesson.
+        """
         entries = [e for e in self.load_entries() if not e.get("pending")]
+        if as_of is not None:
+            entries = [
+                e
+                for e in entries
+                if e.get("resolved") is not None and e["resolved"] <= as_of
+            ]
         if not entries:
             return ""
 
@@ -81,6 +98,13 @@ class TradingMemoryLog:
         fields = [f.strip() for f in tag_line[1:-1].split("|")]
         if len(fields) < 4:
             return None
+        # Optional trailing "resolved:YYYY-MM-DD" records when the outcome
+        # became known, for point-in-time filtering (upstream #1251). The local
+        # write side is retired; this keeps legacy/future logs parseable.
+        resolved = None
+        for extra in fields[6:]:
+            if extra.startswith("resolved:"):
+                resolved = extra[len("resolved:"):].strip()
         entry = {
             "date": fields[0],
             "ticker": fields[1],
@@ -89,6 +113,7 @@ class TradingMemoryLog:
             "raw": fields[3] if fields[3] != "pending" else None,
             "alpha": fields[4] if len(fields) > 4 else None,
             "holding": fields[5] if len(fields) > 5 else None,
+            "resolved": resolved,
         }
         body = "\n".join(lines[1:]).strip()
         decision_match = self._DECISION_RE.search(body)

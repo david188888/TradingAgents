@@ -72,6 +72,16 @@ def test_ohlcv_cleaning_never_backfills_from_future_rows() -> None:
 
     cleaned = stockstats_utils._clean_dataframe(raw)
 
+    # _clean_dataframe parses and coerces but no longer drops incomplete rows;
+    # the drop lives in _drop_incomplete_rows so load_ohlcv can first inspect
+    # the latest in-range bar (upstream #1201).
+    assert list(cleaned["Date"].dt.strftime("%Y-%m-%d")) == [
+        "2026-08-11",
+        "2026-08-12",
+        "2026-08-13",
+    ]
+
+    cleaned = stockstats_utils._drop_incomplete_rows(cleaned)
     assert list(cleaned["Date"].dt.strftime("%Y-%m-%d")) == [
         "2026-08-12",
         "2026-08-13",

@@ -28,10 +28,11 @@ def make_log(tmp_path, filename="trading_memory.md"):
 
 def _seed_completed(tmp_path, ticker, date, decision_text, reflection_text,
                     rating="Buy", raw="+1.0%", alpha="+0.5%", holding="5d",
-                    filename="trading_memory.md"):
+                    resolved=None, filename="trading_memory.md"):
     """Write a completed entry directly to file, bypassing the removed write API."""
+    tag_extra = f" | resolved:{resolved}" if resolved else ""
     entry = (
-        f"[{date} | {ticker} | {rating} | {raw} | {alpha} | {holding}]\n\n"
+        f"[{date} | {ticker} | {rating} | {raw} | {alpha} | {holding}{tag_extra}]\n\n"
         f"DECISION:\n{decision_text}\n\n"
         f"REFLECTION:\n{reflection_text}"
         + _SEP
@@ -154,6 +155,79 @@ class TestGetPastContext:
         ctx = log.get_past_context("NVDA")
         assert "Recent cross-ticker lessons" in ctx
         assert "Past analyses of NVDA" not in ctx
+
+
+# ---------------------------------------------------------------------------
+# Read path: point-in-time gate (upstream #1251)
+# ---------------------------------------------------------------------------
+
+class TestPastContextPointInTime:
+
+    def test_resolved_field_parses(self, tmp_path):
+        """A trailing ``resolved:`` tag field is stored, legacy tags stay None."""
+        log = make_log(tmp_path)
+        _seed_completed(
+            tmp_path, "NVDA", "2026-07-01", "Buy NVDA.", "Correct.",
+            resolved="2026-07-08",
+        )
+        _seed_completed(tmp_path, "AAPL", "2026-07-01", "Buy AAPL.", "Correct.")
+        by_ticker = {e["ticker"]: e for e in log.load_entries()}
+        assert by_ticker["NVDA"]["resolved"] == "2026-07-08"
+        assert by_ticker["AAPL"]["resolved"] is None
+
+    def test_historical_run_excludes_unresolved_legacy_entries(self, tmp_path):
+        """Legacy entries carry no resolution date; a historical run cannot
+        prove they were known by the as-of date, so they are conservatively
+        excluded instead of leaking future outcomes (upstream #1251)."""
+        log = make_log(tmp_path)
+        _seed_completed(tmp_path, "NVDA", "2026-07-01", "Buy NVDA.", "Correct.")
+        assert log.get_past_context("NVDA", as_of="2026-07-15") == ""
+
+    def test_historical_run_only_includes_lessons_known_by_date(self, tmp_path):
+        log = make_log(tmp_path)
+        _seed_completed(
+            tmp_path, "NVDA", "2026-07-01", "Buy NVDA — early thesis.",
+            "Known early.", resolved="2026-07-05",
+        )
+        _seed_completed(
+            tmp_path, "NVDA", "2026-07-10", "Buy NVDA — later lesson.",
+            "Known later.", resolved="2026-07-20",
+        )
+        ctx = log.get_past_context("NVDA", as_of="2026-07-15")
+        assert "early thesis" in ctx
+        assert "later lesson" not in ctx
+
+    def test_resolved_on_or_before_as_of_is_included(self, tmp_path):
+        log = make_log(tmp_path)
+        _seed_completed(
+            tmp_path, "NVDA", "2026-07-01", "Buy NVDA.", "Correct.",
+            resolved="2026-07-15",
+        )
+        ctx = log.get_past_context("NVDA", as_of="2026-07-15")
+        assert "Buy NVDA" in ctx
+
+    def test_live_run_keeps_legacy_behavior(self, tmp_path):
+        """as_of=None (live run) injects everything resolved, resolved or not."""
+        log = make_log(tmp_path)
+        _seed_completed(tmp_path, "NVDA", "2026-07-01", "Buy NVDA.", "Correct.")
+        _seed_completed(
+            tmp_path, "AAPL", "2026-07-01", "Buy AAPL.", "Correct.",
+            resolved="2026-07-05",
+        )
+        ctx = log.get_past_context("NVDA")
+        assert "Buy NVDA" in ctx
+        assert "Recent cross-ticker lessons" in ctx
+
+    def test_memory_as_of_cutoff_helper(self):
+        """Historical date -> cutoff; today/future/unparseable -> unrestricted."""
+        from tradingagents.execution.runner import _memory_as_of
+
+        historical = "2000-01-01"  # stable: always strictly before today
+        assert _memory_as_of(historical) == historical
+        assert _memory_as_of("2999-12-31") is None  # future -> live
+        assert _memory_as_of("not-a-date") is None  # unparseable -> live
+        assert _memory_as_of("") is None
+        assert _memory_as_of(None) is None
 
     def test_same_ticker_prioritised(self, tmp_path):
         """Same-ticker entries land in the same-ticker section; cross-ticker in theirs."""

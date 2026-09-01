@@ -107,39 +107,81 @@ def _ensure_date_column(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
+def _local_midnight(value) -> pd.Timestamp:
+    """A single timestamp as its naive, midnight-normalized local date (or NaT)."""
+    if pd.isna(value):
+        return pd.NaT
+    try:
+        ts = pd.Timestamp(value)
+    except (ValueError, TypeError):
+        return pd.NaT
+    if ts.tzinfo is not None:
+        ts = ts.tz_localize(None)  # drop tz, keep the local wall-clock date
+    return ts.normalize()
+
+
+def _normalize_dates(dates) -> pd.Series:
+    """Parse to naive, midnight-normalized dates so tz-aware or intraday
+    timestamps compare correctly against the naive ``curr_date`` cutoff
+    (upstream #1201).
+
+    Normalized per element: 5 years of yfinance bars span daylight-saving
+    changes (and cache CSVs round-trip the offsets as strings), so the series
+    can carry mixed UTC offsets that ``pd.to_datetime`` cannot unify without
+    ``utc=True`` — which would shift non-US (positive-offset) markets to the
+    previous day. Keeping each bar's own local date avoids both.
+    """
+    return pd.to_datetime(pd.Series(dates).map(_local_midnight))
+
+
 def _clean_dataframe(data: pd.DataFrame) -> pd.DataFrame:
-    """Normalize OHLCV without inventing historical values.
+    """Parse and normalize an OHLCV frame without inventing values.
+
+    Dates are parsed per element (DST- and non-US-market safe) and prices are
+    coerced to numeric. Dropping incomplete rows is left to
+    ``_drop_incomplete_rows`` so the caller can first inspect the latest
+    in-range bar (upstream #1201).
+    """
+    data = _ensure_date_column(data)
+    data["Date"] = _normalize_dates(data["Date"])
+    data = data.dropna(subset=["Date"])
+
+    price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
+    data[price_cols] = data[price_cols].apply(pd.to_numeric, errors="coerce")
+
+    return data
+
+
+def _drop_incomplete_rows(data: pd.DataFrame) -> pd.DataFrame:
+    """Drop rows missing any OHLC price without inventing historical values.
 
     Missing OHLC rows are unusable for price analysis and are dropped. Volume
     may remain unknown; it is never forward- or backward-filled because either
     operation would manufacture trading activity.
     """
-    data = _ensure_date_column(data)
-    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
-    data = data.dropna(subset=["Date"])
-
-    price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
-    data[price_cols] = data[price_cols].apply(pd.to_numeric, errors="coerce")
     required_price_cols = [
         column for column in ("Open", "High", "Low", "Close") if column in data
     ]
-    data = data.dropna(subset=required_price_cols)
-
-    return data
+    return data.dropna(subset=required_price_cols)
 
 
 def _coerce_ohlcv_dates(data: pd.DataFrame) -> pd.Series:
-    """Return parsed dates from an OHLCV frame, whether Date is a column or the index."""
+    """Return parsed dates from an OHLCV frame, whether Date is a column or the index.
+
+    Uses the same per-element normalization as ``_clean_dataframe`` so raw
+    vendor frames with mixed UTC offsets (e.g. cache CSVs spanning DST) parse
+    instead of failing or shifting dates (upstream #1201).
+    """
     if "Date" in data.columns:
-        return pd.to_datetime(data["Date"], errors="coerce").dropna()
+        return _normalize_dates(data["Date"]).dropna()
     # yfinance keeps the dates in the index (a DatetimeIndex, sometimes unnamed).
     if isinstance(data.index, pd.DatetimeIndex):
-        return pd.Series(pd.to_datetime(data.index, errors="coerce")).dropna()
+        return _normalize_dates(pd.Series(list(data.index))).dropna()
     # Fallback: expose the index and look for any date-like column.
     df = data.reset_index()
     for col in ("Date", "Datetime", "date", "index"):
         if col in df.columns:
-            parsed = pd.to_datetime(df[col], errors="coerce").dropna()
+            parsed = _normalize_dates(df[col]).dropna()
             if not parsed.empty:
                 return parsed
     return pd.Series(dtype="datetime64[ns]")
@@ -220,7 +262,7 @@ def load_ohlcv(symbol: str, curr_date: str, via_vendor: bool = False) -> pd.Data
     safe_symbol = safe_ticker_component(canonical)
 
     config = get_config()
-    curr_date_dt = pd.to_datetime(curr_date)
+    curr_date_dt = pd.to_datetime(curr_date).normalize()
 
     # Cache uses a fixed window (5y to today) so one file per symbol.
     today_date = pd.Timestamp.today()
@@ -276,6 +318,17 @@ def load_ohlcv(symbol: str, curr_date: str, via_vendor: bool = False) -> pd.Data
     # Filter to curr_date to prevent look-ahead bias in backtesting
     data = data[data["Date"] <= curr_date_dt]
 
+    # Guard the latest in-range bar before dropping incomplete rows: a newest bar
+    # with no close is "not settled yet", not "does not exist". Silently dropping
+    # it would make the previous trading day look like the latest (upstream
+    # #1201); raise instead so the router surfaces it rather than fabricating a
+    # fallback.
+    if not data.empty and pd.isna(data["Close"].iloc[-1]):
+        raise NoMarketDataError(
+            symbol, canonical, "latest in-range OHLCV bar has no closing price"
+        )
+    data = _drop_incomplete_rows(data)
+
     # Reject a stale frame (latest row far older than curr_date) rather than
     # feeding year-old prices into indicators (#1021).
     _assert_ohlcv_not_stale(data, curr_date, symbol, canonical)
@@ -302,7 +355,7 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
     canonical = _require_a_share_tushare_symbol(symbol)  # 300750 -> 300750.SZ
     safe_symbol = safe_ticker_component(canonical)
     config = get_config()
-    curr_date_dt = pd.to_datetime(curr_date)
+    curr_date_dt = pd.to_datetime(curr_date).normalize()
 
     today_date = pd.Timestamp.today()
     start_date = today_date - pd.DateOffset(years=5)
@@ -363,6 +416,15 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
     if source_id is not None:
         data.attrs["source_id"] = source_id
     data = data[data["Date"] <= curr_date_dt]
+
+    # Guard the latest in-range bar before dropping incomplete rows (upstream
+    # #1201): a newest bar with no close is "not settled yet", not "does not
+    # exist".
+    if not data.empty and pd.isna(data["Close"].iloc[-1]):
+        raise NoMarketDataError(
+            symbol, canonical, "latest in-range OHLCV bar has no closing price"
+        )
+    data = _drop_incomplete_rows(data)
     _assert_ohlcv_not_stale(data, curr_date, symbol, canonical)
     return data
 
