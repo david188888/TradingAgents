@@ -1,6 +1,7 @@
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
+    opponent_argument_or_opening,
 )
 from tradingagents.evaluation.source_alignment import render_source_alignment_summary
 from tradingagents.research import render_research_dossier
@@ -93,7 +94,9 @@ def create_bull_researcher(llm):
         history = investment_debate_state.get("history", "")
         bull_history = investment_debate_state.get("bull_history", "")
 
-        current_response = investment_debate_state.get("current_response", "")
+        current_response = opponent_argument_or_opening(
+            investment_debate_state.get("current_response", ""), "bear analyst"
+        )
         market_research_report = state["market_report"]
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]

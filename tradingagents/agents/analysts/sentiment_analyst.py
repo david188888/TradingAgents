@@ -113,7 +113,9 @@ def create_sentiment_analyst(llm):
                 vendor="stocktwits",
                 function=fetch_stocktwits_messages,
                 args=(ticker,),
-                kwargs={"limit": 30},
+                # Pass the analysis window so a historical run trims social
+                # posts to it instead of leaking today's chatter (#1220).
+                kwargs={"limit": 30, "start_date": start_date, "end_date": end_date},
             )
             reddit_block = capture_direct_call(
                 invocation_path="sentiment.prefetch.reddit",
@@ -121,6 +123,7 @@ def create_sentiment_analyst(llm):
                 vendor="reddit",
                 function=fetch_reddit_posts,
                 args=(ticker,),
+                kwargs={"start_date": start_date, "end_date": end_date},
             )
             skill_trigger_text = build_skill_trigger_context(
                 state.get("messages", ()), news_block, stocktwits_block, reddit_block

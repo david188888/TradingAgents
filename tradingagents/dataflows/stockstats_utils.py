@@ -148,7 +148,16 @@ def _clean_dataframe(data: pd.DataFrame) -> pd.DataFrame:
 
     price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
     data[price_cols] = data[price_cols].apply(pd.to_numeric, errors="coerce")
+    return data
 
+
+def _fill_price_gaps(data: pd.DataFrame) -> pd.DataFrame:
+    """Drop rows with no close and forward/back-fill remaining price gaps so
+    indicators compute on a continuous series."""
+    price_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in data.columns]
+    # copy() so a filtered (sliced) input is written to safely, not via a view.
+    data = data.dropna(subset=["Close"]).copy()
+    data[price_cols] = data[price_cols].ffill().bfill()
     return data
 
 
@@ -315,14 +324,11 @@ def load_ohlcv(symbol: str, curr_date: str, via_vendor: bool = False) -> pd.Data
     data = _clean_dataframe(data)
     data.attrs["source_id"] = "yfinance.ohlcv"
 
-    # Filter to curr_date to prevent look-ahead bias in backtesting
+    # Filter to curr_date to prevent look-ahead bias in backtesting.
     data = data[data["Date"] <= curr_date_dt]
 
     # Guard the latest in-range bar before dropping incomplete rows: a newest bar
     # with no close is "not settled yet", not "does not exist". Silently dropping
-    # it would make the previous trading day look like the latest (upstream
-    # #1201); raise instead so the router surfaces it rather than fabricating a
-    # fallback.
     if not data.empty and pd.isna(data["Close"].iloc[-1]):
         raise NoMarketDataError(
             symbol, canonical, "latest in-range OHLCV bar has no closing price"

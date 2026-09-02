@@ -88,6 +88,7 @@ class TradingMemoryLog:
 
     # --- Helpers ---
 
+
     def _parse_entry(self, raw: str) -> dict | None:
         lines = raw.strip().splitlines()
         if not lines:

@@ -126,6 +126,11 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # SDK retry budget forwarded to every provider chat client. None leaves
     # each provider/SDK at its own default (usually 2).
     "llm_max_retries": None,
+    # Cap on output tokens forwarded to every provider chat client. None leaves
+    # each provider at its own default. Set it to bound a model that emits
+    # unbounded reasoning/output and hangs or trips a gateway idle timeout
+    # (e.g. some deepseek-v4-flash deployments, #1204).
+    "max_tokens": None,
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,
