@@ -52,6 +52,23 @@ class TestStrictTickerCode:
         # Explicit Shenzhen disambiguation for the 000xxx segment is legal.
         assert strict_ticker_code("sz000016") == "000016"
 
+    def test_bse_segment_rule_matches_exchange_inference(self):
+        """a-stock-data #51: the BSE segment rule must be the wide (4/8/92)
+        form everywhere, so explicit-identifier validation cannot accept a
+        market label that exchange inference contradicts."""
+        # Legacy-adjacent segments currently unlisted but reserved to BSE:
+        # an SZ/SH label must be rejected instead of silently passing.
+        with pytest.raises(ValueError):
+            strict_ticker_code("SZ400001")
+        with pytest.raises(ValueError):
+            strict_ticker_code("SH810001")
+        # Explicit BJ labels on the same segments validate and pass through.
+        assert strict_ticker_code("BJ400001") == "400001"
+        assert strict_ticker_code("BJ810001") == "810001"
+        # Both rule sets must agree on every retired and active BSE segment.
+        for code in ("430047", "832982", "870357", "920982"):
+            assert infer_a_share_exchange(code) == "BJ"
+
 
 @pytest.mark.unit
 class TestExchangeInference:

@@ -60,8 +60,8 @@ def _natural_market(digits: str) -> str:
     ``000xxx`` is intentionally ambiguous (SH index / SZ stock) and is handled
     by the caller, mirroring a-stock-data's ``norm_ticker``.
     """
-    if digits.startswith("92") or digits[:2] in ("43", "83", "87"):
-        return "BJ"
+    if digits.startswith(("4", "8", "92")):
+        return "BJ"                      # same BSE segment rule as infer_a_share_exchange (a-stock-data #51)
     if digits[0] in ("5", "6", "9"):
         return "SH"
     return "SZ"

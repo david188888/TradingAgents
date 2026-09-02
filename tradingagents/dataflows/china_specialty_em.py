@@ -983,7 +983,7 @@ def _anomaly_market(code: object, m: object, board: object = None) -> str:
     win; rule code 8 is BSE-specific and is an additional tie-breaker.
     """
     c = str(code or "")
-    if c.startswith("920") or c[:2] in ("43", "83", "87") or board == 8:
+    if c.startswith(("4", "8", "92")) or board == 8:   # same BSE segment rule as ticker_utils (a-stock-data #51)
         return "BJ"
     return "SH" if m == 1 else "SZ"
 

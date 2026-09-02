@@ -305,3 +305,20 @@ def test_price_anomaly_fails_fast_on_api_rejection(monkeypatch):
 
     with pytest.raises(ChinaDataUnavailableError):
         china_specialty_em.get_a_share_price_anomaly_em()
+
+
+def test_anomaly_market_uses_wide_bse_segment_rule():
+    """a-stock-data #51: anomaly records must use the same wide BSE segment
+    rule (4/8/92) as exchange inference, not only the legacy 43/83/87/920
+    enumeration."""
+    assert china_specialty_em._anomaly_market("920575", 0) == "BJ"
+    assert china_specialty_em._anomaly_market("832982", 0) == "BJ"
+    assert china_specialty_em._anomaly_market("430047", 0) == "BJ"
+    # Reserved-but-unlisted BSE segments also route to BJ.
+    assert china_specialty_em._anomaly_market("400001", 0) == "BJ"
+    assert china_specialty_em._anomaly_market("810001", 0) == "BJ"
+    # Rule code 8 stays a BSE tie-breaker regardless of the code.
+    assert china_specialty_em._anomaly_market("920575", 0, board=8) == "BJ"
+    # Non-BSE codes keep the m-based routing.
+    assert china_specialty_em._anomaly_market("600519", 1) == "SH"
+    assert china_specialty_em._anomaly_market("000001", 0) == "SZ"
