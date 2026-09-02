@@ -144,7 +144,6 @@ class TradingAgentsGraph:
         )
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
-        self._resuming = False
 
     def _validate_effective_config(self) -> None:
         """Fail fast on structurally invalid configuration before LLM/graph setup.
