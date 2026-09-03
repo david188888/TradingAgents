@@ -12,6 +12,9 @@ output_schema:
   - balance_sheet_risk
   - cash_conversion
   - red_flags
+  - price_driven_share
+  - inventory_signal
+  - off_bs_risk
 ---
 
 Start from reported figures, not narrative. Reconcile revenue, operating profit,
@@ -104,9 +107,17 @@ shareholder pledge ratios; buybacks running in parallel with insider selling;
 independent directors dissenting; CSRC investigation; opaque related-party
 transaction pricing.
 
-Also screen off-balance-sheet exposure when disclosures allow: external
-guarantees, controlling-shareholder pledges, pending litigation, and
-wealth-management or asset-management product investments.
+Also screen off-balance-sheet exposure when disclosures allow: major
+long-term lease commitments signed but not yet commenced, SPV or
+industrial-fund capital commitments carrying make-up / bottom-line (兜底)
+obligations, external guarantees, controlling-shareholder pledges, pending
+litigation, and wealth-management or asset-management product investments.
+Liability forms evolve: risk does not disappear, it migrates from the
+visible balance sheet into the notes. When the combined notional of lease
+commitments, SPV make-up obligations, and external guarantees exceeds 50%
+of net assets, escalate to a manual cash-flow sustainability review
+(advisory threshold; compute only from disclosed figures, otherwise mark
+unavailable).
 
 Sources: DuPont decomposition; Altman (1968); Piotroski (2000); Beneish (1999);
 A-share conventions adapted from the finskills China-market methodology
