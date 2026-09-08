@@ -256,10 +256,25 @@ def create_app(
     app.state.static_dir = assets_root
 
     @app.middleware("http")
-    async def add_security_headers(request: Request, call_next):
+    async def add_response_headers(request: Request, call_next):
         response = await call_next(request)
         for name, value in SECURITY_HEADERS.items():
             response.headers[name] = value
+        # Cache policy: the SPA entry must revalidate on every load so a
+        # rebuilt frontend takes effect without manual cache clearing, while
+        # content-hashed build assets under /assets are safe to cache for a
+        # year because their URLs change on every rebuild.
+        path = request.url.path
+        if path.startswith("/assets/"):
+            if response.status_code in (200, 206, 304):
+                response.headers["Cache-Control"] = (
+                    "public, max-age=31536000, immutable"
+                )
+        elif (
+            response.status_code == 200
+            and response.headers.get("content-type", "").startswith("text/html")
+        ):
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.exception_handler(ApiBoundaryError)

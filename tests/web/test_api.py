@@ -997,11 +997,16 @@ def test_static_assets_spa_fallback_and_csp_do_not_capture_api_paths(
         assert "default-src 'self'" in csp
         assert "connect-src 'self'" in csp
         assert "object-src 'none'" in csp
+        # The SPA entry must revalidate so rebuilt frontends take effect
+        # without manual cache clearing (FileResponse supplies the ETag).
+        assert response.headers["cache-control"] == "no-cache"
     assert asset.status_code == 200
     assert asset.headers["content-type"].startswith(
         ("text/javascript", "application/javascript")
     )
+    assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
     assert "window.workbench" in asset.text
     assert missing_api.status_code == 404
     assert missing_api.headers["content-type"].startswith("application/json")
     assert "workbench-shell-marker" not in missing_api.text
+    assert "cache-control" not in missing_api.headers
