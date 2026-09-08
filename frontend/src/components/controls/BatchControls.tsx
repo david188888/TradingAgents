@@ -222,6 +222,63 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
         <button type="button" className="secondary" disabled={!canAdd} onClick={() => setRows((current) => [...current, { id: Math.max(...current.map((row) => row.id), 0) + 1, input: "", custom: false }])}>＋ 添加公司（{rows.length}/{MAX_ITEMS}）</button>
       </div>
       <div className="input-group"><label htmlFor="batch-date">分析日期</label><input id="batch-date" type="date" value={cfg.analysis_date} onChange={(event) => cfg.setAnalysisDate(event.target.value)} /></div>
+      <div className="input-group">
+        <label htmlFor="batch-provider">LLM Provider</label>
+        <select
+          id="batch-provider"
+          value={cfg.llm_provider}
+          onChange={(event) => cfg.setLlmProvider(event.target.value)}
+          disabled={cfg.loading}
+        >
+          {cfg.config?.providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.id}
+              {p.configured ? " · 已配置" : " · 未配置"}
+            </option>
+          ))}
+        </select>
+        {cfg.selectedProvider !== null && (
+          <div className="key-status">
+            {cfg.selectedProvider.requires_api_key === false ? (
+              <span className="ok">无需 API Key</span>
+            ) : cfg.configured_keys[cfg.llm_provider] === true ? (
+              <span className="ok">已配置</span>
+            ) : (
+              <span style={{ color: "var(--red)" }}>未配置</span>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="input-group">
+        <label htmlFor="batch-quick">快速思考模型</label>
+        <select
+          id="batch-quick"
+          value={cfg.quick_think_llm}
+          onChange={(event) => cfg.setQuickThinkLlm(event.target.value)}
+          disabled={cfg.loading || cfg.quickOptions.length === 0}
+        >
+          {cfg.quickOptions.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="input-group">
+        <label htmlFor="batch-deep">深度思考模型</label>
+        <select
+          id="batch-deep"
+          value={cfg.deep_think_llm}
+          onChange={(event) => cfg.setDeepThinkLlm(event.target.value)}
+          disabled={cfg.loading || cfg.deepOptions.length === 0}
+        >
+          {cfg.deepOptions.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="input-group"><label htmlFor="batch-depth">公共研究深度</label><select id="batch-depth" value={String(cfg.research_depth)} onChange={(event) => cfg.setResearchDepth(Number(event.target.value) as 1 | 3 | 5)}><option value="1">1 轮</option><option value="3">3 轮</option><option value="5">5 轮</option></select></div>
       <div className="input-group"><label htmlFor="batch-horizon">公共研究周期</label><select id="batch-horizon" value={cfg.horizon} onChange={(event) => cfg.setHorizon(event.target.value as "short" | "medium" | "long")}><option value="short">短期</option><option value="medium">中期</option><option value="long">长期</option></select></div>
       {cfg.validationError ? <div className="error-text">{cfg.validationError === "请输入股票代码" ? "请在上方填写公司列表" : cfg.validationError}</div> : null}
