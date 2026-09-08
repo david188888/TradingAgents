@@ -148,11 +148,19 @@ MODEL_OPTIONS: ProviderModeOptions = {
     "deepseek": {
         "quick": [
             ("DeepSeek V4 Flash - Latest fast model, thinking + non-thinking", "deepseek-v4-flash"),
+            (
+                "DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option",
+                "deepseek-v4.1-flash-expires-on-0910",
+            ),
             ("Custom model ID", "custom"),
         ],
         "deep": [
             ("DeepSeek V4 Pro - Latest flagship", "deepseek-v4-pro"),
             ("DeepSeek V4 Flash - Fast, supports thinking", "deepseek-v4-flash"),
+            (
+                "DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option",
+                "deepseek-v4.1-flash-expires-on-0910",
+            ),
             ("Custom model ID", "custom"),
         ],
     },

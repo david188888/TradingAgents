@@ -13,6 +13,8 @@ from tradingagents.llm_clients.openai_client import (
 def test_deepseek_catalog_defaults_to_v4_models():
     assert get_model_options("deepseek", "quick")[0][1] == "deepseek-v4-flash"
     assert get_model_options("deepseek", "deep")[0][1] == "deepseek-v4-pro"
+    assert ("DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option", "deepseek-v4.1-flash-expires-on-0910") in get_model_options("deepseek", "quick")
+    assert ("DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option", "deepseek-v4.1-flash-expires-on-0910") in get_model_options("deepseek", "deep")
 
 
 def test_deepseek_old_model_names_are_rejected():
