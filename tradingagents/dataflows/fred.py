@@ -13,11 +13,11 @@ import os
 from datetime import datetime, timedelta
 
 import pytz
-import requests
 
 from tradingagents.observability.provenance import capture_vendor_raw
 
 from .errors import VendorNotConfiguredError
+from .utils import get_scrubbed
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,13 @@ def _fred_today() -> str:
 
 def _request(path: str, params: dict) -> dict:
     """GET a FRED endpoint, surfacing FRED's JSON error body on a bad request."""
-    api_params = {**params, "api_key": get_api_key(), "file_type": "json"}
-    response = requests.get(
-        f"{FRED_API_BASE}/{path}", params=api_params, timeout=REQUEST_TIMEOUT
+    api_key = get_api_key()
+    response = get_scrubbed(
+        f"{FRED_API_BASE}/{path}",
+        params={**params, "api_key": api_key, "file_type": "json"},
+        timeout=REQUEST_TIMEOUT,
+        secret=api_key,
+        passthrough=(400,),
     )
     # FRED returns 400 with a JSON {"error_message": ...} for unknown series IDs
     # or malformed params; turn that into a clear, actionable error.
@@ -148,7 +152,6 @@ def _request(path: str, params: dict) -> dict:
         except ValueError:
             message = response.text
         raise ValueError(f"FRED request failed: {message}")
-    response.raise_for_status()
     data = response.json()
     capture_vendor_raw(
         data,

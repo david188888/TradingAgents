@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 import pytest
+import requests
 
 import tradingagents.dataflows.config as config_module
 import tradingagents.default_config as default_config
@@ -229,6 +230,60 @@ class FredRoutingTests(unittest.TestCase):
         ):
             out = interface.route_to_vendor("get_macro_indicators", "cpi", "2026-06-01", 365)
         self.assertIn("DATA_UNAVAILABLE", out)
+
+
+_KEY = "abcdef0123456789abcdef0123456789"
+
+
+@pytest.mark.unit
+class FredSecretScrubbingTests(unittest.TestCase):
+    def test_http_error_carries_no_api_key_or_request_objects(self):
+        response = mock.Mock(status_code=502)
+        response.raise_for_status.side_effect = requests.HTTPError(
+            f"502 Server Error for url: {fred.FRED_API_BASE}/series?api_key={_KEY}",
+            response=response,
+        )
+
+        with mock.patch.dict("os.environ", {"FRED_API_KEY": _KEY}), \
+                mock.patch.object(requests, "get", return_value=response), \
+                pytest.raises(requests.HTTPError) as caught:
+            fred._request("series", {"series_id": "DGS10"})
+
+        error = caught.value
+        assert _KEY not in str(error)
+        assert _KEY not in repr(error)
+        assert error.request is None
+        assert error.response is None
+        assert error.__cause__ is None
+        assert error.__context__ is None
+
+    def test_connection_error_carries_no_api_key_or_exception_chain(self):
+        original = requests.ConnectionError(
+            "Max retries exceeded with url: "
+            f"/fred/series?series_id=DGS10&api_key={_KEY}"
+        )
+
+        with mock.patch.dict("os.environ", {"FRED_API_KEY": _KEY}), \
+                mock.patch.object(requests, "get", side_effect=original), \
+                pytest.raises(requests.ConnectionError) as caught:
+            fred._request("series", {"series_id": "DGS10"})
+
+        error = caught.value
+        assert _KEY not in str(error)
+        assert _KEY not in repr(error)
+        assert error.request is None
+        assert error.response is None
+        assert error.__cause__ is None
+        assert error.__context__ is None
+
+    def test_fred_400_keeps_actionable_json_message(self):
+        response = mock.Mock(status_code=400, text="bad request")
+        response.json.return_value = {"error_message": "The series does not exist."}
+
+        with mock.patch.dict("os.environ", {"FRED_API_KEY": _KEY}), \
+                mock.patch.object(requests, "get", return_value=response), \
+                pytest.raises(ValueError, match="series does not exist"):
+            fred._request("series", {"series_id": "NOTREAL"})
 
 
 if __name__ == "__main__":

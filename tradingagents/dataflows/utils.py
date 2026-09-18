@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from typing import Annotated
 
 import pandas as pd
+import requests
 
 SavePathType = Annotated[str, "File path to save data. If None, data is not saved."]
 
@@ -50,6 +51,34 @@ def save_output(data: pd.DataFrame, tag: str, save_path: SavePathType = None) ->
 
 def get_current_date():
     return date.today().strftime("%Y-%m-%d")
+
+
+def get_scrubbed(
+    url: str,
+    *,
+    params: dict,
+    timeout: float,
+    secret: str,
+    passthrough: tuple[int, ...] = (),
+):
+    """GET a URL without retaining a query-string secret in request errors.
+
+    ``requests`` includes the full prepared URL in HTTP and transport errors.
+    Providers that authenticate through query parameters would therefore leak
+    their API key into logs or tracebacks. Re-raise the same exception class
+    with a scrubbed message and without attached request/response objects. The
+    final raise stays outside the ``except`` block so the original exception is
+    not retained as ``__context__``.
+    """
+    try:
+        response = requests.get(url, params=params, timeout=timeout)
+        if response.status_code not in passthrough:
+            response.raise_for_status()
+        return response
+    except requests.RequestException as exc:
+        message = str(exc).replace(secret, "***") if secret else str(exc)
+        error = type(exc)(message)
+    raise error
 
 
 def decorate_all_methods(decorator):
