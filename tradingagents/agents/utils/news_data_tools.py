@@ -13,6 +13,7 @@ from tradingagents.dataflows.capability_result import (
     aggregate_capability_availability,
 )
 from tradingagents.dataflows.coverage import BundleCoverageV1, CoveredText, SourceCoverageV1
+from tradingagents.dataflows.date_window import as_of, as_of_window, trade_date_from_state
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.ticker_utils import is_a_share_ticker
 from tradingagents.research.analysis_cutoff import (
@@ -36,6 +37,7 @@ def get_news(
     ticker: Annotated[str, "Ticker symbol"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
     end_date: Annotated[str, "End date in yyyy-mm-dd format"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve news data for a given ticker symbol.
@@ -47,6 +49,9 @@ def get_news(
     Returns:
         str: A formatted string containing news data
     """
+    start_date, end_date = as_of_window(
+        start_date, end_date, trade_date_from_state(state)
+    )
     return route_to_vendor("get_news", ticker, start_date, end_date)
 
 @tool
@@ -54,6 +59,7 @@ def get_global_news(
     curr_date: Annotated[str, "Current date in yyyy-mm-dd format"],
     look_back_days: Annotated[int | None, "Days to look back; omit to use the configured default"] = None,
     limit: Annotated[int | None, "Max articles to return; omit to use the configured default"] = None,
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve global news data.
@@ -69,6 +75,7 @@ def get_global_news(
     Returns:
         str: A formatted string containing global news data
     """
+    curr_date = as_of(curr_date, trade_date_from_state(state))
     return route_to_vendor("get_global_news", curr_date, look_back_days, limit)
 
 @tool
@@ -83,6 +90,7 @@ def get_news_windows(
     Horizon is injected from graph state and is not part of the model-visible
     tool schema. Bare legacy callers use the medium policy.
     """
+    curr_date = as_of(curr_date, trade_date_from_state(state))
     horizon = _state_horizon(state)
     return run_news_windows(
         ticker,
@@ -493,6 +501,7 @@ def _company_event_capability_result(
 @guard_target_ticker("ticker")
 def get_insider_transactions(
     ticker: Annotated[str, "ticker symbol"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve insider transaction information about a company.
@@ -502,4 +511,6 @@ def get_insider_transactions(
     Returns:
         str: A report of insider transaction data
     """
-    return route_to_vendor("get_insider_transactions", ticker)
+    return route_to_vendor(
+        "get_insider_transactions", ticker, trade_date_from_state(state) or None
+    )

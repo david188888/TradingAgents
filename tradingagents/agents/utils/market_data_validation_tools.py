@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
 from tradingagents.dataflows.capability_result import (
@@ -12,6 +13,7 @@ from tradingagents.dataflows.capability_result import (
     aggregate_capability_availability,
 )
 from tradingagents.dataflows.coverage import BundleCoverageV1, CoveredText, SourceCoverageV1
+from tradingagents.dataflows.date_window import as_of, trade_date_from_state
 from tradingagents.dataflows.interface import route_to_vendor, route_to_vendor_with_trace
 from tradingagents.dataflows.market_data_validator import (
     build_verified_current_market_snapshot,
@@ -48,6 +50,7 @@ def get_verified_market_snapshot(
     look_back_days: Annotated[
         int, "number of recent trading rows to include for sanity-checking"
     ] = 30,
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """Deterministic verification snapshot for exact market-data claims.
 
@@ -56,6 +59,7 @@ def get_verified_market_snapshot(
     price levels, Bollinger bands, RSI, MACD, moving averages, support /
     resistance, or historical comparisons, and treat it as the source of truth.
     """
+    curr_date = as_of(curr_date, trade_date_from_state(state))
     return build_verified_market_snapshot(symbol, curr_date, look_back_days)
 
 
@@ -64,6 +68,7 @@ def get_verified_market_snapshot(
 def get_verified_current_market_snapshot(
     symbol: Annotated[str, "ticker symbol of the company"],
     curr_date: Annotated[str, "the current trading date, YYYY-mm-dd"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """Return only the latest verified OHLCV row for current-price facts.
 
@@ -71,6 +76,7 @@ def get_verified_current_market_snapshot(
     the deterministic adjusted-price bundle for every historical or technical
     claim.
     """
+    curr_date = as_of(curr_date, trade_date_from_state(state))
     return build_verified_current_market_snapshot(symbol, curr_date)
 
 

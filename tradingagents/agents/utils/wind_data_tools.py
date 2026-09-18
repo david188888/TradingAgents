@@ -6,11 +6,14 @@ When disabled, the tools return an unavailable message through the standard
 vendor-error path without affecting core A-share data.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
+from tradingagents.dataflows.date_window import as_of, as_of_window, trade_date_from_state
 from tradingagents.dataflows.interface import route_to_vendor
+from tradingagents.dataflows.utils import get_current_date
 
 
 @tool
@@ -21,6 +24,7 @@ def get_index_snapshot(
         "'399006.SZ' (ChiNext), or Chinese name like '沪深300'.",
     ],
     curr_date: Annotated[str, "Analysis date in yyyy-mm-dd format"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve the latest trading-day snapshot for a Chinese market index:
@@ -36,6 +40,7 @@ def get_index_snapshot(
     Returns:
         str: CSV-formatted index snapshot with source and coverage metadata
     """
+    curr_date = as_of(curr_date, trade_date_from_state(state))
     return route_to_vendor("get_index_snapshot", index, curr_date)
 
 
@@ -52,6 +57,7 @@ def get_index_history(
         "K-line period: '1d' (daily, default), '1w' (weekly), '1mo' (monthly), "
         "'1min'/'5min'/'15min'/'30min'/'60min' (intraday).",
     ] = "1d",
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve historical OHLCV bars for a Chinese market index over a date range.
@@ -68,6 +74,9 @@ def get_index_history(
     Returns:
         str: CSV-formatted OHLCV bars with source and coverage metadata
     """
+    start_date, end_date = as_of_window(
+        start_date, end_date, trade_date_from_state(state)
+    )
     return route_to_vendor("get_index_history", index, start_date, end_date, period)
 
 
@@ -94,6 +103,7 @@ def get_index_profile(
 def get_index_fundamentals(
     index: Annotated[str, "Index code or name, e.g. '000300.SH', '沪深300'."],
     curr_date: Annotated[str, "Analysis date in yyyy-mm-dd format"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve valuation fundamentals for a Chinese market index:
@@ -109,6 +119,7 @@ def get_index_fundamentals(
     Returns:
         str: CSV-formatted valuation metrics with source and coverage metadata
     """
+    curr_date = as_of(curr_date, trade_date_from_state(state))
     return route_to_vendor("get_index_fundamentals", index, curr_date)
 
 
@@ -147,6 +158,7 @@ def get_macro_series(
     ],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
     end_date: Annotated[str, "End date in yyyy-mm-dd format"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Fetch time-series data for one or more Wind EDB macro/industry indicators.
@@ -162,6 +174,9 @@ def get_macro_series(
     Returns:
         str: CSV of observations with source and coverage metadata
     """
+    start_date, end_date = as_of_window(
+        start_date, end_date, trade_date_from_state(state)
+    )
     return route_to_vendor("get_macro_series", series_ids, start_date, end_date)
 
 
@@ -186,6 +201,7 @@ def get_equity_risk_metrics(
         "Benchmark index for Beta calculation, e.g. '000300.SH'. "
         "If omitted, Wind uses its default benchmark.",
     ] = None,
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """
     Retrieve quantitative risk metrics for an A-share stock: Beta, annualised
@@ -203,4 +219,10 @@ def get_equity_risk_metrics(
     Returns:
         str: CSV-formatted risk metrics with source and coverage metadata
     """
+    trade_date = trade_date_from_state(state)
+    if trade_date and trade_date < get_current_date():
+        return (
+            "DATA_UNAVAILABLE: Wind equity risk metrics are live-only and cannot be "
+            f"verified as of historical analysis date {trade_date}."
+        )
     return route_to_vendor("get_equity_risk_metrics", symbol, window, fields, benchmark)

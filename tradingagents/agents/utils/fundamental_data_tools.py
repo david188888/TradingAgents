@@ -4,6 +4,7 @@ from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
+from tradingagents.dataflows.date_window import as_of, trade_date_from_state
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.research.fundamentals_prefetch import (
     fundamentals_from_prefetch_bundle,
@@ -31,7 +32,10 @@ def get_fundamentals(
     prefetched = fundamentals_from_prefetch_bundle(
         state.get("fundamentals_prefetch_bundle") if isinstance(state, dict) else None
     )
-    return prefetched or route_to_vendor("get_fundamentals", ticker, curr_date)
+    if prefetched:
+        return prefetched
+    curr_date = as_of(curr_date, trade_date_from_state(state))
+    return route_to_vendor("get_fundamentals", ticker, curr_date)
 
 
 @tool
@@ -53,7 +57,10 @@ def get_balance_sheet(
         str: A formatted report containing balance sheet data
     """
     prefetched = _prefetched_statement(state, "balance_sheet", freq)
-    return prefetched or route_to_vendor("get_balance_sheet", ticker, freq, curr_date)
+    if prefetched:
+        return prefetched
+    curr_date = as_of(curr_date, trade_date_from_state(state))
+    return route_to_vendor("get_balance_sheet", ticker, freq, curr_date)
 
 
 @tool
@@ -75,7 +82,10 @@ def get_cashflow(
         str: A formatted report containing cash flow statement data
     """
     prefetched = _prefetched_statement(state, "cash_flow", freq)
-    return prefetched or route_to_vendor("get_cashflow", ticker, freq, curr_date)
+    if prefetched:
+        return prefetched
+    curr_date = as_of(curr_date, trade_date_from_state(state))
+    return route_to_vendor("get_cashflow", ticker, freq, curr_date)
 
 
 @tool
@@ -97,7 +107,10 @@ def get_income_statement(
         str: A formatted report containing income statement data
     """
     prefetched = _prefetched_statement(state, "income_statement", freq)
-    return prefetched or route_to_vendor("get_income_statement", ticker, freq, curr_date)
+    if prefetched:
+        return prefetched
+    curr_date = as_of(curr_date, trade_date_from_state(state))
+    return route_to_vendor("get_income_statement", ticker, freq, curr_date)
 
 
 def _prefetched_statement(

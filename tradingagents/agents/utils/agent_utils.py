@@ -1,6 +1,7 @@
 import functools
 import logging
 from collections.abc import Mapping
+from datetime import date
 from typing import Any
 
 import yfinance as yf
@@ -167,6 +168,8 @@ def build_instrument_context(
     ticker: str,
     asset_type: str = "stock",
     identity: Mapping[str, str] | None = None,
+    *,
+    curr_date: str | None = None,
 ) -> str:
     """Describe the exact instrument so agents preserve identity and ticker.
 
@@ -207,6 +210,11 @@ def build_instrument_context(
             "Do not substitute a different company or ticker unless a tool "
             "result explicitly disproves this resolved identity."
         )
+        if _is_historical_date(curr_date):
+            context += (
+                " The resolved name, sector, industry, and exchange are a "
+                "present-day provider profile, not verified historical identity data."
+            )
 
     if is_crypto:
         context += (
@@ -214,6 +222,15 @@ def build_instrument_context(
             "assume company fundamentals are available."
         )
     return context
+
+
+def _is_historical_date(curr_date: str | None) -> bool:
+    if not curr_date:
+        return False
+    try:
+        return date.fromisoformat(curr_date) < date.today()
+    except ValueError:
+        return False
 
 
 def get_instrument_context_from_state(state: Mapping[str, Any]) -> str:

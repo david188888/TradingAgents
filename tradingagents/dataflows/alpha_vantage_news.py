@@ -1,3 +1,6 @@
+import json
+from datetime import date
+
 from .alpha_vantage_common import _make_api_request, format_datetime_for_api
 
 
@@ -53,13 +56,17 @@ def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict
     return _make_api_request("NEWS_SENTIMENT", params)
 
 
-def get_insider_transactions(symbol: str) -> dict[str, str] | str:
+def get_insider_transactions(
+    symbol: str, curr_date: str | None = None
+) -> dict[str, str] | str:
     """Returns latest and historical insider transactions by key stakeholders.
 
     Covers transactions by founders, executives, board members, etc.
 
     Args:
         symbol: Ticker symbol. Example: "IBM".
+        curr_date: When given, retain only transactions on or before this
+            analysis date (yyyy-mm-dd).
 
     Returns:
         Dictionary containing insider transaction data or JSON string.
@@ -69,4 +76,30 @@ def get_insider_transactions(symbol: str) -> dict[str, str] | str:
         "symbol": symbol,
     }
 
-    return _make_api_request("INSIDER_TRANSACTIONS", params)
+    response = _make_api_request("INSIDER_TRANSACTIONS", params)
+    if not curr_date:
+        return response
+
+    cutoff = date.fromisoformat(curr_date)
+    payload = json.loads(response)
+    transactions = payload.get("data")
+    if not isinstance(transactions, list):
+        raise ValueError("INSIDER_TRANSACTIONS response must contain a data list")
+
+    kept = []
+    for transaction in transactions:
+        if not isinstance(transaction, dict):
+            raise ValueError("INSIDER_TRANSACTIONS data entries must be objects")
+        transaction_date = transaction.get("transaction_date")
+        if not isinstance(transaction_date, str):
+            raise ValueError("INSIDER_TRANSACTIONS transaction_date is required")
+        try:
+            occurred_on = date.fromisoformat(transaction_date)
+        except ValueError as exc:
+            raise ValueError(
+                f"INSIDER_TRANSACTIONS transaction_date is invalid: {transaction_date!r}"
+            ) from exc
+        if occurred_on <= cutoff:
+            kept.append(transaction)
+    payload["data"] = kept
+    return json.dumps(payload)

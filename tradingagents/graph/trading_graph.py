@@ -200,7 +200,13 @@ class TradingAgentsGraph:
             ),
         }
 
-    def resolve_instrument_context(self, ticker: str, asset_type: str = "stock") -> str:
+    def resolve_instrument_context(
+        self,
+        ticker: str,
+        asset_type: str = "stock",
+        *,
+        curr_date: str | None = None,
+    ) -> str:
         """Resolve ticker identity once and return the full instrument context.
 
         Company names and multi-format codes are normalised first so any entry
@@ -238,7 +244,7 @@ class TradingAgentsGraph:
         from tradingagents.dataflows.target_context import set_target_ticker
 
         set_target_ticker(ticker, identity.get("company_name") or identity.get("name"))
-        return build_instrument_context(ticker, asset_type, identity)
+        return build_instrument_context(ticker, asset_type, identity, curr_date=curr_date)
 
     def _run_signature(self, asset_type: str, horizon: str = "medium") -> str:
         """Graph-shape inputs that must invalidate a checkpoint if changed.

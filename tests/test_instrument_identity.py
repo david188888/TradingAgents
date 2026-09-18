@@ -95,6 +95,25 @@ class BuildInstrumentContextTests(unittest.TestCase):
         self.assertIn("Name: Bitcoin USD", context)
         self.assertIn("crypto asset rather than a company", context)
 
+    def test_historical_identity_is_disclosed_as_present_day_profile(self):
+        context = build_instrument_context(
+            "TOTDY",
+            "stock",
+            {"company_name": "TOTO LTD.", "sector": "Industrials"},
+            curr_date="2020-01-02",
+        )
+        self.assertIn("present-day provider profile", context)
+        self.assertIn("not verified historical identity data", context)
+
+    def test_current_identity_has_no_historical_vintage_warning(self):
+        context = build_instrument_context(
+            "TOTDY",
+            "stock",
+            {"company_name": "TOTO LTD."},
+            curr_date="2999-01-01",
+        )
+        self.assertNotIn("present-day provider profile", context)
+
 
 @pytest.mark.unit
 class GetInstrumentContextFromStateTests(unittest.TestCase):

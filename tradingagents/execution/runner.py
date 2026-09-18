@@ -650,6 +650,7 @@ class AnalysisRunner:
             instrument_context = owner.resolve_instrument_context(
                 request.ticker,
                 request.asset_type,
+                curr_date=request.analysis_date,
             )
             scaffold = None
             analysis_cutoff = resolve_analysis_cutoff(

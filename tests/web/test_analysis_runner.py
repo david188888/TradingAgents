@@ -74,7 +74,7 @@ def _owner(*, checkpoint_enabled=False, debug=False):
     owner.propagator = MagicMock()
     owner.memory_log = MagicMock()
     owner.resolve_instrument_context = MagicMock(
-        side_effect=lambda ticker, asset: events.append("identity") or "Apple identity"
+        side_effect=lambda ticker, asset, curr_date=None: events.append("identity") or "Apple identity"
     )
     owner._run_signature = MagicMock(return_value="shape")
     owner._log_state = MagicMock(side_effect=lambda date, state: events.append("state_log"))
@@ -107,6 +107,9 @@ def test_runner_returns_success_object_and_preserves_completion_order():
         "graph",
         "state_log",
     ]
+    owner.resolve_instrument_context.assert_called_once_with(
+        "AAPL", "stock", curr_date="2026-07-18"
+    )
     owner.propagator.create_initial_state.assert_called_once_with(
         "AAPL",
         "2026-07-18",
