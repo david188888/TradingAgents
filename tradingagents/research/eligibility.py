@@ -135,6 +135,18 @@ def assess_decision_eligibility(
         if availability
         in {"not_covered", "not_supported", "provider_unavailable", "invalid"}
     )
+    # A provider this fork has deliberately not built cannot be held against the
+    # run. ``official_disclosures`` reports such a gap explicitly
+    # (``..._provider_not_implemented``) instead of pretending it looked, and
+    # requiring it otherwise forces every US medium/long run to
+    # ``insufficient_evidence`` without the reader ever seeing why. The gap is
+    # still reported through ``missing_capability_actions`` and keeps the run's
+    # eligibility "limited"; only the forced rating is withheld.
+    forcing_unavailable = tuple(
+        capability
+        for capability in unavailable_required
+        if not _is_unimplemented_provider(typed_results.get(capability))
+    )
     actions = tuple(
         _missing_action(capability, typed_results[capability])
         for capability in unavailable_required
@@ -143,8 +155,27 @@ def assess_decision_eligibility(
         eligibility,
         data_quality,
         tuple(codes),
-        "insufficient_evidence" if unavailable_required else None,
+        "insufficient_evidence" if forcing_unavailable else None,
         actions,
+    )
+
+
+# Reason codes that state a capability has no provider in this fork at all, as
+# opposed to a provider that was tried and failed.
+_UNIMPLEMENTED_PROVIDER_REASONS = frozenset(
+    {
+        "official_filings_provider_not_implemented",
+    }
+)
+
+
+def _is_unimplemented_provider(result: ParsedCapabilityResultV1 | None) -> bool:
+    """True when every attempt for a capability reports "no such provider here"."""
+    if result is None or not result.attempts:
+        return False
+    return all(
+        attempt.reason_code in _UNIMPLEMENTED_PROVIDER_REASONS
+        for attempt in result.attempts
     )
 
 

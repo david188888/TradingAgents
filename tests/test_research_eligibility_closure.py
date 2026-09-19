@@ -127,7 +127,7 @@ def _typed_available(ref: CoverageRefV1, *, market: str) -> CapabilityResultV1:
     )
 
 
-def test_required_global_sec_gap_forces_insufficient_evidence() -> None:
+def test_required_global_sec_gap_limits_the_run_without_forcing_a_rating() -> None:
     plan = build_data_window_plan("medium", "2026-08-13", market="global")
     claims, cards = _facts_and_cards(("market", "fundamentals", "news"))
     official = _global_official("medium")
@@ -158,8 +158,12 @@ def test_required_global_sec_gap_forces_insufficient_evidence() -> None:
         + (official,),
     )
 
+    # The gap is real and stays visible, but SEC EDGAR has no provider in this
+    # fork: holding it against the run forced every US medium/long analysis to
+    # "insufficient_evidence" without the reader seeing why. The run stays
+    # "limited", the missing action is reported, and the rating is left alone.
     assert assessment.decision_eligibility == "limited"
-    assert assessment.forced_research_rating == "insufficient_evidence"
+    assert assessment.forced_research_rating is None
     assert assessment.missing_capability_actions[0].capability == (
         "official_disclosures"
     )
@@ -351,7 +355,10 @@ def test_case_assembly_overrides_model_rating_and_adds_review_action() -> None:
     )
 
     assert case.decision_eligibility == "limited"
-    assert case.research_rating == "insufficient_evidence"
+    # The unimplemented official-filings provider no longer overrides the
+    # draft's own tilt; the gap still surfaces as an eligibility limit and a
+    # review catalyst below.
+    assert case.research_rating == "favorable"
     assert any(
         claim.claim_key == "news.governance_risk.official_disclosures.uncertain"
         for claim in case.claims

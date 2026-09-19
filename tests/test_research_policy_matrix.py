@@ -331,12 +331,13 @@ def test_six_cell_eligibility_expectation(market, horizon):
         capability_results=typed,
     )
 
+    # A required capability whose provider this fork has not built keeps the run
+    # "limited" and reports the missing action, but no longer forces the rating.
     if market == "global" and horizon in {"medium", "long"}:
         assert assessment.decision_eligibility == "limited"
-        assert assessment.forced_research_rating == "insufficient_evidence"
     else:
         assert assessment.decision_eligibility == "full"
-        assert assessment.forced_research_rating is None
+    assert assessment.forced_research_rating is None
 
 
 def _typed_available(
