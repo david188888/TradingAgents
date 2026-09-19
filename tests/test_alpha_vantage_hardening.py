@@ -12,6 +12,7 @@ import requests
 
 import tradingagents.dataflows.alpha_vantage_common as av
 import tradingagents.dataflows.alpha_vantage_fundamentals as avf
+import tradingagents.dataflows.alpha_vantage_news as avn
 import tradingagents.dataflows.alpha_vantage_stock as avs
 
 
@@ -202,3 +203,45 @@ def test_indicator_transport_failure_raises_instead_of_returning_error_text(monk
         avi.get_indicator("AAPL", "rsi", "2026-05-08", 30)
 
     assert "Error retrieving" not in str(caught.value)
+
+
+# --- News windows: the analysis day belongs inside the window ---------------
+
+
+@pytest.mark.unit
+def test_ticker_news_window_includes_the_analysis_day(monkeypatch):
+    """A plain date means midnight *starting* that day, so it was excluded."""
+    seen: dict = {}
+    monkeypatch.setattr(
+        avn, "_make_api_request", lambda function, params: seen.update(params) or "{}"
+    )
+
+    avn.get_news("AAPL", "2026-03-10", "2026-03-14")
+
+    assert seen["time_from"] == "20260310T0000"
+    assert seen["time_to"] == "20260314T2359"
+
+
+@pytest.mark.unit
+def test_global_news_window_includes_the_current_day(monkeypatch):
+    seen: dict = {}
+    monkeypatch.setattr(
+        avn, "_make_api_request", lambda function, params: seen.update(params) or "{}"
+    )
+
+    avn.get_global_news("2026-03-14", look_back_days=7)
+
+    assert seen["time_from"] == "20260307T0000"
+    assert seen["time_to"] == "20260314T2359"
+
+
+@pytest.mark.unit
+def test_plain_date_still_means_midnight_by_default():
+    """The window start, and every other caller, keep the old meaning."""
+    assert av.format_datetime_for_api("2026-03-14") == "20260314T0000"
+    assert av.format_datetime_for_api("2026-03-14", end_of_day=True) == "20260314T2359"
+    # Already-formatted and datetime inputs are untouched by the flag.
+    assert av.format_datetime_for_api("20260314T1200") == "20260314T1200"
+    from datetime import datetime
+
+    assert av.format_datetime_for_api(datetime(2026, 3, 14, 8, 30)) == "20260314T0830"

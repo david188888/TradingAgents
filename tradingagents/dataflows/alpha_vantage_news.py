@@ -21,7 +21,8 @@ def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
     params = {
         "tickers": ticker,
         "time_from": format_datetime_for_api(start_date),
-        "time_to": format_datetime_for_api(end_date),
+        # The window ends at the end of the analysis day, not at its midnight.
+        "time_to": format_datetime_for_api(end_date, end_of_day=True),
     }
 
     return _make_api_request("NEWS_SENTIMENT", params)
@@ -49,7 +50,8 @@ def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict
     params = {
         "topics": "financial_markets,economy_macro,economy_monetary",
         "time_from": format_datetime_for_api(start_date),
-        "time_to": format_datetime_for_api(curr_date),
+        # Same rule as the ticker window: include the current day itself.
+        "time_to": format_datetime_for_api(curr_date, end_of_day=True),
         "limit": str(limit),
     }
 
