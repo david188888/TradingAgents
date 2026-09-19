@@ -61,6 +61,8 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [Research data integrity design](archive/designs/2026-08-13-research-data-integrity-design.md): frozen design, implemented.
 - [Research data integrity plan](archive/plans/2026-08-13-research-data-integrity-plan.md): archived implementation plan, completed.
 - [Wind A-share integration plan](archive/plans/2026-08-12-wind-a-share-integration-plan.md): archived research and implementation plan for the Wind integration.
+- [Upstream v0.5 correctness batch plan](archive/plans/2026-09-18-upstream-v0.5-correctness-batch.md): archived implementation plan, completed and released in v2.10.0.
+- [Upstream v0.5 prompt/evidence batch plan](archive/plans/2026-09-19-upstream-v0.5-prompt-evidence-batch.md): archived implementation plan, completed and released in v2.10.0.
 - [First-principles review](archive/reviews/2026-08-13-tradingagents-first-principles-review.md): historical audit snapshot, not a current-state contract.
 
 Every archived document carries a `Status:` field and a pointer back to this index.
