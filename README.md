@@ -107,7 +107,7 @@ Persistent data lives under `~/.tradingagents/`:
 | Data | Default path |
 | --- | --- |
 | Reports and logs | `~/.tradingagents/logs/` |
-| Decision memory | `~/.tradingagents/memory/trading_memory.md` |
+| Legacy decision memory (read-only; writing was retired with the legacy transaction path) | `~/.tradingagents/memory/trading_memory.md` |
 | Web workbench runs | `~/.tradingagents/web/runs/` |
 
 ## Documentation

@@ -79,7 +79,7 @@ Default local data is under `~/.tradingagents/`:
 | --- | --- |
 | Reports and non-web logs | `~/.tradingagents/logs/` |
 | Data cache and LangGraph checkpoints | `~/.tradingagents/cache/` |
-| Decision memory | `~/.tradingagents/memory/trading_memory.md` |
+| Legacy decision memory (read-only; the write side was retired, only parsing and prompt injection remain) | `~/.tradingagents/memory/trading_memory.md` |
 | Durable Web run records | `~/.tradingagents/web/runs/` |
 | Web server log | `~/.tradingagents/web/logs/server.log` |
 
