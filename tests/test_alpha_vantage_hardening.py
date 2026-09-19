@@ -168,3 +168,37 @@ def test_request_error_message_carries_no_api_key(monkeypatch):
     assert caught.value.response is None
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is None
+
+
+# --- Failure semantics: a failure must not reach the router as an answer -----
+
+
+@pytest.mark.unit
+def test_indicator_this_vendor_cannot_serve_lets_the_next_one_serve_it():
+    """VWMA has no Alpha Vantage endpoint.
+
+    The explanatory prose it used to return counted as a successful answer, so
+    the fallback chain stopped at a vendor that cannot compute the indicator
+    while the next vendor can.
+    """
+    import tradingagents.dataflows.alpha_vantage_indicator as avi
+    from tradingagents.dataflows.errors import VendorRequestError
+
+    with pytest.raises(VendorRequestError):
+        avi.get_indicator("AAPL", "vwma", "2026-05-08", 30)
+
+
+@pytest.mark.unit
+def test_indicator_transport_failure_raises_instead_of_returning_error_text(monkeypatch):
+    import tradingagents.dataflows.alpha_vantage_indicator as avi
+    from tradingagents.dataflows.errors import VendorError
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("alpha vantage exploded")
+
+    monkeypatch.setattr(avi, "_make_api_request", boom)
+
+    with pytest.raises(VendorError) as caught:
+        avi.get_indicator("AAPL", "rsi", "2026-05-08", 30)
+
+    assert "Error retrieving" not in str(caught.value)

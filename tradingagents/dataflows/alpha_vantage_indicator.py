@@ -1,4 +1,5 @@
-from .alpha_vantage_common import AlphaVantageNotConfiguredError, _make_api_request
+from .alpha_vantage_common import _make_api_request
+from .errors import VendorError, VendorRequestError
 
 
 def get_indicator(
@@ -131,11 +132,20 @@ def get_indicator(
                 "datatype": "csv"
             })
         elif indicator == "vwma":
-            # Alpha Vantage doesn't have direct VWMA, so we'll return an informative message
-            # In a real implementation, this would need to be calculated from OHLCV data
-            return f"## VWMA (Volume Weighted Moving Average) for {symbol}:\n\nVWMA calculation requires OHLCV data and is not directly available from Alpha Vantage API.\nThis indicator would need to be calculated from the raw stock data using volume-weighted price averaging.\n\n{indicator_descriptions.get('vwma', 'No description available.')}"
+            # This vendor has no VWMA endpoint. Returning an explanation string
+            # counted as a successful answer to the router, which stopped the
+            # chain at Alpha Vantage while the next vendor can compute VWMA from
+            # OHLCV. Raise so the router can fall through.
+            raise VendorRequestError(
+                "alpha_vantage",
+                f"Alpha Vantage has no VWMA endpoint; {indicator} must be computed "
+                "from OHLCV by another vendor",
+            )
         else:
-            return f"Error: Indicator {indicator} not implemented yet."
+            raise VendorRequestError(
+                "alpha_vantage",
+                f"Alpha Vantage does not serve the {indicator} indicator",
+            )
 
         # Parse CSV data and extract values for the date range
         lines = data.strip().split('\n')
@@ -205,11 +215,12 @@ def get_indicator(
 
         return result_str
 
-    except AlphaVantageNotConfiguredError:
-        # Vendor unavailable (no API key). Let it propagate so the router can
-        # fall back / emit the no-data sentinel instead of returning this as a
-        # successful-looking error string.
+    except VendorError:
+        # Vendor unavailable, throttled, or a capability this vendor does not
+        # serve. Let it propagate so the router falls back to a vendor that can,
+        # instead of returning the failure as a successful-looking string.
         raise
     except Exception as e:
-        print(f"Error getting Alpha Vantage indicator data for {indicator}: {e}")
-        return f"Error retrieving {indicator} data: {str(e)}"
+        raise VendorRequestError(
+            "alpha_vantage", f"{indicator} data could not be retrieved: {e}"
+        ) from e
