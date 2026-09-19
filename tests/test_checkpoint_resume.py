@@ -13,6 +13,7 @@ from langgraph.graph import END, StateGraph
 from tradingagents.graph.checkpointer import (
     checkpoint_access,
     checkpoint_step,
+    clear_all_checkpoints,
     clear_checkpoint,
     get_checkpointer,
     has_checkpoint,
@@ -403,6 +404,56 @@ class TestCheckpointAccess(unittest.TestCase):
                 self.signature,
                 run_id="run_strict",
             )
+
+
+class TestClearAllCheckpoints(unittest.TestCase):
+    """Clearing checkpoints must leave no committed SQLite state behind.
+
+    SQLite keeps committed state in ``-wal`` (write-ahead log) and ``-shm``
+    (shared memory) files beside the database. Deleting only the ``.db`` makes
+    the checkpoint look cleared while its committed rows can still be recovered
+    from the sidecar -- and a crashed run can leave a sidecar whose ``.db`` is
+    already gone.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.cp_dir = Path(self.tmpdir) / "checkpoints"
+        self.cp_dir.mkdir(parents=True)
+
+    def test_clearing_removes_databases_and_their_sidecars(self):
+        for ticker in ("AAPL", "NVDA"):
+            for suffix in (".db", ".db-wal", ".db-shm"):
+                (self.cp_dir / f"{ticker}{suffix}").write_text("x")
+
+        cleared = clear_all_checkpoints(self.tmpdir)
+
+        # The count reports databases, not the sidecars it also removed.
+        self.assertEqual(cleared, 2)
+        self.assertEqual(list(self.cp_dir.iterdir()), [])
+
+    def test_clearing_removes_an_orphan_sidecar(self):
+        # A run that crashed after SQLite wrote its WAL can leave the sidecar
+        # behind with no ``.db`` to glob.
+        (self.cp_dir / "AAPL.db-wal").write_text("x")
+        (self.cp_dir / "AAPL.db-shm").write_text("x")
+
+        cleared = clear_all_checkpoints(self.tmpdir)
+
+        self.assertEqual(cleared, 0)
+        self.assertEqual(list(self.cp_dir.iterdir()), [])
+
+    def test_clearing_leaves_unrelated_files_alone(self):
+        (self.cp_dir / "AAPL.db").write_text("x")
+        (self.cp_dir / "notes.txt").write_text("keep me")
+
+        cleared = clear_all_checkpoints(self.tmpdir)
+
+        self.assertEqual(cleared, 1)
+        self.assertEqual([p.name for p in self.cp_dir.iterdir()], ["notes.txt"])
+
+    def test_missing_checkpoint_directory_still_returns_zero(self):
+        self.assertEqual(clear_all_checkpoints(tempfile.mkdtemp()), 0)
 
 
 if __name__ == "__main__":

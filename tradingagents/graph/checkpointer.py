@@ -143,13 +143,20 @@ def checkpoint_step(
 
 
 def clear_all_checkpoints(data_dir: str | Path) -> int:
-    """Remove all checkpoint DBs. Returns number of files deleted."""
+    """Remove all checkpoint databases. Returns the number of databases deleted.
+
+    SQLite keeps committed state in ``-wal`` and ``-shm`` files beside the
+    database, so deleting only the ``.db`` leaves a cleared checkpoint whose
+    rows are still on disk (and a crashed run can leave a sidecar with no
+    ``.db`` at all). Remove all three, and report databases only.
+    """
     cp_dir = Path(data_dir) / "checkpoints"
     if not cp_dir.exists():
         return 0
     dbs = list(cp_dir.glob("*.db"))
-    for db in dbs:
-        db.unlink()
+    for pattern in ("*.db", "*.db-wal", "*.db-shm"):
+        for path in cp_dir.glob(pattern):
+            path.unlink(missing_ok=True)
     return len(dbs)
 
 
