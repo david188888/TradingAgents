@@ -27,6 +27,20 @@ from .target_context import get_target_ticker
 from .ticker_utils import normalize_ticker_symbol, to_akshare_symbol
 
 
+def _is_unavailable_news_result(result: Any) -> bool:
+    """True for a placeholder that says the source could not observe the window.
+
+    The feeds return ``<... unavailable for A..B: ..., so this is not an absence
+    of ...>`` when a window is out of their reach, and ``<... unavailable: ...>``
+    when a fetch itself failed. Neither is a successful answer, so neither may be
+    recorded as one or listed among the sources that returned data.
+    """
+    if not isinstance(result, str):
+        return False
+    text = result.strip()
+    return text.startswith("<") and "unavailable" in text.lower()
+
+
 def _is_empty_news_result(result: Any) -> bool:
     if result is None:
         return True
@@ -35,6 +49,8 @@ def _is_empty_news_result(result: Any) -> bool:
         return len(result["items"]) == 0
     text = str(result).strip()
     if not text:
+        return True
+    if _is_unavailable_news_result(text):
         return True
     lowered = text.lower()
     return lowered.startswith("no news found") or lowered.startswith("no global news found")

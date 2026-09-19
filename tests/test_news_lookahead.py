@@ -71,6 +71,20 @@ def test_offset_aware_timestamp_is_converted_not_truncated():
     assert in_window(aware, start, end) is True
 
 
+# --- deterministic clock ----------------------------------------------------
+# The coverage rule classifies a window against "today", so these tests pin the
+# analysis clock instead of the wall clock: otherwise the same assertions start
+# failing the moment the fixed 2026 windows stop being historical.
+_FROZEN_TODAY = "2026-09-19"
+
+
+@pytest.fixture(autouse=True)
+def _frozen_analysis_clock(monkeypatch):
+    from tradingagents.dataflows import date_window
+
+    monkeypatch.setattr(date_window, "get_current_date", lambda: _FROZEN_TODAY)
+
+
 @pytest.mark.unit
 def test_global_news_future_flat_article_excluded(monkeypatch):
     # #1007: a flat, future-dated global article must not appear in a historical run.
@@ -301,3 +315,77 @@ def test_coverage_gap_future_window_is_unavailable():
     out = coverage_gap([], str(today), str(today + timedelta(days=3)), "Feed", "items")
 
     assert out is not None and "past today" in out
+
+
+@pytest.mark.unit
+def test_coverage_gap_live_window_with_an_empty_feed_is_an_absence():
+    """An empty feed over a window that reaches today is something we observed."""
+    from tradingagents.dataflows.date_window import coverage_gap
+
+    assert coverage_gap([], "2026-09-12", "2026-09-19", "Feed", "items") is None
+
+
+@pytest.mark.unit
+def test_coverage_gap_merged_result_is_an_absence_for_a_live_window():
+    """Merged searches prove no continuity, but a live window is still judged."""
+    from tradingagents.dataflows.date_window import coverage_gap
+
+    assert (
+        coverage_gap((), "2026-09-12", "2026-09-19", "Feed", "items", contiguous=False)
+        is None
+    )
+
+
+@pytest.mark.unit
+def test_coverage_gap_merged_result_does_not_invent_a_coverage_date():
+    """With no timestamps there is no coverage start to report."""
+    from tradingagents.dataflows.date_window import coverage_gap
+
+    out = coverage_gap((), "2026-05-02", "2026-05-09", "Feed", "items", contiguous=False)
+
+    assert out is not None
+    assert "coverage starts" not in out
+    assert "not an absence" in out
+
+
+@pytest.mark.unit
+def test_coverage_gap_uses_the_analysis_clock_not_utc_now(monkeypatch):
+    """A UTC "today" is yesterday for a UTC+8 user before 08:00 local.
+
+    Comparing a local analysis date against the UTC date made every window that
+    ended today look like it extended past today, so a real data gap was
+    reported as an unusable window for a fabricated reason.
+    """
+    from tradingagents.dataflows import date_window
+
+    monkeypatch.setattr(date_window, "get_current_date", lambda: "2026-09-18")
+    out = date_window.coverage_gap((), "2026-09-12", "2026-09-19", "Feed", "items")
+
+    assert out is not None and "past today" in out
+
+    monkeypatch.setattr(date_window, "get_current_date", lambda: "2026-09-19")
+    assert date_window.coverage_gap((), "2026-09-12", "2026-09-19", "Feed", "items") is None
+
+
+@pytest.mark.unit
+def test_global_news_empty_feed_for_a_live_window_is_an_absence(monkeypatch):
+    class FakeSearch:
+        def __init__(self, *args, **kwargs):
+            self.news = []
+
+    monkeypatch.setattr(ynews.yf, "Search", FakeSearch)
+
+    out = ynews.get_global_news_yfinance(_FROZEN_TODAY, look_back_days=7, limit=10)
+
+    assert out == f"No global news found for {_FROZEN_TODAY}"
+    assert "unavailable" not in out
+
+
+@pytest.mark.unit
+def test_ticker_news_empty_feed_for_a_live_window_is_an_absence(monkeypatch):
+    _ticker_with([], monkeypatch)
+
+    out = ynews.get_news_yfinance("AAPL", "2026-09-12", _FROZEN_TODAY)
+
+    assert out == "No news found for AAPL between 2026-09-12 and 2026-09-19"
+    assert "unavailable" not in out

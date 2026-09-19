@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 import tradingagents.default_config as default_config
 from tradingagents.dataflows import interface
 from tradingagents.dataflows.config import set_config
@@ -368,3 +370,41 @@ def test_news_aggregation_treats_error_strings_as_source_failures(monkeypatch):
     assert "yfinance: Error fetching news for AAPL: rate limited" in result
     assert "alpha_vantage: No news found for AAPL" in result
     assert "source: yfinance" not in result
+
+
+@pytest.mark.unit
+def test_news_aggregation_treats_an_unavailable_marker_as_a_source_failure(monkeypatch):
+    """A feed that could not observe the window must not count as a source used.
+
+    The coverage placeholder is not an answer: recording it as a success both
+    hides the gap from the reader and keeps the vendor's health from noticing
+    that it never returned anything.
+    """
+    marker = (
+        "<Yahoo Finance news unavailable for 2026-05-01..2026-05-08: it only "
+        "serves recent items (coverage starts 2026-09-10), so this is not an "
+        "absence of news for AAPL>"
+    )
+    monkeypatch.setattr(interface, "get_vendor", lambda category, method=None: "default")
+    monkeypatch.setitem(
+        interface.VENDOR_METHODS,
+        "get_news",
+        {
+            "tavily": lambda *args, **kwargs: {
+                "source": "tavily",
+                "items": [
+                    {
+                        "title": "Apple AI investment",
+                        "url": "https://example.com/apple-ai",
+                        "content": "Tavily summary.",
+                    }
+                ],
+            },
+            "yfinance": lambda *args, **kwargs: marker,
+        },
+    )
+
+    result = interface.route_to_vendor("get_news", "AAPL", "2026-05-01", "2026-05-08")
+
+    assert "source: yfinance" not in result
+    assert "Yahoo Finance news unavailable" in result

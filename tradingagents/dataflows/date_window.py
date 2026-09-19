@@ -81,29 +81,59 @@ def as_of_window(start_date: str, end_date: str, trade_date: str) -> tuple[str, 
 
 
 def coverage_gap(
-    dates, start_date: str, end_date: str, source: str, subject: str
+    dates,
+    start_date: str,
+    end_date: str,
+    source: str,
+    subject: str,
+    *,
+    contiguous: bool = True,
 ) -> str | None:
     """Placeholder for a window a feed did not fully observe, else None.
 
     Yahoo news and the Reddit and StockTwits feeds return their latest items
     whatever window is asked for, so "none found" over a window they never
-    observed would claim an absence nobody saw. A window is observed when
-    coverage reaches its first day and it ends by today; an empty result is then
-    a real absence and this returns None.
+    observed would claim an absence nobody saw. Returning None means the window
+    was observable and the empty result is a real absence.
+
+    A window is observed when it reaches the present (so its emptiness is
+    something the feed could have shown), and either coverage reaches its first
+    day or there is no coverage evidence to weigh.
 
     ``dates`` are the returned items' timestamps, plus the lookback start for a
-    feed with a fixed lookback. The oldest one bounds coverage only for a feed
-    returned newest-first and unbroken in time; a merged or relevance-ranked
-    result passes no dates, leaving only the present as the bound.
+    feed with a fixed lookback. Pass ``contiguous=False`` for a merged or
+    relevance-ranked result, where older hits prove nothing about the days in
+    between; such a result can then only be judged against the present.
+
+    The reason text never invents a coverage date: with no timestamps to go on it
+    says so, rather than claiming the feed starts today.
     """
-    now = datetime.now(timezone.utc)
-    oldest = min((to_utc(d) for d in dates if d is not None), default=now)
-    if datetime.strptime(end_date, "%Y-%m-%d").date() > now.date():
+    today = date.fromisoformat(get_current_date())
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+
+    if end > today:
         reason = "the window extends past today"
-    elif oldest.date() > datetime.strptime(start_date, "%Y-%m-%d").date():
-        reason = f"it only serves recent items (coverage starts {oldest:%Y-%m-%d})"
+    elif not contiguous:
+        if end >= today:
+            return None
+        reason = (
+            "it serves only recent items, and merged queries do not prove "
+            "coverage of this window"
+        )
     else:
-        return None
+        observed = [to_utc(item).date() for item in dates if item is not None]
+        if observed:
+            oldest = min(observed)
+            if oldest <= start:
+                return None
+            reason = f"it only serves recent items (coverage starts {oldest:%Y-%m-%d})"
+        else:
+            # Nothing came back, so there is no basis for a coverage start.
+            if end >= today:
+                return None
+            reason = "the feed returned nothing, so coverage of this window cannot be established"
+
     return (
         f"<{source} unavailable for {start_date}..{end_date}: {reason}, "
         f"so this is not an absence of {subject}>"
@@ -127,8 +157,14 @@ def withhold_live_profile(curr_date: str | None, label: str) -> str | None:
     """
     if not curr_date:
         return None
-    today = get_current_date()
-    if curr_date >= today:
+    today = date.fromisoformat(get_current_date())
+    try:
+        requested = date.fromisoformat(curr_date)
+    except ValueError:
+        # A date the vendor API would reject anyway: withholding is the
+        # fail-closed side of the same rule, so fall through to the notice.
+        requested = None
+    if requested is not None and requested >= today:
         return None
     return (
         f"# Company Fundamentals for {label}\n"

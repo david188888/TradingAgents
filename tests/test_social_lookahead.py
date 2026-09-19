@@ -54,6 +54,20 @@ def test_in_window_undated_excluded_in_backtest_kept_live():
     assert in_window(None, now, now) is True                          # live
 
 
+# --- deterministic clock ----------------------------------------------------
+# The coverage rule classifies a window against "today", so these tests pin the
+# analysis clock instead of the wall clock: otherwise the same assertions start
+# failing the moment the fixed 2026 windows stop being historical.
+_FROZEN_TODAY = "2026-09-19"
+
+
+@pytest.fixture(autouse=True)
+def _frozen_analysis_clock(monkeypatch):
+    from tradingagents.dataflows import date_window
+
+    monkeypatch.setattr(date_window, "get_current_date", lambda: _FROZEN_TODAY)
+
+
 # --- StockTwits -------------------------------------------------------------
 
 def _msg(created_iso, sentiment=None):

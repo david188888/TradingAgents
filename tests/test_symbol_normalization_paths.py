@@ -45,5 +45,8 @@ def test_news_lookup_normalizes_symbol(monkeypatch):
     out = ynews.get_news_yfinance("XAUUSD", "2025-01-01", "2025-01-10")
 
     assert seen["symbol"] == "GC=F"   # news queried with the canonical symbol
-    assert "XAUUSD" in out            # the user's ticker stays in the report
-    assert "GC=F" in out              # provenance noted
+    # An empty feed over a past window is a coverage gap, so the marker names
+    # both the user's ticker and the resolved one. Assert that pair explicitly:
+    # a bare substring check would also pass on an unrelated sentence.
+    assert out.startswith("<Yahoo Finance news unavailable for 2025-01-01..2025-01-10")
+    assert "news for XAUUSD (resolved to GC=F)" in out

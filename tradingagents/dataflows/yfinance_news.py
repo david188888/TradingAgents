@@ -217,7 +217,12 @@ def get_global_news_yfinance(
             # Results merge several fuzzy searches, so their timestamps prove no
             # continuous coverage; judge the window against the present only.
             gap = coverage_gap(
-                (), start_date, curr_date, "Yahoo Finance global news", "market news"
+                (),
+                start_date,
+                curr_date,
+                "Yahoo Finance global news",
+                "market news",
+                contiguous=False,
             )
             return gap or fallback
 
