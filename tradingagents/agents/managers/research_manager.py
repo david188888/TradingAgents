@@ -20,6 +20,7 @@ from tradingagents.agents.schemas import (
 from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
+    report_or_absent,
 )
 from tradingagents.agents.utils.structured import (
     NO_EXTERNAL_TOOLS,
@@ -290,10 +291,10 @@ claim_key 四段格式：lens.topic.subject.predicate，全部小写 snake_case�
 
 数量限制：facts 最多 5 条、inferences 最多 4 条、unknowns 最多 4 条、catalysts 与 invalidation_conditions 各不超过 4 条。
 
-市场报告：{state.get("market_report", "")}
-基本面报告：{state.get("fundamentals_report", "")}
-新闻报告：{state.get("news_report", "")}
-情绪报告：{state.get("sentiment_report", "")}
+市场报告：{report_or_absent(state.get("market_report"), "market")}
+基本面报告：{report_or_absent(state.get("fundamentals_report"), "fundamentals")}
+新闻报告：{report_or_absent(state.get("news_report"), "news")}
+情绪报告：{report_or_absent(state.get("sentiment_report"), "sentiment")}
 研究辩论：{state.get("investment_debate_state", {}).get("history", "")}
 {valuation_context}
 
@@ -309,7 +310,11 @@ claim_key 示例（严格遵守四段，每段必须以小写字母开头、只�
 - news.company_event.announcement.absent
 - sentiment.capital_flow.net_inflow.supportive
 - fundamentals.valuation.pe_ratio.elevated
-常见错误：market.000338_sz.price（以数字开头）、market.price.close（只有三段）、market.momentum（只有两段）。"""
+常见错误：market.000338_sz.price（以数字开头）、market.price.close（只有三段）、market.momentum（只有两段）。
+
+输出形状（LearningResearchCaseDraft 的顶层字段，全部必填；不要输出本列表之外的字段）：
+research_tilt、confidence、facts、inferences、unknowns、upside、base、downside、catalysts、invalidation_conditions、next_review、holding_thesis_assessment（仅在持仓上下文存在 original_thesis 时填写）。
+每个顶层字段的类型由本提示上方各段规则给出；模型不支持结构化输出时，这个列表就是唯一的形状说明。"""
 
     def _coerce(result: object) -> LearningResearchCaseDraft | None:
         if isinstance(result, LearningResearchCaseDraft):
@@ -407,13 +412,16 @@ def _render_learning_summary_fallback(
 证据状态：{evidence_status}
 持仓复盘上下文（若有）：{holding_context!r}
 
-市场报告：{state.get("market_report", "")}
-基本面报告：{state.get("fundamentals_report", "")}
-新闻报告：{state.get("news_report", "")}
-情绪报告：{state.get("sentiment_report", "")}
+市场报告：{report_or_absent(state.get("market_report"), "market")}
+基本面报告：{report_or_absent(state.get("fundamentals_report"), "fundamentals")}
+新闻报告：{report_or_absent(state.get("news_report"), "news")}
+情绪报告：{report_or_absent(state.get("sentiment_report"), "sentiment")}
 研究辩论：{state.get("investment_debate_state", {}).get("history", "")}
 
-若 original_thesis 缺失，绝不填写 holding_thesis_assessment。"""
+若 original_thesis 缺失，绝不填写 holding_thesis_assessment。
+
+输出形状（LearningResearchSummary 的顶层字段，全部必填；不要输出本列表之外的字段）：
+research_tilt、confidence、facts、inferences、unknowns、upside、base、downside、catalysts、invalidation_conditions、next_review、holding_thesis_assessment（无持仓上下文时省略）。"""
 
     def invoke_summary(one_prompt: str) -> LearningResearchSummary | None:
         try:
