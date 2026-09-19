@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 from tradingagents.observability.provenance import capture_vendor_raw
 
 from .coverage import CoveredText, PriceSeriesCoverageV1
+from .date_window import withhold_live_profile
 from .errors import VendorError, VendorRequestError
 from .stockstats_utils import (
     StockstatsUtils,
@@ -467,10 +468,22 @@ def get_stockstats_indicator(
 
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol of the company"],
-    curr_date: Annotated[str, "current date (not used for yfinance)"] = None
+    curr_date: Annotated[str, "analysis date in YYYY-MM-DD format"] = None
 ):
-    """Get company fundamentals overview from yfinance."""
+    """Get company fundamentals overview from yfinance.
+
+    ``Ticker.info`` is a present-day snapshot with no historical vintage, so a
+    past ``curr_date`` withholds it through the shared point-in-time guard
+    (``date_window.withhold_live_profile``).
+    """
     canonical = normalize_symbol(ticker)
+
+    # Guard before the request: the response would only be discarded, and the
+    # answer does not depend on it.
+    withheld = withhold_live_profile(curr_date, canonical)
+    if withheld:
+        return withheld
+
     try:
         ticker_obj = yf.Ticker(canonical)
         info = yf_retry(lambda: ticker_obj.info)

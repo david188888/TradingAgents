@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from .utils import get_current_date
+
 
 def _parse_date(value: str, *, field_name: str) -> date:
     """Parse a canonical analysis date with a useful fail-closed error."""
@@ -76,6 +78,40 @@ def as_of_window(start_date: str, end_date: str, trade_date: str) -> tuple[str, 
         duration = max((end - start).days, 0)
         return (cutoff - timedelta(days=duration)).isoformat(), cutoff.isoformat()
     return start.isoformat(), cutoff.isoformat()
+
+
+def withhold_live_profile(curr_date: str | None, label: str) -> str | None:
+    """Notice to serve instead of a live-only company profile, or None to serve it.
+
+    Vendor "company overview" endpoints (yfinance ``Ticker.info``, Alpha Vantage
+    ``OVERVIEW``) return only present-day values: market cap, valuation
+    multiples, the 52-week range and TTM income all move with today's quote, and
+    even the name, sector and industry shift when a company renames or is
+    reclassified. None of it carries a historical vintage, so serving it into a
+    run dated in the past would put post-decision information into the analyst's
+    context.
+
+    Centralized so every fundamentals vendor withholds on one rule and says the
+    same thing; point-in-time fundamentals come from the balance sheet, income
+    statement and cash flow tools, which filter on ``curr_date``.
+    """
+    if not curr_date:
+        return None
+    today = get_current_date()
+    if curr_date >= today:
+        return None
+    return (
+        f"# Company Fundamentals for {label}\n"
+        f"# Point-in-time as of: {curr_date}\n\n"
+        f"Profile fundamentals are withheld for this date. This vendor serves "
+        f"only present-day values ({today}) with no historical vintage: market "
+        f"cap, valuation multiples, the 52-week range and TTM income move with "
+        f"today's quote, and even the name, sector and industry reflect today "
+        f"rather than {curr_date} (companies rename and get reclassified). "
+        f"Serving them would put post-decision information into a {curr_date} "
+        f"analysis. Point-in-time fundamentals for {curr_date} are available "
+        f"from the balance sheet, income statement, and cash flow tools."
+    )
 
 
 def to_utc(dt: datetime) -> datetime:
