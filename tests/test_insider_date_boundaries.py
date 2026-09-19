@@ -57,8 +57,11 @@ def test_yahoo_insiders_are_trimmed_to_curr_date(monkeypatch):
 
     result = y_finance.get_insider_transactions("AAPL", curr_date="2026-08-14")
 
-    assert "before" in result
-    assert "after" not in result
+    # Assert the retained rows by date, not by the DataFrame index the CSV
+    # happens to carry: a correct filter that resets the index must still pass.
+    assert "2026-08-13" in result
+    assert "2026-08-15" not in result
+    assert result.count("\n") >= 2  # header + the retained row
 
 
 @pytest.mark.unit

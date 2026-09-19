@@ -106,13 +106,19 @@ class BuildInstrumentContextTests(unittest.TestCase):
         self.assertIn("not verified historical identity data", context)
 
     def test_current_identity_has_no_historical_vintage_warning(self):
-        context = build_instrument_context(
-            "TOTDY",
-            "stock",
-            {"company_name": "TOTO LTD."},
-            curr_date="2999-01-01",
-        )
-        self.assertNotIn("present-day provider profile", context)
+        from tradingagents.dataflows.utils import get_current_date
+
+        # The boundary is "today": a future date is not the case a live run
+        # takes, so pin the run-date-equals-today path explicitly.
+        for curr_date in (get_current_date(), "2999-01-01"):
+            with self.subTest(curr_date=curr_date):
+                context = build_instrument_context(
+                    "TOTDY",
+                    "stock",
+                    {"company_name": "TOTO LTD."},
+                    curr_date=curr_date,
+                )
+                self.assertNotIn("present-day provider profile", context)
 
 
 @pytest.mark.unit

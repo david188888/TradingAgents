@@ -127,6 +127,56 @@ def _typed_available(ref: CoverageRefV1, *, market: str) -> CapabilityResultV1:
     )
 
 
+def test_a_real_provider_failure_still_forces_insufficient_evidence() -> None:
+    """Only "this fork never built the provider" is excused.
+
+    The eligibility change must not turn into a general amnesty for required
+    evidence: a provider that was tried and failed still has to force the
+    rating, otherwise a broken vendor would silently stop being a problem.
+    """
+    plan = build_data_window_plan("medium", "2026-08-13", market="global")
+    claims, cards = _facts_and_cards(("market", "fundamentals", "news"))
+    official = _global_official("medium")
+    failed = official.model_copy(
+        update={
+            "availability": "provider_unavailable",
+            "attempts": tuple(
+                attempt.model_copy(update={"reason_code": "provider_request_failed"})
+                for attempt in official.attempts
+            ),
+        }
+    )
+    coverage = tuple(
+        _coverage(capability.capability_id, complete=capability.capability_id != "official_disclosures")
+        for capability in plan.capabilities
+        if capability.requirement == "required"
+        and capability.capability_id != "official_disclosures"
+    ) + (
+        CoverageRefV1(
+            coverage_ref_id="coverage_official_unavailable",
+            capability="official_disclosures",
+            envelope=failed.coverage,
+        ),
+    )
+
+    assessment = assess_decision_eligibility(
+        plan=plan,
+        evidence_verdict="PASS",
+        claims=claims,
+        analyst_cards=cards,
+        coverage_refs=coverage,
+        capability_results=tuple(
+            _typed_available(item, market="global")
+            for item in coverage
+            if item.capability != "official_disclosures"
+        )
+        + (failed,),
+    )
+
+    assert assessment.forced_research_rating == "insufficient_evidence"
+    assert assessment.missing_capability_actions[0].capability == "official_disclosures"
+
+
 def test_required_global_sec_gap_limits_the_run_without_forcing_a_rating() -> None:
     plan = build_data_window_plan("medium", "2026-08-13", market="global")
     claims, cards = _facts_and_cards(("market", "fundamentals", "news"))
@@ -364,3 +414,50 @@ def test_case_assembly_overrides_model_rating_and_adds_review_action() -> None:
         for claim in case.claims
     )
     assert any(item.item_id == "verify_official_disclosures" for item in case.catalysts)
+
+
+def test_a_mixed_attempt_list_is_not_excused_as_unimplemented() -> None:
+    """One "no such provider" attempt must not excuse a real failure beside it.
+
+    The exclusion is all(...)-based: a capability whose attempts mix a missing
+    provider with a genuine failure still forces the rating.
+    """
+    plan = build_data_window_plan("medium", "2026-08-13", market="global")
+    claims, cards = _facts_and_cards(("market", "fundamentals", "news"))
+    official = _global_official("medium")
+    unimplemented = official.attempts[0]
+    failed = unimplemented.model_copy(update={"reason_code": "provider_request_failed"})
+    mixed = official.model_copy(
+        update={
+            "availability": "provider_unavailable",
+            "attempts": (unimplemented, failed),
+        }
+    )
+    coverage = tuple(
+        _coverage(capability.capability_id, complete=capability.capability_id != "official_disclosures")
+        for capability in plan.capabilities
+        if capability.requirement == "required"
+        and capability.capability_id != "official_disclosures"
+    ) + (
+        CoverageRefV1(
+            coverage_ref_id="coverage_official_unavailable",
+            capability="official_disclosures",
+            envelope=mixed.coverage,
+        ),
+    )
+
+    assessment = assess_decision_eligibility(
+        plan=plan,
+        evidence_verdict="PASS",
+        claims=claims,
+        analyst_cards=cards,
+        coverage_refs=coverage,
+        capability_results=tuple(
+            _typed_available(item, market="global")
+            for item in coverage
+            if item.capability != "official_disclosures"
+        )
+        + (mixed,),
+    )
+
+    assert assessment.forced_research_rating == "insufficient_evidence"

@@ -8,12 +8,13 @@ inside the bounded-excerpt helper on a rebuttal.
 
 Upstream's `2ddfe4c` also fixed a fundamentals brief reaching the model as a
 Python tuple and analysts emitting a trade call nothing reads; this fork already
-covered both (verified: the bundle is a JSON string, and no analyst emits a
-transaction proposal), so only the absent-report marker was missing here.
+covered both, so only the absent-report marker was missing here. The last test in
+this file pins those two so a later change cannot quietly reintroduce them.
 """
 
 from __future__ import annotations
 
+import pathlib
 from unittest.mock import MagicMock
 
 import pytest
@@ -157,3 +158,26 @@ def test_research_manager_prompt_states_the_output_shape(monkeypatch):
         "next_review", "holding_thesis_assessment",
     ):
         assert field in prompt, field
+
+
+@pytest.mark.unit
+def test_the_bundle_is_a_string_and_no_analyst_asks_for_a_trade_call():
+    """The other two halves of upstream 2ddfe4c stay fixed here.
+
+    A fundamentals brief interpolated as a Python tuple, or an analyst ending its
+    report with a transaction proposal nothing reads, would both reach the model
+    as noise. Neither is present; this pins that.
+    """
+    from tradingagents.research.fundamentals_prefetch import canonical_fundamentals_bundle
+
+    assert isinstance(canonical_fundamentals_bundle({"symbol": "AAPL"}), str)
+
+    analysts_dir = pathlib.Path(__file__).resolve().parents[1] / "tradingagents" / "agents" / "analysts"
+    for name in (
+        "market_analyst.py",
+        "news_analyst.py",
+        "fundamentals_analyst.py",
+        "sentiment_analyst.py",
+    ):
+        source = (analysts_dir / name).read_text(encoding="utf-8")
+        assert "FINAL TRANSACTION PROPOSAL" not in source, name

@@ -325,3 +325,47 @@ def test_reachability_probe_reports_success_and_can_bypass_the_cache(monkeypatch
     assert utils.vendor_reachable("https://probe.invalid", ttl_seconds=0) is True
     assert utils.vendor_reachable("https://probe.invalid", ttl_seconds=0) is True
     assert len(probes) == 2
+
+
+@pytest.mark.unit
+def test_a_share_order_survives_a_transient_vendor_failure(monkeypatch):
+    """The new transient classification must not reorder or widen A-share routing.
+
+    A VendorRequestError pulls unchosen vendors into the chain as an implicit
+    safety net, so this pins that the market filter still rejects every global
+    vendor for an A-share symbol and that the configured order holds.
+    """
+    calls: list[str] = []
+
+    def failing_mootdx(*args, **kwargs):
+        calls.append("mootdx")
+        raise VendorRequestError("mootdx", "tcp 7709 dropped")
+
+    def serving_tushare(*args, **kwargs):
+        calls.append("tushare")
+        return "Date,Close\n2026-08-14,1500.0\n"
+
+    def must_not_be_called(vendor):
+        def _inner(*args, **kwargs):
+            calls.append(vendor)
+            raise AssertionError(f"A-share priority violated: {vendor} was called")
+
+        return _inner
+
+    monkeypatch.setattr(interface, "get_vendor", lambda category, method=None: "mootdx,tushare")
+    monkeypatch.setitem(
+        interface.VENDOR_METHODS,
+        "get_stock_data",
+        {
+            "mootdx": failing_mootdx,
+            "tushare": serving_tushare,
+            "yfinance": must_not_be_called("yfinance"),
+            "alpha_vantage": must_not_be_called("alpha_vantage"),
+            "akshare": must_not_be_called("akshare"),
+        },
+    )
+
+    out = interface.route_to_vendor("get_stock_data", "600519.SH", "2026-08-01", "2026-08-14")
+
+    assert "1500.0" in out
+    assert calls == ["mootdx", "tushare"]

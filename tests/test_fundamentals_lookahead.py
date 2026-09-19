@@ -125,7 +125,9 @@ def test_both_vendors_withhold_on_the_same_rule():
     withheld_text = date_window.withhold_live_profile(_PAST, "AAPL")
 
     assert withheld_text is not None
-    assert withheld_text == _yf(_PAST, info={})
+    # The vendor must return the shared notice even when the provider would
+    # happily have answered, which is what the request-less guard buys.
+    assert withheld_text == _yf(_PAST, info={"longName": "Apple Inc."})
     assert withheld_text == _av(_PAST)[0]
     assert date_window.withhold_live_profile(_TODAY, "AAPL") is None
     assert date_window.withhold_live_profile(None, "AAPL") is None
