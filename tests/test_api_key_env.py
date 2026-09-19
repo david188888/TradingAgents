@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from unittest.mock import patch
 
 import pytest
@@ -160,3 +161,63 @@ def test_ensure_api_key_updates_existing_env_file(monkeypatch, tmp_path, cli_uti
     assert "OPENAI_API_KEY" in content and "sk-existing" in content
     assert "OTHER=value" in content
     assert "OPENROUTER_API_KEY" in content and "sk-openrouter-new" in content
+
+
+# ---- Credential file permissions -----------------------------------------
+
+
+def _prompt_for_openai_key(cli_utils, monkeypatch, tmp_path, key="sk-typed-in"):
+    """Drive the prompt with a deterministic ``.env`` target under ``tmp_path``."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(cli_utils, "find_dotenv", lambda **kwargs: "")
+    fake_prompt = type("P", (), {"ask": staticmethod(lambda: key)})()
+    with patch.object(cli_utils.questionary, "password", return_value=fake_prompt):
+        return cli_utils.ensure_api_key("openai")
+
+
+def _mode(path):
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_new_credential_file_is_owner_only_whatever_the_umask(monkeypatch, tmp_path, cli_utils):
+    """The prompt writes a real credential: other local users must not read it."""
+    previous_umask = os.umask(0o002)
+    try:
+        _prompt_for_openai_key(cli_utils, monkeypatch, tmp_path)
+    finally:
+        os.umask(previous_umask)
+
+    env_file = tmp_path / ".env"
+    assert _mode(env_file) == 0o600
+    assert "sk-typed-in" in env_file.read_text()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_existing_world_readable_file_is_tightened_before_the_key_is_written(
+    monkeypatch, tmp_path, cli_utils
+):
+    env_file = tmp_path / ".env"
+    env_file.write_text("OTHER=value\n")
+    os.chmod(env_file, 0o664)
+
+    _prompt_for_openai_key(cli_utils, monkeypatch, tmp_path)
+
+    assert _mode(env_file) == 0o600
+    content = env_file.read_text()
+    assert "OTHER=value" in content
+    assert "OPENAI_API_KEY" in content and "sk-typed-in" in content
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_read_only_credential_file_is_still_updated(monkeypatch, tmp_path, cli_utils):
+    """A .env left read-only must be tightened and updated, not fail the prompt."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("OTHER=value\n")
+    os.chmod(env_file, 0o400)
+
+    _prompt_for_openai_key(cli_utils, monkeypatch, tmp_path)
+
+    assert _mode(env_file) == 0o600
+    assert "OPENAI_API_KEY" in env_file.read_text()
