@@ -14,6 +14,7 @@ import tradingagents.dataflows.alpha_vantage_common as av
 import tradingagents.dataflows.alpha_vantage_fundamentals as avf
 import tradingagents.dataflows.alpha_vantage_news as avn
 import tradingagents.dataflows.alpha_vantage_stock as avs
+from tradingagents.dataflows.errors import VendorRequestError
 
 
 class _FakeResponse:
@@ -245,3 +246,78 @@ def test_plain_date_still_means_midnight_by_default():
     from datetime import datetime
 
     assert av.format_datetime_for_api(datetime(2026, 3, 14, 8, 30)) == "20260314T0830"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        # An unrecognised Information/Note body is a vendor failure, not data.
+        ("Information: the RSI endpoint is temporarily unavailable", VendorRequestError),
+        ("", VendorRequestError),
+        # A usable-looking CSV whose shape does not match the indicator.
+        ("time,other\n2026-05-01,1\n", VendorRequestError),
+    ],
+    ids=["unrecognised-body", "empty-body", "missing-column"],
+)
+def test_indicator_payload_failures_never_return_as_report_text(monkeypatch, payload, expected):
+    """A returned "Error: ..." string counted as a successful answer.
+
+    The router classifies returned text as data, so the fallback chain stopped at
+    a vendor that could not answer while the next vendor could.
+    """
+    import tradingagents.dataflows.alpha_vantage_indicator as avi
+    from tradingagents.dataflows.errors import VendorRequestError
+
+    monkeypatch.setattr(avi, "_make_api_request", lambda *a, **k: payload)
+
+    with pytest.raises(VendorRequestError):
+        avi.get_indicator("AAPL", "rsi", "2026-05-08", 30)
+
+
+@pytest.mark.unit
+def test_indicator_window_without_rows_is_no_data_not_a_report(monkeypatch):
+    """The vendor answered and had no rows in the window; another vendor may."""
+    import tradingagents.dataflows.alpha_vantage_indicator as avi
+    from tradingagents.dataflows.errors import NoMarketDataError
+
+    monkeypatch.setattr(avi, "_make_api_request", lambda *a, **k: "time,RSI\n2026-01-02,50\n")
+
+    with pytest.raises(NoMarketDataError):
+        avi.get_indicator("AAPL", "rsi", "2026-05-08", 30)
+
+
+@pytest.mark.unit
+def test_scrubbed_http_error_keeps_its_status_code_without_the_response(monkeypatch):
+    """Scrubbing must not cost the router its rate-limit signal.
+
+    ``requests`` quotes the URL in HTTP errors, so the exception is rebuilt with
+    a scrubbed message and no attached request/response. The status code is what
+    the router uses to pick a cooldown, so it is carried over as plain data.
+    """
+    from tradingagents.dataflows import utils as flow_utils
+    from tradingagents.dataflows.health import RATE_LIMIT_COOLDOWN_SECONDS
+    from tradingagents.dataflows.vendor_errors import _cooldown_for_exception
+
+    key = "AVKEY1234567890XYZ"
+    url = f"https://www.alphavantage.co/query?function=OVERVIEW&apikey={key}"
+
+    class FakeResponse:
+        status_code = 429
+
+        def raise_for_status(self):
+            raise requests.HTTPError(f"429 Client Error: Too Many Requests for url: {url}")
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse())
+
+    with pytest.raises(requests.HTTPError) as caught:
+        flow_utils.get_scrubbed(url, params={}, timeout=5.0, secret=key)
+
+    assert key not in str(caught.value)
+    assert caught.value.request is None
+    assert caught.value.response is None
+    assert caught.value.status_code == 429
+    assert _cooldown_for_exception(caught.value) == (
+        RATE_LIMIT_COOLDOWN_SECONDS,
+        "rate_limit",
+    )

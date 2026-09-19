@@ -1,5 +1,5 @@
 from .alpha_vantage_common import _make_api_request
-from .errors import VendorError, VendorRequestError
+from .errors import NoMarketDataError, VendorError, VendorRequestError
 
 
 def get_indicator(
@@ -148,16 +148,29 @@ def get_indicator(
             )
 
         # Parse CSV data and extract values for the date range
+        if not isinstance(data, str):
+            # An unexpected payload shape (for example an unrecognised
+            # Information/Note response) is not data: as a returned string it
+            # counted as a successful answer and stopped the fallback chain.
+            raise VendorRequestError(
+                "alpha_vantage", f"unexpected payload for the {indicator} indicator"
+            )
+
         lines = data.strip().split('\n')
         if len(lines) < 2:
-            return f"Error: No data returned for {indicator}"
+            raise VendorRequestError(
+                "alpha_vantage", f"no usable rows returned for the {indicator} indicator"
+            )
 
         # Parse header and data
         header = [col.strip() for col in lines[0].split(',')]
         try:
             date_col_idx = header.index('time')
         except ValueError:
-            return f"Error: 'time' column not found in data for {indicator}. Available columns: {header}"
+            raise VendorRequestError(
+                "alpha_vantage",
+                f"the {indicator} payload has no 'time' column (columns: {header})",
+            ) from None
 
         # Map internal indicator names to expected CSV column names from Alpha Vantage
         col_name_map = {
@@ -176,7 +189,11 @@ def get_indicator(
             try:
                 value_col_idx = header.index(target_col_name)
             except ValueError:
-                return f"Error: Column '{target_col_name}' not found for indicator '{indicator}'. Available columns: {header}"
+                raise VendorRequestError(
+                    "alpha_vantage",
+                    f"the {indicator} payload has no {target_col_name!r} column "
+                    f"(columns: {header})",
+                ) from None
 
         result_data = []
         for line in lines[1:]:
@@ -204,7 +221,14 @@ def get_indicator(
             ind_string += f"{date_dt.strftime('%Y-%m-%d')}: {value}\n"
 
         if not ind_string:
-            ind_string = "No data available for the specified date range.\n"
+            # The vendor answered and had no rows inside this window; another
+            # vendor may, so this is no-data rather than a report body.
+            raise NoMarketDataError(
+                symbol,
+                symbol,
+                f"no {indicator} rows between "
+                f"{before.strftime('%Y-%m-%d')} and {curr_date}",
+            )
 
         result_str = (
             f"## {indicator.upper()} values from {before.strftime('%Y-%m-%d')} to {curr_date}:\n\n"

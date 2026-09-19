@@ -71,6 +71,7 @@ def get_scrubbed(
     final raise stays outside the ``except`` block so the original exception is
     not retained as ``__context__``.
     """
+    response = None
     try:
         response = requests.get(url, params=params, timeout=timeout)
         if response.status_code not in passthrough:
@@ -79,6 +80,14 @@ def get_scrubbed(
     except requests.RequestException as exc:
         message = str(exc).replace(secret, "***") if secret else str(exc)
         error = type(exc)(message)
+        # Keep the status code as plain data. The router classifies throttles and
+        # access denials from it, and re-attaching the original response would
+        # re-expose the secret-bearing URL through the object graph.
+        status_code = getattr(response, "status_code", None)
+        if not isinstance(status_code, int):
+            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if isinstance(status_code, int):
+            error.status_code = status_code
     raise error
 
 
@@ -105,6 +114,11 @@ def vendor_reachable(
     when a request fails, which makes "the vendor is down" and "this symbol has
     no data" indistinguishable. Probe only when a result is empty, never on a
     successful path.
+
+    Only a transport failure (DNS, TCP, TLS, timeout) counts as unreachable: any
+    HTTP answer proves the host is alive, so a 403/404/429 from the probe is
+    reported as reachable rather than misread as an outage. The probe therefore
+    separates "the host does not answer at all" from silence, and nothing finer.
 
     The verdict is cached for ``REACHABILITY_TTL_SECONDS`` so a batch run does
     not send one probe per empty symbol. Pass ``ttl_seconds=0`` to force a fresh
