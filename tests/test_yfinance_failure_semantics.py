@@ -16,6 +16,8 @@ is answering"; the outage tests override it). No test here touches the network.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pandas as pd
 import pytest
 import requests
@@ -187,14 +189,36 @@ def test_empty_company_news_from_an_outage_is_not_reported_as_no_news(monkeypatc
 
     monkeypatch.setattr(yfinance_news.yf, "Ticker", EmptyNewsTicker)
 
+    # An empty feed from an unreachable provider is a vendor failure, not news.
     _unreachable(monkeypatch)
     with pytest.raises(VendorRequestError):
         yfinance_news.get_news_yfinance("AAPL", "2026-01-01", "2026-01-31")
 
+    # Reachable but empty is still not proof of "no news" for a past window; the
+    # coverage rule owns that case (tests/test_news_lookahead.py). A feed whose
+    # own dates prove it reaches back before the window IS a real absence.
     _reachable(monkeypatch)
+
+    class CoveredNewsTicker:
+        def __init__(self, symbol):
+            pass
+
+        def get_news(self, count):
+            return [
+                {
+                    "title": "OLDER",
+                    "publisher": "P",
+                    "link": "l",
+                    "providerPublishTime": int(
+                        datetime(2025, 12, 1, tzinfo=timezone.utc).timestamp()
+                    ),
+                }
+            ]
+
+    monkeypatch.setattr(yfinance_news.yf, "Ticker", CoveredNewsTicker)
     assert (
         yfinance_news.get_news_yfinance("AAPL", "2026-01-01", "2026-01-31")
-        == "No news found for AAPL"
+        == "No news found for AAPL between 2026-01-01 and 2026-01-31"
     )
 
 

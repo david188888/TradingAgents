@@ -23,13 +23,23 @@ from urllib.request import Request, urlopen
 
 from tradingagents.observability.provenance import capture_vendor_raw
 
-from .date_window import in_window
+from .date_window import coverage_gap, in_window
 from .symbol_utils import crypto_base
 
 logger = logging.getLogger(__name__)
 
 _API = "https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
 _UA = "tradingagents/0.2 (+https://github.com/TauricResearch/TradingAgents)"
+
+
+def _created_at(message) -> datetime | None:
+    """Parse a message's ISO 8601 ``created_at``; None when missing or malformed."""
+    raw = message.get("created_at")
+    if not raw:
+        return None
+    with contextlib.suppress(ValueError, TypeError):
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    return None
 
 
 def _within_window(messages, start_date, end_date):
@@ -43,16 +53,7 @@ def _within_window(messages, start_date, end_date):
         return messages
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    kept = []
-    for m in messages:
-        created = None
-        raw = m.get("created_at")
-        if raw:
-            with contextlib.suppress(ValueError, TypeError):
-                created = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        if in_window(created, start_dt, end_dt):
-            kept.append(m)
-    return kept
+    return [m for m in messages if in_window(_created_at(m), start_dt, end_dt)]
 
 
 def _stocktwits_symbol(ticker: str) -> str:
@@ -100,13 +101,19 @@ def fetch_stocktwits_messages(
         logger.warning("StockTwits fetch failed for %s: %s", ticker, exc)
         return f"<stocktwits unavailable: {type(exc).__name__}>"
 
-    messages = data.get("messages", []) if isinstance(data, dict) else []
-    messages = _within_window(messages, start_date, end_date)
+    fetched = data.get("messages", []) if isinstance(data, dict) else []
+    messages = _within_window(fetched, start_date, end_date)
     if not messages:
         if start_date and end_date:
-            return (
+            # The stream only serves recent messages, so a window everything
+            # postdates is "cannot answer", not "nobody said anything".
+            gap = coverage_gap(
+                (_created_at(m) for m in fetched), start_date, end_date,
+                "StockTwits", f"messages about ${ticker.upper()}",
+            )
+            return gap or (
                 f"<no StockTwits messages for ${ticker.upper()} within "
-                f"{start_date}..{end_date} (public stream serves only recent messages)>"
+                f"{start_date}..{end_date}>"
             )
         return f"<no StockTwits messages found for ${ticker.upper()}>"
 

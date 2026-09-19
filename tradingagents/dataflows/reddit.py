@@ -26,17 +26,23 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from tradingagents.observability.provenance import capture_vendor_raw
 
-from .date_window import in_window
+from .date_window import coverage_gap, in_window
 from .symbol_utils import crypto_base
 
 logger = logging.getLogger(__name__)
+
+
+def _posted_at(post) -> datetime | None:
+    """A post's ``created_utc`` epoch as a UTC datetime, or None when missing."""
+    ts = post.get("created_utc")
+    return datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
 
 
 def _within_window(posts, start_date, end_date):
@@ -49,13 +55,17 @@ def _within_window(posts, start_date, end_date):
         return posts
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    kept = []
-    for p in posts:
-        ts = p.get("created_utc")
-        created = datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None
-        if in_window(created, start_dt, end_dt):
-            kept.append(p)
-    return kept
+    return [p for p in posts if in_window(_posted_at(p), start_dt, end_dt)]
+
+
+def _coverage_dates(posts) -> list:
+    """Post dates plus the search lookback start.
+
+    The query is limited to the last week (``t=week``), so a window older than
+    that is out of reach even when the feed returns nothing.
+    """
+    return [_posted_at(p) for p in posts] + [datetime.now(timezone.utc) - _SEARCH_LOOKBACK]
+
 
 _API = "https://www.reddit.com/r/{sub}/search.json?{qs}"
 _RSS = "https://www.reddit.com/r/{sub}/search.rss?{qs}"
@@ -70,6 +80,10 @@ _ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 # discussion. wallstreetbets has the most volume but most noise; stocks /
 # investing trend more measured. Caller can override.
 DEFAULT_SUBREDDITS = ("wallstreetbets", "stocks", "investing")
+
+# Matches the t=week search lookback in _search_qs: an empty response says
+# nothing about a window older than this.
+_SEARCH_LOOKBACK = timedelta(days=7)
 
 
 def _search_qs(ticker: str, limit: int) -> str:
@@ -281,14 +295,29 @@ def fetch_reddit_posts(
     ticker = crypto_base(ticker) or ticker
     blocks = []
     total_posts = 0
+    fetched_posts = []
     for i, sub in enumerate(subreddits):
         if i > 0 and inter_request_delay:
             time.sleep(_jitter(inter_request_delay))
-        posts = _within_window(_fetch_subreddit(ticker, sub, limit_per_sub, timeout),
-                               start_date, end_date)
+        fetched = _fetch_subreddit(ticker, sub, limit_per_sub, timeout)
+        posts = _within_window(fetched, start_date, end_date)
         total_posts += len(posts)
+        fetched_posts.extend(fetched)
         if not posts:
-            blocks.append(f"r/{sub}: <no posts found mentioning {ticker.upper()} in the past 7 days>")
+            # Search only reaches back a week, so a window everything postdates
+            # is "cannot answer", not "nobody posted".
+            gap = start_date and end_date and coverage_gap(
+                _coverage_dates(fetched), start_date, end_date,
+                f"r/{sub}", f"discussion of {ticker.upper()}",
+            )
+            period = (
+                f"within {start_date}..{end_date}"
+                if start_date and end_date
+                else "in the past 7 days"
+            )
+            blocks.append(
+                f"r/{sub}: {gap or f'<no posts found mentioning {ticker.upper()} {period}>'}"
+            )
             continue
 
         via_rss = any(p.get("source") == "rss" for p in posts)
@@ -318,8 +347,17 @@ def fetch_reddit_posts(
         blocks.append("\n".join(lines))
 
     if total_posts == 0:
-        return (
+        gap = start_date and end_date and coverage_gap(
+            _coverage_dates(fetched_posts), start_date, end_date,
+            "Reddit search", f"discussion of {ticker.upper()}",
+        )
+        period = (
+            f"within {start_date}..{end_date}"
+            if start_date and end_date
+            else "in the past 7 days"
+        )
+        return gap or (
             f"<no Reddit posts found mentioning {ticker.upper()} across "
-            f"{', '.join(f'r/{s}' for s in subreddits)} in the past 7 days>"
+            f"{', '.join(f'r/{s}' for s in subreddits)} {period}>"
         )
     return "\n\n".join(blocks)

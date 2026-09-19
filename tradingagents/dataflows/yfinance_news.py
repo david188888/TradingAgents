@@ -9,7 +9,7 @@ from dateutil.relativedelta import relativedelta
 from tradingagents.observability.provenance import capture_vendor_raw
 
 from .config import get_config
-from .date_window import in_window
+from .date_window import coverage_gap, in_window
 from .errors import VendorError, VendorRequestError
 from .stockstats_utils import raise_if_yahoo_unreachable, yf_retry
 from .symbol_utils import normalize_symbol
@@ -87,16 +87,11 @@ def get_news_yfinance(
     resolved = "" if canonical == ticker else f" (resolved to {canonical})"
     try:
         stock = yf.Ticker(canonical)
-        news = yf_retry(lambda: stock.get_news(count=article_limit))
+        news = yf_retry(lambda: stock.get_news(count=article_limit)) or []
         capture_vendor_raw(
             news,
             metadata={"provider": "yfinance", "dataset": "company_news", "symbol": canonical},
         )
-
-        if not news:
-            # An empty list is only "no news" if Yahoo answered at all.
-            raise_if_yahoo_unreachable("company news", ticker, canonical)
-            return f"No news found for {ticker}{resolved}"
 
         # Parse date range for filtering
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -121,7 +116,19 @@ def get_news_yfinance(
             filtered_count += 1
 
         if filtered_count == 0:
-            return f"No news found for {ticker}{resolved} between {start_date} and {end_date}"
+            if not news:
+                # Nothing came back at all: an outage is not an absence.
+                raise_if_yahoo_unreachable("company news", ticker, canonical)
+            # Yahoo serves only recent articles, so an empty window it does not
+            # reach is "cannot answer", not "no news happened".
+            gap = coverage_gap(
+                (_extract_article_data(a)["pub_date"] for a in news),
+                start_date, end_date, "Yahoo Finance news",
+                f"news for {ticker}{resolved}",
+            )
+            return gap or (
+                f"No news found for {ticker}{resolved} between {start_date} and {end_date}"
+            )
 
         return f"## {ticker}{resolved} News, from {start_date} to {end_date}:\n\n{news_str}"
 
@@ -158,8 +165,13 @@ def get_global_news_yfinance(
         limit = config["global_news_article_limit"]
     search_queries = config["global_news_queries"]
 
-    all_news = []
+    curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    start_dt = curr_dt - relativedelta(days=look_back_days)
+    start_date = start_dt.strftime("%Y-%m-%d")
+
+    in_window_news = []
     seen_titles = set()
+    returned_any = False
 
     try:
         for query in search_queries:
@@ -177,53 +189,46 @@ def get_global_news_yfinance(
                 },
             )
 
-            if search.news:
-                for article in search.news:
-                    # Handle both flat and nested structures
-                    if "content" in article:
-                        data = _extract_article_data(article)
-                        title = data["title"]
-                    else:
-                        title = article.get("title", "")
+            for article in search.news or []:
+                returned_any = True
+                # Window first: the limit counts what the run may read, so an
+                # out-of-window article must not spend the budget or cut the
+                # remaining searches short (#1356). Flat articles are filtered on
+                # the same rule, so none can leak future news (#1007).
+                data = _extract_article_data(article)
+                if not in_window(data["pub_date"], start_dt, curr_dt):
+                    continue
+                if data["title"] and data["title"] not in seen_titles:
+                    seen_titles.add(data["title"])
+                    in_window_news.append(data)
 
-                    # Deduplicate by title
-                    if title and title not in seen_titles:
-                        seen_titles.add(title)
-                        all_news.append(article)
-
-            if len(all_news) >= limit:
+            if len(in_window_news) >= limit:
                 break
 
-        if not all_news:
-            # Every configured query came back empty: an outage is not "no news".
-            raise_if_yahoo_unreachable("global news")
-            return f"No global news found for {curr_date}"
-
-        # Calculate date range
-        curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
-        start_dt = curr_dt - relativedelta(days=look_back_days)
-        start_date = start_dt.strftime("%Y-%m-%d")
+        if not in_window_news:
+            if not returned_any:
+                # Nothing came back at all: an outage is not "no news".
+                raise_if_yahoo_unreachable("global news")
+                fallback = f"No global news found for {curr_date}"
+            else:
+                # Candidates came back but none fell inside the window -> say so
+                # rather than return an empty-bodied report (#993).
+                fallback = f"No global news found between {start_date} and {curr_date}"
+            # Results merge several fuzzy searches, so their timestamps prove no
+            # continuous coverage; judge the window against the present only.
+            gap = coverage_gap(
+                (), start_date, curr_date, "Yahoo Finance global news", "market news"
+            )
+            return gap or fallback
 
         news_str = ""
-        kept = 0
-        for article in all_news[:limit]:
-            # Extract uniformly (flat + nested) and apply the same look-ahead-safe
-            # window filter, so flat articles can't leak future news (#1007).
-            data = _extract_article_data(article)
-            if not in_window(data["pub_date"], start_dt, curr_dt):
-                continue
+        for data in in_window_news[:limit]:
             news_str += f"### {data['title']} (source: {data['publisher']})\n"
             if data["summary"]:
                 news_str += f"{data['summary']}\n"
             if data["link"]:
                 news_str += f"Link: {data['link']}\n"
             news_str += "\n"
-            kept += 1
-
-        # All candidates fell outside the window -> say so rather than return an
-        # empty-bodied report (#993).
-        if kept == 0:
-            return f"No global news found between {start_date} and {curr_date}"
 
         return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"
 
