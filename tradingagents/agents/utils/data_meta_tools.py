@@ -15,16 +15,18 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from tradingagents.agents.utils.tool_guard import guard_target_ticker
 from tradingagents.dataflows.coverage import CoveredText
+from tradingagents.dataflows.date_window import as_of, trade_date_from_state
 from tradingagents.dataflows.errors import (
     DataSourceUnavailableError,
     VendorError,
@@ -404,13 +406,21 @@ def run_data_bundle(
     symbol: str,
     curr_date: str,
     request: str,
+    state: Mapping[str, Any] | None = None,
 ) -> str:
     """Return a compact JSON envelope for an allowlisted data bundle.
 
     The envelope carries capability-level route provenance and public error
     categories.  It intentionally omits raw provider exception text, which
     can contain implementation details, credentials, or unstable HTML.
+
+    ``curr_date`` comes from the model and fans out to every selected
+    capability, so it is bounded to the run's ``trade_date`` here, once. A
+    wrapper that skipped this would let a historical run ask for a future date
+    and receive future prices, statements, or the live company profile.
     """
+
+    curr_date = as_of(curr_date, trade_date_from_state(state)) or curr_date
 
     selected = select_capabilities(focus, symbol, request)
     if not selected:
@@ -461,6 +471,7 @@ def get_market_research_bundle(
     symbol: Annotated[str, "ticker symbol of the instrument"],
     curr_date: Annotated[str, "analysis date in yyyy-mm-dd format"],
     request: Annotated[str, "plain-language market-data question; it selects only reviewed capabilities"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """Fetch a bounded market-data bundle selected from an approved catalogue.
 
@@ -469,7 +480,7 @@ def get_market_research_bundle(
     cannot choose a provider or invoke arbitrary code.
     """
 
-    return run_data_bundle("market", symbol, curr_date, request)
+    return run_data_bundle("market", symbol, curr_date, request, state)
 
 
 @tool
@@ -478,10 +489,11 @@ def get_fundamentals_research_bundle(
     symbol: Annotated[str, "ticker symbol of the company"],
     curr_date: Annotated[str, "analysis date in yyyy-mm-dd format"],
     request: Annotated[str, "plain-language fundamentals question; it selects only reviewed capabilities"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """Fetch a bounded, allowlisted company-fundamentals bundle in parallel."""
 
-    return run_data_bundle("fundamentals", symbol, curr_date, request)
+    return run_data_bundle("fundamentals", symbol, curr_date, request, state)
 
 
 @tool
@@ -490,7 +502,8 @@ def get_news_research_bundle(
     symbol: Annotated[str, "ticker symbol of the instrument"],
     curr_date: Annotated[str, "analysis date in yyyy-mm-dd format"],
     request: Annotated[str, "plain-language news or macro question; it selects only reviewed capabilities"],
+    state: Annotated[dict[str, Any] | None, InjectedState] = None,
 ) -> str:
     """Fetch a bounded, allowlisted company-news and macro-news bundle."""
 
-    return run_data_bundle("news", symbol, curr_date, request)
+    return run_data_bundle("news", symbol, curr_date, request, state)

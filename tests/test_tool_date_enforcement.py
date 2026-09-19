@@ -12,6 +12,7 @@ from langgraph.prebuilt import ToolNode
 
 from tradingagents.agents.utils import (
     core_stock_tools,
+    data_meta_tools,
     fundamental_data_tools,
     macro_data_tools,
     market_data_validation_tools,
@@ -95,6 +96,9 @@ def test_missing_state_preserves_legacy_direct_calls():
         wind_data_tools.get_index_fundamentals,
         wind_data_tools.get_macro_series,
         wind_data_tools.get_equity_risk_metrics,
+        data_meta_tools.get_market_research_bundle,
+        data_meta_tools.get_fundamentals_research_bundle,
+        data_meta_tools.get_news_research_bundle,
     ],
 )
 def test_injected_state_is_hidden_from_model_tool_schema(tool):
@@ -274,3 +278,34 @@ def test_direct_calls_without_state_retain_their_legacy_dates(monkeypatch):
     core_stock_tools.get_stock_data.func("AAPL", "2026-09-01", "2026-09-08")
 
     assert captured == [("AAPL", "2026-09-01", "2026-09-08")]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("tool", "ask"),
+    [
+        (data_meta_tools.get_fundamentals_research_bundle, "balance sheet"),
+        (data_meta_tools.get_market_research_bundle, "price history"),
+    ],
+)
+def test_meta_bundle_tools_clamp_the_date_before_the_provider(monkeypatch, tool, ask):
+    """The bundle wrappers are model-visible too, so they need the same bound.
+
+    They take ``curr_date`` straight from the model and fan it out to every
+    selected capability; without the clamp a historical run could ask for a
+    future date and receive future prices, statements, or the live profile.
+    """
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        data_meta_tools,
+        "route_to_vendor",
+        lambda method, *args, **kwargs: seen.append((method, args, kwargs)) or "ok",
+    )
+
+    envelope = tool.func("AAPL", "2030-01-01", ask, state=_STATE)
+
+    assert envelope  # a JSON envelope, degraded or not
+    assert seen, "no capability reached the vendor"
+    for item in seen:
+        assert "2030-01-01" not in str(item)
+    assert any(TRADE_DATE in str(item) for item in seen)

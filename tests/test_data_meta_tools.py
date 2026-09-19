@@ -189,8 +189,15 @@ def test_langchain_meta_tool_is_invocable_without_dynamic_callable_resolution(mo
     monkeypatch.setattr(
         meta,
         "run_data_bundle",
-        lambda focus, symbol, curr_date, request: json.dumps(
-            {"focus": focus, "symbol": symbol, "as_of": curr_date, "request": request}
+        # The signature gained the injected run state so the date can be bounded.
+        lambda focus, symbol, curr_date, request, state=None: json.dumps(
+            {
+                "focus": focus,
+                "symbol": symbol,
+                "as_of": curr_date,
+                "request": request,
+                "state_seen": state is not None,
+            }
         ),
     )
 
