@@ -16,7 +16,6 @@ dependencies = [
     "langgraph>=0.4.8",
     "langgraph-checkpoint-sqlite>=2.0.0",
     "pandas>=2.3.0",
-    "parsel>=1.10.0",
     "python-dotenv>=1.0.0",
     "pytz>=2025.2",
     "PyYAML>=6.0",
@@ -24,9 +23,7 @@ dependencies = [
     "requests>=2.32.4",
     "rich>=14.0.0",
     "typer>=0.21.0",
-    "setuptools>=80.9.0",
     "stockstats>=0.6.5",
-    "tqdm>=4.67.1",
     "typing-extensions>=4.14.0",
     "yfinance>=1.4.1",
 ]
