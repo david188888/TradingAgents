@@ -10,7 +10,8 @@ from tradingagents.observability.provenance import capture_vendor_raw
 
 from .config import get_config
 from .date_window import in_window
-from .stockstats_utils import yf_retry
+from .errors import VendorError, VendorRequestError
+from .stockstats_utils import raise_if_yahoo_unreachable, yf_retry
 from .symbol_utils import normalize_symbol
 
 
@@ -93,6 +94,8 @@ def get_news_yfinance(
         )
 
         if not news:
+            # An empty list is only "no news" if Yahoo answered at all.
+            raise_if_yahoo_unreachable("company news", ticker, canonical)
             return f"No news found for {ticker}{resolved}"
 
         # Parse date range for filtering
@@ -122,8 +125,12 @@ def get_news_yfinance(
 
         return f"## {ticker}{resolved} News, from {start_date} to {end_date}:\n\n{news_str}"
 
+    except VendorError:
+        raise
     except Exception as e:
-        return f"Error fetching news for {ticker}: {str(e)}"
+        raise VendorRequestError(
+            "yfinance", f"news for {canonical} could not be retrieved: {e}"
+        ) from e
 
 
 def get_global_news_yfinance(
@@ -188,6 +195,8 @@ def get_global_news_yfinance(
                 break
 
         if not all_news:
+            # Every configured query came back empty: an outage is not "no news".
+            raise_if_yahoo_unreachable("global news")
             return f"No global news found for {curr_date}"
 
         # Calculate date range
@@ -218,5 +227,9 @@ def get_global_news_yfinance(
 
         return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"
 
+    except VendorError:
+        raise
     except Exception as e:
-        return f"Error fetching global news: {str(e)}"
+        raise VendorRequestError(
+            "yfinance", f"global news could not be retrieved: {e}"
+        ) from e

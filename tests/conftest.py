@@ -66,6 +66,23 @@ def _isolate_vendor_health():
     clear_vendor_health()
 
 
+@pytest.fixture(autouse=True)
+def _no_live_yahoo_reachability_probe(monkeypatch):
+    """Keep the provider-outage probe off the network in every test.
+
+    ``stockstats_utils.raise_for_empty`` probes Yahoo only after an empty
+    result, so an ordinary unit test that simulates an empty frame would issue a
+    real HEAD request and wait out its timeout. Default the probe to "the vendor
+    is answering" (the pre-existing interpretation: empty means no data). Tests
+    that exercise the outage branch override it themselves::
+
+        monkeypatch.setattr(stockstats_utils, "vendor_reachable", lambda *a, **k: False)
+    """
+    from tradingagents.dataflows import stockstats_utils
+
+    monkeypatch.setattr(stockstats_utils, "vendor_reachable", lambda *a, **k: True)
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()

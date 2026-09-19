@@ -9,11 +9,14 @@ from dateutil.relativedelta import relativedelta
 from tradingagents.observability.provenance import capture_vendor_raw
 
 from .coverage import CoveredText, PriceSeriesCoverageV1
+from .errors import VendorError, VendorRequestError
 from .stockstats_utils import (
     StockstatsUtils,
     _assert_ohlcv_not_stale,
     filter_financials_by_date,
     load_ohlcv,
+    raise_for_empty,
+    raise_if_yahoo_unreachable,
     yf_retry,
 )
 from .symbol_utils import NoMarketDataError, normalize_symbol
@@ -71,13 +74,11 @@ def get_YFin_data_online(
 
     _capture_yfinance_frame(data, "ohlcv", source=source, symbol=canonical)
 
-    # Empty result means the symbol is unknown/delisted. Raise a typed error
-    # instead of returning prose: the routing layer turns it into a single
-    # unambiguous "no data" signal so the agent never fabricates a price.
+    # Empty result is ambiguous: an unknown/delisted symbol or a failed request.
+    # Classify it so the routing layer never reports an outage as "no data" and
+    # the agent never fabricates a price.
     if data.empty:
-        raise NoMarketDataError(
-            symbol, canonical, f"no rows between {start_date} and {end_date}"
-        )
+        raise_for_empty(symbol, canonical, f"rows between {start_date} and {end_date}")
 
     # Remove timezone info from index for cleaner output
     if data.index.tz is not None:
@@ -329,8 +330,8 @@ def _build_indicators_window_report(
         for date_str, value in date_values:
             ind_string += f"{date_str}: {value}\n"
 
-    except NoMarketDataError:
-        raise  # Unknown/delisted symbol — let the router emit the sentinel
+    except VendorError:
+        raise  # Typed vendor outcome — let the router classify it
     except Exception as e:
         print(f"Error getting bulk stockstats data: {e}")
         # Fallback to original implementation if bulk method fails
@@ -453,8 +454,8 @@ def get_stockstats_indicator(
             indicator,
             curr_date,
         )
-    except NoMarketDataError:
-        raise  # Unknown/delisted symbol — let the router emit the sentinel
+    except VendorError:
+        raise  # Typed vendor outcome — let the router classify it
     except Exception as e:
         print(
             f"Error getting stockstats indicator data for indicator {indicator} on {curr_date}: {e}"
@@ -479,7 +480,7 @@ def get_fundamentals(
         )
 
         if not info:
-            raise NoMarketDataError(ticker, canonical, "no fundamentals returned")
+            raise_for_empty(ticker, canonical, "fundamentals")
 
         fields = [
             ("Name", info.get("longName")),
@@ -529,10 +530,12 @@ def get_fundamentals(
 
         return header + "\n".join(lines)
 
-    except NoMarketDataError:
+    except VendorError:
         raise
     except Exception as e:
-        return f"Error retrieving fundamentals for {ticker}: {str(e)}"
+        raise VendorRequestError(
+            "yfinance", f"fundamentals for {canonical} could not be retrieved: {e}"
+        ) from e
 
 
 def get_balance_sheet(
@@ -555,7 +558,7 @@ def get_balance_sheet(
         data = filter_financials_by_date(data, curr_date)
 
         if data.empty:
-            raise NoMarketDataError(ticker, canonical, "no balance sheet data")
+            raise_for_empty(ticker, canonical, "balance sheet data")
 
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
@@ -566,10 +569,12 @@ def get_balance_sheet(
 
         return header + csv_string
 
-    except NoMarketDataError:
+    except VendorError:
         raise
     except Exception as e:
-        return f"Error retrieving balance sheet for {ticker}: {str(e)}"
+        raise VendorRequestError(
+            "yfinance", f"balance sheet for {canonical} could not be retrieved: {e}"
+        ) from e
 
 
 def get_cashflow(
@@ -592,7 +597,7 @@ def get_cashflow(
         data = filter_financials_by_date(data, curr_date)
 
         if data.empty:
-            raise NoMarketDataError(ticker, canonical, "no cash flow data")
+            raise_for_empty(ticker, canonical, "cash flow data")
 
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
@@ -603,10 +608,12 @@ def get_cashflow(
 
         return header + csv_string
 
-    except NoMarketDataError:
+    except VendorError:
         raise
     except Exception as e:
-        return f"Error retrieving cash flow for {ticker}: {str(e)}"
+        raise VendorRequestError(
+            "yfinance", f"cash flow for {canonical} could not be retrieved: {e}"
+        ) from e
 
 
 def get_income_statement(
@@ -629,7 +636,7 @@ def get_income_statement(
         data = filter_financials_by_date(data, curr_date)
 
         if data.empty:
-            raise NoMarketDataError(ticker, canonical, "no income statement data")
+            raise_for_empty(ticker, canonical, "income statement data")
 
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
@@ -640,10 +647,12 @@ def get_income_statement(
 
         return header + csv_string
 
-    except NoMarketDataError:
+    except VendorError:
         raise
     except Exception as e:
-        return f"Error retrieving income statement for {ticker}: {str(e)}"
+        raise VendorRequestError(
+            "yfinance", f"income statement for {canonical} could not be retrieved: {e}"
+        ) from e
 
 
 def get_insider_transactions(
@@ -656,9 +665,12 @@ def get_insider_transactions(
         ticker_obj = yf.Ticker(canonical)
         data = yf_retry(lambda: ticker_obj.insider_transactions)
 
-        # Empty is normal here (many valid symbols have no insider filings),
-        # so report it plainly rather than treating the symbol as invalid.
+        # Empty is normal here (many valid symbols have no insider filings), so
+        # report it plainly rather than treating the symbol as invalid. It is
+        # only "normal" if Yahoo actually answered: an empty list from an
+        # unreachable provider is a vendor failure, not an absence.
         if data is None or data.empty:
+            raise_if_yahoo_unreachable("insider filings", ticker, canonical)
             return f"No insider transactions reported for symbol '{canonical}'"
 
         if curr_date:
@@ -688,5 +700,9 @@ def get_insider_transactions(
 
         return header + csv_string
 
+    except VendorError:
+        raise
     except Exception as e:
-        return f"Error retrieving insider transactions for {ticker}: {str(e)}"
+        raise VendorRequestError(
+            "yfinance", f"insider transactions for {canonical} could not be retrieved: {e}"
+        ) from e

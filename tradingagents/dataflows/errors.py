@@ -8,6 +8,7 @@ these (or a thin vendor-named subclass) and needs no new ``except`` clause.
     VendorError
     ├── NoMarketDataError          no usable rows (empty result OR stale data)
     ├── VendorRateLimitError       transient throttle -> skip to next vendor
+    ├── VendorRequestError         the call failed and proved nothing about the symbol
     ├── VendorHTTPError            typed direct-HTTP response failure
     └── VendorNotConfiguredError   missing API key/config -> vendor unavailable
 
@@ -46,6 +47,35 @@ class NoMarketDataError(VendorError):
 
 class VendorRateLimitError(VendorError):
     """A vendor throttled the request; the router skips to the next vendor."""
+
+
+class VendorRequestError(VendorError):
+    """A provider call failed without proving anything about the instrument.
+
+    ``NoMarketDataError`` means the vendor answered and had nothing.
+    ``VendorRateLimitError`` means it answered "too many requests". This type is
+    the remaining case: the call itself failed (transport error, unusable
+    payload) or returned an empty result while the provider was unreachable.
+
+    It exists so a broken provider can no longer masquerade as evidence. Before
+    it, yfinance paths returned an ``"Error retrieving ..."`` string that the
+    router counted as a successful answer: the fallback chain stopped and the
+    error text reached the analyst as if it were data. The router treats every
+    ``VendorError`` as recoverable, so this type falls through to the next
+    configured vendor instead, and a chain where *every* vendor failed reports
+    the vendor failure rather than "no such data".
+
+    ``provider`` is a stable vendor id (``"yfinance"``); ``detail`` is free text
+    that must never claim the symbol is absent.
+    """
+
+    def __init__(self, provider: str, detail: str = "") -> None:
+        self.provider = provider
+        self.detail = detail
+        message = f"{provider} request failed"
+        if detail:
+            message += f": {detail}"
+        super().__init__(message)
 
 
 class RateLimitError(VendorRateLimitError):

@@ -28,6 +28,7 @@ from .errors import (
     VendorError,
     VendorNotConfiguredError,
     VendorRateLimitError,
+    VendorRequestError,
 )
 from .fred import FredNotConfiguredError
 from .health import (
@@ -76,6 +77,8 @@ def public_vendor_reason_code(exc: Exception) -> str:
         return "provider_rate_limited"
     if isinstance(exc, VendorNotConfiguredError):
         return "provider_not_configured"
+    if isinstance(exc, VendorRequestError):
+        return "provider_request_failed"
     if isinstance(exc, ValueError):
         return "provider_invalid_request"
     return "provider_request_failed"
@@ -143,6 +146,12 @@ def _cooldown_for_exception(exc: Exception) -> tuple[float, str]:
         return DAILY_QUOTA_COOLDOWN_SECONDS, "wind_quota"
     if isinstance(exc, WindNetworkError):
         return TRANSIENT_FAILURE_COOLDOWN_SECONDS, "network"
+    if isinstance(exc, VendorRequestError):
+        # A provider call that failed without proving anything about the symbol.
+        # Treated like a transport failure: short cooldown, and the caller's
+        # implicit safety-net fallback may pull in an unchosen vendor. A wrapped
+        # rate-limit cause is caught earlier by ``_carries_rate_limit_signal``.
+        return TRANSIENT_FAILURE_COOLDOWN_SECONDS, "provider_request_failed"
     if status_code == 403:
         return 0.0, "forbidden"
     if status_code == 0:

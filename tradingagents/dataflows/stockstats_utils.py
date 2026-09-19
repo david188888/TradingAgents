@@ -39,9 +39,10 @@ except Exception:  # pragma: no cover - curl_cffi is a yfinance dependency
 
 
 from .config import get_config
+from .errors import VendorRequestError
 from .symbol_utils import NoMarketDataError, normalize_symbol
 from .ticker_utils import is_a_share_ticker
-from .utils import safe_ticker_component
+from .utils import safe_ticker_component, vendor_reachable
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,39 @@ MAX_OHLCV_STALE_DAYS = 10
 # up today's close soon after it publishes, long enough that a day with no bar
 # at all (weekend, holiday) cannot trigger a download on every call.
 OHLCV_CACHE_TTL_SECONDS = 900
+
+
+# Root host used as the liveness probe target for Yahoo. Reaching it proves the
+# provider is answering at all, which is the only thing that separates "this
+# symbol has no data" from "the request never got an answer".
+_YAHOO_HOST = "https://query2.finance.yahoo.com"
+
+
+def raise_if_yahoo_unreachable(what: str, symbol: str = "", canonical: str = "") -> None:
+    """Raise a typed vendor failure when Yahoo is not answering at all.
+
+    Called only after Yahoo returned an empty or unexplained result. The message
+    deliberately says nothing about the instrument: an outage is not evidence
+    that the symbol is unknown, delisted, or uncovered.
+    """
+    if not vendor_reachable(_YAHOO_HOST):
+        target = canonical or symbol
+        subject = f" for {target!r}" if target else ""
+        raise VendorRequestError(
+            "yfinance",
+            f"Yahoo Finance is unreachable, so {what}{subject} could not be "
+            "retrieved. This is a vendor failure, not evidence about the symbol.",
+        )
+
+
+def raise_for_empty(symbol: str, canonical: str, what: str) -> None:
+    """Report an empty Yahoo result as an absence, or as an outage if it is one.
+
+    yfinance returns an empty frame for a failed request rather than raising, so
+    without this check a Yahoo outage reads as "this symbol has no {what}".
+    """
+    raise_if_yahoo_unreachable(what, symbol, canonical)
+    raise NoMarketDataError(symbol, canonical, f"no {what}")
 
 
 def yf_retry(func, max_retries=3, base_delay=2.0):
@@ -313,11 +347,11 @@ def load_ohlcv(symbol: str, curr_date: str, via_vendor: bool = False) -> pd.Data
             auto_adjust=True,
         ))
         downloaded = _ensure_date_column(downloaded.reset_index())
-        # Only cache real data — never persist an empty frame.
+        # Only cache real data — never persist an empty frame. An empty frame is
+        # ambiguous (unknown symbol or failed request), so classify it: an
+        # unreachable Yahoo is a vendor failure, not a missing instrument.
         if downloaded.empty or "Close" not in downloaded.columns:
-            raise NoMarketDataError(
-                symbol, canonical, "Yahoo Finance returned no rows"
-            )
+            raise_for_empty(symbol, canonical, "price rows")
         downloaded.to_csv(data_file, index=False, encoding="utf-8")
         data = downloaded
 

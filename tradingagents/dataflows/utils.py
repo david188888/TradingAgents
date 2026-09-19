@@ -1,4 +1,5 @@
 import re
+import time
 from datetime import date, datetime, timedelta
 from typing import Annotated
 
@@ -79,6 +80,51 @@ def get_scrubbed(
         message = str(exc).replace(secret, "***") if secret else str(exc)
         error = type(exc)(message)
     raise error
+
+
+# How long a reachability verdict is reused. A batch analysis over many symbols
+# asks the same question repeatedly; without reuse a provider outage would cost
+# one probe (and one timeout) per empty result.
+REACHABILITY_TTL_SECONDS = 60.0
+
+# url -> (monotonic timestamp, reachable). Process-lived on purpose: the probe
+# answers "is the vendor answering right now", which is a property of the run,
+# not of the request.
+_REACHABILITY_CACHE: dict[str, tuple[float, bool]] = {}
+
+
+def vendor_reachable(
+    url: str,
+    timeout: float = 5.0,
+    *,
+    ttl_seconds: float | None = None,
+) -> bool:
+    """Whether a vendor host answers at all, for telling silence from an outage.
+
+    Some clients (notably yfinance) return an empty result instead of raising
+    when a request fails, which makes "the vendor is down" and "this symbol has
+    no data" indistinguishable. Probe only when a result is empty, never on a
+    successful path.
+
+    The verdict is cached for ``REACHABILITY_TTL_SECONDS`` so a batch run does
+    not send one probe per empty symbol. Pass ``ttl_seconds=0`` to force a fresh
+    probe. A probe that fails is reported as unreachable, so the caller's
+    fallback favors "vendor failure" over an unproven "no data" claim.
+    """
+    ttl = REACHABILITY_TTL_SECONDS if ttl_seconds is None else ttl_seconds
+    now = time.monotonic()
+    cached = _REACHABILITY_CACHE.get(url)
+    if cached is not None and now - cached[0] < ttl:
+        return cached[1]
+
+    try:
+        requests.head(url, timeout=timeout, allow_redirects=True)
+        reachable = True
+    except requests.RequestException:
+        reachable = False
+
+    _REACHABILITY_CACHE[url] = (now, reachable)
+    return reachable
 
 
 def decorate_all_methods(decorator):
