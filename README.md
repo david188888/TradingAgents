@@ -4,6 +4,14 @@ TradingAgents is a **LangGraph-based multi-agent LLM financial trading analysis 
 
 It is a research tool, not a broker, portfolio accounting system, or source of investment advice.
 
+## Demo
+
+Watch a 20-second walkthrough of a completed A-share research-only sample. English annotations guide the original Chinese interface; the video is for research demonstration only, not investment advice.
+
+[![TradingAgents demo: a completed 002335.SZ research-only sample](https://david188888.github.io/images/tradingagents-demo-poster.jpg)](https://david188888.github.io/videos/tradingagents-demo.mp4)
+
+[Open the 20-second demo video](https://david188888.github.io/videos/tradingagents-demo.mp4) · [View the project page](https://david188888.github.io/en/projects/tradingagents/)
+
 ## Pipelines
 
 The learning-research path is the default product direction for the local workbench:
