@@ -8,6 +8,8 @@ transport error must degrade to a placeholder rather than raise.
 from __future__ import annotations
 
 import http.client
+import io
+import json
 from unittest.mock import patch
 from urllib.error import HTTPError
 
@@ -44,6 +46,25 @@ class TestStockTwitsResilience:
             out = stocktwits.fetch_stocktwits_messages("NVDA")
         assert "unavailable" in out.lower()
         assert out.startswith("<stocktwits unavailable")
+
+    def test_html_entities_are_decoded_in_message_body(self):
+        payload = {
+            "messages": [
+                {
+                    "created_at": "2026-09-25T12:00:00Z",
+                    "user": {"username": "alice"},
+                    "entities": {"sentiment": {"basic": "Bullish"}},
+                    "body": "R&amp;D &lt;growth&gt; &quot;looks good&quot; &#39;",
+                }
+            ]
+        }
+        response = io.BytesIO(json.dumps(payload).encode("utf-8"))
+
+        with patch.object(stocktwits, "urlopen", return_value=response):
+            out = stocktwits.fetch_stocktwits_messages("NVDA")
+
+        assert 'R&D <growth> "looks good"' in out
+        assert "&#39;" not in out
 
 
 @pytest.mark.unit

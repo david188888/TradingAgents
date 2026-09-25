@@ -15,6 +15,7 @@ network call succeeded.
 from __future__ import annotations
 
 import contextlib
+import html
 import http.client
 import json
 import logging
@@ -125,7 +126,7 @@ def fetch_stocktwits_messages(
         entities = m.get("entities") or {}
         sentiment_obj = entities.get("sentiment") or {}
         sentiment = sentiment_obj.get("basic") if isinstance(sentiment_obj, dict) else None
-        body = (m.get("body") or "").replace("\n", " ").strip()
+        body = html.unescape((m.get("body") or "").replace("\n", " ")).strip()
         if len(body) > 280:
             body = body[:280] + "…"
 

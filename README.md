@@ -73,7 +73,7 @@ tradingagents
 tradingagents analyze
 ```
 
-Configuration is resolved from environment variables (`TRADINGAGENTS_*`), a local JSON file, or interactive prompts. The default LLM provider is DeepSeek. See `tradingagents/default_config.py` and `.env.example` for all options.
+Configuration is resolved from environment variables (`TRADINGAGENTS_*`), a local JSON file, or interactive prompts. The default LLM provider is DeepSeek. Blank results, cache, memory-log, and news-layer cache path variables use their built-in defaults. See `tradingagents/default_config.py` and `.env.example` for all options.
 
 ## Local Web Workbench
 

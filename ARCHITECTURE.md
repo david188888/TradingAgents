@@ -26,6 +26,8 @@ AnalysisRequest -> TradingAgentsGraph -> AnalysisRunner -> LangGraph workflow
 workflow, and delegates run execution to `AnalysisRunner`. The runner resolves
 run context, creates state, invokes or streams LangGraph, handles cancellation
 and checkpoint coordination, then returns a result.
+Each analysis binds its effective dataflow configuration to the run's execution
+context, so concurrent Web runs route through their own configured providers.
 
 ## Workflow And Research Routing
 
