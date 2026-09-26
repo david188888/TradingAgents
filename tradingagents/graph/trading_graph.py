@@ -31,7 +31,7 @@ from tradingagents.agents.utils.agent_utils import (
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.analysts import ANALYST_WIRE_KEYS
-from tradingagents.dataflows.config import set_config
+from tradingagents.dataflows.config import config_scope, merge_config, set_config
 from tradingagents.dataflows.registry import validate_data_vendors
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG, validate_config
@@ -275,15 +275,16 @@ class TradingAgentsGraph:
         """Run one analysis through the consumer-neutral execution boundary."""
         if observation_context is not None and not self.observation_enabled:
             raise ValueError("observation context requires an observed graph")
-        return AnalysisRunner(self).run(
-            request,
-            cancellation_token=cancellation_token,
-            observation_context=observation_context,
-            callbacks=callbacks,
-            state_update_sink=state_update_sink,
-            checkpoint_run_id=checkpoint_run_id,
-            checkpoint_guard=checkpoint_guard,
-        )
+        with config_scope(merge_config(self.config)):
+            return AnalysisRunner(self).run(
+                request,
+                cancellation_token=cancellation_token,
+                observation_context=observation_context,
+                callbacks=callbacks,
+                state_update_sink=state_update_sink,
+                checkpoint_run_id=checkpoint_run_id,
+                checkpoint_guard=checkpoint_guard,
+            )
 
     def save_reports(self, final_state, ticker, save_path=None) -> Path:
         """Write the markdown report tree for a completed run, like the CLI does.

@@ -26,6 +26,8 @@ AnalysisRequest -> TradingAgentsGraph -> AnalysisRunner -> LangGraph workflow
 workflow, and delegates run execution to `AnalysisRunner`. The runner resolves
 run context, creates state, invokes or streams LangGraph, handles cancellation
 and checkpoint coordination, then returns a result.
+Each analysis binds its effective dataflow configuration to the run's execution
+context, so concurrent Web runs route through their own configured providers.
 
 ## Workflow And Research Routing
 
@@ -39,10 +41,10 @@ workflow instead of manufacturing a decision.
 Bull and Bear debate through the Research Manager. `AnalysisRequest` accepts
 only the typed public modes `company_research` and `holding_review`; both route
 from Research Manager directly to Portfolio Manager, and the runner reports the
-`research_only` signal. Trader and the three-role risk debate remain wired in
-the graph as a compatibility/internal legacy branch, but no current typed
-public request selects that branch. This routing is defined in `graph/setup.py`;
-do not infer it from an older report layout or UI projection.
+`research_only` signal. The former Trader and three-role risk debate have been
+retired from the execution graph; older state and report fields may remain for
+compatibility. This routing is defined in `graph/setup.py`; do not infer it from
+an older report layout or UI projection.
 
 Research runs use a deterministic evidence registry and data-window plan to
 assemble `ResearchCaseV2` from a validated draft when possible. The same typed

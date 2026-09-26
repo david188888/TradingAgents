@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import importlib
+import os
 
 import pytest
 
 import tradingagents.default_config as default_config_module
 
+_PATH_ENV_VARS = (
+    "TRADINGAGENTS_RESULTS_DIR",
+    "TRADINGAGENTS_CACHE_DIR",
+    "TRADINGAGENTS_MEMORY_LOG_PATH",
+    "TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR",
+)
+
 
 def _reload_with_env(monkeypatch, **overrides):
     """Set/clear env vars then reload default_config to re-evaluate DEFAULT_CONFIG."""
-    for key in list(default_config_module._ENV_OVERRIDES):
+    for key in (*default_config_module._ENV_OVERRIDES, *_PATH_ENV_VARS):
         monkeypatch.delenv(key, raising=False)
     for key, val in overrides.items():
         monkeypatch.setenv(key, val)
@@ -98,6 +106,33 @@ def test_empty_env_value_is_passthrough(monkeypatch):
     )
     assert dc.DEFAULT_CONFIG["llm_provider"] == "deepseek"
     assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 1
+
+
+def test_blank_path_variables_use_built_in_defaults(monkeypatch):
+    dc = _reload_with_env(
+        monkeypatch,
+        TRADINGAGENTS_RESULTS_DIR="",
+        TRADINGAGENTS_CACHE_DIR="",
+        TRADINGAGENTS_MEMORY_LOG_PATH="",
+        TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR="",
+    )
+    home = dc._TRADINGAGENTS_HOME
+    assert dc.DEFAULT_CONFIG["results_dir"] == os.path.join(home, "logs")
+    assert dc.DEFAULT_CONFIG["data_cache_dir"] == os.path.join(home, "cache")
+    assert dc.DEFAULT_CONFIG["memory_log_path"] == os.path.join(
+        home, "memory", "trading_memory.md"
+    )
+    assert dc.DEFAULT_CONFIG["news_layer2_cache_dir"] == os.path.join(
+        home, "cache", "news-layer2"
+    )
+
+
+def test_nonempty_path_variable_is_preserved(monkeypatch):
+    dc = _reload_with_env(
+        monkeypatch,
+        TRADINGAGENTS_RESULTS_DIR="/tmp/custom-results",
+    )
+    assert dc.DEFAULT_CONFIG["results_dir"] == "/tmp/custom-results"
 
 
 def test_invalid_int_raises(monkeypatch):
