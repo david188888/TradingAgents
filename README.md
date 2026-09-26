@@ -1,136 +1,98 @@
+English | [简体中文](README.zh-CN.md)
+
 # TradingAgents
 
-TradingAgents is a **LangGraph-based multi-agent LLM financial trading analysis framework**. This is David's fork, optimized primarily for the **China A-share market**, with A-share-native data sources, evidence validation, and a local web workbench.
+TradingAgents is a local, LangGraph-based multi-agent research framework built on [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). This fork focuses on China A-shares: it gathers market, sentiment, news, and company evidence; checks its quality; tests opposing theses; and publishes a reviewable research case. A CLI and a local web workbench share the same execution core. The output supports company research and holding review, not orders, target positions, or investment advice.
 
-It is a research tool, not a broker, portfolio accounting system, or source of investment advice.
+## Demo
 
-## Pipelines
+Watch a 20-second walkthrough of a completed A-share research-only sample. English annotations guide the original Chinese interface; the video is for research demonstration only, not investment advice.
 
-The learning-research path is the default product direction for the local workbench:
+[![TradingAgents demo: a completed 002335.SZ research-only sample](https://david188888.github.io/images/tradingagents-demo-poster.jpg)](https://david188888.github.io/videos/tradingagents-demo.mp4)
 
-```
-Market / Social / News / Fundamentals Analysts
-                    ↓
-             Evidence Steward
-                    ↓
-          Bull ↔ Bear Research Debate
-                    ↓
-             Research Manager
-                    ↓
-              ResearchCaseV2
-                    ↓
-          Thesis Diff + Reader Surface
-```
+[Open the 20-second demo video](https://david188888.github.io/videos/tradingagents-demo.mp4) · [View the project page](https://david188888.github.io/en/projects/tradingagents/)
 
-It supports company research and holding review without producing orders, target
-positions, or Buy/Hold/Sell instructions. The upstream-compatible legacy graph
-branch remains retained for compatibility with older runs and legacy boundaries;
-current typed request modes are only `company_research` and `holding_review`, and
-the CLI defaults to `company_research`. Both typed modes bypass Trader and the
-three-role risk debate, then terminate through Portfolio Manager.
+## Research pipeline
 
-```
-Retained legacy compatibility graph branch, not selected by current typed request modes
+The CLI and web workbench turn a typed request into the same LangGraph run. The public modes are `company_research` and `holding_review`; the CLI starts company research, while holding review requires context supplied through the Web/API. The graph runs selected analysts in order after deterministic data prefetch, then checks the evidence before debate.
 
-Market / Social / News / Fundamentals Analysts
-                    ↓
-             Evidence Steward
-                    ↓
-          Bull ↔ Bear Research Debate
-                    ↓
-             Research Manager
-                    ↓
-                  Trader
-                    ↓
- Aggressive ↔ Conservative ↔ Neutral Risk Debate
-                    ↓
-             Portfolio Manager
+```mermaid
+flowchart TD
+    A[CLI or local Web/API request] --> B[Shared execution core]
+    B --> C[Data prefetch and source checks]
+    C --> D[Selected analysts: market, sentiment, news, fundamentals]
+    D --> E[Evidence Steward]
+    E -->|Usable evidence, with limitations if needed| F[Bull and Bear research debate]
+    E -->|Gate fault or hard stop| X[Explicit partial or fail-stop result]
+    F --> G[Research Manager synthesizes the case]
+    G --> H[Portfolio Manager closes the research-only run]
+    H --> I[Committed research case and evidence artifacts]
+    I --> J[Report, Reader, optional thesis comparison, and audit views]
 ```
 
-Four analysts gather complementary evidence. The Evidence Steward validates the
-research package before the Bull and Bear researchers debate it. In learning modes,
-the Research Manager produces evidence-bound claims that are assembled into a
-typed Research Case and projected into the Reader. Trader and the three-role
-risk debate remain in the retained compatibility branch; Portfolio Manager is the
-shared terminal convergence for typed and legacy routes.
+The Evidence Steward distinguishes `PASS`, `LOW_CONFIDENCE`, and `FAIL_STOP`; an unexpected gate fault also terminates the graph. A completed run may still expose unknowns or partial coverage. Research artifacts are published from committed run state, and the Reader/Audit views show persisted results rather than fetching new evidence. The former Trader and three-role risk debate are retired from the current execution graph. See [the architecture map](ARCHITECTURE.md) for the execution and persistence boundaries.
 
-## Quick Start
+## Data and agents
+
+Provider routing is local to `tradingagents/dataflows/`. The table names representative interfaces, not a promise that every provider is available for every ticker or date. Provider failures and incomplete coverage are reported explicitly.
+
+| Evidence | Representative interfaces | Current sources |
+| --- | --- | --- |
+| Prices and indicators | `get_stock_data`, `get_adjusted_price_history`, `get_indicators` | A-share routing can use mootdx, Tushare, and AKShare according to the requested capability and configuration; indicators can be computed locally. |
+| Company financials and valuation | `get_fundamentals`, `get_balance_sheet`, `get_cashflow`, `get_income_statement`, `get_a_share_valuation` | Tushare and Sina for financials; Tencent for current A-share valuation snapshots. |
+| News and disclosures | `get_news`, `get_a_share_cninfo_announcements`, `get_a_share_exchange_announcements` | Configured search/news providers and official CNINFO or exchange disclosures; EastMoney is a labeled public fallback for some queries. |
+| A-share research supplements | `get_a_share_dragon_tiger`, `get_a_share_lockup_releases`, `get_a_share_adjust_factors`, `get_a_share_valuation_history`, `get_china_pmi` | EastMoney, Sina, baostock, and the National Bureau of Statistics, depending on the interface. |
+
+Some supplemental A-share adapters were informed by [Simon Lin's a-stock-data](https://github.com/simonlin1212/a-stock-data), including adjustment factors, historical valuation, listing history, chip distribution, and macro series. They are implemented and routed in this repository; installing the entire a-stock-data toolkit is not a runtime requirement. See [A-share data capabilities](docs/operations/a-share-data-capabilities.md) for source and fallback details.
+
+| Agent or stage | Main responsibility |
+| --- | --- |
+| Market Analyst | Examines price action, indicators, and market structure. |
+| Sentiment Analyst | Assesses attention and sentiment in available news and social sources. |
+| News Analyst | Interprets company news, disclosures, and potential catalysts. |
+| Fundamentals Analyst | Reviews financial statements, valuation, and business quality. |
+| Evidence Steward | Checks coverage, contradictions, and provenance; records evidence limits before debate. |
+| Bull Researcher | Builds the strongest evidence-bound positive thesis. |
+| Bear Researcher | Challenges that thesis with counterevidence and failure conditions. |
+| Research Manager | Synthesizes the debate and analyst reports into a research case. |
+| Portfolio Manager | Closes the run with a research-only review and, for holding review, a holding summary; it does not generate an order. |
+
+The four analysts can be selected and ordered; the subsequent convergence path is fixed. The web workbench streams progress via FastAPI/SSE and presents the persisted report, Reader, and audit history through a bundled React/TypeScript frontend.
+
+## Quick start
+
+Python 3.10 or newer is required. Configure an API key for your chosen LLM provider and any optional data or news services you use; the default LLM provider is DeepSeek. Keep credentials in the ignored local files.
 
 ```bash
-# Requirements: Python 3.10+, API credentials for LLM and data services
 git clone https://github.com/david188888/TradingAgents.git
 cd TradingAgents
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[china,web]"       # full install with A-share data + web workbench
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[china,web]"
 
-# Create local config (both are .gitignored)
 cp .env.example .env
 cp tradingagents.config.example.json tradingagents.local.json
+# Set your LLM key in .env (for example DEEPSEEK_API_KEY), and configure
+# the data providers you use (for example TUSHARE_TOKEN for A-share financials).
+# Adjust tradingagents.local.json if you want to change the default routing.
 
-# Start the interactive CLI
-tradingagents
-# or jump straight to analysis
-tradingagents analyze
+# Choose one entry point:
+tradingagents analyze                 # interactive company research
+tradingagents web --port 8765 --open  # local workbench
 ```
 
-Configuration is resolved from environment variables (`TRADINGAGENTS_*`), a local JSON file, or interactive prompts. The default LLM provider is DeepSeek. Blank results, cache, memory-log, and news-layer cache path variables use their built-in defaults. See `tradingagents/default_config.py` and `.env.example` for all options.
+The web server binds to `127.0.0.1`; the bundled frontend needs no Node.js at runtime. Configuration comes from `TRADINGAGENTS_*` environment variables, the local JSON file, or interactive prompts. Blank results, cache, memory-log, and news-cache path settings use their built-in defaults. See [.env.example](.env.example) and [default_config.py](tradingagents/default_config.py). Local runs and reports live under `~/.tradingagents/`; see [the architecture map](ARCHITECTURE.md) for paths. Developers changing `frontend/src/` should rebuild `tradingagents/web/static/` with `npm --prefix frontend run build`.
 
-## Local Web Workbench
+## More documentation
 
-```bash
-tradingagents web                          # serve at http://127.0.0.1:8000
-tradingagents web --port 8765 --open       # custom port + open browser
-```
+- [Documentation index](docs/README.md) and [current architecture](ARCHITECTURE.md)
+- [Research Reader architecture](docs/architecture/research-reader.md) and [web batch analysis](docs/operations/web-batch-analysis.md)
+- [Agent working rules](AGENTS.md), [contract index](docs/contracts/README.md), and [contributing guide](CONTRIBUTING.md)
 
-The workbench binds only to `127.0.0.1` and runs the real TradingAgents graph via a React/TypeScript frontend with a FastAPI + SSE backend. It groups all 13 roles into six workflow stages with typed edges and renders narrative artifacts as sanitized Markdown. Submission accepts single companies or batches of up to 8 companies through one global FIFO scheduler (concurrency 1–3); every company remains an independent run with its own Reader, report, audit history, and cancellation state (see [Web batch analysis](docs/operations/web-batch-analysis.md)). The reading surface is **progressive**: a completed run defaults to a **DecisionBrief** (rating / conclusion / drivers / risks) above a six-stage **debate journey** timeline — click a stage to expand **round cards** (LLM-generated topic, summary, keywords, bull/bear conviction bars), then expand a card to the full two/three-lane debate text. Run history groups active / completed / failed runs (recent failures keep their error category). Terminal runs use an opt-in **Audit Center** with summary-first, single-record detail loading; live runs keep a separate **real-time inspector**. The bundled frontend does not require Node.js at runtime.
+The project license is in [LICENSE](LICENSE).
 
-Rebuild the frontend from source when changing `frontend/src/`:
-```bash
-npm --prefix frontend run build
-```
+## Differences from upstream and acknowledgments
 
-## Differences from Upstream
+This fork retains the LangGraph multi-agent foundation of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Its A-share-oriented research path adds local-market provider routing and supplemental data, an Evidence Steward gate before debate, explicit source and uncertainty handling, typed research cases, and a local Reader/Audit workbench. The current public modes end in a research-only review; they do not run the original trading-decision path. These are this fork's design choices, not claims that upstream lacks every corresponding capability.
 
-This fork extends [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) with:
-
-- **A-share-first data path**: mootdx (TDX TCP, no IP ban) for primary OHLCV, tushare for fundamentals, EastMoney/SSE/SZSE for specialty data (dragon-tiger, lockups, block trades, limit-up pools, shareholder counts), Tencent for realtime PE/PB/market-cap, Sina for ETF options and financial statement fallback. yfinance is skipped for A-shares.
-- **Evidence Steward gate**: validates evidence sufficiency before the debate phase. Issues `PASS`, `LOW_CONFIDENCE`, or `FAIL_STOP` verdicts and enriches thin evidence via Tavily.
-- **Tavily news curation**: A-share query templates with topic fallback, domain/score filters.
-- **Credibility scoring & cross-source consistency**: news source quality scoring and multi-source consistency detection.
-- **Symbol normalization**: commodity/forex/crypto/A-share ticker normalization.
-- **Local web workbench**: reader-first observability surface (described above).
-
-## Data Locations
-
-Persistent data lives under `~/.tradingagents/`:
-
-| Data | Default path |
-| --- | --- |
-| Reports and logs | `~/.tradingagents/logs/` |
-| Legacy decision memory (read-only; writing was retired with the legacy transaction path) | `~/.tradingagents/memory/trading_memory.md` |
-| Web workbench runs | `~/.tradingagents/web/runs/` |
-
-## Documentation
-
-Start with the shortest path for the task at hand:
-
-1. [Documentation index](docs/README.md) for the repository map and document ownership.
-2. [Current architecture](ARCHITECTURE.md) and [product context](docs/context.md) for system boundaries.
-3. [Agent working rules](AGENTS.md) before changing code or configuration.
-4. [Contract index](docs/contracts/README.md) before changing a public request, artifact, event, or API shape.
-5. [Research Reader architecture](docs/architecture/research-reader.md) for the typed learning-research path.
-
-Focused references:
-
-- [A-share data capabilities](docs/operations/a-share-data-capabilities.md)
-- [Observability and replay](docs/operations/observability-replay.md)
-- [Workbench presets](docs/operations/workbench-presets.md)
-- [Wind AIFin Market](docs/integrations/wind.md)
-- [Legacy composite reference](docs/archive/legacy/learning-research-reader-2026-08-13.md) (migration reference; not the canonical ownership map)
-- [Contributing](CONTRIBUTING.md) for validation and documentation-impact rules
-
-Plans and reviews are deliberately kept separate from current-state documentation. Use the [documentation index](docs/README.md) to classify them before relying on their claims.
-
-## License
-
-This project is available under the terms in [LICENSE](LICENSE).
+Thanks to the TauricResearch contributors for the original TradingAgents framework and to [Simon Lin](https://github.com/simonlin1212/a-stock-data) for the A-share data reference. Thanks also to the maintainers of the data providers and open-source libraries used here.
