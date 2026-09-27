@@ -254,10 +254,15 @@ frontend/blob-report/
 # Local e2e / run-store artifacts
 output/
 
-# Local AI tooling (not part of the project)
+# Local AI tooling: only the personal layer is ignored. Shared config
+# (.claude/settings.json, .codex/config.toml) is tracked for fresh clones.
 .agents/
-.claude/
-.codex/
+.claude/settings.local.json
+.claude/plans/
+.claude/scheduled_tasks.lock
+.claude/skills/
+.codex/config.local.toml
+skills-lock.json
 
 # Tests and e2e scaffolding are tracked since 2026-08 (validation runs locally,
 # gated by pre-commit Ruff); the entries below remain local-only.
