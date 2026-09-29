@@ -53,6 +53,12 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 
 - [Architecture decisions](decisions/README.md): ADR lifecycle and future decision records. No historical ADRs are reconstructed here.
 
+## Proposed Engineering Designs
+
+These are execution proposals, not descriptions of current runtime behavior.
+
+- [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): approved product direction, single-column workbench layout, bounded agent workflow, data-source evaluation, implementation checklist, compatibility, and acceptance criteria. Product implementation is pending.
+
 ## Historical / Archive
 
 `Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
@@ -69,6 +75,6 @@ Every archived document carries a `Status:` field and a pointer back to this ind
 
 ## Document Conventions
 
-- Non-current documents must start with one of: `Status: Historical`, `Status: Frozen Design`, `Status: Archived Plan` — and must state: **Do not use this document as evidence of current implementation behavior.**
+- Non-current documents must start with one of: `Status: Proposed`, `Status: Historical`, `Status: Frozen Design`, `Status: Archived Plan` — and must state: **Do not use this document as evidence of current implementation behavior.** Proposed designs belong under Proposed Engineering Designs until implemented or archived.
 - Current documents are marked `Status: Current`.
 - Current-state pages do not carry implementation-process noise (story points, sprints, task boards, uncommitted-worktree notes, one-off test counts, or “Next / To Do” markers). Those belong in issues, PRs, project management systems, or historical plans.
