@@ -1,0 +1,444 @@
+/**
+ * The catalyst workbench's first screen (design 4.3, 4.6).
+ *
+ * Every colour, radius, space and font below resolves to a custom property
+ * declared in `tokens.css`. There is no literal palette here and no second
+ * theme file: the layout sketch in the design docs uses its own colours and
+ * those are not part of this page (gate G14).
+ *
+ * The layout is a single column at every width. Design 4.6 requires the five
+ * core rows to be readable at 1440x900 and 1280x800 without opening a detail,
+ * and no horizontal page scroll at 390x844 or at 200% zoom. The two rules that
+ * earn that are `min-width: 0` on the flex/grid children (a long unbroken
+ * Chinese string otherwise sets a min-content floor and pushes the page wide)
+ * and `overflow-wrap: anywhere` on the text.
+ */
+
+/* --------------------------------------------------------------------------
+   The brief
+   -------------------------------------------------------------------------- */
+
+.catalyst-brief {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.catalyst-brief-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.catalyst-brief-head h2 {
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  line-height: 1.35;
+}
+
+.catalyst-brief-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+/* The state pill is a text label first. Tone is decoration on top of a name
+   the reader can read, never the only carrier of the state. */
+.catalyst-state-pill {
+  display: inline-block;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-1);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.catalyst-state-pill.tone-good {
+  background: var(--green-soft);
+  border-color: var(--green);
+  color: var(--text);
+}
+
+.catalyst-state-pill.tone-limited {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  color: var(--text);
+}
+
+.catalyst-state-pill.tone-bad {
+  background: var(--red-soft);
+  border-color: var(--red);
+  color: var(--text);
+}
+
+.catalyst-state-pill.tone-live {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--text);
+}
+
+.catalyst-state-note {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   One row. The label is a heading so the section order is navigable.
+   -------------------------------------------------------------------------- */
+
+.catalyst-row {
+  min-width: 0;
+}
+
+.catalyst-row-label {
+  margin: 0 0 var(--sp-1);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: none;
+}
+
+.catalyst-row ul,
+.catalyst-row ol {
+  margin: 0;
+  padding-inline-start: 1.15em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.catalyst-row-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.catalyst-row-line > span:first-child {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.catalyst-row-hint {
+  margin: var(--sp-2) 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.catalyst-row-placeholder {
+  margin: 0;
+  color: var(--muted);
+  font-style: normal;
+  line-height: 1.6;
+}
+
+.catalyst-row-refs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+}
+
+.catalyst-ref {
+  padding: 0 var(--sp-2);
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.catalyst-ref:hover:not(:disabled) {
+  background: var(--panel-2);
+}
+
+.catalyst-ref:disabled {
+  color: var(--faint);
+  background: var(--panel-2);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   Safety overflow
+   -------------------------------------------------------------------------- */
+
+/* The rule the design is strictest about. Under overflow the limitation list
+   is the payload: expanded by default, never collapsed, never a count. The
+   scroll box caps its *height* so it cannot push the rest of the page off
+   screen; every entry inside it is still present and still reachable. */
+.catalyst-overflow-note {
+  padding: var(--sp-3);
+  border: 1px solid var(--amber);
+  border-inline-start-width: 3px;
+  border-radius: var(--radius-1);
+  background: var(--amber-soft);
+  min-width: 0;
+}
+
+.catalyst-overflow-note strong {
+  display: block;
+  margin-bottom: var(--sp-1);
+  color: var(--text);
+}
+
+.catalyst-overflow-note p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.catalyst-row-limitations[data-overflow="true"] {
+  padding: var(--sp-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-1);
+  background: var(--panel-2);
+  min-width: 0;
+}
+
+.catalyst-limitations-scroll {
+  /* Focusable (`tabindex="0"` in the markup) and a labelled region, so the
+     list is reachable by keyboard and announced as its own block. */
+  max-height: 22rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline-start: 1.15em;
+  margin: 0;
+}
+
+.catalyst-limitations-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Footer — the budget the server applied, not one this page invented
+   -------------------------------------------------------------------------- */
+
+.catalyst-brief-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+/* --------------------------------------------------------------------------
+   Evidence drawer (design 4.4)
+   -------------------------------------------------------------------------- */
+
+.catalyst-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.catalyst-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  /* The existing `--shadow-lg` token, used as the scrim: an overlay dim is
+     not a palette decision, and a second literal here would be one. */
+  background: var(--shadow-lg);
+  cursor: default;
+}
+
+.catalyst-drawer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(30rem, 100%);
+  max-width: 100%;
+  height: 100%;
+  min-width: 0;
+  background: var(--panel);
+  border-inline-start: 1px solid var(--line-2);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+/* Narrow screens get a sheet, not a drawer: full width, its own scroll
+   region, and `aria-modal` is set in the markup for this case only. */
+.catalyst-drawer-layer.is-narrow .catalyst-drawer {
+  width: 100%;
+  border-inline-start: 0;
+  border-top: 1px solid var(--line-2);
+  box-shadow: var(--shadow-md);
+}
+
+.catalyst-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.catalyst-drawer-head h3 {
+  margin: var(--sp-1) 0 0;
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.catalyst-drawer-close {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.catalyst-drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.catalyst-drawer-body section {
+  min-width: 0;
+}
+
+.catalyst-drawer-kicker {
+  display: block;
+  margin-bottom: var(--sp-1);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.catalyst-drawer-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.catalyst-drawer-facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  min-width: 0;
+}
+
+.catalyst-drawer-facts dt {
+  flex: 0 0 5rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.catalyst-drawer-facts dd {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 8rem;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.catalyst-drawer-body p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.catalyst-drawer-body a {
+  color: var(--accent-strong);
+  overflow-wrap: anywhere;
+}
+
+.catalyst-drawer-nolink {
+  color: var(--muted);
+}
+
+.catalyst-drawer-empty {
+  padding: var(--sp-4);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-1);
+  background: var(--panel-2);
+}
+
+.catalyst-drawer-empty p {
+  margin-top: var(--sp-2);
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   Narrow screens
+   -------------------------------------------------------------------------- */
+
+/* Design 4.6: at 390x844, and at 200% zoom on a 1280-wide viewport (which is
+   effectively 640 CSS pixels), the page stays one column and does not scroll
+   sideways. Nothing here introduces a horizontal scroll container. */
+@media (max-width: 1399px) {
+  .catalyst-brief {
+    padding: var(--sp-4);
+    gap: var(--sp-3);
+  }
+
+  .catalyst-brief-head h2 {
+    font-size: 1.125rem;
+  }
+
+  .catalyst-brief-status {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .catalyst-brief {
+    padding: var(--sp-3);
+  }
+
+  .catalyst-drawer-body {
+    padding: var(--sp-3);
+  }
+
+  .catalyst-limitations-scroll {
+    /* A shorter cap on the narrowest screens: a keyboard user tabbing into
+       the list should not have to scroll a very long page to reach what is
+       below it. The list stays complete and scrollable either way. */
+    max-height: 16rem;
+  }
+}

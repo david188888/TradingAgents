@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRunHistory } from "../../hooks/useRunHistory";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
-import type { AuditEntryContext, AuditOpenHandler } from "../reader/AuditCenter";
+import type { AuditEntryContext } from "../reader/AuditCenter";
 import { WorkbenchLayout } from "./WorkbenchLayout";
 
 const mockStoreModule = vi.hoisted(() => ({ useWorkbenchStore: vi.fn() }));
@@ -25,16 +25,6 @@ vi.mock("../timeline/DebateTimeline", () => ({ DebateTimeline: () => null }));
 vi.mock("../timeline/StageDetail", () => ({ StageDetail: () => null }));
 vi.mock("../reader/ReaderSurface", () => ({ ReaderSurface: () => null }));
 vi.mock("../reader/FailedRunView", () => ({ FailedRunView: () => null }));
-vi.mock("../reader/DecisionBrief", () => ({
-  DecisionBrief: ({ onOpenAudit }: { onOpenAudit: AuditOpenHandler }) => (
-    <button
-      type="button"
-      onClick={(event) => onOpenAudit({ section: "overview" }, event.currentTarget)}
-    >
-      打开终态审计
-    </button>
-  ),
-}));
 vi.mock("../reader/AuditCenter", () => ({
   AuditCenter: ({
     open,
@@ -92,7 +82,15 @@ describe("WorkbenchLayout audit center integration", () => {
     expect(screen.queryByTestId("workbench-audit-center")).toBeNull();
     expect(screen.queryByRole("button", { name: "实时审计栏" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "打开终态审计" }));
+    // T26/T31: a completed run with no catalyst artifact is now read by
+    // `LegacyReader`, which replaced `DecisionBrief` as the single summary
+    // container. The audit entry point it used to expose on the summary is one
+    // layer deep in the 概要/详情/研究过程 reader — the same contract my
+    // `WorkbenchLayout.catalyst.test.tsx` asserts. What this test owns is the
+    // routing of the trigger into the mounted center, not where the trigger
+    // sits.
+    fireEvent.click(screen.getByRole("tab", { name: "研究过程" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开审计中心" }));
     expect(screen.getByTestId("workbench-audit-center")).toHaveAttribute(
       "data-context",
       JSON.stringify({ section: "overview" }),
