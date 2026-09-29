@@ -103,6 +103,8 @@ G 评估与切换 (T33-T39)  ◄── 全部
 | 5 类 fixture 文件 | schema 序列化往返测试 |
 | 指纹/恢复的**兼容性判断** | 引用完整性、时点、优先级上限的**实现** |
 
+**共享文件 `tradingagents/web/api.py`（2026-09-29 执行中补充）**：B 与 C 都会改它，但落点不同——B 接入 `research_profile` 请求校验与 policy 常量（T07），C 注册 `GET /api/runs/{run_id}/catalyst` 路由与 projection 导入（T09）。合回顺序固定为 **B 先、C 后**；C 不得改动 B 加入的校验分支，B 不得改动 C 加入的路由。若两边都新增了 import 块，合回时需人工确认无重复导入。
+
 两者共享 `tradingagents/execution/models.py` 时，B 先改、C 后改，C 完成后 B 负责把 TS 镜像对齐到最终 schema。**C 不得改 `execution/models.py` 或 `web/schemas.py`；B 不得在 `agents/schemas/` 下新增或修改模型。**
 
 **policy 版本的硬约束（代码核查确认）**：`tradingagents/runtime/contracts.py` 的 `RuntimePolicyVersion` 是 **horizon 门控专用**枚举，目前只接受 `horizon-policy-v2` / `horizon-policy-v3`。该字面量被 **5 个文件**消费：`runtime/contracts.py`、`runtime/fingerprint.py`、`execution/runner.py`、`observability/canonical.py`、`research/analysis_cutoff.py`。**禁止把 `catalyst-evidence-policy-v1` 加进这个 Literal** —— 新 policy 走独立的 policy 模块与字段，不复用 horizon 的 runtime contract 通道。这一条对应设计 §9「不得因为命名相近启用项目中已有的测试门控 horizon-policy-v3」的警告。
