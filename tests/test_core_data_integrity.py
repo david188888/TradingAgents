@@ -123,19 +123,24 @@ def test_a_share_current_day_cache_obeys_ttl(monkeypatch, tmp_path) -> None:
     calls: list[str] = []
 
     def fetch(*args, **kwargs):
-        calls.append("mootdx")
+        calls.append("tushare")
         return fresh
 
     monkeypatch.setattr(
         stockstats_utils, "get_config", lambda: {"data_cache_dir": str(tmp_path)}
     )
-    from tradingagents.dataflows import mootdx_provider
+    # T-D1: tushare is the rank-1 A-share daily-bar vendor.  This test only
+    # exercises cache TTL, so it stubs the chain at the new primary rather than
+    # asserting a vendor order the mootdx demotion deliberately changed.  The
+    # loader imports its fetchers inside the function body, so the patch has to
+    # land on the defining module.
+    from tradingagents.dataflows import china_data
 
-    monkeypatch.setattr(mootdx_provider, "get_stock_mootdx_df", fetch)
+    monkeypatch.setattr(china_data, "get_stock_tushare_df", fetch)
 
     result = stockstats_utils._load_ohlcv_a_share("600519.SH", curr_date)
 
-    assert calls == ["mootdx"]
+    assert calls == ["tushare"]
     assert result.iloc[-1]["Close"] == 2.0
 
 

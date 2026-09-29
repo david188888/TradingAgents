@@ -377,13 +377,13 @@ def load_ohlcv(symbol: str, curr_date: str, via_vendor: bool = False) -> pd.Data
 
 
 def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
-    """A-share OHLCV via mootdx/tushare/akshare, with caching + look-ahead + stale guard.
+    """A-share OHLCV via tushare/mootdx/akshare, with caching + look-ahead + stale guard.
 
     Mirrors ``load_ohlcv``'s contract (5y window, per-symbol CSV cache,
-    curr_date filter, stale rejection) but pulls from mootdx (TCP 7709, no IP
-    ban) with tushare/akshare fallback, so the verified-snapshot and indicator
-    tools get real A-share rows instead of yfinance's unreliable .SZ/.SS
-    coverage.
+    curr_date filter, stale rejection) but pulls from tushare with mootdx
+    (TCP 7709, no IP ban) and akshare fallback, so the verified-snapshot and
+    indicator tools get real A-share rows instead of yfinance's unreliable
+    .SZ/.SS coverage.
     """
     from .china_data import (
         _require_a_share_tushare_symbol,
@@ -427,8 +427,13 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
     if data is None:
         errors: list[str] = []
         for fetch, name, candidate_source_id in (
-            (get_stock_mootdx_df, "mootdx", "mootdx.daily_bars"),
+            # T-D1: mootdx is tried after tushare. It stays registered (its
+            # finance/F10 capabilities are unaffected), but the 2026-09-29
+            # probe showed its quote path returns empty columnless frames after
+            # a *successful* TCP handshake, so paying it first cost ~26s per
+            # request. Its own circuit breaker caps the fallback cost too.
             (get_stock_tushare_df, "tushare", "tushare.tushare_get_stock"),
+            (get_stock_mootdx_df, "mootdx", "mootdx.daily_bars"),
             (get_stock_akshare_df, "akshare", "akshare.daily_bars"),
         ):
             try:
@@ -444,7 +449,7 @@ def _load_ohlcv_a_share(symbol: str, curr_date: str) -> pd.DataFrame:
             raise NoMarketDataError(
                 symbol,
                 canonical,
-                "A-share vendors (mootdx/tushare/akshare) returned no rows ("
+                "A-share vendors (tushare/mootdx/akshare) returned no rows ("
                 + "; ".join(errors)
                 + ")",
             )

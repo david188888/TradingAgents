@@ -1,0 +1,148 @@
+{
+  "$comment": "Shared first-screen character-count fixture. Loaded unchanged by tests/agents/test_catalyst_brief_budget.py (pytest) and frontend/src/test/catalystBriefBudget.test.ts (Vitest); both assert the same numbers. Do not reformat: the counts below are measured from the exact text, and JSON whitespace does not affect them, but the string contents do.",
+  "schema_version": "catalyst-research-case-v1",
+  "budget": 420,
+  "safety_overflow_budget": 120,
+  "cases": [
+    {
+      "name": "ordinary_minimum",
+      "note": "A short but legitimate brief. Under-filling is allowed; padding is not.",
+      "expected_characters": 122,
+      "body": {
+        "kind": "ordinary",
+        "judgement": "预告已披露且日期明确，值得在下一次定期报告时优先核查收入兑现。",
+        "priority": "verify_first",
+        "primary_catalyst_event_id": "ev_1",
+        "primary_catalyst": {
+          "text": "2026 年半年度业绩预告于 8 月 14 日披露。",
+          "event_ids": [
+            "ev_1"
+          ]
+        },
+        "key_evidence": [
+          {
+            "text": "预告区间为归母净利润 12.0 亿至 14.0 亿元。",
+            "finding_ids": [
+              "f_fact_1"
+            ]
+          }
+        ],
+        "key_question": {
+          "text": "预告的利润增长可能由低毛利产品结构贡献。",
+          "challenge_ids": [
+            "ch_1"
+          ]
+        },
+        "next_check": {
+          "text": "核对中报分产品毛利率与订单交付节奏。"
+        },
+        "critical_limitations": []
+      }
+    },
+    {
+      "name": "ordinary_exactly_at_budget",
+      "note": "Sits exactly on the 420 boundary. Adding one character must trip the gate, which is what the safety-overflow rule exists for. The trailing padding is deliberate: it makes the boundary the thing under test.",
+      "expected_characters": 420,
+      "body": {
+        "kind": "ordinary",
+        "judgement": "公告已披露业绩预告，公告本身不构成确认；当前仅有预告区间，尚无正式定期报告支撑，分产品口径与在手订单金额均未在本次覆盖窗口内取得，结论保持为待核查。",
+        "priority": "verify_first",
+        "primary_catalyst_event_id": "ev_1",
+        "primary_catalyst": {
+          "text": "业绩预告公告披露，回购计划与股东增减持均处于计划阶段、尚无执行记录。",
+          "event_ids": [
+            "ev_1"
+          ]
+        },
+        "key_evidence": [
+          {
+            "text": "预告净利润区间已披露，但未说明分产品口径。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。"
+          },
+          {
+            "text": "同期无可用一致预期，无法判断相对预期的变化方向。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。"
+          },
+          {
+            "text": "复权价格链缺少因子快照，历史时点不可验证。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。。"
+          }
+        ],
+        "key_question": {
+          "text": "利润增长是否由低毛利产品结构贡献，需在中报分产品毛利率中核对，否则预告区间不可直接外推全年。",
+          "challenge_ids": [
+            "ch_1"
+          ]
+        },
+        "next_check": {
+          "text": "核对中报分产品毛利率、订单交付节奏与一致预期口径。"
+        },
+        "critical_limitations": []
+      }
+    },
+    {
+      "name": "ordinary_with_limitations",
+      "note": "Limitations are counted. They may not be moved off the first screen to buy room.",
+      "expected_characters": 83,
+      "body": {
+        "kind": "ordinary",
+        "judgement": "有可核查的催化，但兑现路径缺少分部数据。",
+        "priority": "keep_watching",
+        "primary_catalyst_event_id": "ev_1",
+        "primary_catalyst": {
+          "text": "回购计划公告已披露，尚无执行记录。",
+          "event_ids": [
+            "ev_1"
+          ]
+        },
+        "key_evidence": [
+          {
+            "text": "计划金额不等于已执行金额。"
+          }
+        ],
+        "key_question": {
+          "text": "执行进度是否在窗口内披露。"
+        },
+        "next_check": {
+          "text": "跟踪回购进展公告。"
+        },
+        "critical_limitations": [
+          {
+            "text": "资金面数据本次不可用。"
+          }
+        ]
+      }
+    },
+    {
+      "name": "safety_overflow",
+      "note": "Design section 4.3 safety overflow. The code template (judgement + question + next check) is measured at 48 against the 120 budget; the four-item critical_limitations list is explicitly exempt, is never truncated, and is why the two numbers differ. The limitation list carries the payload, so counting it would push the system back toward the truncation the rule forbids.",
+      "expected_characters": 48,
+      "body": {
+        "kind": "safety_overflow",
+        "judgement": "本次信息限制较多，暂不能形成可靠的简短判断。",
+        "priority": "insufficient_information",
+        "primary_catalyst_event_id": null,
+        "primary_catalyst": null,
+        "key_evidence": [],
+        "key_question": {
+          "text": "多项关键资料未能取得。"
+        },
+        "next_check": {
+          "text": "以新的 run 补做关键来源。"
+        },
+        "overflow_reason": "brief_safety_overflow",
+        "critical_limitations": [
+          {
+            "text": "必需事件来源不可用，覆盖完整性无法证明。"
+          },
+          {
+            "text": "复权价格链缺少因子快照，历史时点不可验证。"
+          },
+          {
+            "text": "反证阶段未完成，关键反证仍未解决。"
+          },
+          {
+            "text": "证券身份在一个来源上与其他身份冲突。"
+          }
+        ]
+      }
+    }
+  ]
+}

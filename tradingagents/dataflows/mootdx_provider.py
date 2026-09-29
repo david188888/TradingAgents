@@ -1,9 +1,21 @@
 """mootdx (通达信 TCP 7709) A-share OHLCV provider -- no IP ban, zero key.
 
-This is the preferred A-share market-data primary source: the TDX binary
-protocol over TCP 7709 is not rate-limited and never IP-bans, unlike the
-EastMoney HTTP endpoints behind tushare/akshare.  tushare/akshare remain as
-fallbacks for when every TDX server is unreachable.
+The TDX binary protocol over TCP 7709 is not rate-limited and never IP-bans,
+unlike the EastMoney HTTP endpoints behind tushare/akshare, so it stays
+registered for A-share quotes, finance snapshots, and F10.
+
+**It is no longer the rank-1 daily-bar source.**  The 2026-09-29 live probe
+(docs/superpowers/operations/capability-probe-2026-09-29.md §4) recorded 13/13
+failures: 3 of 8 servers complete the TCP handshake and ``Quotes.factory()``
+returns a real ``StdQuotes``, but every data call returns an empty DataFrame
+with no columns.  The old code therefore burned 25-28s probing servers on every
+single A-share request before falling back to tushare.  Two mitigations:
+
+* the in-process circuit breaker in :func:`tdx_client` (see
+  :data:`_TDX_BREAKER_COOLDOWN_SECONDS`), and
+* mootdx sitting *after* tushare in ``registry.VENDOR_METHODS['get_stock_data']``.
+
+tushare/akshare remain as fallbacks for when every TDX server is unreachable.
 
 The mootdx 0.11.x library carries a BESTIP bug where a fresh install leaves
 ``BESTIP.HQ`` misconfigured and ``Quotes.factory`` cannot unpack it.
@@ -17,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import socket
+import time
 from datetime import datetime
 from typing import Any
 
@@ -50,6 +63,26 @@ _BAR_MAX_PAGES = 4  # 4 * 800 = 3200 daily bars ≈ 12.8 years
 # Module-level cache: reusing a validated client avoids re-probing on every call.
 _tdx_client_cache: Any = None
 
+# --- T-D1 fast circuit breaker -------------------------------------------------
+#
+# Live probe (2026-09-29, capability-probe-2026-09-29.md §4) found the TDX
+# binary protocol *silently* dead on this network: 3 of 8 servers complete the
+# TCP handshake and `Quotes.factory()` returns a real `StdQuotes`, but every
+# data call yields an empty DataFrame with no columns.  Because
+# ``_validate_bar_fetch`` rejects those servers one by one, a single request
+# paid 25-28s before the router ever reached tushare -- and it paid it again
+# on the *next* request, because nothing remembered the outcome.
+#
+# The breaker below records "no server served bars" and refuses to re-probe
+# until the cooldown expires, turning a ~26s per-request tax into ~0s.  It is
+# deliberately local to this module: the shared VendorHealthRegistry keys on
+# (vendor, market, capability), and mootdx's finance/F10 capabilities go
+# through the same `tdx_client()`.  Suppressing only the daily-bar probe keeps
+# those capabilities independently re-probeable if the server list recovers.
+_TDX_BREAKER_COOLDOWN_SECONDS = 300.0
+_tdx_probe_failure_until: float = 0.0
+_tdx_probe_failure_count: int = 0
+
 
 def _validate_bar_fetch(client: Any, symbol: str = "000001") -> bool:
     """Return True only if the client actually returns bar rows.
@@ -72,10 +105,22 @@ def tdx_client(market: str = "std") -> Any:
     :class:`ChinaDataUnavailableError` when no server serves bars (common
     overseas -- TCP 7709 is typically blocked), so the router falls back to
     tushare/akshare.
+
+    When every candidate has failed, an in-process circuit breaker short-circuits
+    subsequent calls for :data:`_TDX_BREAKER_COOLDOWN_SECONDS` instead of paying
+    the full server sweep again.  Without it a dead TDX network costs ~26s on
+    *every* A-share request, not just the first one.
     """
     global _tdx_client_cache
     if _tdx_client_cache is not None:
         return _tdx_client_cache
+
+    if _tdx_breaker_open():
+        raise ChinaDataUnavailableError(
+            f"mootdx/TDX server probe failed {_tdx_probe_failure_count} time(s); "
+            f"circuit breaker open for another "
+            f"{_tdx_breaker_remaining():.0f}s. tushare/akshare fallback applies."
+        )
 
     from mootdx.quotes import Quotes  # optional dependency, lazy import
 
@@ -92,18 +137,48 @@ def tdx_client(market: str = "std") -> Any:
             continue
         if _validate_bar_fetch(client):
             _tdx_client_cache = client
+            _close_tdx_breaker()
             logger.debug("mootdx validated server: %s:%s", ip, port)
             return client
+    _open_tdx_breaker()
     raise ChinaDataUnavailableError(
         "No mootdx/TDX server returned bar data. The TCP 7709 protocol may be "
         "unreachable from this network (common overseas); tushare/akshare fallback applies."
     )
 
 
+def _tdx_breaker_open() -> bool:
+    """True while a prior full-server sweep failed and its cooldown is live."""
+    return time.monotonic() < _tdx_probe_failure_until
+
+
+def _tdx_breaker_remaining() -> float:
+    return max(0.0, _tdx_probe_failure_until - time.monotonic())
+
+
+def _open_tdx_breaker() -> None:
+    global _tdx_probe_failure_until, _tdx_probe_failure_count
+    _tdx_probe_failure_count += 1
+    _tdx_probe_failure_until = time.monotonic() + _TDX_BREAKER_COOLDOWN_SECONDS
+    logger.warning(
+        "mootdx/TDX: no server returned bar data (attempt %d); circuit breaker "
+        "open for %.0fs so later requests skip the ~26s server sweep.",
+        _tdx_probe_failure_count,
+        _TDX_BREAKER_COOLDOWN_SECONDS,
+    )
+
+
+def _close_tdx_breaker() -> None:
+    global _tdx_probe_failure_until, _tdx_probe_failure_count
+    _tdx_probe_failure_until = 0.0
+    _tdx_probe_failure_count = 0
+
+
 def _reset_tdx_client_cache() -> None:
     """Clear the cached client (test hook for swapping servers between cases)."""
     global _tdx_client_cache
     _tdx_client_cache = None
+    _close_tdx_breaker()
 
 
 def _a_share_code(ticker: str) -> str:

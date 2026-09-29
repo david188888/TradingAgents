@@ -132,6 +132,9 @@ export type ResearchDepth = 1 | 3 | 5;
 export type AssetTypeLiteral = "stock" | "crypto";
 export type ResearchMode = "company_research" | "holding_review";
 export type ResearchHorizon = "short" | "medium" | "long";
+// `research_profile` is omitted by every pre-catalyst client; the server
+// treats an omitted value as "classic". The narrowed alias below is the
+// authoritative mirror of AnalysisRequest.research_profile.
 
 /** Minimal, user-provided facts for a learning-oriented holding review. */
 export interface HoldingInputDTO {
@@ -183,6 +186,13 @@ export interface RunCreateRequestDTO {
   checkpoint_enabled: boolean;
   /** Null means "let the server derive from normalized ticker". */
   asset_type: AssetTypeLiteral | null;
+  /**
+   * Optional. Omission is the server-side default `classic`; it is NOT an
+   * error and produces the same request identity as sending "classic"
+   * explicitly. An explicit `catalyst_v1` that the deployment cannot honor is
+   * rejected with a `CatalystRequestErrorCode` — never silently downgraded.
+   */
+  research_profile?: ResearchProfile;
   holding?: HoldingInputDTO;
   /** Legacy-only input. New clients must use holding instead. */
   portfolio?: PortfolioDTO | null;
@@ -1652,4 +1662,405 @@ export interface AuditDetailDTO {
   facts: AuditFactDTO[];
   related_selections: AuditSelectionDTO[];
   content: AuditContentDTO;
+}
+
+// ---------------------------------------------------------------------------
+// Catalyst research profile (research_profile: classic | catalyst_v1)
+// ---------------------------------------------------------------------------
+// Mirrors, in this order of authority:
+//   tradingagents/research/catalyst_evidence_policy.py  (profile + policy version)
+//   tradingagents/agents/schemas/_catalyst_research.py (catalyst-research-case-v1)
+//   tradingagents/web/catalyst_projection.py           (the read body below)
+//
+// NOT the horizon runtime contract. `horizon-policy-v2` / `horizon-policy-v3` in
+// runtime/contracts.py is a horizon-gating enum read by five modules, and v3 is
+// an already-active test gate. `catalyst-evidence-policy-v1` is a data-requirement
+// version; the two must never share a field, a module, or a literal.
+
+export type ResearchProfile = "classic" | "catalyst_v1";
+export const RESEARCH_PROFILES: readonly ResearchProfile[] = ["classic", "catalyst_v1"];
+
+export const CATALYST_EVIDENCE_POLICY_VERSION = "catalyst-evidence-policy-v1" as const;
+export type CatalystEvidencePolicyVersion = typeof CATALYST_EVIDENCE_POLICY_VERSION;
+
+export const CATALYST_CASE_SCHEMA_VERSION = "catalyst-research-case-v1" as const;
+export const CATALYST_CASE_SCHEMA_NUMBER = 1 as const;
+
+/** Endpoint contract version — distinct from the case contract version. */
+export const CATALYST_ENDPOINT_VERSION = 1 as const;
+
+/** Per-profile policy version. `classic` keeps horizon-policy-v2. */
+export const PROFILE_POLICY_VERSIONS: Readonly<Record<ResearchProfile, string>> = {
+  classic: "horizon-policy-v2",
+  catalyst_v1: CATALYST_EVIDENCE_POLICY_VERSION,
+};
+
+/**
+ * Frozen evidence/budget parameters for one catalyst_v1 run. Every field here
+ * participates in the resume fingerprint, so a client must never synthesize
+ * this object locally — the server attaches it.
+ */
+export interface CatalystEvidencePolicyV1DTO {
+  policy_version: CatalystEvidencePolicyVersion;
+  profile: "catalyst_v1";
+  /** Product research-lookahead window; NOT the historical fetch window. */
+  forward_window_max_calendar_days: number;
+  event_lookback_calendar_days: number[];
+  price_history_trading_days: number;
+  fundamentals_quarters: number;
+  max_source_calls: number;
+  max_model_calls: number;
+  max_supplement_rounds: number;
+  max_supplement_capabilities: number;
+}
+
+/**
+ * Stable public error codes for the catalyst *request* boundary (T07). Frozen
+ * because clients branch on them; mirrored from
+ * tradingagents/research/catalyst_evidence_policy.py.
+ */
+export const CATALYST_REQUEST_ERROR_CODES = [
+  "catalyst_profile_unavailable",
+  "catalyst_mode_unsupported",
+  "catalyst_market_unsupported",
+  "catalyst_legacy_scheduling_params_not_applicable",
+  "catalyst_horizon_not_supported",
+  "catalyst_profile_mismatch",
+] as const;
+export type CatalystRequestErrorCode = (typeof CATALYST_REQUEST_ERROR_CODES)[number];
+
+// ---------------------------------------------------------------------------
+// The committed case: catalyst-research-case-v1
+// ---------------------------------------------------------------------------
+// Field names and Literal members below are copied from
+// tradingagents/agents/schemas/_catalyst_research.py. That module is
+// extra="forbid", so a renamed field is a contract break in both directions and
+// this mirror is where it should be caught first.
+
+/** 优先核查 / 持续观察 / 暂缓研究 / 信息不足. */
+export type CatalystResearchPriority =
+  | "verify_first"
+  | "keep_watching"
+  | "defer_research"
+  | "insufficient_information";
+
+export type CatalystClaimKind = "fact" | "inference" | "unknown";
+export type CatalystSpecialistRole = "catalyst_events" | "operating_delivery" | "market_reaction";
+export type CatalystEventStatus = "planned" | "in_progress" | "completed" | "cancelled";
+export type CatalystDatePrecision = "unknown" | "day" | "month" | "quarter" | "range";
+export type CatalystSourceTier = "official" | "vendor" | "media" | "derived";
+export type CatalystChallengeSeverity = "minor" | "material" | "critical";
+export type CatalystChallengeKind = "counter_evidence" | "missing_evidence";
+export type CatalystDispositionOutcome =
+  | "accepted"
+  | "partially_accepted"
+  | "refuted_by_evidence"
+  | "unresolved";
+export type CatalystCompleteness = "complete" | "partial" | "blocked";
+export type CatalystResearchQuality = "PASS" | "LOW_CONFIDENCE" | "FAIL_STOP" | "GATE_ERROR";
+
+/** Reason codes that forbid publishing `verify_first` (design 9.1). */
+export const PRIORITY_BLOCKING_REASONS: readonly string[] = [
+  "hard_error",
+  "identity_conflict",
+  "required_source_unqualified",
+  "observation_window_unqualified",
+  "refutation_stage_missing",
+  "key_challenge_unresolved",
+  "required_capability_unavailable",
+  "required_coverage_insufficient",
+  "pit_unverified",
+  "required_specialist_failed",
+  "synthesis_failed",
+  "brief_safety_overflow",
+];
+
+export interface CatalystEvidenceDTO {
+  evidence_id: string;
+  run_id: string;
+  ticker: string;
+  capability: string;
+  source_tier: CatalystSourceTier;
+  source_name: string;
+  public_url: string | null;
+  /** Three aggregators copying one filing are one independent source. */
+  source_family_id: string;
+  republished_from_evidence_id: string | null;
+  published_at: string | null;
+  observed_at: string | null;
+  captured_at: string;
+  usable_as_of: string | null;
+  time_basis: string;
+  value_basis: string;
+  availability: "available" | "unavailable" | "unverified";
+}
+
+export interface CatalystEventDTO {
+  event_id: string;
+  run_id: string;
+  ticker: string;
+  event_type: string;
+  version: number;
+  title: string;
+  status: CatalystEventStatus;
+  announced_at: string | null;
+  /** Non-null only when date_precision !== "unknown" and evidence backs it. */
+  occurred_on: string | null;
+  occurred_period_end: string | null;
+  date_precision: CatalystDatePrecision;
+  date_evidence_ids: string[];
+  updated_by_evidence_id: string | null;
+  supersedes_event_id: string | null;
+}
+
+export interface CatalystNumericFactDTO {
+  label: string;
+  value: number;
+  unit: string;
+  period: string;
+  basis: "reported" | "derived" | "forecast_range";
+  period_start: string | null;
+  period_end: string | null;
+}
+
+export interface CatalystFindingDTO {
+  finding_id: string;
+  run_id: string;
+  role: CatalystSpecialistRole;
+  kind: CatalystClaimKind;
+  text: string;
+  supporting_finding_ids: string[];
+  evidence_ids: string[];
+  event_ids: string[];
+  numeric_facts: CatalystNumericFactDTO[];
+  limitations: string[];
+  next_checks: string[];
+  /** Absent for kind === "unknown": a confident unknown is a disguised fact. */
+  confidence: number | null;
+  survives: boolean;
+}
+
+export interface CatalystChallengeDTO {
+  challenge_id: string;
+  run_id: string;
+  kind: CatalystChallengeKind;
+  severity: CatalystChallengeSeverity;
+  target_finding_ids: string[];
+  target_event_ids: string[];
+  statement: string;
+  /** Present for counter_evidence, absent for missing_evidence. */
+  evidence_ids: string[];
+  test_method: string;
+  is_key: boolean;
+}
+
+export interface CatalystChallengeDispositionDTO {
+  challenge_id: string;
+  outcome: CatalystDispositionOutcome;
+  rationale: string;
+  evidence_ids: string[];
+  retained_limitations: string[];
+  finding_ids: string[];
+}
+
+/** One first-screen line, bound to the object it restates. */
+export interface CatalystBriefLineDTO {
+  text: string;
+  finding_ids: string[];
+  event_ids: string[];
+  challenge_ids: string[];
+}
+
+export interface CatalystBriefDTO {
+  kind: "ordinary" | "safety_overflow";
+  judgement: string;
+  priority: CatalystResearchPriority;
+  primary_catalyst_event_id: string | null;
+  primary_catalyst: CatalystBriefLineDTO | null;
+  key_evidence: CatalystBriefLineDTO[];
+  key_question: CatalystBriefLineDTO;
+  next_check: CatalystBriefLineDTO;
+  critical_limitations: CatalystBriefLineDTO[];
+  overflow_reason: string | null;
+}
+
+export interface CatalystBudgetUsageDTO {
+  model_attempts: number;
+  structured_output_repairs: number;
+  network_retries: number;
+  data_capability_calls: number;
+  http_attempts: number;
+  semantic_preprocess_calls: number;
+  model_usage_available: boolean;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  stage_durations_ms: Array<[string, number]>;
+  termination_reason: string | null;
+}
+
+export interface CatalystPriorityDecisionDTO {
+  priority: CatalystResearchPriority;
+  candidate_priority: CatalystResearchPriority;
+  proposed_by: "synthesis" | "code";
+  blocking_reasons: string[];
+  rationale: string;
+}
+
+/** The authoritative committed result of one catalyst_v1 run. */
+export interface CatalystResearchCaseDTO {
+  schema_version: typeof CATALYST_CASE_SCHEMA_VERSION;
+  schema_number: typeof CATALYST_CASE_SCHEMA_NUMBER;
+  run_id: string;
+  ticker: string;
+  research_profile: "catalyst_v1";
+  evidence_policy: string;
+  as_of: string;
+  source_sequence: number;
+  completeness: CatalystCompleteness;
+  quality: CatalystResearchQuality;
+  reason_codes: string[];
+  research_question: string | null;
+  evidence: CatalystEvidenceDTO[];
+  events: CatalystEventDTO[];
+  findings: CatalystFindingDTO[];
+  challenges: CatalystChallengeDTO[];
+  dispositions: CatalystChallengeDispositionDTO[];
+  priority_decision: CatalystPriorityDecisionDTO;
+  brief: CatalystBriefDTO;
+  budget_usage: CatalystBudgetUsageDTO;
+}
+
+// ---------------------------------------------------------------------------
+// The read body: GET /api/runs/{run_id}/catalyst
+// ---------------------------------------------------------------------------
+// Mirrors tradingagents/web/catalyst_projection.py. The discriminator is
+// `state`, and every arm carries `schema_version` (the *endpoint* version), so a
+// consumer can tell which contract it holds without inspecting the payload.
+
+export type CatalystUnavailableReason = "run_running" | "not_committed" | "missing" | "corrupt";
+export type CatalystUnsupportedReason = "classic_profile" | "unknown_profile";
+
+export interface CatalystReadyV1DTO {
+  state: "ready";
+  schema_version: typeof CATALYST_ENDPOINT_VERSION;
+  case_schema_version: typeof CATALYST_CASE_SCHEMA_VERSION;
+  case_schema_number: typeof CATALYST_CASE_SCHEMA_NUMBER;
+  run_id: string;
+  ticker: string;
+  run_status: string;
+  completeness: CatalystCompleteness;
+  quality: CatalystResearchQuality;
+  priority: CatalystResearchPriority;
+  research_question: string | null;
+  brief: Record<string, unknown>;
+  limitations: string[];
+  /** Derived by the server from the brief text; never asserted by a producer. */
+  brief_character_count: number;
+  case: Record<string, unknown>;
+}
+
+export interface CatalystUnavailableV1DTO {
+  state: "unavailable";
+  schema_version: typeof CATALYST_ENDPOINT_VERSION;
+  run_id: string;
+  ticker: string;
+  run_status: string;
+  reason_code: CatalystUnavailableReason;
+  reason_codes: string[];
+}
+
+export interface CatalystUnsupportedV1DTO {
+  state: "unsupported";
+  schema_version: typeof CATALYST_ENDPOINT_VERSION;
+  run_id: string;
+  ticker: string;
+  reason_code: CatalystUnsupportedReason;
+}
+
+export type CatalystReadState = CatalystReadyV1DTO | CatalystUnavailableV1DTO | CatalystUnsupportedV1DTO;
+export type CatalystReadStateKind = CatalystReadState["state"];
+
+export function isCatalystReady(state: CatalystReadState): state is CatalystReadyV1DTO {
+  return state.state === "ready";
+}
+
+/** Transient: the run *could* have a catalyst artifact and does not yet. */
+export function isCatalystUnavailable(state: CatalystReadState): state is CatalystUnavailableV1DTO {
+  return state.state === "unavailable";
+}
+
+/** Permanent: this run's profile will never have one. Never rendered as failure. */
+export function isCatalystUnsupported(state: CatalystReadState): state is CatalystUnsupportedV1DTO {
+  return state.state === "unsupported";
+}
+
+/**
+ * A readable response is NOT a sufficient result. `ready` means the committed
+ * artifact parses; the case may still be `blocked`. Run lifecycle and research
+ * quality stay two separate axes.
+ */
+export function isResearchSufficient(state: CatalystReadState | null): boolean {
+  return (
+    state !== null &&
+    isCatalystReady(state) &&
+    state.completeness === "complete" &&
+    state.quality === "PASS"
+  );
+}
+
+/**
+ * The priority ceiling (design 9.1), mirrored from ResearchPriorityDecision.
+ * Only a case whose blocking_reasons are disjoint from PRIORITY_BLOCKING_REASONS
+ * may publish `verify_first`.
+ */
+export function isVerifyFirstPermitted(blockingReasons: readonly string[]): boolean {
+  return blockingReasons.every((reason) => !PRIORITY_BLOCKING_REASONS.includes(reason));
+}
+
+/**
+ * Brief budgets, mirrored from _catalyst_research.py. Overflow degrades to the
+ * safety template; a line is never truncated to fit.
+ */
+export const BRIEF_CHARACTER_BUDGET = 420;
+export const BRIEF_CHARACTER_TARGET_MIN = 200;
+export const BRIEF_CHARACTER_TARGET_MAX = 300;
+export const SAFETY_OVERFLOW_TEMPLATE_BUDGET = 120;
+export const SAFETY_OVERFLOW_REASON = "brief_safety_overflow";
+
+/** The budget a given brief kind is measured against. */
+export function briefBudgetFor(kind: CatalystBriefDTO["kind"]): number {
+  return kind === "ordinary" ? BRIEF_CHARACTER_BUDGET : SAFETY_OVERFLOW_TEMPLATE_BUDGET;
+}
+
+/**
+ * Version routing. The endpoint is selected by explicit path, never by content
+ * sniffing: a caller either asks for the catalyst contract or does not. Legacy
+ * callers keep using API.runView / API.reader unchanged.
+ */
+export const CATALYST_CASE_PATH = (runId: string) => `/api/runs/${runId}/catalyst` as const;
+
+/**
+ * Legacy pre-catalyst record, read through the existing classic reader
+ * contract. It carries no profile, no priority, and no catalyst fields: a reader
+ * upgrade must read it without recomputation and must not synthesize a research
+ * priority from its prose.
+ */
+export interface CatalystLegacyRecordDTO {
+  kind: "legacy";
+  run_id: string;
+  mode: string;
+  ticker: string;
+  horizon: string;
+  as_of: string;
+  availability: string;
+  decision_eligibility: string;
+  evidence_verdict: string;
+  research_tilt: string | null;
+  rating_confidence: number | null;
+  /** Always null: a reader upgrade must not manufacture a priority. */
+  research_priority: null;
+  claims: Array<Record<string, unknown>>;
+  catalysts: unknown[];
+  invalidation_conditions: unknown[];
+  evidence_refs: Array<{ ref_id: string; label: string; resolution_status: string }>;
 }

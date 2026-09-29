@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from tradingagents.execution.models import ANALYST_WIRE_KEYS
+from tradingagents.execution.models import ANALYST_WIRE_KEYS, ResearchProfile
 
 SUPPORTED_OUTPUT_LANGUAGES = (
     "English",
@@ -98,6 +98,10 @@ class RunCreateRequest(BaseModel):
     holding: HoldingInputRequest | None = None
     # Legacy-only input; new UI clients send HoldingInputRequest instead.
     portfolio: PortfolioRequest | None = None
+    # Omission means "classic". An explicit catalyst_v1 that cannot be honored
+    # is rejected with a readable error by the compatibility layer below; it is
+    # never silently downgraded.
+    research_profile: ResearchProfile = "classic"
 
     @field_validator("ticker")
     @classmethod

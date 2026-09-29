@@ -232,6 +232,31 @@ def _is_missing_required_data_result(result: Any) -> bool:
     return lowered.startswith(missing_prefixes)
 
 
+# Capabilities whose meaning is fixed by the data itself, not by the provider.
+# ``get_adjusted_price_history`` is the canonical case: any vendor in the chain
+# must return *forward-adjusted* bars. Widening its chain onto a vendor that
+# serves unadjusted prices would hand the caller a different price basis with
+# no marker, so a source failure has to surface as failure instead.
+# (Design SS8.5 / task plan T13: raw and qfq must never be mixed.)
+_BASIS_BOUND_METHODS = frozenset(
+    {
+        "get_adjusted_price_history",
+        "get_a_share_kline_qfq",
+    }
+)
+
+
+def _forbids_vendor_substitution(method: str) -> bool:
+    """Return True when a fallback source could change the answer's meaning.
+
+    Used to decide whether a cooldown or transient failure may widen the
+    fallback chain. Widening is fine when every vendor in the chain serves the
+    same *kind* of data; it is not fine when the chain mixes data that a reader
+    would otherwise assume is equivalent.
+    """
+    return method in _BASIS_BOUND_METHODS
+
+
 def _should_halt_on_missing_data(method: str) -> bool:
     cfg = get_config()
     if not cfg.get("halt_on_missing_data", True):

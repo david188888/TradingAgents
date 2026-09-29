@@ -215,8 +215,8 @@ G 评估与切换 (T33-T39)  ◄── 全部
   - 验收：产物写入在 commit barrier 之后；SSE 重连**不重复模型调用、不重复产物**（测试：重连后 LLM 调用计数不变）；恢复继承已消耗额度（**不从 0 重置**）；取消/超时后不发布迟到结果为最终结论；重复提交幂等、同 ID 不同内容报冲突。
 - [ ] **T25 classic 回归**
   - 验收：测试断言旧多空辩论、持仓复盘、长期研究路由未被替换；旧角色 key 与 lens 枚举仍服务旧 profile。
-  - **判定标准（2026-09-29 实测基线修正）**：`python -m pytest -q -p no:randomly` 在 `ca90f27` 上为 **15 failed / 1983 passed / 73 subtests**，明细见 `docs/superpowers/plans/baseline-pytest-failures.md`。基线本身**不是全绿**，因此通过条件是「失败集合不扩大、且这 15 项状态不变」，而非「全绿」。
-  - **高风险区**：`test_runtime_scaffold.py` 的 3 项（`test_production_v2_descriptor_and_delta_are_frozen`、`test_production_v2_fingerprint_bytes_are_frozen`、`test_checkpoint_authorization_is_bound_to_prepared_context`）**已经是红的**，且正是 B/E 改 profile、policy、指纹时会碰的地方。B 动 `runtime/fingerprint.py` 前后必须分别记录这 3 项的状态，否则无法区分既有问题与自己引入的。
+  - **判定标准（2026-09-29 实测基线修正）**：`python -m pytest -q -p no:randomly` 在 `ca90f27` 上稳定为 **14 failed**（首测 15，含 1 项偶发）/ 1983 passed / 73 subtests，明细见 `docs/superpowers/plans/baseline-pytest-failures.md`。基线本身**不是全绿**，因此通过条件是「失败集合不扩大、且这 15 项状态不变」，而非「全绿」。
+  - **高风险区**：`test_runtime_scaffold.py` 的 3 项（`test_production_v2_descriptor_and_delta_are_frozen`、`test_production_v2_fingerprint_bytes_are_frozen`、`test_checkpoint_authorization_is_bound_to_prepared_context`）**已经是红的**，且正是 B/E 改 profile、policy、指纹时会碰的地方（B 已复核：3 failed / 21 passed，冻结摘要仍是既有的 `fc2fcd10…` vs `cc5d8b11…` 不匹配）。B 动 `runtime/fingerprint.py` 前后必须分别记录这 3 项的状态，否则无法区分既有问题与自己引入的。
 
 ### F — 工作台页面
 
@@ -294,7 +294,7 @@ G 评估与切换 (T33-T39)  ◄── 全部
 | G6 | 预算与故障 | E | 上限全部生效；失败/超时/取消不制造完整结论、不继续调用 |
 | G7 | 同源只读 | C + F | 概要/详情/Markdown 一致；**读取触发的新增 LLM/provider 次数为 0** |
 | G8 | 并发与恢复 | E | 跨 run 无串数据；重复/重放幂等；指纹不同拒绝恢复 |
-| G9 | 旧功能回归 | E | **基线为 15 failed / 1983 passed**（见 `baseline-pytest-failures.md`）。判定标准是「不得让这 15 项变差、不得新增失败」，**不是**「全绿」——当前基线本身不是全绿 |
+| G9 | 旧功能回归 | E | **稳定基线为 14 failed**（首次测得 15，其中 `test_wind_provider.py::TestConfigFlag::test_explicitly_disabled_returns_data_unavailable` 经 pristine-tree 复测为偶发，明细见 `baseline-pytest-failures.md`）。判定标准是「不得让这 14 项变差、不得新增失败」，**不是**「全绿」——当前基线本身不是全绿 |
 | G10 | UI 可用性 | F | 指定屏宽、200% 缩放、键盘导航无阻断 |
 | G11 | 严重事实错误 | G | 评估集**零**严重身份错误、未来泄漏、数值/单位错误、无来源确定日期 |
 | G12 | 关键风险保留 | G | 人工预标注重大反证/关键缺口 **100%** 保留在简报或常显限制 |

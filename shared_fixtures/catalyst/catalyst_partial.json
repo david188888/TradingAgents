@@ -1,0 +1,238 @@
+{
+  "fixture_id": "catalyst_partial",
+  "description": "Partial case: one required source capability was unavailable, so coverage is unverified. Priority is capped at insufficient_information and quality is LOW_CONFIDENCE — a readable artifact, but not a sufficient result.",
+  "schema_version": 1,
+  "state": "ready",
+  "case_schema_version": "catalyst-research-case-v1",
+  "case_schema_number": 1,
+  "run_id": "run_catalyst_fixture",
+  "ticker": "600519.SS",
+  "run_status": "completed",
+  "completeness": "partial",
+  "quality": "LOW_CONFIDENCE",
+  "priority": "insufficient_information",
+  "research_question": "半年度业绩预告的利润增长是否由低毛利产品结构贡献？",
+  "limitations": [
+    "分产品毛利率数据源不可用。"
+  ],
+  "brief_character_count": 84,
+  "brief": {
+    "kind": "ordinary",
+    "judgement": "预告本身可读，但缺少分产品毛利率，覆盖度未经验证。",
+    "priority": "insufficient_information",
+    "primary_catalyst_event_id": null,
+    "primary_catalyst": null,
+    "key_evidence": [],
+    "key_question": {
+      "text": "利润结构归因缺少可用数据源，无法在本次运行内确认。",
+      "finding_ids": [],
+      "event_ids": [],
+      "challenge_ids": [
+        "ch_partial"
+      ]
+    },
+    "next_check": {
+      "text": "恢复分产品毛利率数据源后重跑本次研究问题。",
+      "finding_ids": [],
+      "event_ids": [],
+      "challenge_ids": []
+    },
+    "critical_limitations": [
+      {
+        "text": "分产品毛利率数据源不可用。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": [
+          "ch_partial"
+        ]
+      }
+    ],
+    "overflow_reason": null
+  },
+  "case": {
+    "schema_version": "catalyst-research-case-v1",
+    "schema_number": 1,
+    "run_id": "run_catalyst_fixture",
+    "ticker": "600519.SS",
+    "research_profile": "catalyst_v1",
+    "evidence_policy": "catalyst-evidence-policy-v1",
+    "as_of": "2026-08-14T09:31:20+00:00",
+    "source_sequence": 2,
+    "completeness": "partial",
+    "quality": "LOW_CONFIDENCE",
+    "reason_codes": [
+      "required_capability_unavailable",
+      "required_coverage_insufficient"
+    ],
+    "research_question": "半年度业绩预告的利润增长是否由低毛利产品结构贡献？",
+    "evidence": [
+      {
+        "evidence_id": "ev_filing",
+        "run_id": "run_catalyst_fixture",
+        "ticker": "600519.SS",
+        "capability": "a_share.filings.performance_express",
+        "source_tier": "official",
+        "source_name": "Shanghai Stock Exchange filing",
+        "public_url": "https://www.sse.com.cn/disclosure/performance_express/",
+        "source_family_id": "src_family_sse_filing",
+        "republished_from_evidence_id": null,
+        "published_at": "2026-08-14T09:30:00+00:00",
+        "observed_at": "2026-08-14T09:31:12+00:00",
+        "captured_at": "2026-08-14T09:31:20+00:00",
+        "usable_as_of": "2026-08-14T09:31:20+00:00",
+        "time_basis": "point_in_time filing timestamp",
+        "value_basis": "as_reported",
+        "availability": "available"
+      }
+    ],
+    "events": [
+      {
+        "event_id": "ev_event_partial",
+        "run_id": "run_catalyst_fixture",
+        "ticker": "600519.SS",
+        "event_type": "performance_express",
+        "version": 1,
+        "title": "2026 年半年度业绩预告",
+        "status": "in_progress",
+        "announced_at": "2026-08-14T09:30:00+00:00",
+        "occurred_on": null,
+        "occurred_period_end": null,
+        "date_precision": "unknown",
+        "date_evidence_ids": [],
+        "updated_by_evidence_id": null,
+        "supersedes_event_id": null
+      }
+    ],
+    "findings": [
+      {
+        "finding_id": "f_fact_partial",
+        "run_id": "run_catalyst_fixture",
+        "role": "catalyst_events",
+        "kind": "fact",
+        "text": "预告归母净利润区间为 12.0 亿至 14.0 亿元。",
+        "supporting_finding_ids": [],
+        "evidence_ids": [
+          "ev_filing"
+        ],
+        "event_ids": [
+          "ev_event_partial"
+        ],
+        "numeric_facts": [],
+        "limitations": [],
+        "next_checks": [],
+        "confidence": 0.9,
+        "survives": true
+      },
+      {
+        "finding_id": "f_unknown_partial",
+        "run_id": "run_catalyst_fixture",
+        "role": "operating_delivery",
+        "kind": "unknown",
+        "text": "利润结构归因未知：分产品毛利率数据源本次不可用。",
+        "supporting_finding_ids": [],
+        "evidence_ids": [],
+        "event_ids": [],
+        "numeric_facts": [],
+        "limitations": [
+          "分产品毛利率数据源不可用。"
+        ],
+        "next_checks": [
+          "恢复数据源后重跑。"
+        ],
+        "confidence": null,
+        "survives": true
+      }
+    ],
+    "challenges": [
+      {
+        "challenge_id": "ch_partial",
+        "run_id": "run_catalyst_fixture",
+        "kind": "missing_evidence",
+        "severity": "material",
+        "target_finding_ids": [
+          "f_unknown_partial"
+        ],
+        "target_event_ids": [],
+        "statement": "分产品毛利率数据源不可用，结构归因缺少直接证据。",
+        "evidence_ids": [],
+        "test_method": "恢复数据源后重新取证。",
+        "is_key": false
+      }
+    ],
+    "dispositions": [
+      {
+        "challenge_id": "ch_partial",
+        "outcome": "unresolved",
+        "rationale": "数据源不可用属于运行期缺口，本次运行内无法关闭。",
+        "evidence_ids": [],
+        "retained_limitations": [
+          "分产品毛利率数据源不可用。"
+        ],
+        "finding_ids": [
+          "f_unknown_partial"
+        ]
+      }
+    ],
+    "priority_decision": {
+      "priority": "insufficient_information",
+      "candidate_priority": "verify_first",
+      "proposed_by": "code",
+      "blocking_reasons": [
+        "required_capability_unavailable",
+        "required_coverage_insufficient"
+      ],
+      "rationale": "必需能力不可用且覆盖度不足，按确定性上限降级。"
+    },
+    "brief": {
+      "kind": "ordinary",
+      "judgement": "预告本身可读，但缺少分产品毛利率，覆盖度未经验证。",
+      "priority": "insufficient_information",
+      "primary_catalyst_event_id": null,
+      "primary_catalyst": null,
+      "key_evidence": [],
+      "key_question": {
+        "text": "利润结构归因缺少可用数据源，无法在本次运行内确认。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": [
+          "ch_partial"
+        ]
+      },
+      "next_check": {
+        "text": "恢复分产品毛利率数据源后重跑本次研究问题。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": []
+      },
+      "critical_limitations": [
+        {
+          "text": "分产品毛利率数据源不可用。",
+          "finding_ids": [],
+          "event_ids": [],
+          "challenge_ids": [
+            "ch_partial"
+          ]
+        }
+      ],
+      "overflow_reason": null
+    },
+    "budget_usage": {
+      "model_attempts": 2,
+      "structured_output_repairs": 1,
+      "network_retries": 3,
+      "data_capability_calls": 6,
+      "http_attempts": 6,
+      "semantic_preprocess_calls": 0,
+      "model_usage_available": false,
+      "input_tokens": null,
+      "output_tokens": null,
+      "stage_durations_ms": [
+        [
+          "catalyst_events",
+          5010
+        ]
+      ],
+      "termination_reason": "partial_coverage"
+    }
+  }
+}

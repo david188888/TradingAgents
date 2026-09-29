@@ -360,6 +360,13 @@ def _build_resume_fingerprint_for_test(
                 if request.holding_context is not None
                 else None
             ),
+            # Profile + evidence policy participate in resume compatibility:
+            # resuming a catalyst_v1 run under the classic topology (or with a
+            # different evidence window) would execute a different graph over
+            # the same state.  ``profile_identity`` always emits the classic
+            # default, so an omission cannot produce a different fingerprint
+            # than an explicit "classic".
+            **request.profile_identity(),
         },
         "effective_config": prepared_config,
         "runtime_semantics_hash": semantics_hash,

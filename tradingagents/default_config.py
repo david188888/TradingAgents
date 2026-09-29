@@ -28,6 +28,8 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_DEEPSEEK_REASONING_EFFORT": "deepseek_reasoning_effort",
     "TRADINGAGENTS_LLM_MAX_TOKENS":          "llm_max_tokens",
     "TRADINGAGENTS_EVIDENCE_GATE_ENABLED":   "evidence_gate_enabled",
+    "TRADINGAGENTS_CATALYST_PROFILE_ENABLED": "catalyst_profile_enabled",
+    "TRADINGAGENTS_CATALYST_DEFAULT_WEB":    "catalyst_default_web",
     "TRADINGAGENTS_EVIDENCE_STOP_ON_FAIL":   "evidence_stop_on_fail",
     "TRADINGAGENTS_NEWS_MIN_COMPANY_ITEMS":  "news_min_company_items",
     "TRADINGAGENTS_NEWS_MIN_MIXED_ITEMS":    "news_min_mixed_items",
@@ -380,6 +382,12 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "news_min_company_items": 3,
     "news_min_mixed_items": 5,
     "evidence_stop_on_fail": False,
+    # Catalyst research profile (design §11.2).  Both flags default OFF: the
+    # new entry point stays unavailable until every hard gate passes, and the
+    # web default only flips after an explicit product confirmation.  Neither
+    # flag affects reading already-committed catalyst artifacts.
+    "catalyst_profile_enabled": False,
+    "catalyst_default_web": False,
     # Credibility scoring for news sources
     "credibility_enabled": True,
     "credibility_domain_overrides": {},

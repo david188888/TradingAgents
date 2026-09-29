@@ -1,0 +1,9 @@
+{
+  "fixture_id": "catalyst_unsupported",
+  "description": "Permanent state: a classic run has no catalyst artifact and never will. HTTP 200 with state=unsupported. It carries no case fields at all, so it cannot be confused with `unavailable` (which means the run could have one but does not yet).",
+  "schema_version": 1,
+  "state": "unsupported",
+  "run_id": "run_classic_record",
+  "ticker": "600519.SS",
+  "reason_code": "classic_profile"
+}

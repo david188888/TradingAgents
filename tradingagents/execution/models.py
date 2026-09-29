@@ -12,6 +12,9 @@ from typing import Any, Literal
 from tradingagents.analysts import ANALYST_WIRE_KEYS
 
 ResearchMode = Literal["company_research", "holding_review"]
+# Omitting research_profile is exactly equivalent to "classic"; the default is
+# applied by normalize_research_profile so it cannot drift between entry points.
+ResearchProfile = Literal["classic", "catalyst_v1"]
 # Typed learning modes produce research narratives, not trade outcomes: they
 # must not write into the trading-reflection memory (see AnalysisRunner).
 LEARNING_MODES: frozenset[str] = frozenset({"company_research", "holding_review"})
@@ -97,8 +100,37 @@ class AnalysisRequest:
     horizon: Literal["short", "medium", "long"] = "medium"
     mode: ResearchMode = "company_research"
     holding_context: HoldingContext | None = None
+    # Execution profile. "classic" runs the existing bull/bear graph under
+    # horizon-policy-v2; "catalyst_v1" runs the bounded research flow under
+    # catalyst-evidence-policy-v1. Omission is "classic".
+    research_profile: ResearchProfile = "classic"
+    # Frozen evidence policy parameters for catalyst_v1. None for classic,
+    # which keeps horizon-policy-v2 and must not carry this bundle.
+    #
+    # Annotated structurally rather than as CatalystEvidencePolicyV1: that
+    # class lives in tradingagents.research.catalyst_evidence_policy, whose
+    # package import pulls holding_review, which imports this module. A
+    # resolvable class annotation would therefore make typing.get_type_hints
+    # (and every consumer of it, e.g. tests/test_frontend_wire_contract.py)
+    # fail with NameError the first time it runs, because the deferred runtime
+    # imports in __post_init__ are not on that code path. The shape is
+    # asserted in tests/test_research_profile_contract.py, and
+    # __post_init__ rejects anything that is not the real policy object, so a
+    # value can never reach the wire under the wrong type.
+    catalyst_policy: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        # Imported here: tradingagents.research.__init__ imports this module
+        # (holding_review), so a module-level import would be circular.
+        from tradingagents.research.catalyst_evidence_policy import (
+            CATALYST_V1_PROFILE,
+            CLASSIC_PROFILE,
+            PROFILE_POLICY_VERSIONS,
+            CatalystEvidencePolicyV1,
+            catalyst_evidence_policy_v1,
+            normalize_research_profile,
+        )
+
         if not self.ticker.strip():
             raise ValueError("ticker is required")
         try:
@@ -122,6 +154,60 @@ class AnalysisRequest:
             raise ValueError("company_research cannot include holding_context")
         if self.mode == "holding_review" and self.holding_context is None:
             raise ValueError("holding_review requires holding_context")
+        profile = normalize_research_profile(self.research_profile)
+        if profile not in PROFILE_POLICY_VERSIONS:
+            raise ValueError(f"unsupported research profile: {profile}")
+        if profile == CATALYST_V1_PROFILE and self.catalyst_policy is None:
+            object.__setattr__(
+                self, "catalyst_policy", catalyst_evidence_policy_v1()
+            )
+        if profile == CLASSIC_PROFILE and self.catalyst_policy is not None:
+            raise ValueError("classic research profile cannot carry a catalyst policy")
+        if self.catalyst_policy is not None and not isinstance(
+            self.catalyst_policy, CatalystEvidencePolicyV1
+        ):
+            # The dataclass field is annotated structurally (see the field
+            # comment), so the concrete class is enforced here rather than by
+            # the annotation. A hand-rolled dict cannot masquerade as a policy.
+            raise ValueError("catalyst_policy must be a CatalystEvidencePolicyV1 instance")
+
+    @property
+    def policy_version(self) -> str:
+        """The evidence policy that governs this run.
+
+        This is a lookup, not a runtime contract selection.  It must never be
+        used to widen RuntimePolicyVersion in runtime/contracts.py.
+        """
+        from tradingagents.research.catalyst_evidence_policy import (
+            PROFILE_POLICY_VERSIONS,
+            normalize_research_profile,
+        )
+
+        return PROFILE_POLICY_VERSIONS[normalize_research_profile(self.research_profile)]
+
+    def profile_identity(self) -> dict[str, object]:
+        """Fingerprint-facing projection of profile + its evidence policy.
+
+        Returns ``{}`` for the ``classic`` default so that every fingerprint
+        byte produced before this field existed is reproduced exactly.  Old
+        checkpoints therefore stay resumable without recomputation, and the
+        frozen classic digest is not silently invalidated by this release.
+
+        A non-classic profile always emits its own evidence policy version, so
+        a catalyst_v1 checkpoint can never be compared equal to a classic one.
+        """
+        from tradingagents.research.catalyst_evidence_policy import normalize_research_profile
+
+        profile = normalize_research_profile(self.research_profile)
+        if profile == "classic":
+            return {}
+        identity: dict[str, object] = {
+            "research_profile": profile,
+            "evidence_policy_version": self.policy_version,
+        }
+        if self.catalyst_policy is not None:
+            identity["catalyst_policy"] = self.catalyst_policy.as_identity()
+        return identity
 
 
 @dataclass(frozen=True)
