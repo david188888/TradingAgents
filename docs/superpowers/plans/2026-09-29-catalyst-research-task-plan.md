@@ -162,6 +162,19 @@ G 评估与切换 (T33-T39)  ◄── 全部
 
 ### D — 数据能力
 
+**D 同时承担两项现存生产缺陷的修复**（2026-09-29 用户确认一并处理）。这两项不是新功能的输入，而是当前就在影响每次运行的缺陷：
+
+- [ ] **T-D1 修复 mootdx 首位空转**
+  - 现状：`dataflows/registry.py:271` 中 mootdx 是 A 股行情链首位，但 live 探测 13/13 用例失败——TCP 可连、`Quotes.factory()` 在 3 个服务器成功，**数据调用返回无列空 DataFrame**。每次行情请求先浪费约 26 秒再 fallback 到 Tushare。
+  - 要求：把 mootdx 移出首位，或加快速熔断（首次空返回即标记该服务器不可用并冷却），使失败不再消耗每请求 26 秒。
+  - 验收：有一个测试证明**连续两次请求的总耗时不因 mootdx 显著增加**；mootdx 在链中的位置变更或熔断逻辑有对应测试；`registry.py` 的顺序变更有 diff 证据。
+  - **不得**顺手删除 mootdx 的财务/F10 能力（设计 §8.2 明确「不直接删除全部 mootdx 财务/F10 能力」）。
+
+- [ ] **T-D2 修复腾讯 kline 列序**
+  - 现状：腾讯 kline 实际列序为 `[date, OPEN, CLOSE, HIGH, LOW, VOL]`，**索引 2 是收盘、3 是最高、4 是最低**，非标准 OHLC。已由 4 只股票 × 28 天 max/min 不变式 + 与实时行情快照 4/4 字段精确比对双重证明。按 OHLC 读取会**静默得到错误的高/低价且不报错**。
+  - 要求：修正解析，并加不变式断言（`high >= max(open, close) >= min(open, close) >= low`）作为回归防线。
+  - 验收：存在一个测试对多只股票多日数据断言该不变式；**该测试在修正前必须失败**（证明它能捕获此缺陷）；所有消费腾讯 kline 的调用点均已核查。
+
 - [ ] **T13 腾讯 raw/qfq adapter**
   - 验收：raw 与 qfq **各自独立** adapter 与测试文件；断言两者结果不混拼（qfq 不可用时 raw 不顶替）；覆盖沪/深、正常、无匹配、停牌、新上市、历史 cutoff、限流、字段缺失、分页截断 8 维；**每个测试带 provenance 记录**；单位、复权口径、截止时间、最后完整交易日均有断言。
   - **额外断言（T01 实测发现）**：`dataflows/interface.py:271-276` 在命中 vendor cooldown 时会把整条 fallback 链追加进来，其源码注释明写「even when the user explicitly selected one primary」。这与设计 §8.5「不因一个源失败强制更换用户显式选定的供应商策略」相反，且会让 raw 结果顶替 qfq。T13 必须为此写一条**显式反例测试**：显式选定 qfq 且 qfq 处于 cooldown 时，raw 不得静默顶替。
