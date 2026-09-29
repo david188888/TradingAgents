@@ -92,6 +92,21 @@ G 评估与切换 (T33-T39)  ◄── 全部
 
 **A 与 H 的边界**：A 定义探测清单与判定标准（设计的 §8.6），H 执行实测并出记录。H 的实测结论是 A 的 T04 验收输入，也是 D 的 T13–T16 输入。A 不直接调端点，H 不定义标准。
 
+**B 与 C 的边界（2026-09-29 代码核查后细化）**：两者都涉及 T07/T08/T09，按文件所有权切：
+
+| 归 B（请求契约与版本） | 归 C（催化产物 schema） |
+| --- | --- |
+| `research_profile` 请求字段与校验 | `catalyst-research-case-v1` canonical 模型 |
+| `catalyst-evidence-policy-v1` 的**版本常量与窗口参数** | schema 层对 policy 值的引用 |
+| 稳定错误码、预算字段的定义位置 | 全部 invariants 与负向测试 |
+| TS wire 镜像（`frontend/src/api/contracts.ts`） | 产物写入与 `/catalyst` endpoint 的 schema 侧 |
+| 5 类 fixture 文件 | schema 序列化往返测试 |
+| 指纹/恢复的**兼容性判断** | 引用完整性、时点、优先级上限的**实现** |
+
+两者共享 `tradingagents/execution/models.py` 时，B 先改、C 后改，C 完成后 B 负责把 TS 镜像对齐到最终 schema。**C 不得改 `execution/models.py` 或 `web/schemas.py`；B 不得在 `agents/schemas/` 下新增或修改模型。**
+
+**policy 版本的硬约束（代码核查确认）**：`tradingagents/runtime/contracts.py` 的 `RuntimePolicyVersion` 是 **horizon 门控专用**枚举，目前只接受 `horizon-policy-v2` / `horizon-policy-v3`。该字面量被 **5 个文件**消费：`runtime/contracts.py`、`runtime/fingerprint.py`、`execution/runner.py`、`observability/canonical.py`、`research/analysis_cutoff.py`。**禁止把 `catalyst-evidence-policy-v1` 加进这个 Literal** —— 新 policy 走独立的 policy 模块与字段，不复用 horizon 的 runtime contract 通道。这一条对应设计 §9「不得因为命名相近启用项目中已有的测试门控 horizon-policy-v3」的警告。
+
 **G 的特殊约束**：G 只能在 A–F 全部交付且 §6 门槛自查通过后启动，且不自行切换 Web 默认（设计的 §11.2 第 3 步 + 你的确认制偏好）。G 的 T33–T35 涉及 LLM 运行，按 §1.4 授权，本轮标记为「待授权执行」。
 
 ## 4. T01–T39 逐项验收
@@ -109,6 +124,7 @@ G 评估与切换 (T33-T39)  ◄── 全部
 - [ ] **T03 篇幅与重复测量**
   - 测：首屏可见字符数、重复字段、首次找到关键问题耗时、每 run 的 LLM 调用/耗时/token，token 缺失记 `unknown` 不记 0。
   - 验收：`docs/superpowers/plans/baseline-readability.md` 含 ≥3 个真实 run 的测量表，每行有 run_id、字符数、重复字段清单、token 字段含 `unknown` 标记；至少 1 个 run 有 `unknown` usage 记录（证明没有把缺失当 0）。
+  - **已交付的实测结论（2026-09-29）**：首屏正文 p50 **8,399 字符**（min 196 / max 14,599），对 420 硬上限超出 **20x**，15 个 run 中 14 个超限；`view.brief` 与 `learning_summary` p50 重叠 **96%**；LLM 调用 **20.6/run**（14–26）。token **可测**，但**不在 `run.json`**，而在 `events.jsonl → payload.usage`（嵌两层）——按 `run.json` 平面检索会误判为「不可测」。存在真实 `unknown`：5 个 failed run 各有 1 次 `model.started` 无 `model.completed`（成本已发生但未记录），其中 1 个 failed run 消耗 419,932 tokens。**另注**：15 个 run 中 8 个宏观数据源不可用，跨 run 比较内容质量时必须把它作为受控变量（T06 已据此设计）。
 - [ ] **T04 探测清单定义**（标准由 A 定义，实测由 H 出）
   - 定义：每项能力需覆盖的维度（沪/深市、正常、无匹配、停牌/新上市、历史 cutoff、限流/超时、字段缺失、分页截断）与记录字段。
   - 验收：清单文件含 ≥10 项候选能力 × ≥8 个维度矩阵；每项有成功/降级/失败三态定义；明确写出「北交所未声明支持则精确标不支持」。
@@ -148,6 +164,15 @@ G 评估与切换 (T33-T39)  ◄── 全部
 
 - [ ] **T13 腾讯 raw/qfq adapter**
   - 验收：raw 与 qfq **各自独立** adapter 与测试文件；断言两者结果不混拼（qfq 不可用时 raw 不顶替）；覆盖沪/深、正常、无匹配、停牌、新上市、历史 cutoff、限流、字段缺失、分页截断 8 维；**每个测试带 provenance 记录**；单位、复权口径、截止时间、最后完整交易日均有断言。
+  - **额外断言（T01 实测发现）**：`dataflows/interface.py:271-276` 在命中 vendor cooldown 时会把整条 fallback 链追加进来，其源码注释明写「even when the user explicitly selected one primary」。这与设计 §8.5「不因一个源失败强制更换用户显式选定的供应商策略」相反，且会让 raw 结果顶替 qfq。T13 必须为此写一条**显式反例测试**：显式选定 qfq 且 qfq 处于 cooldown 时，raw 不得静默顶替。
+  - **实测结论（2026-09-29 探测，完整记录见 `docs/superpowers/operations/capability-probe-2026-09-29.md`）**：
+    - **腾讯 kline 列序不是 OHLC**（最高优先级）。实际为 `[date, OPEN, CLOSE, HIGH, LOW, VOL]`：索引 2 是收盘、3 是最高、4 是最低。已由 4 只股票 × 28 天的 max/min 不变式 + 与实时行情快照 4/4 字段精确比对双重证明。按 OHLC 读取会**静默得到错误的高/低价且不报错**。T13 必须按真实列序解析并写断言。
+    - **腾讯 qfq 会静默降级为不复权**：部分标的（688981、两个北交所代码）HTTP 200 但返回未复权 `day` 数据，无任何警告。必须判为 `unavailable`，**绝不可当 qfq 使用**。
+    - **腾讯分页有静默截断**：640 行上限，无 total/count/more 标记；`count>=2100` 返回 `param error` 且 `code:0`。截断必须显式识别，不得当作「无更多数据」。
+    - 腾讯 raw 与 qfq 对「当日未完成 bar 是否包含」处理不一致。
+    - 腾讯估值快照可用（沪/深/科创/创业/北交所），含陈旧检测。
+  - **PIT 约束（关键）**：Wind 与腾讯同属「qfq to today」anchor，最新 bar 天然等于 raw，**故最新交易日窗口内 raw 与 qfq 不可区分——这不等于 qfq 正确**。设计 §8.5 要求历史 cutoff 必须有复权因子/版本快照，否则标 `pit_unverified`。H 实测仅证明同一 session 内稳定，**跨公司行动稳定性未测**。T13 在补齐因子快照能力前，**历史 cutoff 的 qfq 不得进入市场专项上下文**。
+  - **复权口径分歧（断言要求）**：Wind 与腾讯的 qfq 比值逐日变化（0.99556 → 0.99503），anchor 一致但**复权因子算法不同**，两源 qfq 值**不可互换、不可混用**。T13 须写断言防止同值化。
 - [ ] **T14 业绩预告/快报事件**
   - 验收：官方披露为事实锚；结构化列表仅作发现入口；测试覆盖预告区间 / 快报 / 正式报表三态区分；预告区间**不取中点**；报告期与发布时点分离；cutoff 后发布的公告被过滤。
 - [ ] **T15 回购/增减持执行链**
@@ -174,7 +199,9 @@ G 评估与切换 (T33-T39)  ◄── 全部
 - [ ] **T24 Commit barrier 与恢复**
   - 验收：产物写入在 commit barrier 之后；SSE 重连**不重复模型调用、不重复产物**（测试：重连后 LLM 调用计数不变）；恢复继承已消耗额度（**不从 0 重置**）；取消/超时后不发布迟到结果为最终结论；重复提交幂等、同 ID 不同内容报冲突。
 - [ ] **T25 classic 回归**
-  - 验收：`classic` 全部既有测试全绿（**这是硬门槛，不是抽样**）；测试断言旧多空辩论、持仓复盘、长期研究路由未被替换；旧角色 key 与 lens 枚举仍服务旧 profile。
+  - 验收：测试断言旧多空辩论、持仓复盘、长期研究路由未被替换；旧角色 key 与 lens 枚举仍服务旧 profile。
+  - **判定标准（2026-09-29 实测基线修正）**：`python -m pytest -q -p no:randomly` 在 `ca90f27` 上为 **15 failed / 1983 passed / 73 subtests**，明细见 `docs/superpowers/plans/baseline-pytest-failures.md`。基线本身**不是全绿**，因此通过条件是「失败集合不扩大、且这 15 项状态不变」，而非「全绿」。
+  - **高风险区**：`test_runtime_scaffold.py` 的 3 项（`test_production_v2_descriptor_and_delta_are_frozen`、`test_production_v2_fingerprint_bytes_are_frozen`、`test_checkpoint_authorization_is_bound_to_prepared_context`）**已经是红的**，且正是 B/E 改 profile、policy、指纹时会碰的地方。B 动 `runtime/fingerprint.py` 前后必须分别记录这 3 项的状态，否则无法区分既有问题与自己引入的。
 
 ### F — 工作台页面
 
@@ -182,6 +209,7 @@ G 评估与切换 (T33-T39)  ◄── 全部
 
 - [ ] **T26 布局重组**
   - 验收：`WorkbenchLayout` 完成页**只有一个主摘要容器**（组件测试断言主摘要元素数量 = 1）；三标签（研究简报 / 依据与事件 / 研究过程）；历史侧栏可收起；更多研究入口可达。**配色沿用现有 `frontend/src/styles/tokens.css` 设计变量，不复制草图的 `#f5f4ef` 等色值**。
+  - **去重对象已由 T03 实测确定**：真正并列渲染、p50 重叠 96% 的是 `reader-brief-v1.json.learning_summary` 与 `run-view-v1.json.view.brief`。设计 §3 提到的 `executive_summary` / `drivers` / `risks` 在 15/15 个真实 run 中**全为 null**（`executive_summary` 非 null 计数 0/15），去重**不能靠删除这些投影字段**——它们不承载内容。T26 的组件测试应断言前两个容器不再同时挂载。
 - [ ] **T27 表单与配置**
   - 验收：默认表单只显示公司、窗口、可选问题、开始按钮；profile 切换显示有效配置摘要；**不自动提交隐藏配置**（测试：切换 profile 后请求体不含旧的隐藏字段）；旧模式切换保留原角色选择。
 - [ ] **T28 首屏五项**
@@ -251,7 +279,7 @@ G 评估与切换 (T33-T39)  ◄── 全部
 | G6 | 预算与故障 | E | 上限全部生效；失败/超时/取消不制造完整结论、不继续调用 |
 | G7 | 同源只读 | C + F | 概要/详情/Markdown 一致；**读取触发的新增 LLM/provider 次数为 0** |
 | G8 | 并发与恢复 | E | 跨 run 无串数据；重复/重放幂等；指纹不同拒绝恢复 |
-| G9 | 旧功能回归 | E | classic / 持仓 / 长期 / 历史 / 批量 / 审计全绿 |
+| G9 | 旧功能回归 | E | **基线为 15 failed / 1983 passed**（见 `baseline-pytest-failures.md`）。判定标准是「不得让这 15 项变差、不得新增失败」，**不是**「全绿」——当前基线本身不是全绿 |
 | G10 | UI 可用性 | F | 指定屏宽、200% 缩放、键盘导航无阻断 |
 | G11 | 严重事实错误 | G | 评估集**零**严重身份错误、未来泄漏、数值/单位错误、无来源确定日期 |
 | G12 | 关键风险保留 | G | 人工预标注重大反证/关键缺口 **100%** 保留在简报或常显限制 |
@@ -287,4 +315,15 @@ git status --short
 | T33–T35 的 LLM 运行 | 需按实际模型价格核定预算；本轮未授权 |
 | T39 默认切换 | 依赖全部前置通过 + 你的明确确认 |
 | 任何提交 / 推送 / PR | 未授权；worktree 合回由主会话在你确认后进行 |
-| H 的 live 探测 | 需确认探测用哪些数据源凭据（本仓库 `.env` 已有 tushare 等，见项目记忆） |
+| §8.6 完整探测矩阵 | 已完成 raw-vs-qfq 决定性子集，**未覆盖** mootdx、公告、机构调研、分页截断、停牌/新上市、字段缺失、北交所。T13–T16 实施时需自行补测并补全记录 |
+
+## 8.1 探测已确认的缺陷（D 实施时必须处理或显式规避）
+
+以下四项在 2026-09-29 的 live 探测中**已确认**，完整证据见 `docs/superpowers/operations/capability-probe-2026-09-29.md`：
+
+1. **腾讯 kline 列序不是 OHLC** —— 实际 `[date, OPEN, CLOSE, HIGH, LOW, VOL]`。按 OHLC 读会静默得到错误高/低价且不报错。（已并入 T13）
+2. **Wind 指数行情代码位错误** —— `get_index_snapshot` 行情侧落到 `000300.OF`（场外基金位）而非 `000300.SH`，返回 0.862–0.966 点（真实沪深300 约 4000）；历史序列四价全等、成交量恒 0.0，**调用成功但数据是错的，比不可用更危险**。`profile`/`fundamentals` 路径用 `000300.SH` 正确，属行情接口代码位问题。修复前**指数行情不得作为市场反应专项的证据来源**。
+3. **Wind `TURNOVER` 字段实为成交额（元），不是换手率** —— `volume/100` 与 Tushare `Volume` 比值精确 1.0000；`turnover` 与 Tushare `amount`（千元）隐含比值同为 1.0000。任何按「换手率」解读该字段的代码都是错的，接入时须改名。
+4. **mootdx 全线失效且是 registry rank-1** —— 13/13 用例失败：TCP 可连、`Quotes.factory()` 在 3 个服务器上成功，但**每次数据调用返回空 DataFrame 且无列**。它是 `dataflows/registry.py:271` 中 A 股行情链的首位，意味着**每次行情请求先浪费约 26 秒再 fallback**。上游仓库的报告由此独立确认。T13 之前应先把它移出首位或加快速熔断。
+
+**其他已确认事实**：Tushare raw 最可靠（沪深北 40/40 行，标准 OHLC，无重复、无排序错误）；**Tushare qfq 被限流**（`adj_factor` 1 次/分钟，0/2 成功），不能承担多标的串行 qfq；**东财与巨潮在本网络返回 502**（属发布门槛相关）；qfq 链尾的 `yfinance`/`alpha_vantage` 对 A 股复权语义**未验证**，是下一个可能伪装成 qfq 的风险源；北交所是**按源不同**而非整体不支持（Tushare/Wind 完整，腾讯 kline 实际不可用）。

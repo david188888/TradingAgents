@@ -1,0 +1,267 @@
+{
+  "$schema_note": "T02 eval case set. Design SS13.2 scenarios C01-C12 mapped onto tickers that have REAL committed runs in ~/.tradingagents/web/runs. Read-only; no new runs created. This file declares the case set and its REQUIRED replay inputs; it does NOT yet contain those inputs (see blocking_gaps).",
+  "version": "eval-cases-v1",
+  "generated_at": "2026-09-29",
+  "code_baseline": "a6a3f4c60f678c230a6290ed25c13a8da7a1431c",
+  "max_cutoff": "2026-09-29",
+  "unit_of_repetition": "per design SS13.2: 2 controlled repeats per case per flow = 48 core architecture-comparison runs. NOT AUTHORIZED this round (task plan SS1.4).",
+
+  "ticker_directory": {
+    "002130.SZ": "沃尔核材（公司全称取自 run_20260821T103108351561Z_b4cda679 的 metadata.company_name）",
+    "002185.SZ": "公司名 unknown —— 既有 run 未记录 full name",
+    "002223.SZ": "公司名 unknown —— 既有 run 未记录 full name",
+    "002249.SZ": "公司名 unknown —— 既有 run 未记录 full name",
+    "002335.SZ": "公司名 unknown —— 既有 run 未记录 full name",
+    "600580.SS": "公司名 unknown —— 既有 run 未记录 full name",
+    "605277.SS": "公司名 unknown —— 既有 run 未记录 full name",
+    "note": "8 个 ticker 中只有 1 个的中文全称在既有 run 中可核验。其余保持 unknown，不猜测。名称核验是 T26/T31 的输入，不阻塞本文件。"
+  },
+
+  "cases": [
+    {
+      "id": "C01",
+      "scenario": "业绩预告明确、数据相对完整",
+      "must_check": "预告与实绩区分、主催化明确",
+      "primary": {
+        "ticker": "002335.SZ",
+        "cutoff": "2026-08-21",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260821T115857528554Z_1ba234c2",
+        "evidence_measured": "earnings_forecast=25 hits, formal_report=14 hits in committed report+public-research"
+      },
+      "fallback": [
+        {
+          "ticker": "002230.SZ",
+          "cutoff": "2026-08-15",
+          "replay_input_ref": "PENDING:BUILD",
+          "evidence_basis": "run_20260815T161035782334Z_c21d09ff",
+          "evidence_measured": "earnings_forecast=16 hits, formal_report=28 hits"
+        }
+      ],
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "预告区间不得取中点；正式报告发布时点必须晚于 cutoff 才排除"
+    },
+    {
+      "id": "C02",
+      "scenario": "业绩预告后出现正式报告",
+      "must_check": "事件更新链，不重复加权",
+      "primary": {
+        "ticker": "002335.SZ",
+        "cutoff": "2026-08-21",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260821T115857528554Z_1ba234c2 + run_20260908T120139230696Z_ae9203c0",
+        "evidence_measured": "同一 ticker 在 2026-08-21 与 2026-09-08 两个 cutoff 均有完成 run；formal_report 由 14 -> 32，符合『预告后出现正式报告』形态"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "08-21 cutoff 下绝不可引用 09-08 才发布的正式报告"
+    },
+    {
+      "id": "C03",
+      "scenario": "回购计划但尚无执行",
+      "must_check": "计划不等于已完成",
+      "primary": {
+        "ticker": "002130.SZ",
+        "cutoff": "2026-09-08",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260908T120139230253Z_9237ca9b",
+        "evidence_measured": "buyback=115 hits, insider=36 hits"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "计划金额不得表述为已执行金额"
+    },
+    {
+      "id": "C04",
+      "scenario": "股东增减持计划变更/终止",
+      "must_check": "状态和主体一致",
+      "primary": {
+        "ticker": "002249.SZ",
+        "cutoff": "2026-08-21",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260821T115857528790Z_8b094268",
+        "evidence_measured": "insider=96 hits (15 个 run 中最高), buyback=127 hits"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "同一 ID 不同内容必须报冲突，不得静默覆盖"
+    },
+    {
+      "id": "C05",
+      "scenario": "机构调研热度高、兑现证据弱",
+      "must_check": "公司表述不升级为已验证订单",
+      "primary": {
+        "ticker": "002335.SZ",
+        "cutoff": "2026-09-08",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260908T120139230696Z_ae9203c0",
+        "evidence_measured": "institutional_research=94 hits (15 个 run 中最高)"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "管理层表述不得升级为订单事实（T16 门控）"
+    },
+    {
+      "id": "C06",
+      "scenario": "行业利好但个股无对应证据",
+      "must_check": "行业与个股归因边界",
+      "primary": {
+        "ticker": "002230.SZ",
+        "cutoff": "2026-08-16",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260816T065732246035Z_756dc67f",
+        "evidence_measured": "institutional_research=28 hits, buyback=234 hits (最高), 但 earnings_forecast=0 —— 与『个股缺少业绩侧证据』形态一致",
+        "caveat": "该映射为形态推断，未逐条核对公告。不能声称已确认『行业利好但个股无证据』。"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "行业改善不得用于证明个股订单"
+    },
+    {
+      "id": "C07",
+      "scenario": "新闻密集但多数转载",
+      "must_check": "独立来源数不虚增",
+      "primary": {
+        "ticker": "002335.SZ",
+        "cutoff": "2026-09-08",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260908T120139230696Z_ae9203c0",
+        "evidence_measured": "news_cluster=6 hits + institutional_research=94 hits，同时存在转载与自有来源，最适合暴露『独立支持数虚增』"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "3 站点转载同一公告 -> 1 个来源家族、1 个事件、独立支持数不增"
+    },
+    {
+      "id": "C08",
+      "scenario": "无明显催化且覆盖完整",
+      "must_check": "可暂缓，但不能制造故事",
+      "primary": {
+        "ticker": "605277.SS",
+        "cutoff": "2026-08-27",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260827T152431428834Z_756de302",
+        "evidence_measured": "earnings_forecast=2, buyback=14 —— 事件关键词命中最低的一档",
+        "caveat": "『覆盖完整』未验证：该 run 的 degraded_data_sources 含 search_macro_series:unavailable。选它正是因为要测『覆盖不全时不得暂缓』的边界。"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "取数失败不得当作暂缓研究"
+    },
+    {
+      "id": "C09",
+      "scenario": "关键来源失败/分页不足",
+      "must_check": "信息不足，而非无事件",
+      "primary": {
+        "ticker": "002335.SZ",
+        "cutoff": "2026-09-08",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260908T120139230696Z_ae9203c0",
+        "evidence_measured": "degraded=83 hits (15 个 run 中最高), degraded_data_sources 含 search_macro_series:unavailable"
+      },
+      "secondary": {
+        "ticker": "002130.SZ",
+        "cutoff": "2026-08-21",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260821T115857528047Z_26e8bab1",
+        "evidence_measured": "唯一含 global_news:degraded 的 run"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "源失败不得被吞成『无事件』；三态区分必须可判定"
+    },
+    {
+      "id": "C10",
+      "scenario": "公告/价格口径冲突或证券误匹配",
+      "must_check": "阻断/限制正确，不能仅平均处理",
+      "primary": {
+        "ticker": "WALNU-IDENTITY-CONFLICT",
+        "cutoff": "2026-08-21",
+        "replay_input_ref": "SYNTHETIC:NOT-YET-BUILT",
+        "evidence_basis": "NONE",
+        "evidence_measured": "既有 25 个 run 中无任何 run 记录了证券身份冲突",
+        "rationale": "真实误匹配样本不存在且不可制造（不得伪造研究事实）。本例必须用合成 fixture，由 D agent 在 T18 建。"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "不得把两个同名主体的事实合并"
+    },
+    {
+      "id": "C11",
+      "scenario": "历史 cutoff、后续财报/复权变化",
+      "must_check": "防止未来信息泄漏",
+      "primary": {
+        "ticker": "002335.SZ",
+        "cutoff": "2026-08-21",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260821T115857528554Z_1ba234c2 (cutoff 08-21) 对照 run_20260908T120139230696Z_ae9203c0 (cutoff 09-08)",
+        "evidence_measured": "同一 ticker 两个相隔 18 天的 cutoff 各有完成 run，formal_report 命中 14 -> 32。天然的未来泄漏探针。"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "08-21 结论不得引用 09-08 证据；qfq 历史值可能随后续公司行动重算（设计 SS8.5 pit_unverified）"
+    },
+    {
+      "id": "C12",
+      "scenario": "新上市/停牌/价格历史不足",
+      "must_check": "不伪造完整窗口，不错误解释成交",
+      "primary": {
+        "ticker": "002185.SZ",
+        "cutoff": "2026-09-08",
+        "replay_input_ref": "PENDING:BUILD",
+        "evidence_basis": "run_20260908T120139230596Z_b6367483",
+        "evidence_measured": "唯一含 halted_or_new=2 hits 的 run；但停牌/新上市状态未逐条核验",
+        "caveat": "映射为形态推断。『新上市或停牌』未经确认 —— 若该股实际正常交易，本例作废，需 D agent 换样本。"
+      },
+      "cutoff_le_2026_09_29": true,
+      "future_leak_risk": "停牌期不得当活跃交易日；无 ≥2 个合格收盘值时按必需能力不足处理"
+    }
+  ],
+
+  "regression_cases_outside_the_12": {
+    "note": "设计 SS13.2 末段要求以下场景作为回归用例，不因不在 12 案例内而跳过。本轮无运行，仅登记。",
+    "cases": [
+      "legacy run 读取（8 个旧 completed run 已存在，可直接用于 T31 回归）",
+      "holding_review（既有 run 的 holding_context 均为 null，无真实样本 -> 未验证）",
+      "long horizon（既有 run 的 horizon 全为 medium，无真实样本 -> 未验证）",
+      "非 A 股（无真实样本 -> 未验证）",
+      "取消/中断（3 个 cancelled run 存在：0b23eecc / 1c36be4c / 59babfec）",
+      "预算耗尽（无真实样本 -> 未验证，需故障注入）",
+      "schema 修复失败（无真实样本 -> 未验证）",
+      "多 run 并发（5 个 2026-08-21T10:31:08Z 批次为并发证据）"
+    ]
+  },
+
+  "blocking_gaps": [
+    {
+      "gap": "replay_input_ref 全部为 PENDING:BUILD",
+      "why": "设计 SS13.2 的『架构对照』要求固定共同证据集合并通过 provider replay 注入。仓库内不存在任何 replay 语料：tests/fixtures/ 只有 wind 子目录，tests/evals/ 只有 contradictions.csv，无 golden/snapshot/replay 目录。既有 run 的证据在 ~/.tradingagents/ 下（用户数据，不可提交）。",
+      "who": "B agent (T11 fixtures) + D agent (T13-T15 adapters)",
+      "unblock_condition": "T11 的 5 类 fixture 落地后，把每个 case 的最小可重放证据集接入同一份 JSON"
+    },
+    {
+      "gap": "C10 无真实样本",
+      "why": "证券身份冲突不能从真实数据中安全制造",
+      "who": "D agent (T18)",
+      "unblock_condition": "合成 fixture，明确标注 synthetic"
+    },
+    {
+      "gap": "C12 停牌/新上市状态未确认",
+      "why": "本 agent 不做行情端点探测（T04 实测归 H agent）",
+      "who": "H agent (T04) + D agent (T13)",
+      "unblock_condition": "H 的 live 探测记录确认 002185.SZ 在 2026-09-08 的交易状态"
+    },
+    {
+      "gap": "8 个 ticker 中 7 个中文全称不可核验",
+      "why": "既有 run 的 company_name 多为 6 位代码而非全称",
+      "who": "D agent / F agent",
+      "unblock_condition": "证券身份解析接口可用后补全"
+    },
+    {
+      "gap": "48 次对照运行未执行",
+      "why": "任务计划 SS1.4 未授权 LLM 批量运行",
+      "who": "G agent，需用户按实际模型价格核定预算后授权",
+      "unblock_condition": "用户授权 + 预算核定"
+    }
+  ],
+
+  "acceptance_self_check": {
+    "file_exists": true,
+    "twelve_cases_present": "C01-C12 = 12 条",
+    "every_cutoff_le_2026_09_29": true,
+    "max_cutoff_used": "2026-09-08",
+    "replay_input_ref_present_on_every_case": "结构上每例都有该字段，但 11 例值为 PENDING:BUILD —— 见 blocking_gaps，不谎称已满足",
+    "no_credentials": "本文件无任何密钥、token 或带凭据 URL",
+    "no_future_facts_as_history": "C02/C11 显式声明 08-21 结论不得引用 09-08 证据"
+  }
+}
