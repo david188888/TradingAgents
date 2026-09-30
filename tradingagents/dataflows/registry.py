@@ -112,6 +112,7 @@ from .tavily_news import (
     get_global_news_tavily,
     get_news_tavily,
 )
+from .tencent_kline import get_a_share_kline, get_a_share_kline_qfq
 from .tencent_provider import get_a_share_valuation
 from .wind_provider import (
     get_equity_risk_metrics as get_wind_equity_risk_metrics,
@@ -189,6 +190,14 @@ TOOLS_CATEGORIES = {
     "a_share_valuation": {
         "description": "A-share realtime valuation (PE/PB/market-cap/turnover/price-limits) via Tencent",
         "tools": ["get_a_share_valuation"],
+    },
+    # T-D2: raw and qfq are two separate capabilities, not one tool with a flag.
+    # Registering them separately is what lets a caller ask for forward-adjusted
+    # bars and get a typed `unavailable` when the vendor cannot serve them,
+    # instead of a raw frame wearing a qfq label.
+    "a_share_kline": {
+        "description": "A-share daily bars via Tencent, raw and forward-adjusted as separate capabilities",
+        "tools": ["get_a_share_kline", "get_a_share_kline_qfq"],
     },
     "a_share_research": {
         "description": "A-share research reports and consensus EPS forecast",
@@ -334,11 +343,22 @@ VENDOR_MARKETS: dict[str, frozenset[str]] = {
 VENDOR_METHODS = {
     # core_stock_apis
     "get_stock_data": {
-        "mootdx": get_stock_mootdx,
+        # T-D1: mootdx moved below tushare for daily bars. The 2026-09-29 live
+        # probe found 13/13 mootdx quote calls failing while the TCP handshake
+        # and `Quotes.factory()` both succeeded -- every data call returned an
+        # empty columnless DataFrame, costing 25-28s of server probing per
+        # request before falling back. tushare raw covered SH/SZ/BSE completely
+        # with standard OHLC field order in the same probe, so it is the
+        # primary and mootdx is retained as a still-registered fallback: its
+        # finance/F10 capabilities are untouched and stay reachable.
+        # mootdx additionally short-circuits on a 5-minute in-process circuit
+        # breaker (mootdx_provider.tdx_client), so even the fallback position
+        # does not re-pay the server sweep on every request.
         "tushare": get_stock_tushare,
-        # akshare removed from the A-share OHLCV chain: mootdx (TCP 7709, no IP
-        # ban) is the primary source and tushare is the stable fallback; akshare
-        # only added import/install overhead on this path.
+        "mootdx": get_stock_mootdx,
+        # akshare removed from the A-share OHLCV chain: tushare is the primary
+        # source and mootdx the fallback; akshare only added import/install
+        # overhead on this path.
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
     },
@@ -470,6 +490,11 @@ VENDOR_METHODS = {
     },
     "get_a_share_break_board_pool": {"eastmoney": get_a_share_break_board_pool},
     "get_a_share_valuation": {"tencent": get_a_share_valuation},
+    # Two capabilities on purpose -- see the a_share_kline category note.  A
+    # shared vendor dict with two keys would let the router satisfy a qfq
+    # request with raw bars, which design SS8.5 forbids.
+    "get_a_share_kline": {"tencent": get_a_share_kline},
+    "get_a_share_kline_qfq": {"tencent": get_a_share_kline_qfq},
     "get_a_share_fundamentals_mootdx": {"mootdx": get_fundamentals_mootdx},
     "get_a_share_f10": {"mootdx": get_a_share_f10},
     "get_a_share_research_reports": {"eastmoney": get_a_share_research_reports},

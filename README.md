@@ -14,7 +14,7 @@ Watch a 20-second walkthrough of a completed A-share research-only sample. Engli
 
 ## Research pipeline
 
-The CLI and web workbench turn a typed request into the same LangGraph run. The public modes are `company_research` and `holding_review`; the CLI starts company research, while holding review requires context supplied through the Web/API. The graph runs selected analysts in order after deterministic data prefetch, then checks the evidence before debate.
+The default `classic` profile turns CLI and web requests into the same LangGraph run. The public modes are `company_research` and `holding_review`; the CLI starts company research, while holding review requires context supplied through the Web/API. The classic graph runs selected analysts in order after deterministic data prefetch, then checks the evidence before debate.
 
 ```mermaid
 flowchart TD
@@ -33,6 +33,10 @@ flowchart TD
 The Evidence Steward distinguishes `PASS`, `LOW_CONFIDENCE`, and `FAIL_STOP`; an unexpected gate fault also terminates the graph. A completed run may still expose unknowns or partial coverage. Research artifacts are published from committed run state, and the Reader/Audit views show persisted results rather than fetching new evidence. The former Trader and three-role risk debate are retired from the current execution graph. See [the architecture map](ARCHITECTURE.md) for the execution and persistence boundaries.
 
 ## Data and agents
+
+The web workbench also supports explicit trials of `catalyst_v1` for A-share company research. Enable it for the server process with `TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1`, then select the catalyst workflow. It freezes cutoff-qualified evidence, runs three specialists, independent refutation, and one synthesis, and publishes a validated case and its Markdown report. Its fixed outlook is the next 84 calendar days; the optional research question is saved with the run. Classic remains the default.
+
+Catalyst uses durable attempt budgets and resumable stage records independently of the classic checkpoint toggle. Its initial bounded adapters cover Tushare identity/financial statements and CNINFO announcement coverage. It currently has no qualified price-history adapter for the default vendor chain; Tencent qfq without verified historical adjustment factors is also unavailable. Missing capabilities cap priority at insufficient information. See [catalyst operation and limits](docs/operations/catalyst-research.md). The following provider and agent tables describe the classic profile.
 
 Provider routing is local to `tradingagents/dataflows/`. The table names representative interfaces, not a promise that every provider is available for every ticker or date. Provider failures and incomplete coverage are reported explicitly.
 

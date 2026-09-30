@@ -142,6 +142,8 @@ class ReportArtifactWriter:
         final_state: dict[str, Any],
         ticker: str,
     ) -> FinalReportPublication:
+        if final_state.get("research_profile") == "catalyst_v1":
+            return self._publish_catalyst(run_id, final_state["catalyst_case"])
         run_dir = self.store._run_dir(run_id)
         reports_dir = run_dir / "reports"
         with self.store.lock_for(run_id):
@@ -165,6 +167,35 @@ class ReportArtifactWriter:
             artifacts=artifacts,
             published_at=utc_timestamp(),
         )
+
+    def _publish_catalyst(self, run_id, value) -> FinalReportPublication:
+        from tradingagents.agents.schemas import CatalystResearchCase
+        from tradingagents.research.case_assembly import build_markdown_from_case
+        case = CatalystResearchCase.model_validate(value)
+        if case.run_id != run_id:
+            raise ReportPublicationError("catalyst report identity mismatch")
+        content = build_markdown_from_case(case)
+        run_dir = self.store._run_dir(run_id)
+        reports_dir = run_dir / "reports"
+        with self.store.lock_for(run_id):
+            if reports_dir.exists():
+                existing = reports_dir / "complete_report.md"
+                if not existing.is_file() or existing.read_text(encoding="utf-8") != content:
+                    raise ReportPublicationError("catalyst report content conflict")
+            else:
+                temporary = run_dir / f".reports.{uuid.uuid4().hex}.tmp"
+                try:
+                    temporary.mkdir()
+                    (temporary / "complete_report.md").write_text(content, encoding="utf-8")
+                    self._fsync_tree(temporary)
+                    os.replace(temporary, reports_dir)
+                    self.store._fsync_directory(run_dir)
+                except Exception:
+                    shutil.rmtree(temporary, ignore_errors=True)
+                    raise
+        return FinalReportPublication(reports_directory=reports_dir,
+            complete_report=reports_dir / "complete_report.md",
+            artifacts=tuple(self._final_artifacts(run_dir, reports_dir)), published_at=utc_timestamp())
 
     @staticmethod
     def _verify_report_tree(

@@ -96,6 +96,7 @@ from .routing_trace import (
 from .symbol_utils import NoMarketDataError
 from .vendor_errors import (  # noqa: F401  - re-exported for callers that import from interface
     _cooldown_for_exception,
+    _forbids_vendor_substitution,
     _format_vendor_unavailable_message,
     _http_status_code,
     _is_missing_required_data_result,
@@ -267,6 +268,16 @@ def _route_to_vendor_impl(
             )
             recoverable_errors.append((vendor, DataSourceUnavailableError(reason)))
             cooldown_skips += 1
+            if _forbids_vendor_substitution(method):
+                # T13: this capability is bound to a data *basis*, not just a
+                # source. Widening the chain here would let an unchosen vendor
+                # answer with a different basis (raw bars for a forward-adjusted
+                # request) and the caller could not tell. A capability whose
+                # meaning changes with its provider must fail instead.
+                #
+                # Cooldown exhaustion is still handled at the tail below, which
+                # degrades to the retry-later sentinel rather than raising.
+                continue
             # A stored cooldown only represents a prior transient failure. It
             # gets the same implicit safety-net fallback as a live 429/network
             # failure, even when the user explicitly selected one primary.

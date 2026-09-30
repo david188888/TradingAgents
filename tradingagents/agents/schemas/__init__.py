@@ -29,6 +29,31 @@ from tradingagents.research.claim_registry import (  # noqa: F401 - facade re-ex
     validate_claim_key,
 )
 
+from ._catalyst_research import (  # noqa: F401  - facade re-export
+    BRIEF_CHARACTER_BUDGET,
+    BRIEF_CHARACTER_TARGET_MAX,
+    BRIEF_CHARACTER_TARGET_MIN,
+    CATALYST_CASE_SCHEMA_NUMBER,
+    CATALYST_CASE_SCHEMA_VERSION,
+    PRIORITY_BLOCKING_REASONS,
+    SAFETY_OVERFLOW_PRIORITY,
+    SAFETY_OVERFLOW_REASON,
+    SAFETY_OVERFLOW_TEMPLATE_BUDGET,
+    BriefLine,
+    BudgetUsage,
+    CatalystBrief,
+    CatalystEvent,
+    CatalystEvidence,
+    CatalystResearchCase,
+    Challenge,
+    ChallengeDisposition,
+    ClaimKind,
+    NumericFact,
+    ResearchPriority,
+    ResearchPriorityDecision,
+    SpecialistFinding,
+    brief_character_count,
+)
 from ._common import (  # noqa: F401  - facade re-export
     ModelClaimInput,
     PortfolioRating,

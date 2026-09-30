@@ -1,0 +1,207 @@
+{
+  "fixture_id": "catalyst_blocked",
+  "description": "Blocked case: the security identity conflicted and a future-dated document was observed, so the run must stop. Quality is FAIL_STOP, priority is insufficient_information, and a key challenge stays unresolved. This is the arm that proves a readable 'ready' response is not a sufficient result.",
+  "schema_version": 1,
+  "state": "ready",
+  "case_schema_version": "catalyst-research-case-v1",
+  "case_schema_number": 1,
+  "run_id": "run_catalyst_fixture",
+  "ticker": "600519.SS",
+  "run_status": "completed",
+  "completeness": "blocked",
+  "quality": "FAIL_STOP",
+  "priority": "insufficient_information",
+  "research_question": "半年度业绩预告的利润增长是否由低毛利产品结构贡献？",
+  "limitations": [
+    "证券身份冲突，研究结果不可用于决策。"
+  ],
+  "brief_character_count": 93,
+  "brief": {
+    "kind": "ordinary",
+    "judgement": "证券身份冲突，本次研究停止，未产出可用的催化剂结论。",
+    "priority": "insufficient_information",
+    "primary_catalyst_event_id": null,
+    "primary_catalyst": null,
+    "key_evidence": [],
+    "key_question": {
+      "text": "身份冲突未解决前，任何催化剂判断都不成立。",
+      "finding_ids": [],
+      "event_ids": [],
+      "challenge_ids": [
+        "ch_blocked"
+      ]
+    },
+    "next_check": {
+      "text": "先核对 600519.SS 的证券身份映射，再重跑研究。",
+      "finding_ids": [],
+      "event_ids": [],
+      "challenge_ids": []
+    },
+    "critical_limitations": [
+      {
+        "text": "证券身份冲突，研究结果不可用于决策。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": [
+          "ch_blocked"
+        ]
+      }
+    ],
+    "overflow_reason": null
+  },
+  "case": {
+    "schema_version": "catalyst-research-case-v1",
+    "schema_number": 1,
+    "run_id": "run_catalyst_fixture",
+    "ticker": "600519.SS",
+    "research_profile": "catalyst_v1",
+    "evidence_policy": "catalyst-evidence-policy-v1",
+    "as_of": "2026-08-14T09:31:20+00:00",
+    "source_sequence": 1,
+    "completeness": "blocked",
+    "quality": "FAIL_STOP",
+    "reason_codes": [
+      "identity_conflict",
+      "pit_unverified"
+    ],
+    "research_question": "半年度业绩预告的利润增长是否由低毛利产品结构贡献？",
+    "evidence": [
+      {
+        "evidence_id": "ev_filing",
+        "run_id": "run_catalyst_fixture",
+        "ticker": "600519.SS",
+        "capability": "a_share.filings.performance_express",
+        "source_tier": "official",
+        "source_name": "Shanghai Stock Exchange filing",
+        "public_url": "https://www.sse.com.cn/disclosure/performance_express/",
+        "source_family_id": "src_family_sse_filing",
+        "republished_from_evidence_id": null,
+        "published_at": "2026-08-14T09:30:00+00:00",
+        "observed_at": "2026-08-14T09:31:12+00:00",
+        "captured_at": "2026-08-14T09:31:20+00:00",
+        "usable_as_of": "2026-08-14T09:31:20+00:00",
+        "time_basis": "point_in_time filing timestamp",
+        "value_basis": "as_reported",
+        "availability": "available"
+      }
+    ],
+    "events": [],
+    "findings": [
+      {
+        "finding_id": "f_unknown_blocked",
+        "run_id": "run_catalyst_fixture",
+        "role": "market_reaction",
+        "kind": "unknown",
+        "text": "证券身份冲突，无法确认证据属于 600519.SS。",
+        "supporting_finding_ids": [],
+        "evidence_ids": [],
+        "event_ids": [],
+        "numeric_facts": [],
+        "limitations": [
+          "证券身份冲突，研究结果不可用于决策。"
+        ],
+        "next_checks": [
+          "核对证券身份映射。"
+        ],
+        "confidence": null,
+        "survives": true
+      }
+    ],
+    "challenges": [
+      {
+        "challenge_id": "ch_blocked",
+        "run_id": "run_catalyst_fixture",
+        "kind": "counter_evidence",
+        "severity": "critical",
+        "target_finding_ids": [
+          "f_unknown_blocked"
+        ],
+        "target_event_ids": [],
+        "statement": "同一 ISIN 映射到两个 A 股代码，证据归属不唯一。",
+        "evidence_ids": [
+          "ev_filing"
+        ],
+        "test_method": "比对交易所证券主数据中的代码映射。",
+        "is_key": true
+      }
+    ],
+    "dispositions": [
+      {
+        "challenge_id": "ch_blocked",
+        "outcome": "accepted",
+        "rationale": "身份冲突由主数据比对确认，证据归属无法确定。",
+        "evidence_ids": [
+          "ev_filing"
+        ],
+        "retained_limitations": [
+          "证券身份冲突，研究结果不可用于决策。"
+        ],
+        "finding_ids": [
+          "f_unknown_blocked"
+        ]
+      }
+    ],
+    "priority_decision": {
+      "priority": "insufficient_information",
+      "candidate_priority": "verify_first",
+      "proposed_by": "code",
+      "blocking_reasons": [
+        "identity_conflict",
+        "pit_unverified",
+        "key_challenge_unresolved"
+      ],
+      "rationale": "身份冲突与时点未验证同时成立，研究在预取阶段即被阻断。"
+    },
+    "brief": {
+      "kind": "ordinary",
+      "judgement": "证券身份冲突，本次研究停止，未产出可用的催化剂结论。",
+      "priority": "insufficient_information",
+      "primary_catalyst_event_id": null,
+      "primary_catalyst": null,
+      "key_evidence": [],
+      "key_question": {
+        "text": "身份冲突未解决前，任何催化剂判断都不成立。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": [
+          "ch_blocked"
+        ]
+      },
+      "next_check": {
+        "text": "先核对 600519.SS 的证券身份映射，再重跑研究。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": []
+      },
+      "critical_limitations": [
+        {
+          "text": "证券身份冲突，研究结果不可用于决策。",
+          "finding_ids": [],
+          "event_ids": [],
+          "challenge_ids": [
+            "ch_blocked"
+          ]
+        }
+      ],
+      "overflow_reason": null
+    },
+    "budget_usage": {
+      "model_attempts": 0,
+      "structured_output_repairs": 0,
+      "network_retries": 0,
+      "data_capability_calls": 1,
+      "http_attempts": 1,
+      "semantic_preprocess_calls": 1,
+      "model_usage_available": true,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "stage_durations_ms": [
+        [
+          "security_identity",
+          210
+        ]
+      ],
+      "termination_reason": "fail_stop"
+    }
+  }
+}

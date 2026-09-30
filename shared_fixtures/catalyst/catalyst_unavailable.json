@@ -1,0 +1,13 @@
+{
+  "fixture_id": "catalyst_unavailable",
+  "description": "Transient state: the run exists and could have a catalyst artifact, but has not committed one yet. Distinct from `unsupported`, which is permanent.",
+  "schema_version": 1,
+  "state": "unavailable",
+  "run_id": "run_catalyst_fixture",
+  "ticker": "600519.SS",
+  "run_status": "running",
+  "reason_code": "run_running",
+  "reason_codes": [
+    "run_running"
+  ]
+}

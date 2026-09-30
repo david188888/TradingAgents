@@ -10,7 +10,7 @@
  *
  * The Controls component is a pure renderer of this hook's state.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   ConfigResponseDTO,
   HoldingInputDTO,
@@ -19,9 +19,27 @@ import type {
   ResearchDepth,
   ResearchHorizon,
   ResearchMode,
+  ResearchProfile,
   RunCreateRequestDTO,
 } from "../api/contracts";
 import { getConfig } from "../api/client";
+
+/**
+ * The four bounded stages `catalyst_v1` runs, in order. Shown on profile switch
+ * so the reader knows what starting one will actually do — the classic form's
+ * role checkboxes have no bearing on this flow and are not shown.
+ */
+const CATALYST_V1_STAGES: readonly string[] = ["准备证据", "专项分析", "反证核验", "综合发布"];
+
+/**
+ * The normalized compatibility defaults a `catalyst_v1` request carries
+ * (design 7.1). The profile runs four bounded stages, so the old debate-round
+ * count and look-ahead horizon are not inputs to it; these values exist so the
+ * server's normalized view of the request is stable, not because the profile
+ * honours them.
+ */
+const CATALYST_COMPAT_DEPTH: ResearchDepth = 1;
+const CATALYST_COMPAT_HORIZON: ResearchHorizon = "medium";
 
 export interface UseConfigResult {
   loading: boolean;
@@ -75,7 +93,48 @@ export interface UseConfigResult {
 
   buildRequest: () => RunCreateRequestDTO | null;
   buildRequestForTicker: (ticker: string) => RunCreateRequestDTO | null;
+  /**
+   * T27: the catalyst request builder.
+   *
+   * Separate from `buildRequest` rather than a branch inside it, because the
+   * two must not share a body. The classic request carries a research profile
+   * the caller never set, a selected-analyst list from the classic form, and
+   * a horizon; none of those belong in a `catalyst_v1` request, and a hidden
+   * field leaking into the wrong profile is exactly the failure this split
+   * makes impossible to express.
+   */
+  buildCatalystRequest: (researchQuestion?: string | null) => RunCreateRequestDTO | null;
+  research_profile: ResearchProfile;
+  setResearchProfile: (v: ResearchProfile) => void;
+  research_question: string;
+  setResearchQuestion: (v: string) => void;
+  /** The effective config the next catalyst run will run under. */
+  effectiveCatalystConfig: EffectiveCatalystConfig;
   validationError: string | null;
+  catalystValidationError: string | null;
+}
+
+/**
+ * What the reader is actually about to run, shown on profile switch (T27).
+ *
+ * "Effective" because it is the *server's* answer, not the form's: the server
+ * may pin a depth or a model pair the form did not choose. Showing the form's
+ * own values would let the two disagree silently.
+ */
+export interface EffectiveCatalystConfig {
+  profile: ResearchProfile;
+  researchDepth: ResearchDepth;
+  horizon: ResearchHorizon;
+  llmProvider: string;
+  quickThinkLlm: string;
+  deepThinkLlm: string;
+  outputLanguage: string;
+  /** The four bounded stages this profile runs. */
+  stages: readonly string[];
+  /** True when the deployment reports it can honor this profile. */
+  supported: boolean | null;
+  /** Set when the deployment cannot honor it; the run is not silently downgraded. */
+  reason: string | null;
 }
 
 const DEPTHS: ReadonlyArray<ResearchDepth> = [1, 3, 5];
@@ -104,6 +163,10 @@ export function useConfig(): UseConfigResult {
   const [checkpointEnabled, setCheckpointEnabled] = useState<boolean>(false);
   const [mode, setMode] = useState<ResearchMode>("company_research");
   const [horizon, setHorizon] = useState<ResearchHorizon>("medium");
+  // T27. `classic` by default, so an untouched form behaves exactly as it did
+  // before this profile switch existed.
+  const [researchProfile, setResearchProfile] = useState<ResearchProfile>("classic");
+  const [researchQuestion, setResearchQuestion] = useState<string>("");
   const [holdingQuantity, setHoldingQuantity] = useState<string>("");
   const [holdingAverageCost, setHoldingAverageCost] = useState<string>("");
   const [holdingCash, setHoldingCash] = useState<string>("");
@@ -300,6 +363,90 @@ export function useConfig(): UseConfigResult {
     };
   }
 
+  // T27: whether this deployment can honor `catalyst_v1`. The server rejects
+  // an unsupported profile rather than downgrading it, so the form says so
+  // before the reader spends a run — `null` means the config has not loaded yet
+  // and no claim is made either way.
+  const catalystProfileSupported: boolean | null = useMemo(() => {
+    if (config === null) return null;
+    const declared = config
+      .research_profiles?.catalyst_v1;
+    if (declared === undefined) return null;
+    return declared.supported === true;
+  }, [config]);
+
+  const catalystProfileReason: string | null = useMemo(() => {
+    if (config === null) return null;
+    const declared = config
+      .research_profiles?.catalyst_v1;
+    const reason = declared?.reason;
+    return typeof reason === "string" ? reason : null;
+  }, [config]);
+
+  /**
+   * T27: the catalyst request builder.
+   *
+   * The fixed three-specialist flow does not read classic scheduling or
+   * holding selections. Required legacy fields use canonical compatibility
+   * defaults. Profile and optional question travel together on the request
+   * and become part of the persisted catalyst identity.
+   */
+  const catalystValidationError = !ticker.trim() ? "请输入股票代码"
+    : Array.from(researchQuestion.trim()).length > 400 ? "研究问题最多 400 个字符"
+    : !selectedProvider ? "请选择 LLM Provider"
+    : selectedProvider.requires_api_key && config?.configured_keys[llmProvider] !== true ? "所选 Provider 未配置 API Key"
+    : !quickThinkLlm || !deepThinkLlm ? "请选择研究模型" : null;
+
+  function buildCatalystRequest(question: string | null = researchQuestion): RunCreateRequestDTO | null {
+    if (config === null) return null;
+    const normalizedTicker = ticker.trim();
+    const normalizedQuestion = (question ?? "").trim();
+    if (!normalizedTicker || Array.from(normalizedQuestion).length > 400) return null;
+    // The classic holding-review validation does not apply here: a catalyst run
+    // is a company research, and `buildRequest`'s holding errors must not block
+    // it or leak their text into the new form.
+    return {
+      ticker: normalizedTicker,
+      analysis_date: analysisDate,
+      // Design 7.1: the new profile gives the old scheduler fields no
+      // scheduling authority. The values below are therefore the *normalized*
+      // compatibility defaults the server sees when it inspects a
+      // `catalyst_v1` request — not the classic form's values, which were set
+      // by controls this profile never rendered. Sending the classic depth
+      // here would submit a scheduling parameter the profile will ignore, and
+      // the reader would reasonably read that as "my depth applied".
+      selected_analysts: ["market", "social", "news", "fundamentals"],
+      research_depth: CATALYST_COMPAT_DEPTH,
+      mode: "company_research",
+      // Design 7.1: the old `horizon` field is kept for wire compatibility and
+      // the new entry point sends `medium`. The profile uses its own
+      // `catalyst-evidence-policy-v1`; this is a compatibility value, not a
+      // statement about how far ahead the run looks.
+      horizon: CATALYST_COMPAT_HORIZON,
+      llm_provider: llmProvider,
+      quick_think_llm: quickThinkLlm,
+      deep_think_llm: deepThinkLlm,
+      output_language: outputLanguage,
+      checkpoint_enabled: false,
+      asset_type: null,
+      research_profile: "catalyst_v1",
+      research_question: normalizedQuestion || null,
+    };
+  }
+
+  const effectiveCatalystConfig: EffectiveCatalystConfig = {
+    profile: researchProfile,
+    researchDepth: CATALYST_COMPAT_DEPTH,
+    horizon: CATALYST_COMPAT_HORIZON,
+    llmProvider,
+    quickThinkLlm,
+    deepThinkLlm,
+    outputLanguage,
+    stages: CATALYST_V1_STAGES,
+    supported: researchProfile === "catalyst_v1" ? catalystProfileSupported : null,
+    reason: researchProfile === "catalyst_v1" ? catalystProfileReason : null,
+  };
+
   return {
     loading: config === null && error === null,
     error,
@@ -329,6 +476,12 @@ export function useConfig(): UseConfigResult {
     setMode,
     horizon,
     setHorizon,
+    buildCatalystRequest,
+    research_profile: researchProfile,
+    setResearchProfile,
+    research_question: researchQuestion,
+    setResearchQuestion,
+    effectiveCatalystConfig,
     holding_quantity: holdingQuantity,
     setHoldingQuantity,
     holding_average_cost: holdingAverageCost,
@@ -350,5 +503,6 @@ export function useConfig(): UseConfigResult {
     buildRequest,
     buildRequestForTicker,
     validationError,
+    catalystValidationError,
   };
 }

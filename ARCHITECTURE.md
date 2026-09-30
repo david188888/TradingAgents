@@ -14,7 +14,7 @@ Three consumer shapes share the same execution core:
 - Programmatic callers construct `TradingAgentsGraph` and use its
   consumer-neutral execution path.
 
-The common flow is:
+The default classic flow is:
 
 ```text
 AnalysisRequest -> TradingAgentsGraph -> AnalysisRunner -> LangGraph workflow
@@ -28,6 +28,13 @@ run context, creates state, invokes or streams LangGraph, handles cancellation
 and checkpoint coordination, then returns a result.
 Each analysis binds its effective dataflow configuration to the run's execution
 context, so concurrent Web runs route through their own configured providers.
+
+The Web manager routes explicit `catalyst_v1` requests to
+`execution/catalyst_runner.py:CatalystRunner`. This neutral executor coordinates
+`dataflows/catalyst_sources.py`, the retry-free budgeted HTTP transport, and
+`graph/catalyst_workflow.py`. The classic graph facade rejects catalyst requests
+instead of silently running classic. The explicit Web entry is gated by
+`catalyst_profile_enabled`; classic remains the default.
 
 ## Workflow And Research Routing
 
@@ -58,6 +65,35 @@ coverage. The thesis-diff code compares committed research cases; derived
 artifacts are promoted only after durable graph commit barriers.
 
 ## Publication And Projections
+
+Catalyst freezes one cutoff-qualified evidence draft, then executes three
+specialists, independent refutation and one synthesis. Model proposals pass
+the canonical `CatalystResearchCase` validation and deterministic priority
+ceiling. Its model adapter reuses configured quick/deep clients, disables SDK
+retries and charges every dispatch. Process-wide model and data concurrency
+ceilings are two each. Active execution defaults to 300 seconds, excluding
+scheduler queue time.
+
+`runtime/catalyst_checkpoint.py` persists attempt transitions, source results,
+frozen inputs, prompt digests, role results, stage status and the final candidate
+as committed run artifacts. Recovery checks identity and integrity, reuses saved
+results and counts uncertain dispatched attempts as spent. The catalyst frontier
+is always durable; `checkpoint_enabled` controls classic LangGraph checkpoints.
+The catalyst evidence policy does not extend the horizon runtime-policy enum.
+
+The manager arbitrates cancellation and durable publication authorization
+under the same lifecycle lock. Cancellation first forbids publication;
+authorization first starts terminalization and rejects late cancellation.
+A crash after authorization resumes from the saved candidate. The committed
+`catalyst-research-case-v1` artifact has a durable parent; its Markdown report is
+derived from that same case. No classic debate-summary call is scheduled.
+
+`/api/runs/{id}/catalyst` projects the committed case and durable stage facts.
+Reading, refreshing and reconnecting do not invoke models or providers.
+`ready`, run completion, evidence completeness and quality are separate axes.
+The SPA exposes an explicit catalyst form with the fixed 84-day outlook;
+classic selection and historical reading remain available. See
+[catalyst operations](docs/operations/catalyst-research.md) for qualification limits.
 
 `observability/` records run events and graph-task candidates. `execution/`
 promotes committed state, public role outputs, evidence bundles, report

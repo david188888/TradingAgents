@@ -113,6 +113,7 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   // Gaps: RunSnapshotDTO has no checkpoint_enabled (default false) and no
   // research_depth (default 1).
   const meta: RunMeta = {
+    research_profile: s.metadata?.research_profile === "catalyst_v1" ? "catalyst_v1" : "classic",
     run_id: s.run_id,
     status: s.status,
     ticker: s.ticker,
@@ -325,6 +326,7 @@ function applyRunStarted(
     ...state.meta,
     run_id,
     status: "running",
+    research_profile: p.research_profile === "catalyst_v1" ? "catalyst_v1" : state.meta.research_profile,
     ticker: str(p.ticker, state.meta.ticker),
     asset_type: (str(p.asset_type, state.meta.asset_type) || "stock") as AssetTypeLiteral,
     analysis_date: str(p.analysis_date, state.meta.analysis_date),
@@ -790,7 +792,12 @@ function applyArtifactWritten(
     written_sequence: event.sequence,
     input_capture_kinds: existing?.input_capture_kinds ?? [],
   };
-  return { ...state, artifacts: { ...state.artifacts, [artifact_id]: ar } };
+  const stages = p.catalyst_stages;
+  return { ...state,
+    meta: p.kind === "catalyst-checkpoint" && typeof stages === "object" && stages !== null
+      ? { ...state.meta, catalyst_stages: Object.fromEntries(Object.entries(stages).filter((entry): entry is [string, string] => typeof entry[1] === "string")) }
+      : state.meta,
+    artifacts: { ...state.artifacts, [artifact_id]: ar } };
 }
 
 // --- report.* ---

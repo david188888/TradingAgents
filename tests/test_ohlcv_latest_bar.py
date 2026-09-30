@@ -103,7 +103,7 @@ def test_cached_latest_bar_with_blank_close_is_rejected(tmp_path, monkeypatch):
 
 @pytest.mark.unit
 def test_a_share_latest_bar_with_nan_close_is_rejected(tmp_path, monkeypatch):
-    """The A-share (mootdx/tushare/akshare) path enforces the same guard."""
+    """The A-share (tushare/mootdx/akshare) path enforces the same guard."""
     monkeypatch.setattr(su, "get_config", lambda: {"data_cache_dir": str(tmp_path)})
 
     def fetch(symbol, start_str, end_str):
@@ -118,9 +118,14 @@ def test_a_share_latest_bar_with_nan_close_is_rejected(tmp_path, monkeypatch):
             }
         )
 
-    from tradingagents.dataflows import mootdx_provider
+    # T-D1: tushare is the rank-1 A-share daily-bar vendor.  This test only
+    # checks the NaN-close guard, so it stubs the chain at the new primary
+    # rather than pinning the vendor order the demotion deliberately changed.
+    # The loader imports its fetchers inside the function body, so the patch
+    # lands on the defining module.
+    from tradingagents.dataflows import china_data
 
-    monkeypatch.setattr(mootdx_provider, "get_stock_mootdx_df", fetch)
+    monkeypatch.setattr(china_data, "get_stock_tushare_df", fetch)
 
     with pytest.raises(NoMarketDataError) as ctx:
         su._load_ohlcv_a_share("600519.SH", CURR)

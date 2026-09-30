@@ -104,6 +104,7 @@ export function RunHistory({
     return (
       <li
         key={run.run_id}
+        data-run-id={run.run_id}
         className={itemClassName}
         onClick={() => selectRun(run.run_id)}
       >

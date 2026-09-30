@@ -178,6 +178,9 @@ def get_a_share_cninfo_announcements(
     end_date: str | None = None,
     page_size: int = 30,
     max_pages: int = 10,
+    *,
+    session: requests.Session | None = None,
+    records_sink: Any = None,
 ) -> CoveredText:
     """Fetch CNINFO company disclosures with dynamic orgId resolution.
 
@@ -187,7 +190,7 @@ def get_a_share_cninfo_announcements(
     if max_pages < 1:
         raise ValueError("max_pages must be positive")
     code = _require_a_share_code(ticker)
-    org_id = _cninfo_orgid(code)
+    org_id = _cninfo_orgid(code) if session is None else _cninfo_orgid(code, session=session)
     bounded_page_size = max(1, min(page_size, 100))
     records: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -195,7 +198,7 @@ def get_a_share_cninfo_announcements(
     page_count = 0
     pagination_exhausted: bool | None = None
     for page in range(1, max_pages + 1):
-        response = requests.post(
+        response = (session or requests).post(
             CNINFO_ANNOUNCEMENT_URL,
             data={
                 "stock": f"{code},{org_id}",
@@ -337,6 +340,8 @@ def get_a_share_cninfo_announcements(
         degradations=tuple(degradations),
         as_of=end_date or datetime.now().strftime("%Y-%m-%d"),
     )
+    if records_sink is not None:
+        records_sink(records)
     report = "\n".join([
         f"# China A-share CNINFO disclosures for {normalize_ticker_symbol(ticker)}",
         "# Source: cninfo.com.cn",
@@ -376,11 +381,11 @@ def _cninfo_ts_to_date(value: object) -> str:
         return ""
 
 
-def _cninfo_orgid(code: str) -> str:
+def _cninfo_orgid(code: str, *, session: requests.Session | None = None) -> str:
     global _CNINFO_ORGID_MAP
     if not _CNINFO_ORGID_MAP:
         try:
-            response = requests.get(CNINFO_STOCK_LIST_URL, headers={"User-Agent": "TradingAgents/1.0"}, timeout=15)
+            response = (session or requests).get(CNINFO_STOCK_LIST_URL, headers={"User-Agent": "TradingAgents/1.0"}, timeout=15)
             payload = response.json()
             _CNINFO_ORGID_MAP = {
                 str(row.get("code")): str(row.get("orgId"))

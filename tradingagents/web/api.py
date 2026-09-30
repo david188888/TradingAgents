@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from tradingagents.analysts import ANALYST_CONFIG
+from tradingagents.analysts import ANALYST_CONFIG, ANALYST_WIRE_KEYS
 from tradingagents.dataflows.company_resolution import resolve_input_candidates
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
@@ -26,6 +26,17 @@ from tradingagents.execution.models import AnalysisRequest, HoldingContext
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
 from tradingagents.presets import load_preset_catalog
+from tradingagents.research.catalyst_evidence_policy import (
+    CATALYST_HORIZON_NOT_SUPPORTED,
+    CATALYST_LEGACY_SCHEDULING_PARAMS,
+    CATALYST_MARKET_UNSUPPORTED,
+    CATALYST_MODE_UNSUPPORTED,
+    CATALYST_PROFILE_UNAVAILABLE,
+    CATALYST_V1_PROFILE,
+    CLASSIC_PROFILE,
+    catalyst_evidence_policy_v1,
+    normalize_research_profile,
+)
 from tradingagents.runtime.run_models import generate_run_id
 
 from .audit_models import AuditSelection
@@ -38,6 +49,7 @@ from .audit_projection import (
 )
 from .batch_models import BatchItem
 from .broker import EventBroker, Keepalive, SubscriptionClosed
+from .catalyst_projection import project_catalyst
 from .connectivity import YahooUnavailableError
 from .manager import (
     LegacyResumeNormalizationFailed,
@@ -508,6 +520,14 @@ def create_app(
         # and audit artifacts remain reachable through their existing routes.
         return RunProjectionPublisher(selected_store).read_or_rebuild_view(run_id)
 
+    @app.get("/api/runs/{run_id}/catalyst")
+    def get_catalyst(run_id: str) -> dict[str, Any]:
+        # Read-only, committed-facts-only. The projection makes no model and no
+        # provider call, so opening or refreshing this page cannot change what
+        # the run concludes. A missing run still surfaces as 404; a run that
+        # exists without a catalyst artifact is an HTTP 200 discriminated body.
+        return project_catalyst(selected_store, run_id)
+
     @app.get("/api/runs/{run_id}/reader")
     def get_reader(run_id: str) -> dict[str, Any]:
         # Read-only learning reader; missing runs surface as 404 via the global
@@ -832,7 +852,7 @@ def _analysis_request(
             "The selected LLM provider is not configured on this local server.",
             fields=("llm_provider",),
         )
-    if body.checkpoint_enabled and not checkpoint_available:
+    if body.checkpoint_enabled and not checkpoint_available and body.research_profile != "catalyst_v1":
         raise ApiBoundaryError(
             422,
             "checkpoint_unavailable",
@@ -868,6 +888,12 @@ def _analysis_request(
     }
     configured_keys = _configured_keys(environment)
     mode, holding_context = _normalize_research_context(body, canonical_ticker)
+    research_profile, catalyst_policy = _normalize_research_profile(
+        body,
+        mode=mode,
+        asset_type=asset_type,
+        canonical_ticker=canonical_ticker,
+    )
     return (
         AnalysisRequest(
             ticker=canonical_ticker,
@@ -880,9 +906,117 @@ def _analysis_request(
             mode=mode,
             holding_context=holding_context,
             effective_config=effective_config,
+            research_profile=research_profile,
+            catalyst_policy=catalyst_policy,
+            research_question=body.research_question,
         ),
         configured_keys,
     )
+
+
+def _normalize_research_profile(
+    body: RunCreateRequest,
+    *,
+    mode: str,
+    asset_type: str,
+    canonical_ticker: str,
+) -> tuple[str, object]:
+    """Validate the requested execution profile before anything is enqueued.
+
+    The new profile is a strict subset of what exists today.  Every combination
+    it cannot honor is rejected with a readable, field-addressed error naming
+    the alternative entry point -- never silently downgraded to ``classic``,
+    because a silent downgrade would show the user a bull/bear report while they
+    believed they had asked a bounded catalyst question.
+    """
+    try:
+        profile = normalize_research_profile(body.research_profile)
+    except ValueError as exc:
+        raise ApiBoundaryError(
+            422,
+            CATALYST_PROFILE_UNAVAILABLE,
+            "The requested research profile is not supported. Use classic or catalyst_v1.",
+            fields=("research_profile",),
+        ) from exc
+
+    if profile == CLASSIC_PROFILE:
+        return CLASSIC_PROFILE, None
+
+    if not catalyst_profile_enabled():
+        raise ApiBoundaryError(
+            403,
+            CATALYST_PROFILE_UNAVAILABLE,
+            "The catalyst_v1 research profile is not enabled on this server. "
+            "Use research_profile=classic.",
+            fields=("research_profile",),
+        )
+
+    if mode != "company_research":
+        raise ApiBoundaryError(
+            422,
+            CATALYST_MODE_UNSUPPORTED,
+            "research_profile=catalyst_v1 supports company_research only. "
+            "Use research_profile=classic for holding review.",
+            fields=("research_profile", "mode"),
+        )
+    if asset_type != "stock" or not _is_a_share_ticker(canonical_ticker):
+        raise ApiBoundaryError(
+            422,
+            CATALYST_MARKET_UNSUPPORTED,
+            "research_profile=catalyst_v1 supports A-share common stocks only. "
+            "Use research_profile=classic for other markets or asset types.",
+            fields=("research_profile", "ticker", "asset_type"),
+        )
+    # The new flow has its own role set.  The classic medium plan's required
+    # roles must not be copied onto it, and an explicit non-default selection
+    # must not be accepted and then ignored.
+    if body.horizon != "medium":
+        raise ApiBoundaryError(
+            422,
+            CATALYST_HORIZON_NOT_SUPPORTED,
+            "research_profile=catalyst_v1 does not use the classic horizon setting; "
+            "its evidence policy fixes the window. Send horizon=medium or omit it.",
+            fields=("horizon",),
+        )
+    if not _catalyst_legacy_scheduling_is_default(body):
+        raise ApiBoundaryError(
+            422,
+            CATALYST_LEGACY_SCHEDULING_PARAMS,
+            "research_profile=catalyst_v1 does not use selected_analysts or "
+            "research_depth; the profile fixes its own roles. Omit them or use "
+            "research_profile=classic.",
+            fields=("selected_analysts", "research_depth"),
+        )
+    return CATALYST_V1_PROFILE, catalyst_evidence_policy_v1()
+
+
+def catalyst_profile_enabled() -> bool:
+    """Feature flag: may a new catalyst_v1 run be created at all?
+
+    The code configuration owns the default (off).  An explicit
+    ``TRADINGAGENTS_CATALYST_PROFILE_ENABLED`` override wins over it, which is
+    the supported way to exercise the enabled path without mutating the shared
+    DEFAULT_CONFIG for the rest of the suite.
+    """
+    override = os.environ.get("TRADINGAGENTS_CATALYST_PROFILE_ENABLED")
+    if override is not None and override.strip():
+        return override.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(DEFAULT_CONFIG.get("catalyst_profile_enabled", False))
+
+
+def _catalyst_legacy_scheduling_is_default(body: RunCreateRequest) -> bool:
+    """True when the classic scheduling fields carry no explicit selection."""
+    return (
+        tuple(body.selected_analysts) == tuple(ANALYST_WIRE_KEYS)
+        and body.research_depth == 1
+    )
+
+
+_A_SHARE_SUFFIXES = (".SS", ".SZ", ".BJ", ".SH")
+
+
+def _is_a_share_ticker(canonical_ticker: str) -> bool:
+    return canonical_ticker.upper().endswith(_A_SHARE_SUFFIXES)
 
 
 def _normalize_research_context(
@@ -1207,6 +1341,11 @@ def _configuration_payload(
         "depths": list(RESEARCH_DEPTHS),
         "output_languages": list(SUPPORTED_OUTPUT_LANGUAGES),
         "checkpoint_available": checkpoint_available,
+        "research_profiles": {
+            "classic": {"supported": True, "reason": None},
+            "catalyst_v1": {"supported": catalyst_profile_enabled(),
+                "reason": None if catalyst_profile_enabled() else "此服务尚未启用催化研究试用"},
+        },
         "wind": {
             "enabled": bool(DEFAULT_CONFIG.get("wind_enabled", False)),
             "configured": bool(environment.get("WIND_API_KEY")),

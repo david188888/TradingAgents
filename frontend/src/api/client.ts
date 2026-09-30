@@ -31,8 +31,9 @@ import type {
   RunCreateRequestDTO,
   RunSnapshotDTO,
   RunSummaryDTO,
+  CatalystReadState,
 } from "./contracts";
-import { API } from "./contracts";
+import { API, CATALYST_CASE_PATH } from "./contracts";
 
 /** Same-origin base; prepended to every API path. */
 export const API_BASE = "";
@@ -178,6 +179,25 @@ export function getRunView(
 ): Promise<RunViewEnvelopeDTO> {
   assertRunId(run_id);
   return request<RunViewEnvelopeDTO>("GET", API.runView(run_id), undefined, signal);
+}
+
+/**
+ * GET /api/runs/{run_id}/catalyst
+ *
+ * The catalyst read projection. Version routing is by path, never by content
+ * sniffing: a caller either asks for the catalyst contract or does not, and a
+ * legacy caller keeps using `getRunView`/`getReader` unchanged.
+ *
+ * Reading this calls no LLM and no data source server-side. It is a plain GET
+ * of committed facts, which is why the page may call it on refresh, tab switch
+ * and SSE reconnect without a budget consequence.
+ */
+export function getCatalyst(
+  run_id: string,
+  signal?: AbortSignal,
+): Promise<CatalystReadState> {
+  assertRunId(run_id);
+  return request<CatalystReadState>("GET", CATALYST_CASE_PATH(run_id), undefined, signal);
 }
 
 /** GET /api/runs/{run_id}/reader */

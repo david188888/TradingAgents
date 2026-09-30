@@ -643,3 +643,300 @@ def _missing_capability_review(action) -> ReviewItem:
         trigger_kind="filing",
         trigger_value=action.review_trigger,
     )
+
+
+# ---------------------------------------------------------------------------
+# Catalyst profile assembly
+# ---------------------------------------------------------------------------
+#
+# ``catalyst-research-case-v1`` is a separate contract from ``ResearchCaseV2``
+# and is assembled here rather than by loosening the older model's lens and
+# scenario requirements. The functions below are the deterministic half of
+# design section 9.1: they compute the research priority ceiling from
+# committed facts, so a synthesis model's proposal is bounded by code and
+# never by a prompt.
+
+from tradingagents.agents.schemas import (  # noqa: E402
+    PRIORITY_BLOCKING_REASONS,
+    SAFETY_OVERFLOW_PRIORITY,
+    SAFETY_OVERFLOW_REASON,
+    BriefLine,
+    BudgetUsage,
+    CatalystBrief,
+    CatalystResearchCase,
+    Challenge,
+    ChallengeDisposition,
+    ResearchPriority,
+    ResearchPriorityDecision,
+    SpecialistFinding,
+    brief_character_count,
+)
+
+CATALYST_EVIDENCE_POLICY = "catalyst-evidence-policy-v1"
+
+# Conditions design section 9.1 caps at information-insufficient regardless of
+# which matrix row they appear in. Ordered most severe first: the caller
+# collects all that apply and the ceiling takes the strictest outcome.
+_CATALYST_INSUFFICIENT_REASONS = (
+    "hard_error",
+    "identity_conflict",
+    "required_source_unqualified",
+    "observation_window_unqualified",
+    "required_capability_unavailable",
+    "required_coverage_insufficient",
+    "pit_unverified",
+    "required_specialist_failed",
+    "refutation_stage_missing",
+    "synthesis_failed",
+    "key_challenge_unresolved",
+    SAFETY_OVERFLOW_REASON,
+)
+
+# Integrity conditions that force information-insufficient outright, even when
+# the case is otherwise complete: the run's facts about the security itself
+# cannot be trusted.
+_CATALYST_INTEGRITY_REASONS = frozenset(
+    {"hard_error", "identity_conflict", "required_source_unqualified"}
+)
+
+
+def collect_catalyst_blocking_reasons(
+    *,
+    findings: tuple[SpecialistFinding, ...],
+    challenges: tuple[Challenge, ...],
+    dispositions: tuple[ChallengeDisposition, ...],
+    completeness: str,
+    run_reason_codes: tuple[str, ...] = (),
+    brief: CatalystBrief | None = None,
+) -> tuple[str, ...]:
+    """Return every code-visible condition that caps the research priority.
+
+    Deliberately conservative: a condition that might apply is reported and
+    the ceiling moves down. An over-restrictive ceiling costs the reader a
+    stronger category on a run that might have earned it; an
+    under-restrictive one publishes "verify first" on a run that cannot
+    support it, which the design treats as unpublishable.
+    """
+    reasons: list[str] = list(run_reason_codes)
+    surviving = {finding.finding_id for finding in findings if finding.survives}
+    by_challenge = {challenge.challenge_id: challenge for challenge in challenges}
+    for disposition in dispositions:
+        challenge = by_challenge.get(disposition.challenge_id)
+        if challenge is None:
+            continue
+        # A challenge whose targets were all removed no longer constrains
+        # anything, so it must not cap the priority forever.
+        if not set(challenge.target_finding_ids) & surviving:
+            continue
+        if challenge.is_key and disposition.outcome == "unresolved":
+            reasons.append("key_challenge_unresolved")
+    if completeness != "complete" and not reasons:
+        # A non-complete case with no recorded cause still may not claim the
+        # top category: something reduced the result and the cause is missing.
+        reasons.append("required_coverage_insufficient")
+    if brief is not None and brief.kind == "safety_overflow":
+        reasons.append(SAFETY_OVERFLOW_REASON)
+    wanted = set(reasons)
+    ordered = [code for code in _CATALYST_INSUFFICIENT_REASONS if code in wanted]
+    return tuple(ordered + sorted(wanted - set(ordered)))
+
+
+def decide_catalyst_priority(
+    *,
+    candidate: ResearchPriority,
+    rationale: str,
+    blocking_reasons: tuple[str, ...],
+) -> ResearchPriorityDecision:
+    """Apply the deterministic ceiling to a synthesis model's candidate.
+
+    Both values are retained so a reader can tell a capped result from a
+    genuinely lower one: that is the difference between "the evidence did not
+    support it" and "the process could not verify it".
+    """
+    caps_top = any(code in PRIORITY_BLOCKING_REASONS for code in blocking_reasons)
+    if caps_top or (candidate == "verify_first" and blocking_reasons):
+        published: ResearchPriority = SAFETY_OVERFLOW_PRIORITY
+    else:
+        published = candidate
+    return ResearchPriorityDecision(
+        priority=published,
+        candidate_priority=candidate,
+        proposed_by="synthesis" if published == candidate else "code",
+        blocking_reasons=blocking_reasons,
+        rationale=rationale,
+    )
+
+
+def build_catalyst_brief(
+    *,
+    judgement: str,
+    priority: ResearchPriority,
+    primary_catalyst_event_id: str | None,
+    primary_catalyst_text: str | None,
+    key_evidence: tuple[BriefLine, ...],
+    key_question: BriefLine,
+    next_check: BriefLine,
+    critical_limitations: tuple[BriefLine, ...],
+) -> CatalystBrief:
+    """Build the first-screen brief, degrading to the overflow template.
+
+    Overflow is not a repair loop. If the ordinary brief does not fit, the
+    answer is the safety template plus the full limitation list -- never a
+    truncated brief, and never a shorter list of risks. The limitation list is
+    exempt from the template's own budget for exactly this reason: it is the
+    payload the reader needs.
+
+    ``CatalystBrief`` raises when the ordinary shape overflows, so this
+    catches that one failure and re-publishes. Any other construction error
+    propagates: silently swapping a malformed brief for the template would
+    hide a real defect behind a valid-looking response.
+    """
+    try:
+        return CatalystBrief(
+            kind="ordinary",
+            judgement=judgement,
+            priority=priority,
+            primary_catalyst_event_id=primary_catalyst_event_id,
+            primary_catalyst=(
+                BriefLine(
+                    text=primary_catalyst_text,
+                    event_ids=(primary_catalyst_event_id,),
+                )
+                if primary_catalyst_event_id is not None and primary_catalyst_text
+                else None
+            ),
+            key_evidence=key_evidence,
+            key_question=key_question,
+            next_check=next_check,
+            critical_limitations=critical_limitations,
+        )
+    except ValueError as exc:
+        if "character budget" not in str(exc):
+            raise
+        return build_safety_overflow_brief(limitations=critical_limitations)
+
+
+# The code template. Fixed text, not a model output: this result exists
+# precisely because the budget could not be met, so asking a model for
+# shorter words would be both unbounded and unreliable.
+SAFETY_OVERFLOW_JUDGEMENT = "本次信息限制较多，暂不能形成可靠的简短判断。"
+SAFETY_OVERFLOW_QUESTION = "本次覆盖窗口内存在未解决的重大反证或关键资料缺口。"
+SAFETY_OVERFLOW_NEXT_CHECK = "请以新的 run 补做缺失来源后重新判断。"
+
+
+def build_safety_overflow_brief(*, limitations: tuple[BriefLine, ...]) -> CatalystBrief:
+    """Emit the design section 4.3 overflow result.
+
+    The limitation list must be non-empty. A caller with nothing to show is
+    not in the situation the rule describes, and an empty list would let a
+    real overflow pass as a legitimate short result.
+    """
+    if not limitations:
+        raise ValueError("the safety-overflow brief requires a limitation list")
+    return CatalystBrief(
+        kind="safety_overflow",
+        judgement=SAFETY_OVERFLOW_JUDGEMENT,
+        priority=SAFETY_OVERFLOW_PRIORITY,
+        key_question=BriefLine(text=SAFETY_OVERFLOW_QUESTION),
+        next_check=BriefLine(text=SAFETY_OVERFLOW_NEXT_CHECK),
+        overflow_reason=SAFETY_OVERFLOW_REASON,
+        critical_limitations=limitations,
+    )
+
+
+def assemble_blocked_catalyst_case(
+    *,
+    run_id: str,
+    ticker: str,
+    as_of: datetime,
+    source_sequence: int,
+    reason_codes: tuple[str, ...],
+    findings: tuple[SpecialistFinding, ...] = (),
+    challenges: tuple[Challenge, ...] = (),
+    dispositions: tuple[ChallengeDisposition, ...] = (),
+    budget_usage: BudgetUsage | None = None,
+    research_question: str | None = None,
+) -> CatalystResearchCase:
+    """Publish the safe shell for a run that must not form a research view.
+
+    Same rule as ``assemble_fail_stop_research_case`` on the classic path: a
+    run that cannot be trusted still gets a truthful, publishable artifact,
+    so the reader sees "insufficient information" with its cause rather than
+    an empty page or a stale earlier result.
+    """
+    limitations = tuple(BriefLine(text=code) for code in reason_codes) or (
+        BriefLine(text=SAFETY_OVERFLOW_QUESTION),
+    )
+    decision = decide_catalyst_priority(
+        candidate="verify_first",
+        rationale="A blocking integrity condition forbids any directional research view.",
+        blocking_reasons=tuple(
+            code for code in reason_codes if code in _CATALYST_INTEGRITY_REASONS
+        ),
+    )
+    return CatalystResearchCase(
+        run_id=run_id,
+        ticker=ticker,
+        evidence_policy=CATALYST_EVIDENCE_POLICY,
+        as_of=as_of,
+        source_sequence=source_sequence,
+        completeness="blocked",
+        quality="FAIL_STOP",
+        reason_codes=tuple(reason_codes),
+        research_question=research_question,
+        findings=findings,
+        challenges=challenges,
+        dispositions=dispositions,
+        priority_decision=decision,
+        brief=build_safety_overflow_brief(limitations=limitations),
+        budget_usage=budget_usage
+        or BudgetUsage(
+            model_attempts=0,
+            structured_output_repairs=0,
+            network_retries=0,
+            data_capability_calls=0,
+            http_attempts=0,
+            semantic_preprocess_calls=0,
+            model_usage_available=False,
+        ),
+    )
+
+
+def build_markdown_from_case(case: CatalystResearchCase) -> str:
+    """Render the report from the same case, never from a second model call.
+
+    First screen, detail, and Markdown all read this one object, so a claim
+    cannot read differently in the report than in the brief the reader
+    judged. Design section 5.2: synthesis writes one structured brief and the
+    report is a projection of it.
+    """
+    brief = case.brief
+    lines: list[str] = [f"# {case.ticker} 催化研究简报", ""]
+    lines.append(f"研究优先级：{case.priority_decision.priority}")
+    lines.append(f"完成程度：{case.completeness} / 质量：{case.quality}")
+    lines.append("")
+    lines.append(f"## 研究判断\n\n{brief.judgement}")
+    if brief.primary_catalyst is not None:
+        lines.append(f"\n## 关键催化\n\n{brief.primary_catalyst.text}")
+    if brief.key_evidence:
+        lines.append("\n## 关键依据")
+        lines.extend(f"- {line.text}" for line in brief.key_evidence)
+    lines.append(f"\n## 最大疑点\n\n{brief.key_question.text}")
+    lines.append(f"\n## 下一步验证\n\n{brief.next_check.text}")
+    if brief.critical_limitations:
+        lines.append("\n## 影响判断的限制")
+        lines.extend(f"- {line.text}" for line in brief.critical_limitations)
+    if case.challenges:
+        lines.append("\n## 反证处理")
+        by_id = {item.challenge_id: item for item in case.dispositions}
+        for challenge in case.challenges:
+            disposition = by_id[challenge.challenge_id]
+            lines.append(
+                f"- [{disposition.outcome}] {challenge.statement} "
+                f"（严重性 {challenge.severity}，验证方式：{challenge.test_method}）"
+            )
+    lines.append("")
+    lines.append(
+        f"<!-- {case.schema_version} brief_characters={brief_character_count(brief)} -->"
+    )
+    return "\n".join(lines)

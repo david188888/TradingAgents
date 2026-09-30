@@ -9,18 +9,29 @@ import {
   type AuditEntryContext,
   type AuditOpenHandler,
 } from "../reader/AuditCenter";
-import { DecisionBrief } from "../reader/DecisionBrief";
 import { ReaderSurface } from "../reader/ReaderSurface";
 import { FailedRunView } from "../reader/FailedRunView";
 import { ResumableRunBar } from "../reader/ResumableRunBar";
+import { CatalystCasePage } from "../reader/CatalystCasePage";
+import { CatalystProgress } from "../reader/CatalystProgress";
+import { EvidenceDrawer } from "../reader/EvidenceDrawer";
+import { restoreFocus } from "../shared/drawerFocus";
+import { LegacyReader } from "../reader/LegacyReader";
 import { RunDisclosure } from "./RunDisclosure";
 import { DebateTimeline } from "../timeline/DebateTimeline";
 import { StageDetail } from "../timeline/StageDetail";
 import type { JourneyStageId } from "../../api/contracts";
-import { resumeRun, retryRun } from "../../api/client";
+import { cancelRun, resumeRun, retryRun } from "../../api/client";
 import { notifyRun } from "../../hooks/useCompletionNotifications";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { useRunHistory } from "../../hooks/useRunHistory";
+import { useCatalyst } from "../../hooks/useCatalyst";
+import {
+  catalystRoute,
+  catalystScreenState,
+  catalystStageProgress,
+  type LegacyLayerId,
+} from "../../domain/catalystWorkbench";
 
 const TERMINAL_RUN_STATUSES = new Set([
   "completed",
@@ -58,7 +69,80 @@ export function WorkbenchLayout(): JSX.Element {
   const isResizingRef = useRef(false);
   const previousStatus = useRef<string | null>(null);
   const auditReturnFocusRef = useRef<HTMLElement | null>(null);
+  /**
+   * T29: the control that opened the evidence drawer. Kept separately from the
+   * audit trigger because the two overlays are mutually exclusive and each has
+   * to return focus to its own trigger.
+   */
+  const catalystReturnFocusRef = useRef<HTMLElement | null>(null);
+  const [legacyLayer, setLegacyLayer] = useState<LegacyLayerId>("summary");
+  const [openRef, setOpenRef] = useState<{ id: string; title: string | null } | null>(null);
   const state = stream.state;
+
+  /**
+   * T26. The catalyst projection is read once per selected run, alongside the
+   * classic view rather than instead of it: a classic run still needs its view,
+   * and the read is a plain GET of committed facts (no LLM, no data source), so
+   * mounting it costs nothing.
+   */
+  const catalyst = useCatalyst(run_id, JSON.stringify([state?.meta.catalyst_stages, state?.meta.status]));
+
+  /**
+   * Which contract produced this page. The completed page used to mount
+   * `DecisionBrief` (rendering `view.brief` + `learning_summary`) directly above
+   * `ReaderSurface`, and the two measured 96% overlapping. Routing by contract
+   * means exactly one of them is mounted, which is the only way the duplication
+   * goes away: the projection fields cannot be deleted, because
+   * `executive_summary` is null in 15/15 real runs and carries no content.
+   */
+  const route = catalystRoute({
+    runId: run_id,
+    classicTerminal: view.view?.terminal === true,
+    readState: catalyst.state,
+    profile: state?.meta.research_profile,
+    loading: view.loading || catalyst.loading,
+  });
+
+  const screenState = catalystScreenState({
+    run_status: state?.meta.status ?? view.view?.view.run.status ?? "created",
+    state: catalyst.state,
+    completeness: null,
+    quality: null,
+    profile: route.kind === "catalyst" ? "catalyst_v1" : null,
+    error: catalyst.error,
+  });
+
+  const stageProgress = catalystStageProgress({
+    run_status: state?.meta.status ?? "created",
+    stage_status: catalyst.stageStatus,
+    stage_durations_ms: catalyst.stageDurations,
+    counts: catalyst.stageCounts,
+    uncommitted_candidates: catalyst.uncommittedCandidates,
+  });
+
+  const openEvidence = (refId: string, title: string | null, trigger: HTMLElement): void => {
+    catalystReturnFocusRef.current = trigger;
+    setOpenRef({ id: refId, title });
+  };
+
+  const closeEvidence = (): void => {
+    setOpenRef(null);
+    const trigger = catalystReturnFocusRef.current;
+    catalystReturnFocusRef.current = null;
+    restoreFocus(trigger);
+  };
+
+  const handleCancelRun = async (): Promise<void> => {
+    if (run_id === null) return;
+    await cancelRun(run_id);
+    await history.refresh();
+  };
+
+  useEffect(() => {
+    setOpenRef(null);
+    catalystReturnFocusRef.current = null;
+    setLegacyLayer("summary");
+  }, [run_id]);
 
   useEffect(() => {
     const stored = Number(window.localStorage.getItem(INSPECTOR_WIDTH_KEY));
@@ -280,34 +364,96 @@ export function WorkbenchLayout(): JSX.Element {
           ) : state && !(view.view?.terminal) ? (
             /* Live run (or a terminal run still replaying events): the swarm
                view is the monitoring surface; the reader surface takes over
-               only once the projection is terminal. */
+               only once the projection is terminal. T30 also shows the four
+               bounded stages here, so a catalyst run in flight never shows a
+               final research priority. */
             <>
-              <SwarmStatusCard state={state} streamStatus={stream.status} />
-              <WorkflowMap onRoleSelected={handleRoleSelected} />
-              <RunDisclosure state={state} />
+              {state.meta.research_profile !== "catalyst_v1" && <SwarmStatusCard state={state} streamStatus={stream.status} />}
+              {state.meta.research_profile === "catalyst_v1" &&
+              <CatalystProgress
+                progress={stageProgress}
+                state={screenState}
+                onCancel={() => void handleCancelRun()}
+                onRetry={handleRetryRun}
+                onResume={handleResumeRun}
+                onViewProcess={() => setLegacyLayer("process")}
+                onNewRun={() => selectRun(null)}
+                onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+              />}
+              {state.meta.research_profile !== "catalyst_v1" && <>
+                <WorkflowMap onRoleSelected={handleRoleSelected} />
+                <RunDisclosure state={state} />
+              </>}
             </>
           ) : view.view ? (
             view.view.view.run.status === "failed" ? (
               <FailedRunView envelope={view.view} onOpenAudit={openAudit} onRetry={handleRetryRun} />
-            ) : view.view.view.run.status === "completed" ? (
-              <>
-                <DecisionBrief envelope={view.view} onOpenAudit={openAudit} />
-                <ReaderSurface runId={run_id} onOpenAudit={openAudit} />
-                <DebateTimeline
-                  journey={view.view.view.debate_journey}
-                  selectedStage={expandedStage}
-                  onStageToggle={toggleStage}
-                />
-                {expandedStage ? (
-                  <StageDetail
-                    stageId={expandedStage}
-                    envelope={view.view}
-                    runId={run_id}
-                    onOpenAudit={openAudit}
-                    onRoleSelected={handleRoleSelected}
-                  />
-                ) : null}
-              </>
+            ) : route.kind === "catalyst" && catalyst.screen !== null ? (
+              /*
+                T26 — the single main summary.
+                `DecisionBrief` and `ReaderSurface` are NOT mounted here. They
+                render `view.brief` and `learning_summary`, which overlap 96% and
+                are the duplication this restructure removes. Both remain
+                reachable: `ReaderSurface` is the 依据与事件 tab's content, and
+                `DecisionBrief`'s old summary is the legacy route's 概要 layer.
+                Neither is a second copy of the same text on one screen.
+              */
+              <CatalystCasePage
+                runId={run_id}
+                screen={catalyst.screen}
+                state={screenState}
+                asOf={catalyst.kase?.as_of ?? null}
+                onOpenEvidence={openEvidence}
+                onOpenAudit={() =>
+                  openAudit({ section: "overview" }, document.body)
+                }
+                onNewResearch={() => selectRun(null)}
+                detailPane={
+                  view.view ? <ReaderSurface runId={run_id} onOpenAudit={openAudit} /> : null
+                }
+                processPane={
+                  <>
+                    {view.view ? (
+                      <DebateTimeline
+                        journey={view.view.view.debate_journey}
+                        selectedStage={expandedStage}
+                        onStageToggle={toggleStage}
+                      />
+                    ) : null}
+                    {expandedStage && view.view ? (
+                      <StageDetail
+                        stageId={expandedStage}
+                        envelope={view.view}
+                        runId={run_id}
+                        onOpenAudit={openAudit}
+                        onRoleSelected={handleRoleSelected}
+                      />
+                    ) : null}
+                  </>
+                }
+              />
+            ) : route.kind === "legacy" ? (
+              /*
+                T31 — a legacy run, read in layers and with no research priority.
+                `legacyLayerView` returns `priority: null` by construction, so
+                the old `research_rating` is shown as a rating and never mapped
+                onto the four new categories.
+              */
+              <LegacyReader
+                runId={run_id}
+                ticker={view.view.view.run.ticker}
+                /*
+                  `brief` is typed as required, but a run that produced no
+                  readable brief still has a terminal projection — and this page
+                  must not white-screen on it. An absent brief is an honest
+                  "no summary" state, not an error.
+                */
+                summaryText={view.view.view.brief?.value?.executive_summary?.text ?? null}
+                rating={view.view.view.brief?.value?.research_rating ?? null}
+                layer={legacyLayer}
+                onLayerChange={setLegacyLayer}
+                onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+              />
             ) : (
               /* Terminal but neither completed nor failed (cancelled /
                  interrupted historical run): the honest fallback. */
@@ -315,7 +461,22 @@ export function WorkbenchLayout(): JSX.Element {
                 {view.view.view.run.status === "interrupted" ? (
                   <ResumableRunBar onResume={handleResumeRun} />
                 ) : null}
-                <DecisionBrief envelope={view.view} onOpenAudit={openAudit} />
+                {/*
+                  A completed classic run that the catalyst read has not
+                  classified yet. This is the honest holding state, not a second
+                  summary: it says the page is still deciding which contract
+                  produced this run, and it renders no brief text of its own.
+                */}
+                <CatalystProgress
+                  progress={stageProgress}
+                  state={screenState}
+                  onRetry={handleRetryRun}
+                  onResume={handleResumeRun}
+                  onCancel={() => void handleCancelRun()}
+                  onViewProcess={() => setLegacyLayer("process")}
+                  onNewRun={() => selectRun(null)}
+                  onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+                />
               </>
             )
           ) : null}
@@ -354,6 +515,17 @@ export function WorkbenchLayout(): JSX.Element {
           context={auditContext}
           returnFocus={auditReturnFocusRef.current}
           onClose={() => setAuditOpen(false)}
+        />
+      ) : null}
+      {run_id !== null && catalyst.kase !== null ? (
+        <EvidenceDrawer
+          runId={run_id}
+          evidence={catalyst.kase.evidence}
+          events={catalyst.kase.events}
+          openId={openRef?.id ?? null}
+          title={openRef?.title ?? null}
+          background={[topbarRef.current, layoutRef.current]}
+          onClose={closeEvidence}
         />
       ) : null}
     </div>

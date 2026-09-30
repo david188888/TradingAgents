@@ -188,6 +188,8 @@ export type ApplicationStatus =
   | "abandoned";
 
 export interface RunMeta {
+  research_profile?: "classic" | "catalyst_v1";
+  catalyst_stages?: Record<string, string>;
   run_id: string;
   status: ApplicationStatus;
   ticker: string;

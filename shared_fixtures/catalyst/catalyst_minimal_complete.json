@@ -1,0 +1,284 @@
+{
+  "fixture_id": "catalyst_minimal_complete",
+  "description": "Minimal complete case: one evidence record, one event, one finding, no challenges, and a brief that fits the 420-character first-screen budget. This is the only arm allowed to publish an unrestricted research priority.",
+  "schema_version": 1,
+  "state": "ready",
+  "case_schema_version": "catalyst-research-case-v1",
+  "case_schema_number": 1,
+  "run_id": "run_catalyst_fixture",
+  "ticker": "600519.SS",
+  "run_status": "completed",
+  "completeness": "complete",
+  "quality": "PASS",
+  "priority": "verify_first",
+  "research_question": "半年度业绩预告的利润增长是否由低毛利产品结构贡献？",
+  "limitations": [],
+  "brief_character_count": 145,
+  "brief": {
+    "kind": "ordinary",
+    "judgement": "预告已披露且日期明确，值得在下一次定期报告时优先核查收入兑现。",
+    "priority": "verify_first",
+    "primary_catalyst_event_id": "ev_event_1",
+    "primary_catalyst": {
+      "text": "2026 年半年度业绩预告于 8 月 14 日披露。",
+      "finding_ids": [],
+      "event_ids": [
+        "ev_event_1"
+      ],
+      "challenge_ids": []
+    },
+    "key_evidence": [
+      {
+        "text": "预告区间为归母净利润 12.0 亿至 14.0 亿元。",
+        "finding_ids": [
+          "f_fact_1"
+        ],
+        "event_ids": [],
+        "challenge_ids": []
+      }
+    ],
+    "key_question": {
+      "text": "预告的利润增长可能由低毛利产品结构贡献。",
+      "finding_ids": [],
+      "event_ids": [],
+      "challenge_ids": [
+        "ch_1"
+      ]
+    },
+    "next_check": {
+      "text": "核对中报分产品毛利率与订单交付节奏。",
+      "finding_ids": [],
+      "event_ids": [],
+      "challenge_ids": []
+    },
+    "critical_limitations": [
+      {
+        "text": "预告未披露分产品毛利率，结构归因缺少直接证据。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": [
+          "ch_1"
+        ]
+      }
+    ],
+    "overflow_reason": null
+  },
+  "case": {
+    "schema_version": "catalyst-research-case-v1",
+    "schema_number": 1,
+    "run_id": "run_catalyst_fixture",
+    "ticker": "600519.SS",
+    "research_profile": "catalyst_v1",
+    "evidence_policy": "catalyst-evidence-policy-v1",
+    "as_of": "2026-08-14T09:31:20+00:00",
+    "source_sequence": 3,
+    "completeness": "complete",
+    "quality": "PASS",
+    "reason_codes": [],
+    "research_question": "半年度业绩预告的利润增长是否由低毛利产品结构贡献？",
+    "evidence": [
+      {
+        "evidence_id": "ev_filing",
+        "run_id": "run_catalyst_fixture",
+        "ticker": "600519.SS",
+        "capability": "a_share.filings.performance_express",
+        "source_tier": "official",
+        "source_name": "Shanghai Stock Exchange filing",
+        "public_url": "https://www.sse.com.cn/disclosure/performance_express/",
+        "source_family_id": "src_family_sse_filing",
+        "republished_from_evidence_id": null,
+        "published_at": "2026-08-14T09:30:00+00:00",
+        "observed_at": "2026-08-14T09:31:12+00:00",
+        "captured_at": "2026-08-14T09:31:20+00:00",
+        "usable_as_of": "2026-08-14T09:31:20+00:00",
+        "time_basis": "point_in_time filing timestamp",
+        "value_basis": "as_reported",
+        "availability": "available"
+      }
+    ],
+    "events": [
+      {
+        "event_id": "ev_event_1",
+        "run_id": "run_catalyst_fixture",
+        "ticker": "600519.SS",
+        "event_type": "performance_express",
+        "version": 1,
+        "title": "2026 年半年度业绩预告",
+        "status": "in_progress",
+        "announced_at": "2026-08-14T09:30:00+00:00",
+        "occurred_on": null,
+        "occurred_period_end": null,
+        "date_precision": "unknown",
+        "date_evidence_ids": [],
+        "updated_by_evidence_id": null,
+        "supersedes_event_id": null
+      }
+    ],
+    "findings": [
+      {
+        "finding_id": "f_fact_1",
+        "run_id": "run_catalyst_fixture",
+        "role": "catalyst_events",
+        "kind": "fact",
+        "text": "预告归母净利润区间为 12.0 亿至 14.0 亿元。",
+        "supporting_finding_ids": [],
+        "evidence_ids": [
+          "ev_filing"
+        ],
+        "event_ids": [
+          "ev_event_1"
+        ],
+        "numeric_facts": [
+          {
+            "label": "预告归母净利润下限",
+            "value": 1200000000.0,
+            "unit": "CNY",
+            "period": "2026H1",
+            "basis": "forecast_range",
+            "period_start": "2026-01-01",
+            "period_end": "2026-06-30"
+          }
+        ],
+        "limitations": [],
+        "next_checks": [],
+        "confidence": 0.95,
+        "survives": true
+      },
+      {
+        "finding_id": "f_infer_1",
+        "run_id": "run_catalyst_fixture",
+        "role": "operating_delivery",
+        "kind": "inference",
+        "text": "利润增长可能由低毛利产品结构贡献。",
+        "supporting_finding_ids": [
+          "f_fact_1"
+        ],
+        "evidence_ids": [
+          "ev_filing"
+        ],
+        "event_ids": [
+          "ev_event_1"
+        ],
+        "numeric_facts": [],
+        "limitations": [
+          "预告未披露分产品毛利率。"
+        ],
+        "next_checks": [
+          "核对中报分产品毛利率。"
+        ],
+        "confidence": 0.55,
+        "survives": false
+      }
+    ],
+    "challenges": [
+      {
+        "challenge_id": "ch_1",
+        "run_id": "run_catalyst_fixture",
+        "kind": "counter_evidence",
+        "severity": "critical",
+        "target_finding_ids": [
+          "f_infer_1"
+        ],
+        "target_event_ids": [],
+        "statement": "预告未披露分产品毛利率，利润增长的结构归因缺少直接证据。",
+        "evidence_ids": [
+          "ev_filing"
+        ],
+        "test_method": "在中报披露后核对分产品毛利率与销量。",
+        "is_key": true
+      }
+    ],
+    "dispositions": [
+      {
+        "challenge_id": "ch_1",
+        "outcome": "refuted_by_evidence",
+        "rationale": "中报已披露分产品毛利率，结构归因在本次运行内被证伪。",
+        "evidence_ids": [
+          "ev_filing"
+        ],
+        "retained_limitations": [],
+        "finding_ids": [
+          "f_infer_1"
+        ]
+      }
+    ],
+    "priority_decision": {
+      "priority": "verify_first",
+      "candidate_priority": "verify_first",
+      "proposed_by": "synthesis",
+      "blocking_reasons": [],
+      "rationale": "事件已公告、日期明确、关键挑战已被证伪，无阻断原因。"
+    },
+    "brief": {
+      "kind": "ordinary",
+      "judgement": "预告已披露且日期明确，值得在下一次定期报告时优先核查收入兑现。",
+      "priority": "verify_first",
+      "primary_catalyst_event_id": "ev_event_1",
+      "primary_catalyst": {
+        "text": "2026 年半年度业绩预告于 8 月 14 日披露。",
+        "finding_ids": [],
+        "event_ids": [
+          "ev_event_1"
+        ],
+        "challenge_ids": []
+      },
+      "key_evidence": [
+        {
+          "text": "预告区间为归母净利润 12.0 亿至 14.0 亿元。",
+          "finding_ids": [
+            "f_fact_1"
+          ],
+          "event_ids": [],
+          "challenge_ids": []
+        }
+      ],
+      "key_question": {
+        "text": "预告的利润增长可能由低毛利产品结构贡献。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": [
+          "ch_1"
+        ]
+      },
+      "next_check": {
+        "text": "核对中报分产品毛利率与订单交付节奏。",
+        "finding_ids": [],
+        "event_ids": [],
+        "challenge_ids": []
+      },
+      "critical_limitations": [
+        {
+          "text": "预告未披露分产品毛利率，结构归因缺少直接证据。",
+          "finding_ids": [],
+          "event_ids": [],
+          "challenge_ids": [
+            "ch_1"
+          ]
+        }
+      ],
+      "overflow_reason": null
+    },
+    "budget_usage": {
+      "model_attempts": 3,
+      "structured_output_repairs": 0,
+      "network_retries": 0,
+      "data_capability_calls": 4,
+      "http_attempts": 4,
+      "semantic_preprocess_calls": 1,
+      "model_usage_available": true,
+      "input_tokens": 18420,
+      "output_tokens": 2130,
+      "stage_durations_ms": [
+        [
+          "catalyst_events",
+          4120
+        ],
+        [
+          "operating_delivery",
+          2870
+        ]
+      ],
+      "termination_reason": "completed"
+    }
+  }
+}

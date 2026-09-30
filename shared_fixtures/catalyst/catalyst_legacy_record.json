@@ -1,0 +1,56 @@
+{
+  "fixture_id": "catalyst_legacy_record",
+  "description": "Legacy record: a pre-catalyst run read through the existing classic reader contract. It carries no profile, no priority, and no catalyst fields of any kind. A reader upgrade must read it without recomputation and must not synthesize a research priority from its text.",
+  "schema_version": 1,
+  "kind": "legacy",
+  "reader_schema_version": 2,
+  "run_id": "run-legacy-record",
+  "mode": "company_research",
+  "ticker": "AAPL",
+  "horizon": "medium",
+  "as_of": "2026-05-02T16:00:00+00:00",
+  "availability": "full",
+  "decision_eligibility": "limited",
+  "evidence_verdict": "LOW_CONFIDENCE",
+  "research_tilt": "neutral",
+  "rating_confidence": 0.42,
+  "research_priority": null,
+  "claims": [
+    {
+      "claim_id": "claim-1",
+      "text": "营收增速环比放缓，费用率维持稳定。",
+      "evidence_ref_ids": [
+        "ref-1"
+      ],
+      "claim_type": "fact",
+      "lifecycle_status": "active",
+      "confidence": 0.7
+    }
+  ],
+  "scenarios": null,
+  "catalysts": [],
+  "invalidation_conditions": [],
+  "review_plan": null,
+  "analyst_cards": [],
+  "data_quality": {
+    "level": "limited",
+    "summary": "宏观数据源两次不可用。",
+    "conflicts": [],
+    "omissions": [
+      "industry_comparison"
+    ],
+    "unavailable_capabilities": [
+      "fred.macro_series"
+    ],
+    "checks": []
+  },
+  "evidence_refs": [
+    {
+      "ref_id": "ref-1",
+      "label": "季度报告",
+      "resolution_status": "available"
+    }
+  ],
+  "coverage_refs": [],
+  "omissions": []
+}

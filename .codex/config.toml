@@ -1,0 +1,9 @@
+# Codex project configuration for TradingAgents.
+#
+# Tracked so a fresh clone works. Put anything personal (tokens, local-only
+# overrides) in config.local.toml, which is gitignored.
+#
+# MCP servers are declared here, not in .mcp.json — see the project README
+# before adding one. For a token, prefer
+#   bearer_token_env_var = "SOME_TOKEN"
+# over a literal Authorization header, so the secret stays out of git.

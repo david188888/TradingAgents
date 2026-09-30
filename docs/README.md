@@ -42,6 +42,7 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [Research package interoperability](operations/research-package-interoperability.md): external Agent consumption contract over the public research-package and reader fact layer.
 - [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
 - [Web batch analysis](operations/web-batch-analysis.md): 1-8 company batch research, global FIFO scheduler, concurrency, lifecycle, and notification limits.
+- [Catalyst trial operations](operations/catalyst-research.md): explicit entry, qualification limits, budgets, recovery and read semantics.
 
 ## Integrations
 
@@ -52,6 +53,13 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 ## Decisions
 
 - [Architecture decisions](decisions/README.md): ADR lifecycle and future decision records. No historical ADRs are reconstructed here.
+
+## Proposed Engineering Designs
+
+These are execution proposals, not descriptions of current runtime behavior.
+
+- [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): original product direction and evaluation criteria. The explicit Web path is wired; default switching and batch quality evaluation remain separate decisions.
+- [Wiring design](superpowers/specs/2026-09-30-catalyst-production-wiring-design.md) and [acceptance record](superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md): approved scope and verification evidence.
 
 ## Historical / Archive
 
@@ -69,6 +77,6 @@ Every archived document carries a `Status:` field and a pointer back to this ind
 
 ## Document Conventions
 
-- Non-current documents must start with one of: `Status: Historical`, `Status: Frozen Design`, `Status: Archived Plan` — and must state: **Do not use this document as evidence of current implementation behavior.**
+- Non-current documents must start with one of: `Status: Proposed`, `Status: Historical`, `Status: Frozen Design`, `Status: Archived Plan` — and must state: **Do not use this document as evidence of current implementation behavior.** Proposed designs belong under Proposed Engineering Designs until implemented or archived.
 - Current documents are marked `Status: Current`.
 - Current-state pages do not carry implementation-process noise (story points, sprints, task boards, uncommitted-worktree notes, one-off test counts, or “Next / To Do” markers). Those belong in issues, PRs, project management systems, or historical plans.
