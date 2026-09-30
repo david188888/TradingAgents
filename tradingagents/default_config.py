@@ -207,6 +207,12 @@ DEFAULT_CONFIG = _apply_env_overrides({
         # swsresearch industry history, pbc/nbs macro).  baostock does not
         # serve BSE segments; those degrade per-method.
         "a_share_v37_supplement": "sina,baostock,swsresearch,pbc,nbs",
+        # a-stock-data v3.9.0 event-driven layer and the gap-fill official
+        # sources.  Every method here pins exactly one vendor (see tool_vendors);
+        # the category entries are a superset safety net so a method added under
+        # this category is routable without a second edit.
+        "a_share_event_data": "eastmoney",
+        "a_share_official_extras": "eastmoney,szse,china_exchange,sse_e,sina",
         # Wind AIFin Market is the premium primary; EastMoney is the keyless
         # fallback for index snapshot/history when Wind is unavailable.
         "wind_index_data": "wind,eastmoney",
@@ -246,6 +252,21 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "get_sw_industry_history": "swsresearch",
         "get_china_social_financing": "pbc",
         "get_china_pmi": "nbs",
+        # a-stock-data v3.9.0 sources: one zero-key provider each.  The official
+        # exchange endpoints are registered as their own capabilities rather than
+        # as fallbacks of the EastMoney methods they back up, because their input
+        # contracts differ (a calendar month, an exchange plus trade date, a
+        # platform page).
+        "get_a_share_earnings_forecast": "eastmoney",
+        "get_a_share_institution_survey": "eastmoney",
+        "get_a_share_share_buyback": "eastmoney",
+        "get_a_share_equity_pledge": "eastmoney",
+        "get_a_share_ipo_calendar": "eastmoney",
+        "get_a_share_st_stock_list": "eastmoney",
+        "get_a_share_trading_calendar": "szse",
+        "get_a_share_margin_trading_backup": "china_exchange",
+        "get_a_share_sse_e_interaction": "sse_e",
+        "get_a_share_research_reports_sina": "sina",
     },
     # Tavily news search controls. Defaults intentionally keep API usage low.
     # Search providers return 8 results by default: search APIs charge per
