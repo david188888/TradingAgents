@@ -1,6 +1,6 @@
 # 催化研究重构：工程交接说明
 
-- **Status: Updated 2026-09-30 — P3（E）与 P4（F）已全部完成、验证并合回 `main`。剩余阻塞在 §5 的四个产品卡点。当前 `main` HEAD = `af90488`。**
+- **Status: Updated 2026-09-30 — P3（E）与 P4（F）已全部完成、验证并合回 `main`，两棵 worktree 与分支已删除。当前 `main` HEAD = `1856391`（全部本地提交，未推送）。接线（§3.4）已出方案但未获批、未动代码。剩余阻塞在 §5 的四个产品卡点，其中 C-1 gate 住 T33 与整体验收判定。**
 - 创建日期：2026-09-29，最近更新：2026-09-30。交接对象：接手的工程师。
 - 上游：[执行计划](2026-09-29-catalyst-research-task-plan.md)（T01–T39 拆分与验收标准）、[设计](../specs/2026-09-28-catalyst-research-redesign.md)、[布局草图](../specs/2026-09-28-catalyst-research-layout.html)。
 - **本文档已按 2026-09-30 的实测重写 §1–§5。§6（探测遗留）与 §7（环境注意事项）仍然有效，原文保留；§8 已按新现状重写。**
@@ -101,8 +101,14 @@ T25 两半均已完成：失败集合未扩大（§2.1）+ 行为断言（上述
 
 ### 3.4 未接线项（有意保留，非缺陷）
 
-- **`run_catalyst_research` 零生产调用方**。已实测 `grep -rn "run_catalyst_research" tradingagents cli`，除定义外无任何命中。流程引擎目前只能经测试调用。这是**「真实接线」的未来工作**，但它意味着 P3 的产物目前没有任何用户可达路径。
+- **`run_catalyst_research` 零生产调用方**。已实测 `grep -rn "run_catalyst_research" tradingagents cli`，除定义外无任何命中；2026-09-30 复测全仓库（含 `tests/`）亦仅命中测试文件。流程引擎目前只能经测试调用。这是**「真实接线」的未来工作**，但它意味着 P3 的产物目前没有任何用户可达路径。
+- **`research_profile` 被校验但不被执行路径消费（2026-09-30 接线调查实测）**。这是上条更刺眼的一面：
+  - `grep -rn "research_profile" tradingagents` 在 `web/` 之外的命中只有三处——`execution/models.py`（请求字段 `ResearchProfile = "classic"` 及其 policy version 投影）、`research/catalyst_evidence_policy.py`（`normalize_research_profile` 归一化）、`agents/schemas/_catalyst_research.py`（`Literal["catalyst_v1"]` 的响应侧字段）。
+  - `manager.py`、`broker.py`、`scheduler.py` 与 graph 执行路径**零命中**。
+  - **后果**：`web/api.py:_normalize_research_profile` 会接受并校验 `catalyst_v1`，但请求随后**被当作 classic 跑掉**，没有任何执行分叉。当前不存在 catalyst 执行分支——不是「接线不完整」，是「入口承认了它、下游不认识它」。
+  - `EvidenceFreezer`（`research/evidence_freeze.py:801`）是 `FrozenEvidenceDraft` 的唯一生产构造点，接线时从它取草稿。
 - **T24 采用窄范围**：只补模块层语义与测试（commit barrier、事件注册、审计、取消、失败与恢复、重连不重复执行），不做 HTTP/SSE 层的真实接线。理由与上条相同：接线会触及 `web/api.py`，而该文件由 B/C 共享，属另一次有独立风险的改动。
+- **接线的四步方案已出，未获批、未动代码**（2026-09-30 收尾时用户指示「先停下来，存入记忆与文档」）：(1) 在 `manager.py` 按 `request.research_profile` 分流，`catalyst_v1` 走 `EvidenceFreezer` → `run_catalyst_research`，classic 保持原路径，**不改 `RuntimePolicyVersion`**；(2) 把 `CatalystForm.tsx` 接进工作台并重建 `web/static/`；(3) 接线时须处理 §3.2 的取消路径 `slots` 长度不对称；(4) 接线后 T32 浏览器验证才可执行（需本地 LLM 配置）。
 
 ## 4. 已完成：F（工作台 P4）
 
@@ -183,11 +189,13 @@ priority: CatalystReadState extends { priority?: infer P } ? P : never,
 
 ## 8. 建议的接手顺序
 
-0. **已完成、无需重复**：E 的全量 pytest 与失败集合比对、串并行竞态的复现与修复、F 的 typecheck 修复与 static 重建。接手方从第 1 步开始。
+0. **已完成、无需重复**：E 的全量 pytest 与失败集合比对、串并行竞态的复现与修复、F 的 typecheck 修复与 static 重建、E/F worktree 与分支的删除、E 交付物清单的逐项核对（E 自报的 11 项中 `test_catalyst_events_t14_t18.py` 与 `test_catalyst_fixtures.py` 实为 `92a7187` 的既有文件，**main 上无缺失**）。接手方从第 1 步开始。
 1. **补 T32 的浏览器验证**：启动 `tradingagents web --port 8765 --open`，实际打开工作台页面，验证八态矩阵渲染、G14 配色未漂移、字符预算 fixture 前后端一致。需本地可用的 LLM 配置才能跑真 run。
 2. **把 C-1~C-4 拿给产品决定**。**C-1 不决定，T33 无法执行，整体验收无法判定。**
 3. 决定后再派 G 做 T33–T39；在此之前 G 只能做 T36–T38。
-4. **接线**（`run_catalyst_research` 的生产调用方 + `CatalystForm` 入口）是端到端验收的前置条件，见 §3.4 与 §5 末段。
+4. **接线**（`run_catalyst_research` 的生产调用方 + `CatalystForm` 入口）是端到端验收的前置条件，见 §3.4 与 §5 末段。**方案已出（§3.4 末条），但 2026-09-30 用户明确指示「先停下来，存入记忆与文档」，故未获批、未动代码。**
+
+> **注意**：仓库内尚有 **7 棵历史遗留 worktree**（5 棵 `a6a3f4c` 的 `worktree-agent-*`、1 棵 detached `ca90f27`、1 棵 codex 的 `upstream-sync-20260925`），均与本轮 catalyst 收尾无关，**已报告用户，未触碰**。清理前须逐个确认无未提交产出。
 
 ## 9. 历史复核记录（2026-09-29 21:5x）
 
