@@ -15,7 +15,7 @@
 
 ### 提交构成
 
-按时间顺序（合并时保持分段，便于逐条审阅与回滚）：
+按时间顺序（合并时保持分段，便于逐条审阅与回滚）。前六条哈希稳定；末条是分支 tip，用下方命令取实际值：
 
 | commit | 内容 |
 |---|---|
@@ -25,7 +25,7 @@
 | `cec83e6` | 事件驱动层五端点 + ST 名单 + 深交所日历 + 官方两融 + 上证e互动 + 新浪研报；registry/default_config/data_meta_tools 接线 |
 | `41cf487` | `coverage.py` 规范扩展（`ScreeningCoverageV1`）+ 腾讯周线/月线 |
 | `f10eba5` | 六个 `(period, adjust)` 能力互不相同的注册断言 |
-| `5299a5f` | 东财 datacenter 严格性回填六个适配器 + coverage 返回；新浪研报 coverage；移除已无引用的宽松 helper；事件层与回填的测试 |
+| 分支 tip（`git log -1 --format=%h main..feat/a-stock-data-v3.10-sync`） | 东财 datacenter 严格性回填六个适配器 + coverage 返回；新浪研报 coverage；移除已无引用的宽松 helper；事件层与回填的测试 |
 
 **为什么会有这条分支。** 本机安装的 skill（`~/.claude/skills/a-stock-data/SKILL.md`）与上游 tag v3.7.1 **逐字节相同**，而上游已到 v3.10.0。核对后结论是：v3.7.1→v3.10.0 共有的 90 个函数里只有 13 个实现有变，其中真正影响本仓库的只有 3 条（见 §3.1），其余是 Layer 1 章节重编号与文档字符串；主要工作量在 v3.8–v3.10 新增的 4 个层、34 个函数。
 
