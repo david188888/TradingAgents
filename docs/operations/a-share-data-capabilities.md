@@ -57,6 +57,19 @@
 
 路由默认把上述数据归为可降级的 A 股补充能力：它们的失败不会使 OHLCV、财务报表或最终研究流程被误判为数据缺失。
 
+## 「完整查过且确实没有」与「取数失败」
+
+对筛查类查询，这两件事必须可区分：把限流读成"这家公司没有披露业绩预告"是一项错误的否定发现。本仓库用既有的 coverage 契约表达，而不是靠报告措辞：
+
+- `CoveredText` 是 `str` 子类，携带 `SourceCoverageV1`。老调用方当字符串用照旧；`data_meta_tools` 会把 `.coverage` 带进结果信封。
+- `completeness == "complete"` 且 `item_count == 0` ⟹ **来源走完了整个查询，确实没有命中**。
+- 抛 `ChinaDataUnavailableError` ⟹ **取数失败、被限流或响应格式变了**，绝不等于"没有"。
+- `completeness == "partial"` / `"unknown"` ⟹ 有数据但不完整，`degradations` 写明原因（`row_cap_truncated`、`pagination_not_proven`、`no_source_reported_total` 等）。
+
+基类 `SourceCoverageV1` 默认**不允许** `complete` 搭配零条记录（对文档/载荷集合类能力这是正确约束）。筛查类能力使用 `ScreeningCoverageV1`：它显式覆写两个默认关闭的钩子，并要求 `query_complete == (pagination_exhausted is True)`——即分页必须被走完、来源自报总数必须与实际读到的行数核对一致，否则只能是 `partial`/`unknown`。
+
+适用范围：东财 datacenter 系（事件驱动五端点、大宗交易、股东户数、解禁、龙虎榜、日龙虎榜、融资融券）、ST 名单、新浪研报列表。东财 **push2 / push2ex** 系（行业排名、板块资金流、概念归属、涨停池、监控池、异动）尚未纳入，仍可能把结构变化洗成空表。
+
 ## 官方披露与覆盖语义
 
 - 中长期策略要求 `cninfo.announcements` 与 `exchange.announcements` 至少一个
@@ -99,7 +112,7 @@
 
 - **Layer 13 期货与大宗商品**（期货/期权日行情、持仓排名、A50、上金所）与 **Layer 15 可转债**：不在本仓 A 股股票研究的范围内。
 - **§1.3 通达信盘后包**、**§1.4 腾讯逐笔**：现有 tushare 日线与腾讯日线已覆盖研究所需的 OHLCV，逐笔/全市场盘后包没有下游消费者。
-- **腾讯 K 线仍只做日线**：上游 §1.2 还提供周/月/分钟与 hfq、三域名轮换；本仓只注册了 raw 与 qfq 日线。
+- **腾讯 K 线只做日/周/月**：上游 §1.2 还提供 1–60 分钟线、hfq 与三域名轮换；本仓注册了日/周/月 × raw/qfq 六个能力，周期是能力身份的一部分（`get_a_share_kline_weekly` 等），不允许由日线供应商顶替。
 - **mootdx 服务器列表保持本仓实测版本**：与上游列表不同（上游为 2026-06 验证），本次无联网实测，不替换。`tdx_client()` 增加了上游的 `bestip` / 裸 factory 回退阶段作为列表过期时的恢复路径。
 - **早期 EastMoney datacenter 适配器未回填严格性**：见上文「EastMoney datacenter 严格性」。
 - **北交所 B 股/老号段等 §-only 边界**：仅在本次新增的适配器中实现。

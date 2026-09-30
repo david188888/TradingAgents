@@ -126,7 +126,14 @@ from .tavily_news import (
     get_global_news_tavily,
     get_news_tavily,
 )
-from .tencent_kline import get_a_share_kline, get_a_share_kline_qfq
+from .tencent_kline import (
+    get_a_share_kline,
+    get_a_share_kline_monthly,
+    get_a_share_kline_monthly_qfq,
+    get_a_share_kline_qfq,
+    get_a_share_kline_weekly,
+    get_a_share_kline_weekly_qfq,
+)
 from .tencent_provider import get_a_share_valuation
 from .wind_provider import (
     get_equity_risk_metrics as get_wind_equity_risk_metrics,
@@ -210,8 +217,15 @@ TOOLS_CATEGORIES = {
     # bars and get a typed `unavailable` when the vendor cannot serve them,
     # instead of a raw frame wearing a qfq label.
     "a_share_kline": {
-        "description": "A-share daily bars via Tencent, raw and forward-adjusted as separate capabilities",
-        "tools": ["get_a_share_kline", "get_a_share_kline_qfq"],
+        "description": "A-share daily/weekly/monthly bars via Tencent, raw and forward-adjusted as separate capabilities",
+        "tools": [
+            "get_a_share_kline",
+            "get_a_share_kline_qfq",
+            "get_a_share_kline_weekly",
+            "get_a_share_kline_weekly_qfq",
+            "get_a_share_kline_monthly",
+            "get_a_share_kline_monthly_qfq",
+        ],
     },
     "a_share_research": {
         "description": "A-share research reports and consensus EPS forecast",
@@ -556,6 +570,13 @@ VENDOR_METHODS = {
     # request with raw bars, which design SS8.5 forbids.
     "get_a_share_kline": {"tencent": get_a_share_kline},
     "get_a_share_kline_qfq": {"tencent": get_a_share_kline_qfq},
+    # Bar width is part of the method identity for the same reason the
+    # adjustment convention is: a router allowed to satisfy a weekly request
+    # from the daily vendor would silently change the bar width.
+    "get_a_share_kline_weekly": {"tencent": get_a_share_kline_weekly},
+    "get_a_share_kline_weekly_qfq": {"tencent": get_a_share_kline_weekly_qfq},
+    "get_a_share_kline_monthly": {"tencent": get_a_share_kline_monthly},
+    "get_a_share_kline_monthly_qfq": {"tencent": get_a_share_kline_monthly_qfq},
     "get_a_share_fundamentals_mootdx": {"mootdx": get_fundamentals_mootdx},
     "get_a_share_f10": {"mootdx": get_a_share_f10},
     "get_a_share_research_reports": {"eastmoney": get_a_share_research_reports},

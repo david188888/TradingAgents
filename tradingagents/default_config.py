@@ -245,6 +245,14 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "get_a_share_interactive_answers": "akshare",
         # a-stock-data v3.7.0 supplement endpoints pin a single zero-key source;
         # category default (a_share_v37_supplement) is a superset safety net.
+        # Tencent bar width is pinned per method, not selected by an argument
+        # the fallback chain could drop.
+        "get_a_share_kline": "tencent",
+        "get_a_share_kline_qfq": "tencent",
+        "get_a_share_kline_weekly": "tencent",
+        "get_a_share_kline_weekly_qfq": "tencent",
+        "get_a_share_kline_monthly": "tencent",
+        "get_a_share_kline_monthly_qfq": "tencent",
         "get_a_share_adjust_factors": "sina",
         "get_a_share_valuation_history": "baostock",
         "get_a_share_listing_history": "baostock",
