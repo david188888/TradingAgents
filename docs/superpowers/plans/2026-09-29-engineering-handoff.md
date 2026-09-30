@@ -1,14 +1,16 @@
 # 催化研究重构：工程交接说明
 
-- **Status: Proposed — 工程交接说明。本文件记录已完成并合回的工作，以及**未完成**的 E/F 产出。不得把 E/F 的产出描述为已完成或已验证。Do not use this document as evidence of current implementation behavior.**
-- 创建日期：2026-09-29。交接对象：接手的工程师。
+- **Status: Updated 2026-09-30 — P3（E）与 P4（F）已全部完成、验证并合回 `main`。剩余阻塞在 §5 的四个产品卡点。当前 `main` HEAD = `af90488`。**
+- 创建日期：2026-09-29，最近更新：2026-09-30。交接对象：接手的工程师。
 - 上游：[执行计划](2026-09-29-catalyst-research-task-plan.md)（T01–T39 拆分与验收标准）、[设计](../specs/2026-09-28-catalyst-research-redesign.md)、[布局草图](../specs/2026-09-28-catalyst-research-layout.html)。
-- `main` HEAD = `eacd026`，工作区干净，全部门禁检查通过。**E/F 产出未合回**，按用户指示保留在 worktree。
-- **本文件的所有实测数字均为 2026-09-29 21:5x 重新执行所得**，不是上一轮 agent 的自报。上一版交接说明中有三处归因错误，已在本文件 §4.1、§4.4、§3 修正并标注。
+- **本文档已按 2026-09-30 的实测重写 §1–§5。§6（探测遗留）与 §7（环境注意事项）仍然有效，原文保留；§8 已按新现状重写。**
+- 原始记录（2026-09-29 21:5x 复核）见 §9，其中的归因更正依然成立，追加更正见 §9.1。
 
 ## 1. 一句话现状
 
-P0–P2 全部完成并合回（7 个 commit，+9119 行代码，2189 测试通过）。**P3（流程 E）与 P4（工作台 F）各有大量产出但未完成、未验证，保留在两个 worktree 分支中。P5（验收 G）未开始，且被四个产品卡点阻塞。**
+**P0–P4 全部完成并合回 `main`。P5（验收 G）未开始，被四个产品卡点阻塞，其中 C-1 gate 住 T33 与整体验收判定。**
+
+合回顺序为 F 先、E 后（约束见 §2.3 `web/api.py`）。两条 worktree 分支的产出已全部并入 main，可删除。
 
 ## 2. 已完成并合回（main 分支，可直接使用）
 
@@ -20,176 +22,131 @@ P0–P2 全部完成并合回（7 个 commit，+9119 行代码，2189 测试通�
 | P1 | T07、T10–T12 | `research/catalyst_evidence_policy.py`、`execution/models.py`、`web/schemas.py`、`web/api.py`、`runtime/fingerprint.py`、`frontend/src/api/contracts.ts`、`shared_fixtures/catalyst/*.json`（6 个 fixture） | 4 个测试文件 + 164 Vitest |
 | P1 | T08、T09 | `agents/schemas/_catalyst_research.py`、`web/catalyst_projection.py`、`research/case_assembly.py`、`execution/output_publisher.py` | 94 pytest + 9 Vitest |
 | P2 | T-D1、T-D2、T13–T18 | `dataflows/tencent_kline.py`、`dataflows/catalyst_events.py`、`dataflows/registry.py`、`dataflows/mootdx_provider.py`、`dataflows/interface.py`、`dataflows/vendor_errors.py`、`dataflows/stockstats_utils.py` | 51 pytest |
+| **P4** | **T26–T32** | **工作台页面**：`components/reader/CatalystBrief.tsx`、`CatalystCasePage.tsx`、`CatalystProgress.tsx`、`EvidenceDrawer.tsx`、`LegacyReader.tsx`、`components/shared/drawerFocus.ts`、`domain/catalystWorkbench.ts`、`hooks/useCatalyst.ts`、`styles/catalyst.css`；改动 `WorkbenchLayout.tsx`、`api/client.ts`、`hooks/useConfig.ts`、`main.tsx` | **41 files / 297 Vitest** |
+| **P3** | **T19–T25** | **流程引擎**：`execution/budget.py`、`graph/catalyst_workflow.py`、`research/evidence_freeze.py`、`agents/evidence_steward_gating.py` | **131 pytest** |
 
-### 2.1 验证状态（`main` @ `3366436`，复现命令）
+### 2.1 验证状态（`main` @ `af90488`，2026-09-30 实测）
 
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate tradingagents
-python -m pytest -q -p no:randomly --color=no     # 2189 passed / 14 failed
-ruff check tradingagents/ tests/              # All checks passed
-npm --prefix frontend run typecheck           # clean
-npm --prefix frontend run test -- --run       # 32 files / 173 tests
-python3 scripts/check_agent_docs.py           # 48 files passed
+python scripts/check_agent_docs.py                                    # 49 files passed
+ruff check tradingagents cli scripts/check_agent_docs.py             # All checks passed
+npm --prefix frontend run typecheck                                  # clean
+npm --prefix frontend run test -- --run                              # 41 files / 297 tests
+python -m pytest tests/test_catalyst_workflow.py \
+  tests/test_catalyst_budget.py tests/test_catalyst_classic_regression.py \
+  tests/test_catalyst_evidence_freeze.py tests/test_catalyst_evidence_steward_split.py \
+  -q -p no:randomly --color=no                                       # 131 passed
+python -m pytest -q -p no:randomly --color=no                        # 13 failed / 2321 passed
 ```
 
-**14 failed 是既有基线，不是回归。** 判定标准是「失败集合不扩大」，不是「全绿」——基线本身就不是全绿。明细见 `baseline-pytest-failures.md`。
+**13 failed 是既有基线，不是回归。** 判定标准是「失败集合不扩大」，不是「全绿」——基线本身就不是全绿。明细见 `baseline-pytest-failures.md`。
 
-> `pytest` 必须加 `--color=no` 才有可解析的 `FAILED` 行。默认彩色输出会让 `grep '^FAILED'` 抓不到任何内容，导致失败集合比对静默变成「0 项，集合未扩大」——这正是本轮核查差点误判的地方。
+第 13 项是 `test_wind_provider.py::TestConfigFlag::test_explicitly_disabled_returns_data_unavailable`，即基线文档开篇第 5 行已记录的**偶发失败**项：单独运行 1 passed（8.94s），该文件不 import 任何 catalyst 代码。基线 12 项与本次实测**逐条同名同类，0 项消失**。
 
-### 2.2 顺手修掉的两个现存生产缺陷
+> `pytest` 必须加 `--color=no` 才有可解析的 `FAILED` 行。默认彩色输出会让 `grep '^FAILED'` 抓不到任何内容，导致失败集合比对静默变成「0 项，集合未扩大」。**本轮实际踩到过一次**：比对时因一条测试名笔误（漏写 `_first_`）产生了假的差异项，修正后才是真实的 13 vs 12。比对前先确认两侧名单本身没有打字错误。
+
+### 2.2 顺手修掉的三个现存生产缺陷
 
 - **T-D1 mootdx**：`dataflows/registry.py` 里 mootdx 是 A 股行情链首位，但 live 探测 13/13 失败（TCP 可连、`Quotes.factory()` 成功，数据调用返回无列空 DataFrame），每次请求浪费约 26 秒。已降级到 tushare 之下并加熔断。**其财务/F10 能力保留未删**（设计 §8.2 明确禁止删除）。
 - **T-D2 腾讯 kline 列序**：实际是 `[date, OPEN, CLOSE, HIGH, LOW, VOL]`，**不是 OHLC**。按 OHLC 读会静默得到错误的高/低价且不报错。已修正并加不变式 `high >= max(open, close) >= min(open, close) >= low`，该测试已验证在改动前的代码上失败。
+- **串并行预算竞态（P3 合回前修复）**：见 §3.1。
 
 ### 2.3 关键设计约束（后续修改勿破坏）
 
 - `RuntimePolicyVersion`（`runtime/contracts.py`）是 **horizon 门控专用枚举**，被 5 个文件消费。`catalyst-evidence-policy-v1` **不得**加进这个 Literal——新 policy 走独立模块。
 - `web/api.py` 由 B（`research_profile` 校验）与 C（`/catalyst` 路由）共享，合回顺序 B 先 C 后。
-- `frontend/src/api/contracts.ts` 是 B 的权威契约。F 期间它保持未改动。字段名不得重新发明（`state`、`verify_first|keep_watching|defer_research|insufficient_information`、`judgement`/`key_evidence`/`next_check`、`counter_evidence|missing_evidence`）。
+- `frontend/src/api/contracts.ts` 是权威契约。**F 期间与 E 期间均保持零改动**（已实测 `git diff` 为空）。字段名不得重新发明（`state`、`verify_first|keep_watching|defer_research|insufficient_information`、`judgement`/`key_evidence`/`next_check`、`counter_evidence|missing_evidence`）。
 - 字符预算 fixture `frontend/src/test/fixtures/catalyst-brief-budget.json` 前后端共享，数字固定 **122 / 420 / 83 / 48**，两侧必须一致。
 
-## 3. 未完成：E（流程 P3）— 保留在 worktree
+## 3. 已完成：E（流程 P3）
 
-- **分支**：`worktree-agent-ab89cf67e680ed0e9`
-- **路径**：`.claude/worktrees/agent-ab89cf67e680ed0e9`
-- **基于**：`92a7187`（比 main 少一个 commit `3366436`，即卡点记录文档；代码基线相同）
-- **状态**：**未完成**。agent 最后一句是「T23 的负向检查，然后 T24/T25」——即 T24、T25 尚未开始。
-- **实测**：`python -m pytest tests/test_catalyst_budget.py tests/test_catalyst_evidence_freeze.py tests/test_catalyst_evidence_steward_split.py tests/test_catalyst_workflow.py -q -p no:randomly` → **107 passed**（本轮重跑复现）。
-- **全量实测（本轮补做，原文档缺此项）**：`python -m pytest -q -p no:randomly --color=no` → **14 failed / 2296 passed**。相对 main 基线 14 failed / 2189 passed，**+107 正是 E 自己的四个测试文件，失败数未增加**。
-- **T25 硬门槛（失败集合逐条比对）**：把 E 的 14 条 `FAILED` 与 `baseline-pytest-failures.md` 分类清单逐条对照，**14 条全部同名同类**，四类分布完全吻合——Wind 合约漂移 5、graph 路由顺序 4、runtime 指纹冻结 3、skills registry 2。**未出现任何基线之外的新失败。**
+- **commit**：`4c4756d`（feat）→ `af90488`（merge 到 main）
+- **交付物**：`execution/budget.py`（767 行预算账本）、`graph/catalyst_workflow.py`（1724 行流程引擎）、`research/evidence_freeze.py`（991 行证据冻结）、`agents/evidence_steward_gating.py`（307 行 Steward 门控拆分）
+- **测试**：5 个文件共 **131 passed**（125 原有 + 6 为竞态修复新增）
 
-  > 这不等于 T25 已通过。T25 要求的另一半——「classic 多空辩论、持仓复盘、长期研究路由未被替换；旧角色 key 与 lens 枚举仍服务旧 profile」——是**行为断言，全量 pytest 通过不能替代**，仍需人工或专项测试确认。接手方须补这一半。
+### 3.1 合回前修复的串并行预算竞态
 
-**未提交文件（8 个）**：
+**这是真实缺陷，不是测试覆盖不足。** T20 要求「串行降级不改变结论语义」，但当专项预算不足时，**哪个角色被拒绝是结论的一部分**。
+
+`BudgetLedger` 线程安全，从不超支；但修复前每个角色在自己的工作线程里各自 `ledger.reserve()`，于是**谁抢到最后一个额度由调度器决定**。实测（上限 2、并发 2、三角色争抢）：
 
 ```
-tradingagents/execution/budget.py                          预算账本
-tradingagents/graph/catalyst_workflow.py                   三专项+反证+综合的 graph
-tradingagents/research/evidence_freeze.py                  证据冻结底稿（§5.1，D 范围外的遗留项）
-tradingagents/agents/evidence_steward_gating.py           Steward 可复用门控拆分（T23）
-tests/test_catalyst_budget.py
-tests/test_catalyst_workflow.py
-tests/test_catalyst_evidence_freeze.py
-tests/test_catalyst_evidence_steward_split.py
+串行   ×5 ：5/5 得到 (catalyst_events, operating_delivery)   ← 严格按 ROLE_ORDER
+并行   ×8 ：7/8 得到 (catalyst_events, market_reaction)      ← 调度器决定
 ```
 
-**剩余工作**：
-1. T23 的负向检查（拆分后确认无隐含模型调用绕过 §5.5 预算）
-2. **T24**：commit barrier、事件注册、审计、取消、失败与恢复；**重连不重复执行**（SSE 重连后 LLM 调用计数不变）
-3. **T25 的剩余一半**：全量回归的「失败集合不扩大」已由本轮实测证明（见上），但**行为断言未做**——classic 多空辩论、持仓复盘、长期研究路由未被替换，旧角色 key 与 lens 枚举仍服务旧 profile
-4. **串并行结果一致性未验证**：`catalyst_workflow.py` 注释与设计 §5.4 都声称「并行与串行产生逐字节相同的产物」，但没有对应的断言测试。接手方应补一条：同一 frozen draft 分别以 `concurrency=1` 与 `concurrency=2` 跑，断言 `case.model_dump()` 相等（`_publishable_usage` 已刻意剥离 `stage_durations_ms` 以支撑这一点，说明设计意图存在但测试缺失）
-5. `test_runtime_scaffold.py` 的 3 项前后状态对比（T07/T24 会碰 fingerprint 邻域，这 3 项**本来就是红的**）
+**修法**：把 `ledger.reserve()` 提前到主线程，在 `pool.submit` 之前按 `ROLE_ORDER` 同步跑完一轮；模型调用仍在 `ThreadPoolExecutor` 内并发。两个推论都必须处理，缺一即串并行不等价：
 
-**接手命令**：
-```bash
-cd .claude/worktrees/agent-ab89cf67e680ed0e9
-source ~/miniconda3/etc/profile.d/conda.sh && conda activate tradingagents
-python -m pytest -q -p no:randomly --color=no   # 本轮已跑：14 failed / 2296 passed
-# 从 T23 负向检查 + T24 开始；T25 只需补行为断言（失败集合已证明未扩大）
-# 完成后在 main 上 diff 审阅再合回
+1. **预留循环必须跳过能力阻塞角色**——否则为注定 SKIPPED 的角色白占额度，下一角色会拿到串行路径不会产生的拒绝。
+2. **cancel 后必须 `ledger.release()` 回收**——取消的 run 不能白占额度影响后续 run。
+
+实现上 `run_specialist` 新增一个带哨兵默认值的 `reservation` 参数（区分「未提供」/「已授权」/「已拒绝」三种状态），因此**所有既有直接调用方行为不变**。
+
+**修复后实测**（上限 1/2/3 三档，并行各 ×20）：存活角色恰好是 `ROLE_ORDER` 的前缀，与串行 **100% 一致**；上限 2 时并行 20/20 均为 `(catalyst_events, operating_delivery)`。
+
+**测试有效性已反向验证**：把预留循环临时改回修复前行为，新测试立即失败并复现出**原始症状** `(catalyst_events, market_reaction)`，恢复后全绿。5 个新测试连跑 3 次稳定。其中 `test_a_ample_budget_leaves_the_parallel_path_actually_concurrent` 是刻意加的——修复只应序列化**预留**，不该序列化模型调用；没有它，一个「在主线程跑完整段调用」的错修法能通过所有等价性测试而悄悄把 SS5.4 并发上限降成 1。
+
+### 3.2 已知的串并行不对称（留档，本次不修）
+
+串行分支每跑完一个角色会 `if cancel(): break`，并行分支三个角色已全部 submit 不会提前退出，因此 **cancel 场景下 `slots` 长度本身就不同**（串行 1 条 / 并行 3 条 CANCELLED）。
+
+它**没有进入公共产物**——取消的 run 什么都不发布，所以「公共产物逐字相同」在这种情况下平凡成立。因而不扩大范围去动它，但接手方若修改 `execute_specialists` 的取消路径，须知道这个不对称存在。
+
+### 3.3 T25 的行为断言已补齐
+
+原文档称 T25 的「行为断言」待补。实际 `tests/test_catalyst_classic_regression.py` 已有 **9 条**针对性断言，覆盖：classic 多空辩论节点仍接线、classic graph setup 不 import catalyst workflow、executor 未引用 catalyst workflow、`research_mode` 仍提供持仓复盘、`research_profile` 仍恰为 classic 与 catalyst_v1 两项、long horizon 值仍在请求上、case assembly 仍受两个 learning mode 门控、classic 角色 registry key 未变、horizon lens 枚举未变。
+
+T25 两半均已完成：失败集合未扩大（§2.1）+ 行为断言（上述 9 条）。
+
+### 3.4 未接线项（有意保留，非缺陷）
+
+- **`run_catalyst_research` 零生产调用方**。已实测 `grep -rn "run_catalyst_research" tradingagents cli`，除定义外无任何命中。流程引擎目前只能经测试调用。这是**「真实接线」的未来工作**，但它意味着 P3 的产物目前没有任何用户可达路径。
+- **T24 采用窄范围**：只补模块层语义与测试（commit barrier、事件注册、审计、取消、失败与恢复、重连不重复执行），不做 HTTP/SSE 层的真实接线。理由与上条相同：接线会触及 `web/api.py`，而该文件由 B/C 共享，属另一次有独立风险的改动。
+
+## 4. 已完成：F（工作台 P4）
+
+- **commit**：`2136cc1`（feat）→ `3cee419`（merge 到 main）
+- **验证**：typecheck clean；**41 files / 297 Vitest passed**；`npm run build` 复现出**逐字节相同**的产物哈希（`index-BQAQBYRZ.js` / `index-BpOWPrT6.css`），合回后工作树保持干净；`tradingagents/web/static/` 已同步提交。
+
+### 4.1 原 typecheck 5 处错误的成因与修法（已实施）
+
+原 5 处全在**测试文件**里，不影响运行时产物。真实成因不在组件 props——`CatalystProgress.tsx` 的 props 正常 import 自 `domain/catalystWorkbench`，`contracts.ts` 零改动且 `CatalystReadyV1DTO.priority` 定义正确。
+
+真因是测试辅助函数 `CatalystProgress.test.tsx:60` 把条件类型写在**裸类型参数**上：
+
+```ts
+priority: CatalystReadState extends { priority?: infer P } ? P : never,
 ```
 
-> 本轮已代跑全量基线，接手方不必重跑。**不要**用无 `--color=no` 的输出做失败集合比对（见 §2.1 提示）。
+`CatalystReadState` 是**三成员联合**（`contracts.ts:1980`），`priority` 只存在于 `CatalystReadyV1DTO`。条件类型写在裸类型参数上时不做分配，对具体联合类型整体不 `extends` 该对象形状，于是落入 `: never` 分支。
 
-## 4. 未完成：F（工作台 P4）— 保留在 worktree
+修法：改用 `contracts.ts:1741` 已导出的 `CatalystResearchPriority`。**未使用** `as never` / `as any` / `@ts-expect-error`——该文件顶部注释明确说明「a partial literal would typecheck under `as never` and would stop being a statement about the wire at all」。第 1 处 `TS6196` 是 `WorkbenchLayout.audit.test.tsx:5` 的未使用具名导入，删掉即可。
 
-- **分支**：`worktree-agent-a86380eca594832b0`
-- **路径**：`.claude/worktrees/agent-a86380eca594832b0`
-- **基于**：`92a7187`（同上）
-- **状态**：**未完成**。agent 停在「重写 fixtures 为完整 typed wire shapes」中途。
-- **实测**：`npm --prefix frontend run test -- --run` → **38 files / 271 tests passed**（基线 32/173，+98。本轮重跑复现）。但 **typecheck 5 处失败**（本轮重跑复现，逐字一致）。
-- **static 产物已落后于源码（本轮新发现，原文档误标为「已重建」）**：static 三个文件（`index.html` + 两个 hashed asset）的时间戳均为 `09-29 17:49`，而 **12 个 `frontend/src/` 文件比它更新**，其中包含运行时源码而非仅测试：
+修复过程中还清除了 `ready()` 辅助函数里残留的 3 处 `as` 收窄断言，改为经导出的 `CatalystCompleteness` / `CatalystResearchQuality` 构造完整 wire fixture。
 
-  ```
-  domain/catalystWorkbench.ts          components/reader/CatalystCasePage.tsx
-  hooks/useCatalyst.ts                 components/reader/CatalystProgress.tsx
-  hooks/useConfig.ts                   components/reader/LegacyReader.tsx
-  components/controls/CatalystForm.tsx components/layout/WorkbenchLayout.tsx
-  （另 5 个为 .test.tsx）
-  ```
+### 4.2 static 产物曾落后于源码（已重建）
 
-  `index.html` 的引用与磁盘文件本身是自洽的（都指向 `index-DL55Osg4.js` / `index-BpOWPrT6.css`），但**那只是 17:49 那次 build 的产物，不代表当前源码**。AGENTS.md 要求源码与 static 同提交，因此这批 static **不能直接合回**，必须先 `npm run build` 重新生成。
+原产物时间戳 17:49，而 **12 个 `frontend/src/` 文件比它更新**（含运行时源码而非仅测试）。`index.html` 的引用与磁盘文件自洽，但那只是 17:49 那次 build 的产物，不代表当前源码。已重建并随源码同提交。
 
-### 4.1 typecheck 的 5 处失败（必须先修）
+### 4.3 可信产出（已验证）
 
-本轮重跑 `npm --prefix frontend run typecheck`，错误逐字复现：
-
-```
-src/components/layout/WorkbenchLayout.audit.test.tsx(5,34):
-  TS6196: 'AuditOpenHandler' is declared but never used
-src/components/reader/CatalystProgress.test.tsx(113,38):
-  TS2345: Argument of type '"verify_first"' is not assignable to parameter of type 'never'
-src/components/reader/CatalystProgress.test.tsx(122,38):
-  TS2345: Argument of type '"defer_research"' is not assignable to parameter of type 'never'
-src/components/reader/CatalystProgress.test.tsx(127,47):
-  TS2345: Argument of type '"insufficient_information"' is not assignable to parameter of type 'never'
-src/components/reader/CatalystProgress.test.tsx(132,43):
-  TS2345: Argument of type '"insufficient_information"' is not assignable to parameter of type 'never'
-```
-
-5 处全在**测试文件**里，不影响运行时产物。
-
-> **归因更正（原文档此处判断有误）**：上一版交接说明称「`CatalystProgress` 的 props 尚未接上 `contracts.ts` 的四类联合类型」。**这是错的**，已实测排除：
-> - `CatalystProgress.tsx` 的 `progress`/`state` props 正常 import 自 `domain/catalystWorkbench`，类型完整；
-> - `frontend/src/api/contracts.ts` **零改动**（`git diff` 为空），且 `CatalystReadyV1DTO.priority: CatalystResearchPriority` 定义正确。
->
-> 真实成因在测试辅助函数 `CatalystProgress.test.tsx:60`：
->
-> ```ts
-> priority: CatalystReadState extends { priority?: infer P } ? P : never,
-> ```
->
-> `CatalystReadState` 是**三成员联合**（`CatalystReadyV1DTO | CatalystUnavailableV1DTO | CatalystUnsupportedV1DTO`，`contracts.ts:1980`），`priority` 只存在于 `CatalystReadyV1DTO`（`contracts.ts:1902`，类型 `CatalystResearchPriority` 定义在 `contracts.ts:1741`）。条件类型写在**裸类型参数**上时不做分配，对具体联合类型整体不 `extends` 该对象形状，于是落入 `: never` 分支——推断出 `never`，第 113/122/127/132 行传字符串即报 TS2345。
->
-> 修法（未实施，交接方决定）：`CatalystResearchPriority` **已从 `contracts.ts:1741` 导出**，因此最直接的修法是把该参数类型改为
-> `priority: CatalystResearchPriority`。
-> **不要**改成 `as never` 或 `as any` 绕过——该文件顶部注释明确说明「a partial literal would typecheck under `as never` and would stop being a statement about the wire at all」。
->
-> 第 1 处 `TS6196` 是 `WorkbenchLayout.audit.test.tsx` 第 5 行 `import type { AuditEntryContext, AuditOpenHandler }` 中 `AuditOpenHandler` 未被使用，删掉该具名导入即可。
-
-### 4.2 未提交文件（26 个）
-
-**新增源码**：`components/reader/CatalystBrief.tsx`、`CatalystCasePage.tsx`、`CatalystProgress.tsx`、`EvidenceDrawer.tsx`、`LegacyReader.tsx`、`components/controls/CatalystForm.tsx`、`components/shared/drawerFocus.ts`、`domain/catalystWorkbench.ts`、`hooks/useCatalyst.ts`、`styles/catalyst.css`
-
-**修改**：`components/layout/WorkbenchLayout.tsx`、`api/client.ts`（仅加 `getCatalyst()`，19 行）、`hooks/useConfig.ts`、`main.tsx`
-
-**新增测试**：`CatalystBrief.test.tsx`、`EvidenceDrawer.test.tsx`、`CatalystProgress.test.tsx`、`WorkbenchLayout.catalyst.test.tsx`、`useConfig.catalyst.test.ts`、`domain/catalystWorkbench.test.ts`
-
-**static 产物（⚠️ 已过期，不可直接合回）**：旧 `index-B7hV84WL.js`/`index-o51o60jp.css` 已删，新 `index-DL55Osg4.js`/`index-BpOWPrT6.css` 已生成于 17:49，但**此后源码又有 12 个文件被修改**（含 `WorkbenchLayout.tsx` 等运行时源码）。AGENTS.md 要求源码与 static 同提交，故这批产物必须重建后再提交。详见 §4 开头。
-
-### 4.3 已完成并验证的部分（可信）
-
-- **T28 七行首屏**、**T29 证据抽屉**：agent 自报完成并有测试。
-- **两个同类状态映射 bug**（agent 自查发现）：`complete_limited` 分支因先检查 `partial` 而不可达；级联只从嵌套 `ready` 分支读 completeness/quality 而 `CatalystScreenInput` 提供扁平字段——同一输入两个答案。已修，且把 `LOW_CONFIDENCE`（优先级封顶→第 3 行）与 `partial`（证据缺失→第 4 行）拆开。
-- **九状态可达性扫描**：导出 `CATALYST_SCREEN_STATE_IDS` 供测试断言「联合集无成员缺少产生它的输入」，含 3×4×4 共 48 组合网格。
-- **安全溢出测试**（`CatalystBrief.test.tsx`，6 个）：四条限制按序渲染、最后一条**全文**存在、无 `<details>`/`aria-expanded`/`hidden`/`aria-hidden`、`role="region"` + `tabIndex=0` + 滚动类（键盘可达）、页脚报 `/ 120 字` 而非 `/ 420 字`、限制字符数（66）超过所报预算数以证明豁免。
-- **焦点逻辑**：`Companion`/`Audit` 的机制**逐字提取**到 `shared/drawerFocus.ts`（`restoreFocus` 含 `[inert]` 解包、同一 `FOCUSABLE` 列表、1399px 断点）——是复用不是重写，符合设计 §4.4。
-- **`contracts.ts` 未改动**（agent 报 `git diff` 为空）。
+- **T28 七行首屏**、**T29 证据抽屉**。
+- **两个同类状态映射 bug**（F 自查发现并修复）：`complete_limited` 分支因先检查 `partial` 而不可达；级联只从嵌套 `ready` 分支读 completeness/quality 而 `CatalystScreenInput` 提供扁平字段——同一输入两个答案。已修，且把 `LOW_CONFIDENCE`（优先级封顶）与 `partial`（证据缺失）拆开。
+- **九状态可达性扫描**：导出 `CATALYST_SCREEN_STATE_IDS`，含 3×4×4 共 48 组合网格断言「联合集无成员缺少产生它的输入」。
+- **安全溢出测试**（6 个）：四条限制按序渲染、最后一条**全文**存在、无 `<details>`/`aria-expanded`/`hidden`/`aria-hidden`、`role="region"` + `tabIndex=0` + 滚动类（键盘可达）、页脚报 `/ 120 字` 而非 `/ 420 字`、限制字符数（66）超过所报预算数以证明豁免。
+- **焦点逻辑**：`Companion`/`Audit` 的机制**逐字提取**到 `shared/drawerFocus.ts`——是复用不是重写，符合设计 §4.4。
 - **预算 fixture 未动**，仍 122/420/83/48；计数规则用 `Array.from` 码点复现 Python 侧，四个 case 全部一致。
-- **无第二套色板**（G14）：`catalyst.css` 零颜色字面量，连抽屉遮罩也复用 `--shadow-lg`；草图的 `#f5f4ef`/`#245c45` 在 `frontend/src/` 中不存在。
+- **无第二套色板**（G14）：`catalyst.css` 零颜色字面量；草图的 `#f5f4ef`/`#245c45` 在 `frontend/src/` 中不存在。
 
-### 4.4 未完成/未验证的部分
+### 4.4 仍未完成的两项
 
-- 修完 5 处 typecheck 错误（**4 处同源，成因已定位，见 §4.1**）
-- **重跑 `npm run build` 重新生成 static**（现有产物落后于源码，不可直接合回）
-- 重跑 `npm run typecheck` + `npm run test -- --run` + `npm run build` 三项全绿后才可提交
-- **T32 的像素断言尚未做**（需要挂载后可测的页面；CSS 已写并构建过）
-- T27 隐藏字段不泄漏的测试（`CatalystForm.tsx` 已建，测试未见）
-- 与 E 的真实联调（计划 §2 指出 F 不必等 E，但真实联调应在 E 完成后补）
-
-**接手命令**：
-```bash
-cd .claude/worktrees/agent-a86380eca594832b0
-npm --prefix frontend run typecheck    # 先修那 5 处（成因见 §4.1）
-npm --prefix frontend run test -- --run
-npm --prefix frontend run build        # 必须重建 static：现有产物落后于源码
-```
-
-> 本轮核查时该 worktree 的 `frontend/node_modules` **已存在**，可直接跑；若接手时不存在，先 `npm --prefix frontend ci`（worktree 之间不共享 `node_modules`）。
+- **T32 只做了 jsdom 结构性断言，未做浏览器验证**。八态矩阵、配色未漂移（G14）、字符预算前后端一致这三项都经过了 jsdom 层断言，但**没有在真实浏览器里打开过页面**。这是 T32 剩余的唯一缺口。
+- **`CatalystForm.tsx` 未接线**。已实测：它**只被自己的测试文件引用**，`frontend/src/` 下无任何生产代码 import 它。页面因此**没有创建 catalyst_v1 run 的入口**。按窄范围决策保留未动——接线会新增 `web/api.py` 调用方，属独立风险。T27「隐藏字段不泄漏」的测试已随该组件存在（`CatalystForm.test.tsx`）。
 
 ## 5. P5 验收（G）：四个产品卡点，未决
 
-按用户指示，G 本轮**不做**。以下四项记录在 `2026-09-29-catalyst-research-task-plan.md` §8.0，此处复述供接手者判断。**在 C-1~C-4 决定前，G 只能执行 T36–T38**（T36 恢复/回滚演练、T37 文档同步、T38 验收报告）。
+按用户指示，G 尚未开始。以下四项记录在 `2026-09-29-catalyst-research-task-plan.md` §8.0，此处复述供产品决定。**在 C-1~C-4 决定前，G 只能执行 T36–T38**（T36 恢复/回滚演练、T37 文档同步、T38 验收报告）。
 
 | ID | 阻塞什么 | 需要什么决定 |
 | --- | --- | --- |
@@ -197,6 +154,10 @@ npm --prefix frontend run build        # 必须重建 static：现有产物落�
 | **C-2** | T33、T35 | 48 次架构对照 + live smoke 的**预算核定**（设计 §14 要求按实际模型价格计算，文档估算不能代替授权） |
 | **C-3** | T34、A03 门槛 | 真人阅读验收需**用户或 ≥3 名目标读者**参与，评估 ≥6 个未预读案例、60 秒内答对率 ≥80% |
 | **C-4** | T39 | 默认切换需用户最终确认（设计 §11.2 第 3 步 + 项目确认制约定） |
+
+**C-1 不决定，T33 无法执行，整体验收无法判定。**
+
+另需产品注意：按 §3.4 与 §4.4，`run_catalyst_research` 目前零生产调用方、`CatalystForm` 未接线，因此**即使 C-1~C-4 全部决定，端到端用户路径仍需先接线**才能做真实的端到端验收。
 
 ## 6. 探测遗留的未验证项（写 T38 时须带上）
 
@@ -215,27 +176,40 @@ npm --prefix frontend run build        # 必须重建 static：现有产物落�
 - **用 conda 环境 `tradingagents`**（`source ~/miniconda3/etc/profile.d/conda.sh && conda activate tradingagents`），仓库内无 `.venv`。若 worktree 中 `source` 被拒，直接调 `~/miniconda3/envs/tradingagents/bin/python`。
 - **`Agent(isolation: "worktree")` 总是从 `origin/main` 新建 worktree**，不包含本地未推送提交。若要带 spec 文档，用绝对路径引用主 checkout 的 `docs/superpowers/`，或手动 `git worktree add` 到目标 commit。
 - **worktree 不共享 `node_modules`**：每个前端 worktree 需 `npm --prefix frontend ci`。
-- **上一轮会话记录（本轮无法独立核实，agent 中途死亡属当时会话事件）**：共 7 次 agent 中途死亡（5 次 HTTP 422「No choices in response」、2 次 stream watchdog 超时），全部是基础设施问题。`SendMessage` 续跑可保留上下文与已产出，建议接手者沿用「实现→测试→运行→下一个，别攒到最后写」的节奏。
-- **本轮补充的同类教训**：`pytest` 判定失败集合必须带 `--color=no`（见 §2.1），否则 `grep '^FAILED'` 静默返回空集，会把「无法比对」误判成「未扩大」。这是本轮核查中实际踩到并修正的一次误判，接手方做 T25 时须避免。
-- **stash 栈是跨 worktree 共享的**，不要用裸 `git stash pop`。
+- **stash 栈是跨 worktree 共享的**，**绝不要用裸 `git stash pop`**。若必须 stash，用 `git stash push -u -m "<唯一标签>"`，立即用 `git stash list --format='%H %gs'` 记下 SHA，用 `git stash apply <sha>` 恢复（不是 pop），事后按标签重新定位 `stash@{n}` 再 drop。
+- **zsh 会吞掉未加引号的 `--include=*.py` / `--include=*.tsx`**（报 `no matches found`），导致 `grep` 静默返回空，误判为「无引用」。核实「某符号是否真的没有调用方」时**必须确认 grep 本身没有报错**——本轮就差点把一次失败的 grep 当成证据。
+- **`pytest` 判定失败集合必须带 `--color=no`**（见 §2.1）。
+- **subagent 派发可能被 auto mode 拦截**：2026-09-30 实测 `SendMessage` 与 `Agent` 均返回「分类器无裁决结果，重试无效」。若再次发生，只读操作不受影响，可先自行核实事实，再决定是否由主 agent 实施。
 
 ## 8. 建议的接手顺序
 
-0. **本轮（2026-09-29 复核）已完成、无需重复**：E 的全量 pytest 基线与失败集合比对（14 项逐条同名）、F 的 typecheck 逐字复现与成因定位、F 的 Vitest 复跑、F 的 static 产物落后判定。接手方从下面的第 1 步开始即可。
-1. 在两个 worktree 里分别修完 E 的 T23/T24/T25 剩余部分与 F 的 5 处 typecheck + 重建 static，各自跑通本地验证。
-2. 合回顺序建议 **F 先、E 后**：F 只依赖已合回的 B/C 契约；E 的 T25 行为断言要跑全量 pytest，在更完整的主线上做更可靠。
-3. E/F 都合回后，重跑 `main` 的全量 pytest 确认失败集合仍 ≤14 且**逐条同名**（`--color=no`）。
-4. 把 C-1~C-4 拿给产品决定。**C-1 不决定，T33 无法执行，整体验收无法判定。**
-5. 决定后再派 G 做 T33–T39；在此之前 G 只能做 T36–T38。
+0. **已完成、无需重复**：E 的全量 pytest 与失败集合比对、串并行竞态的复现与修复、F 的 typecheck 修复与 static 重建。接手方从第 1 步开始。
+1. **补 T32 的浏览器验证**：启动 `tradingagents web --port 8765 --open`，实际打开工作台页面，验证八态矩阵渲染、G14 配色未漂移、字符预算 fixture 前后端一致。需本地可用的 LLM 配置才能跑真 run。
+2. **把 C-1~C-4 拿给产品决定**。**C-1 不决定，T33 无法执行，整体验收无法判定。**
+3. 决定后再派 G 做 T33–T39；在此之前 G 只能做 T36–T38。
+4. **接线**（`run_catalyst_research` 的生产调用方 + `CatalystForm` 入口）是端到端验收的前置条件，见 §3.4 与 §5 末段。
 
-## 9. 本轮复核记录（2026-09-29 21:5x）
+## 9. 历史复核记录（2026-09-29 21:5x）
 
-对上一版交接说明做的独立复核，全部为重新执行、非引用自报。**结论：E/F 的完成度判断成立，但有三处描述与实测不符，已在上文修正。**
+对上一版交接说明做的独立复核，全部为重新执行、非引用自报。
 
 | 项 | 上一版说法 | 复核实测 | 处理 |
 | --- | --- | --- | --- |
-| E 全量回归 | 「未跑全量套件，未验证 classic 回归」 | 14 failed / 2296 passed，14 条与基线**逐条同名**，无新增 | 补记为 §3 实测；T25 拆为「失败集合已证 / 行为断言待补」 |
+| E 全量回归 | 「未跑全量套件，未验证 classic 回归」 | 14 failed / 2296 passed，14 条与基线**逐条同名**，无新增 | 补记；T25 拆为「失败集合已证 / 行为断言待补」 |
 | F typecheck 成因 | 「组件 props 尚未接上 `contracts.ts` 联合类型」 | props 与 `contracts.ts` 均正常；真因是测试第 60 行条件类型写在裸类型参数上 → `never` | §4.1 整段重写并给出行号与修法 |
-| F static 产物 | 「已重建」，列入可信产出 | 产物时间戳 17:49，**12 个源码文件更新于其后**（含运行时源码） | 标为过期，§4.2/§4.4 改为「必须重建」 |
+| F static 产物 | 「已重建」，列入可信产出 | 产物时间戳 17:49，**12 个源码文件更新于其后**（含运行时源码） | 标为过期，改为「必须重建」 |
 
-复现命令见 §2.1、§3、§4。**本节只记录复核动作与差异，不改变 §1–§8 的任何结论。**
+以上三项均已在 2026-09-30 处理完毕（§3、§4.1、§4.2）。
+
+### 9.1 2026-09-30 追加的更正
+
+原文档对 E 剩余工作量的估计**偏高**，来源是三处与实测不符的描述：
+
+- **「串并行结果一致性未验证、没有对应断言测试」——不成立**。`test_serial_and_parallel_runs_produce_identical_public_cases` 当时已存在，且已钉住 `f.{role}.i0` 的合并顺序。真正的缺口不是「没有测试」，而是**该测试只在预算充足时成立**——预算一紧，并行与串行产出不同，而没有任何测试覆盖那种情形。修复见 §3.1。
+- **「T24 的 resume/barrier 测试不存在」——不成立**，相关测试当时已存在。
+- **「T23 只有部分测试」——不成立**，当时已有 15 条。
+
+此外：
+
+- **基线文档曾把两个 ollama 测试归入「Wind 合约漂移」类**——分类错误，已在 `90a45d3` 更正（它们测的是 `cli/utils.py` 的 ollama endpoint 提示，与 Wind 无关），并记录 2026-09-30 复测已转绿。
+- **两个 ollama 测试的转绿根因未定位**。`cli/utils.py` 与 `tests/test_ollama_base_url.py` 自 `ca90f27` 起零改动，单独运行 15 passed，因此最可能是全量套件中其它模块改变了导入或控制台状态所致的跨测试干扰。此处只记录实测事实，**不作因果断言**。
