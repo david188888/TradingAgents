@@ -220,7 +220,7 @@ def test_mootdx_finance_snapshot_keeps_source_type_and_cutoff(monkeypatch):
         def finance(self, symbol):
             return pd.DataFrame([{"symbol": symbol, "eps": 1.2, "profit": 100000000}])
 
-    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda: Client())
+    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda **kwargs: Client())
     monkeypatch.setattr(mootdx_provider, "_capture_vendor_raw", lambda *args, **kwargs: None)
     report = mootdx_provider.get_fundamentals_mootdx("000338.SZ", "2026-08-05")
     assert "quarterly snapshot" in report

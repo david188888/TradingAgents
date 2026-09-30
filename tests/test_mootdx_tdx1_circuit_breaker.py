@@ -102,8 +102,10 @@ def test_second_request_does_not_repay_the_dead_server_sweep(monkeypatch):
     assert first_elapsed >= per_call * server_count
     assert second_elapsed < per_call  # not merely "smaller", but no I/O at all
 
-    # And the second call opened no TCP connection and built no client.
-    assert len(created) == server_count
+    # The second call opened no TCP connection and built no client.  The first
+    # call sweeps the explicit server list and then the two fallback stages
+    # (bestip, bare factory) exactly once.
+    assert len(created) == server_count + 2
 
 
 def test_breaker_does_not_swallow_a_recovered_server(monkeypatch):

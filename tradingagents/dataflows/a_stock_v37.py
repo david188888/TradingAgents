@@ -3,7 +3,7 @@
 New capabilities added by simonlin1212/a-stock-data v3.7.0, adapted to this
 project's degradable-adapter contract:
 
-- §1.4  adjust factors qfq/hfq (Sina, zero-key)  -> ``get_a_share_adjust_factors``
+- §1.6  adjust factors qfq/hfq (Sina, zero-key)  -> ``get_a_share_adjust_factors``
 - §6.5  valuation history (baostock)             -> ``get_a_share_valuation_history``
 - §6.6  listing / delisting dates (baostock)     -> ``get_a_share_listing_history``
 - §4.6  chip distribution CYQ (local derivation) -> ``get_a_share_chip_distribution``
@@ -135,7 +135,7 @@ def _capture_vendor_raw(data: Any, *, metadata: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# §1.4 复权因子 qfq / hfq (Sina, zero-key)
+# §1.6 复权因子 qfq / hfq (Sina, zero-key)
 # ---------------------------------------------------------------------------
 
 def get_a_share_adjust_factors(ticker: str, kind: str = "qfq") -> str:
