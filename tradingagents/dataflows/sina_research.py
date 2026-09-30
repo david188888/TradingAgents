@@ -11,6 +11,13 @@ genuine empty result) on rapid consecutive requests, so the adapter enforces a
 minimum interval between requests and retries an empty page once.  A page whose
 numbered table rows do not all parse, or whose research-table markers are
 missing, raises ``ChinaDataUnavailableError`` instead of reporting "no reports".
+
+Coverage: Sina exposes no total row count and no pagination metadata, so a page
+that parsed rows is only ever ``partial`` (``no_source_reported_total``) — the
+adapter cannot prove it saw the whole list.  A page carrying the explicit
+没有找到相关内容 marker with zero parsed rows is the one case the source itself
+states the list ended, and is reported as ``complete`` with zero items in a
+``CoveredText`` whose header says so.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ import pandas as pd
 import requests
 
 from .china_data import ChinaDataUnavailableError
+from .coverage import CoveredText, ScreeningCoverageV1
 from .ticker_utils import infer_a_share_exchange, strict_ticker_code
 
 SINA_REPORT_URL = "https://vip.stock.finance.sina.com.cn/q/go.php/vReport_List/kind/{kind}/index.phtml"
@@ -52,7 +60,7 @@ _BROWSER_UA = (
 )
 
 
-def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> str:
+def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> CoveredText:
     """Sina research-report list: title/type/date/org/analyst plus a detail URL.
 
     ``ticker=None`` returns the market-wide latest page (``kind="lastest"``);
@@ -60,6 +68,11 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> str:
     holds roughly 40 rows and ``page`` starts at 1.  This source carries **no
     ratings and no target prices** — the report header says so; use the
     EastMoney adapter when those fields are required.
+
+    The returned ``CoveredText`` carries a ``ScreeningCoverageV1``: ``complete``
+    with zero items only when the page itself says 没有找到相关内容, otherwise
+    ``partial`` with ``no_source_reported_total`` because Sina never reports a
+    total to reconcile against.
     """
     try:
         page_no = int(page)
@@ -71,6 +84,7 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> str:
         url = SINA_REPORT_URL.format(kind="lastest")
         params: dict[str, Any] = {"p": page_no}
         title = f"China A-share research reports for the whole market (Sina, page {page_no})"
+        scope = f"market-wide research-report list page={page_no}"
     else:
         url = SINA_REPORT_URL.format(kind="search")
         symbol = strict_ticker_code(ticker, stock_only=True)
@@ -80,6 +94,7 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> str:
             symbol = "bj" + symbol
         params = {"symbol": symbol, "t1": "all", "p": page_no}
         title = f"China A-share research reports for {symbol} (Sina, page {page_no})"
+        scope = f"ticker={symbol} page={page_no}"
     response, text = _sina_report_page(url, params)
     if "tb_01" not in text or "研究员" not in text:
         raise ChinaDataUnavailableError("新浪研报页面结构改变（找不到研报表格）")
@@ -114,7 +129,41 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> str:
         },
     )
     frame = _frame(rows, columns=_SINA_COLUMNS, source="sina", url=url)
-    return _format_report(
+    if rows:
+        # Sina never reports how many rows or pages exist, so the retained page
+        # cannot prove it covered the whole list: partial, with the reason.
+        coverage = ScreeningCoverageV1(
+            capability="research_reports",
+            source_id="sina.research_reports",
+            item_count=len(rows),
+            page_count=None,
+            pagination_exhausted=None,
+            completeness="partial",
+            sources=("sina.research_reports",),
+            degradations=("no_source_reported_total",),
+            as_of=date.today().isoformat(),
+            query_complete=False,
+            requested_scope=scope,
+        )
+        coverage_line = "# Coverage: partial (no_source_reported_total)"
+    else:
+        # The 没有找到相关内容 marker is the source's own statement that the list
+        # ends here: the query for this page completed and matched nothing.
+        coverage = ScreeningCoverageV1(
+            capability="research_reports",
+            source_id="sina.research_reports",
+            item_count=0,
+            page_count=1,
+            pagination_exhausted=True,
+            completeness="complete",
+            sources=("sina.research_reports",),
+            degradations=(),
+            as_of=date.today().isoformat(),
+            query_complete=True,
+            requested_scope=scope,
+        )
+        coverage_line = "# Coverage: complete (0 matching records)"
+    report = _format_report(
         frame,
         title=title,
         caveat=(
@@ -124,6 +173,7 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> str:
         ),
         source="sina",
         source_url=url,
+        coverage_line=coverage_line,
         empty_note=(
             "页面明确写着「没有找到相关内容」（翻过末页或该股确实没有研报），"
             "因此 0 条是来源事实而不是解析失败。"
@@ -131,6 +181,7 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> str:
             else None
         ),
     )
+    return CoveredText(report, coverage)
 
 
 def _sina_report_page(
@@ -214,6 +265,7 @@ def _format_report(
     caveat: str,
     source: str,
     source_url: str | None = None,
+    coverage_line: str | None = None,
     empty_note: str | None = None,
 ) -> str:
     """Source-labelled report; an empty table is only allowed with an explicit note."""
@@ -223,6 +275,8 @@ def _format_report(
     lines = [f"# {title}", f"# Source: {source}"]
     if source_url:
         lines.append(f"# Source URL: {source_url}")
+    if coverage_line:
+        lines.append(coverage_line)
     lines += [
         f"# Note: {note}",
         f"# Total records: {len(data)}",

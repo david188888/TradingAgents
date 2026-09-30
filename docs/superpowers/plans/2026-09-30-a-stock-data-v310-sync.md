@@ -13,6 +13,20 @@
 | 上游基准 | 从 **v3.7.1** 对齐到 **v3.10.0**（覆盖 v3.7.2 / v3.8.0 / v3.9.0 / v3.10.0） |
 | 上游仓库 | <https://github.com/simonlin1212/a-stock-data> |
 
+### 提交构成
+
+按时间顺序（合并时保持分段，便于逐条审阅与回滚）：
+
+| commit | 内容 |
+|---|---|
+| `cb2ab4f` | 修 #52 mootdx 验活分流、#55 聚宽后缀、F10 失效类别、互动易沪市盲区；刷新 Layer 1 编号；能力文档记录上游基准 |
+| `0599e8a` | 新增 `apply_adjust`（复权因子换算）+ 修 Sina 复权因子对 `000001.XSHG` 的静默错票 |
+| `105f38f` | F10 不再把 dict 响应字符串化当披露正文；`pyproject` 补 `openpyxl`/`xlrd` |
+| `cec83e6` | 事件驱动层五端点 + ST 名单 + 深交所日历 + 官方两融 + 上证e互动 + 新浪研报；registry/default_config/data_meta_tools 接线 |
+| `41cf487` | `coverage.py` 规范扩展（`ScreeningCoverageV1`）+ 腾讯周线/月线 |
+| `f10eba5` | 六个 `(period, adjust)` 能力互不相同的注册断言 |
+| `5299a5f` | 东财 datacenter 严格性回填六个适配器 + coverage 返回；新浪研报 coverage；移除已无引用的宽松 helper；事件层与回填的测试 |
+
 **为什么会有这条分支。** 本机安装的 skill（`~/.claude/skills/a-stock-data/SKILL.md`）与上游 tag v3.7.1 **逐字节相同**，而上游已到 v3.10.0。核对后结论是：v3.7.1→v3.10.0 共有的 90 个函数里只有 13 个实现有变，其中真正影响本仓库的只有 3 条（见 §3.1），其余是 Layer 1 章节重编号与文档字符串；主要工作量在 v3.8–v3.10 新增的 4 个层、34 个函数。
 
 **重要：本仓库不 vendor 上游。** 上游 `SKILL.md` 是 Markdown 内嵌 Python，无法 import，只作为端点/参数/字段的参考。本分支延续「手写移植到 `tradingagents/dataflows/` 现有 registry + typed-error 架构」的做法。
@@ -158,7 +172,7 @@ python -m pytest -q -p no:randomly --tb=no 2>&1 | grep '^FAILED' | sort > /tmp/m
 comm -13 /tmp/base.txt /tmp/merged.txt    # 必须为空 = 无回归
 ```
 
-本分支合入前的实测：基线 52 failed / 2310 passed，分支 52 failed / 2429 passed，`comm` 两侧为空——**失败集合逐条相同，新增 119 个测试全绿**。
+本分支的实测：基线 `b68fee8` 为 **52 failed / 2310 passed**，本分支为 **52 failed / 2469 passed**，`comm` 两侧为空——**失败集合逐条相同，零回归，新增 159 个测试全绿**。
 
 > 注意：仓库里 `docs/superpowers/plans/baseline-pytest-failures.md` 记录的「12 failed」是在 conda 环境（Python 3.13.13 + pytest 9.0.3）测的，与 `.venv` 下的 52 不一致。**请用同一环境现测现比**，不要拿那份旧数字当门槛。
 

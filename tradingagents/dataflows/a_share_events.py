@@ -34,18 +34,26 @@ strict, because a partial page set that looks complete is worse than a failure:
   and exact duplicate rows across pages mean the sort key was not unique: both
   raise instead of returning another instrument's or another period's rows.
 
-Degradation contract: an empty response, a changed schema, an unavailable
-optional dependency (baostock for the ST fallback), or a provider error raises a
-typed ``ChinaDataUnavailableError`` / ``AshareCapabilityUnavailableError``; it
-never returns an empty table that a caller could read as "there were no such
-events".
+Degradation contract: a changed schema, an unavailable optional dependency
+(baostock for the ST fallback), a provider error, a truncated scan, or an
+unproven pagination raises a typed ``ChinaDataUnavailableError`` /
+``AshareCapabilityUnavailableError``.  A *narrowed* query the provider completed
+with no match is not a degradation: it is returned as a ``CoveredText`` whose
+report header says so and whose ``ScreeningCoverageV1`` carries
+``completeness="complete"`` with ``item_count=0``.  A whole-market query that
+returns nothing still raises, because "the whole market had no such event" is
+not something this interface can answer.
+
+The pagination primitives (``strict_limit`` / ``strict_rows`` /
+``em_datacenter_strict`` / ``datacenter_screening_coverage`` …) live in
+:mod:`tradingagents.dataflows.eastmoney`; this module imports them so every
+EastMoney datacenter adapter shares one pager and one coverage vocabulary.
 """
 
 from __future__ import annotations
 
-import json
-import math
 import re
+from dataclasses import dataclass
 from datetime import date as _date_cls, datetime
 from functools import wraps
 from typing import Any
@@ -54,9 +62,24 @@ import pandas as pd
 
 from .china_capabilities import AshareCapabilityUnavailableError
 from .china_data import ChinaDataUnavailableError
-from .eastmoney import EASTMONEY_DATACENTER_URL, em_get
-from .errors import VendorError, VendorHTTPError, VendorRateLimitError
-from .ticker_utils import infer_a_share_exchange, normalize_ticker_symbol, strict_ticker_code
+from .coverage import CoveredText, ScreeningCoverageV1
+from .eastmoney import (
+    DatacenterPage,
+    datacenter_screening_coverage,
+    dedupe_datacenter_rows,
+    em_datacenter_strict,
+    em_get,
+    strict_count,
+    strict_date_arg,
+    strict_limit,
+    strict_number,
+    strict_rows,
+    strict_source_date,
+    strict_source_day,
+    strict_stock_code,
+)
+from .errors import VendorHTTPError, VendorRateLimitError
+from .ticker_utils import infer_a_share_exchange, normalize_ticker_symbol
 
 __all__ = [
     "get_a_share_earnings_forecast",
@@ -66,8 +89,6 @@ __all__ = [
     "get_a_share_share_buyback",
     "get_a_share_st_stock_list",
 ]
-
-_DATACENTER_URL = EASTMONEY_DATACENTER_URL
 
 # EastMoney quote-list hosts.  push2delay is the same interface with ~15-minute
 # delayed quotes, used only when the primary host fails at the transport layer.
@@ -83,115 +104,27 @@ _ST_COLUMNS = ["code", "market", "name", "st_type", "price", "pct_change"]
 
 
 # ---------------------------------------------------------------------------
-# Strict helper contract (ported from a-stock-data v3.10.0 ``_v39_*``)
+# Shared reporting helpers
 # ---------------------------------------------------------------------------
 
-def _v39_limit(limit: Any, upper: int = 5000) -> int:
-    """Validate a row limit; a caller error stays a ``ValueError``."""
-    limit = int(limit)
-    if not 1 <= limit <= upper:
-        raise ValueError(f"limit 范围 1–{upper}")
-    return limit
+
+def _today() -> str:
+    """The analysis date for an adapter that has no report date of its own."""
+    return _date_cls.today().isoformat()
 
 
-def _v39_num(value: Any) -> float | None:
-    """``'1,234.50'`` -> ``1234.5``; ``''`` / ``'-'`` / ``'--'`` / ``None`` -> ``None``.
+@dataclass(frozen=True)
+class EventQuery:
+    """Rows plus the pagination facts needed to make an honest coverage claim.
 
-    Anything else that cannot be parsed raises ``ChinaDataUnavailableError``
-    (the source produced a value we do not recognize -- a format change, not a
-    caller error).  A JSON boolean is an error too: ``float(True) == 1.0`` would
-    silently turn a format mistake into a price or volume.
+    ``_em_event_rows`` used to return a bare ``list``, which threw away the
+    pager's ``pages`` / ``count`` / ``truncated`` facts exactly where the
+    adapter needed them to distinguish "the provider answered nothing" from
+    "the cap cut the answer short".
     """
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        raise ChinaDataUnavailableError(f"来源在数值字段给了布尔值 {value!r}")
-    if isinstance(value, (int, float)):
-        if isinstance(value, float) and not math.isfinite(value):
-            return None
-        return float(value)
-    text = str(value).replace(",", "").strip()
-    if text in ("", "-", "--", "None", "null"):
-        return None
-    try:
-        number = float(text)
-    except ValueError as exc:
-        raise ChinaDataUnavailableError(f"来源返回了无法识别的数值 {value!r}") from exc
-    return number if math.isfinite(number) else None
 
-
-def _v39_date(value: Any) -> str:
-    """``'2026-09-18'`` / ``'20260918'`` / a date object -> ``'2026-09-18'``.
-
-    Any other spelling raises ``ValueError``: a caller-supplied date that cannot
-    be parsed must not be guessed at.
-    """
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, _date_cls):
-        return value.isoformat()
-    text = str(value).strip()
-    fmt = "%Y%m%d" if re.fullmatch(r"[0-9]{8}", text) else "%Y-%m-%d"
-    return datetime.strptime(text, fmt).date().isoformat()
-
-
-def _v39_src_date(value: Any) -> str:
-    """A date that came *from the source*: unrecognized -> typed source error."""
-    try:
-        return _v39_date(value)
-    except ValueError as exc:
-        raise ChinaDataUnavailableError(f"来源返回了无法识别的日期 {value!r}") from exc
-
-
-def _em_day(value: Any) -> str | None:
-    """EastMoney day string ``'2026-09-18 00:00:00'`` -> ``'2026-09-18'``; empty -> ``None``.
-
-    The 10-character truncation is followed by strict ISO validation, so a
-    non-ISO spelling such as ``'2026/09/18'`` raises instead of passing through
-    and later comparing wrong against a date window.
-    """
-    return _v39_src_date(str(value)[:10]) if value else None
-
-
-def _strict_stock_code(ticker: Any) -> str:
-    """Bare six-digit code for a stock-only endpoint.
-
-    ``strict_ticker_code`` raises ``ValueError``; the public contract is a
-    typed degradation, so it is wrapped here.
-    """
-    try:
-        return strict_ticker_code(ticker, stock_only=True)
-    except ValueError as exc:
-        raise ChinaDataUnavailableError(str(exc)) from exc
-
-
-def _v39_count(value: Any, what: str) -> int:
-    """A source's self-reported page/total count -> non-negative int.
-
-    Only int or a digits-only string qualify; a boolean raises because
-    ``int(True) == 1`` would let "only one row returned" pass the completeness
-    check.
-    """
-    numeric = isinstance(value, (int, str)) and not isinstance(value, bool)
-    text = str(value).strip() if numeric else ""
-    if not re.fullmatch(r"[0-9]+", text):
-        raise ChinaDataUnavailableError(f"{what} 不是非负整数: {value!r}")
-    return int(text)
-
-
-def _v39_rows(value: Any, what: str) -> list[dict[str, Any]]:
-    """A possibly-absent row list: ``None`` -> empty, anything else must be objects.
-
-    Writing ``value or []`` would treat ``{}`` / ``''`` / ``0`` as an empty list
-    and silently drop a whole payload section.
-    """
-    if value is None:
-        return []
-    if not isinstance(value, list) or not all(isinstance(row, dict) for row in value):
-        raise ChinaDataUnavailableError(
-            f"{what} 应为对象列表，实际是 {type(value).__name__}: {str(value)[:120]}"
-        )
-    return value
+    rows: list[dict[str, Any]]
+    page: DatacenterPage
 
 
 def _source_contract(func):
@@ -227,15 +160,22 @@ def _format_report(
     caveat: str,
     source: str = "eastmoney",
     extra_lines: tuple[str, ...] = (),
+    empty_note: str | None = None,
 ) -> str:
-    """House-style source-labelled markdown report; empty rows degrade loudly."""
-    if data.empty:
+    """House-style source-labelled markdown report; empty rows degrade loudly.
+
+    An empty table is only rendered when the caller supplies ``empty_note``,
+    which is the one case where the emptiness is a proven provider answer rather
+    than a failed fetch.
+    """
+    if data.empty and empty_note is None:
         raise ChinaDataUnavailableError(f"{source} returned no rows for {title}.")
+    note = f"{caveat} {empty_note}" if empty_note else caveat
     return "\n".join(
         [
             f"# {title}",
             f"# Source: {source}",
-            f"# Note: {caveat}",
+            f"# Note: {note}",
             f"# Total records: {len(data)}",
             f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             *extra_lines,
@@ -245,117 +185,60 @@ def _format_report(
     )
 
 
-def _em_datacenter_strict(
-    report_name: str,
-    filter_str: str = "",
-    sort_columns: str = "",
-    sort_types: str = "",
-    page_size: int = 500,
-    max_rows: int = 5000,
-    columns: str = "ALL",
-    extra: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    """Strict EastMoney datacenter pager: page-1 9201 -> ``[]``, everything else raises.
+def _screening_scope(**parts: str | None) -> str:
+    """Describe what was screened in the provider's own terms."""
+    described = " ".join(f"{key}={value}" for key, value in parts.items() if value)
+    return described or "market-wide"
 
-    Unlike the legacy ``eastmoney_datacenter()`` helper, this version paginates
-    and surfaces error codes.  ``sortTypes`` must have as many elements as
-    ``sortColumns`` or EastMoney answers 9501.  A mid-pagination failure
-    (page 2+ 9201, an empty page, a short non-final page, missing ``pages`` /
-    ``count``, changed page total / row total, or a final count disagreeing with
-    ``count``) raises instead of returning a partial set.  ``max_rows``
-    truncates only when the source's own ``count`` exceeds it; otherwise the
-    whole pagination runs and the total is verified.
+
+def _coverage_line(coverage: ScreeningCoverageV1) -> str:
+    """A header line a reader cannot mistake for a fetch failure.
+
+    ``complete`` with zero rows is rendered as ``complete (0 matching records)``
+    so the report itself states that the provider answered; every unproven or
+    truncated scan names its degradation code instead.
     """
-    n_cols = len([c for c in sort_columns.split(",") if c]) if sort_columns else 0
-    n_types = len([t for t in sort_types.split(",") if t]) if sort_types else 0
-    if n_cols != n_types:
-        raise ValueError(f"sortColumns({n_cols}) 与 sortTypes({n_types}) 个数不一致")
-    rows: list[dict[str, Any]] = []
-    page, first = 1, None
-    while True:
-        params = {
-            "reportName": report_name,
-            "columns": columns,
-            "filter": filter_str,
-            "pageNumber": str(page),
-            "pageSize": str(page_size),
-            "sortColumns": sort_columns,
-            "sortTypes": sort_types,
-            "source": "WEB",
-            "client": "WEB",
-        }
-        params.update(extra or {})
-        try:
-            payload = em_get(_DATACENTER_URL, params=params, timeout=20)
-        except VendorError as exc:
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 请求失败: {type(exc).__name__}: {exc}"
-            ) from exc
-        if not isinstance(payload, dict):
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 返回的不是 JSON 对象: {str(payload)[:100]}"
-            )
-        if payload.get("code") == 9201:
-            if page == 1:
-                return []
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 第 {page} 页返回「数据为空」，"
-                f"前面已取 {len(rows)} 条，结果不完整"
-            )
-        if payload.get("code") != 0 or not payload.get("result"):
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 返回错误: {payload.get('code')} {payload.get('message')}"
-            )
-        result = payload["result"]
-        if not isinstance(result, dict):
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 的 result 不是对象: {str(result)[:100]}"
-            )
-        pages, count, data = result.get("pages"), result.get("count"), result.get("data")
-        if data is None:
-            data = []
-        if not isinstance(data, list) or not all(isinstance(r, dict) for r in data):
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 第 {page} 页的 data 不是由对象组成的列表，格式可能已变"
-            )
-        if (
-            any(isinstance(v, bool) or not isinstance(v, int) for v in (pages, count))
-            or pages < 1
-            or count < 0
-        ):
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 缺少分页信息（pages={pages!r}, count={count!r}）"
-            )
-        if first is None:
-            first = (pages, count)
-        elif (pages, count) != first:
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 翻页时总页数 / 总条数从 {first} 变成 {(pages, count)}，"
-                "结果可能错位，请重试"
-            )
-        if not data and (page > 1 or pages > 1):
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 第 {page}/{pages} 页是空的，结果不完整"
-            )
-        if page < pages and len(data) != int(page_size):
-            raise ChinaDataUnavailableError(
-                f"东财 {report_name} 第 {page}/{pages} 页只有 {len(data)} 条"
-                f"（非末页应为 {page_size} 条），结果不完整"
-            )
-        rows.extend(data)
-        # Only truncate when the source's own count exceeds the cap; otherwise
-        # (count <= max_rows yet more rows arrived) the whole pagination must
-        # finish and the total must be checked, so "data longer than count" is
-        # not passed off as a legitimate truncation.
-        if len(rows) >= max_rows and count > max_rows:
-            return rows[:max_rows]
-        if page >= pages:
-            if len(rows) != count:
-                raise ChinaDataUnavailableError(
-                    f"东财 {report_name} 翻页后 {len(rows)} 条，与总数 {count} 不符"
-                )
-            return rows
-        page += 1
+    detail: list[str] = []
+    if coverage.completeness == "complete" and coverage.item_count == 0:
+        detail.append("0 matching records")
+    detail.extend(coverage.degradations)
+    suffix = f" ({'; '.join(detail)})" if detail else ""
+    return f"# Coverage: {coverage.completeness}{suffix}"
+
+
+def _screening_report(
+    data: pd.DataFrame,
+    coverage: ScreeningCoverageV1,
+    *,
+    title: str,
+    caveat: str,
+    empty_note: str | None = None,
+) -> CoveredText:
+    """Render an event report and carry its ``ScreeningCoverageV1``.
+
+    Only ``complete`` coverage may render an empty table: a zero-row scan whose
+    pagination was not proven still raises, so "throttled" can never be read as
+    "no such event".
+    """
+    if not data.empty:
+        empty_note = None
+    elif coverage.completeness != "complete":
+        raise ChinaDataUnavailableError(
+            f"eastmoney returned no rows and did not prove the query completed for {title}."
+        )
+    elif empty_note is None:
+        empty_note = (
+            "The provider completed the query and no matching record exists "
+            f"({coverage.requested_scope})."
+        )
+    report = _format_report(
+        data,
+        title=title,
+        caveat=caveat,
+        extra_lines=(_coverage_line(coverage),),
+        empty_note=empty_note,
+    )
+    return CoveredText(report, coverage)
 
 
 def _em_event_filter(
@@ -369,15 +252,15 @@ def _em_event_filter(
 
     ``start`` later than ``end`` raises ``ValueError`` before any request.
     """
-    if start and end and _v39_date(start) > _v39_date(end):
+    if start and end and strict_date_arg(start) > strict_date_arg(end):
         raise ValueError("start 不能晚于 end")
     parts = [extra] if extra else []
     if ticker is not None:
-        parts.append(f'(SECURITY_CODE="{_strict_stock_code(ticker)}")')
+        parts.append(f'(SECURITY_CODE="{strict_stock_code(ticker)}")')
     if start:
-        parts.append(f"({date_field}>='{_v39_date(start)}')")
+        parts.append(f"({date_field}>='{strict_date_arg(start)}')")
     if end:
-        parts.append(f"({date_field}<='{_v39_date(end)}')")
+        parts.append(f"({date_field}<='{strict_date_arg(end)}')")
     return "".join(parts)
 
 
@@ -391,23 +274,25 @@ def _em_event_rows(
     extra: dict[str, Any] | None = None,
     equal: dict[str, Any] | None = None,
     dates: dict[str, tuple[str | None, str | None]] | None = None,
-) -> list[dict[str, Any]]:
+) -> EventQuery:
     """Fetch event rows and prove the answer is complete and truly the requested slice.
 
     ``narrowed=False`` (whole market, no condition at all) with zero rows means
     the interface broke and raises; with a ticker/date condition zero rows is
-    "genuinely none" and returns an empty list.
+    "genuinely none" and returns an empty ``EventQuery`` whose ``page`` proves
+    the query finished.
 
     The sort key must uniquely identify a row: EastMoney slices by page, so a
     tie repeats one row and drops another (measured on the pledge table: sorted
-    by ratio alone, 2212 rows repeated 1 and lost 1).  Identical rows -> raise.
+    by ratio alone, 2212 rows repeated 1 and lost 1).  Identical rows -> raise
+    (``dedupe_datacenter_rows``).
 
     Server-side filtering is only a request: ``equal={field: value}`` and
     ``dates={date_field: (lo, hi)}`` are re-checked row by row, so a filter the
     interface ignored, or a stale cache page for another instrument/period,
     raises instead of being returned as the answer.
     """
-    rows = _em_datacenter_strict(
+    page = em_datacenter_strict(
         report,
         filter_str,
         sort_columns,
@@ -416,10 +301,9 @@ def _em_event_rows(
         max_rows=limit,
         extra=extra,
     )
-    if not rows and not narrowed:
+    if not page.rows and not narrowed:
         raise ChinaDataUnavailableError(f"东财 {report} 全市场返回 0 行，接口可能改了")
-    if len({json.dumps(r, sort_keys=True, ensure_ascii=False) for r in rows}) != len(rows):
-        raise ChinaDataUnavailableError(f"东财 {report} 翻页返回了重复行（排序不唯一），结果不完整")
+    rows = dedupe_datacenter_rows(page, report)
     for r in rows:
         for field, value in (equal or {}).items():
             if r.get(field) != value:
@@ -427,12 +311,12 @@ def _em_event_rows(
                     f"东财 {report} 请求 {field}={value}，却返回了 {r.get(field)!r}，结果不可信"
                 )
         for field, (lo, hi) in (dates or {}).items():
-            day = _v39_src_date(str(r.get(field) or "")[:10])
+            day = strict_source_date(str(r.get(field) or "")[:10])
             if (lo and day < lo) or (hi and day > hi):
                 raise ChinaDataUnavailableError(
                     f"东财 {report} 请求 {field} 在 {lo or ''}~{hi or ''}，却返回了 {day}，结果不可信"
                 )
-    return rows
+    return EventQuery(rows=rows, page=page)
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +341,7 @@ _FORECAST_COLUMNS = [
 
 
 @_source_contract
-def get_a_share_earnings_forecast(ticker=None, report_date=None, limit=500) -> str:
+def get_a_share_earnings_forecast(ticker=None, report_date=None, limit=500) -> CoveredText:
     """业绩预告 (earnings pre-announcement), EastMoney datacenter, SH/SZ/BJ.
 
     No ``ticker`` = the whole market, newest ``limit`` rows by notice date.
@@ -465,13 +349,16 @@ def get_a_share_earnings_forecast(ticker=None, report_date=None, limit=500) -> s
     is accepted too).  One pre-announcement is split across indicators
     (``indicator`` = 归母净利润 / 扣非净利润 / 营业收入 …).  Amounts are in yuan,
     ``change_pct_*`` is the year-on-year change in %.
+
+    A ``ticker`` / ``report_date`` query the provider completed with no match is
+    returned as a ``CoveredText`` whose header says so, not raised.
     """
-    limit = _v39_limit(limit)
-    period = _v39_date(report_date) if report_date else None
+    limit = strict_limit(limit)
+    period = strict_date_arg(report_date) if report_date else None
     extra = f"(REPORT_DATE='{period}')" if period else ""
     filter_str = _em_event_filter(ticker, extra=extra)
-    code = _strict_stock_code(ticker) if ticker is not None else None
-    rows = _em_event_rows(
+    code = strict_stock_code(ticker) if ticker is not None else None
+    query = _em_event_rows(
         "RPT_PUBLIC_OP_NEWPREDICT",
         filter_str,
         "NOTICE_DATE,SECURITY_CODE,REPORT_DATE,PREDICT_FINANCE_CODE",
@@ -481,19 +368,20 @@ def get_a_share_earnings_forecast(ticker=None, report_date=None, limit=500) -> s
         equal={} if code is None else {"SECURITY_CODE": code},
         dates={"REPORT_DATE": (period, period)} if period else None,
     )
+    rows = query.rows
     out = [
         {
             "code": r["SECURITY_CODE"],
             "name": r.get("SECURITY_NAME_ABBR"),
-            "notice_date": _em_day(r.get("NOTICE_DATE")),
-            "report_date": _em_day(r.get("REPORT_DATE")),
+            "notice_date": strict_source_day(r.get("NOTICE_DATE")),
+            "report_date": strict_source_day(r.get("REPORT_DATE")),
             "indicator": r.get("PREDICT_FINANCE"),
             "forecast_type": r.get("PREDICT_TYPE"),
-            "amount_lower": _v39_num(r.get("PREDICT_AMT_LOWER")),
-            "amount_upper": _v39_num(r.get("PREDICT_AMT_UPPER")),
-            "change_pct_lower": _v39_num(r.get("ADD_AMP_LOWER")),
-            "change_pct_upper": _v39_num(r.get("ADD_AMP_UPPER")),
-            "prior_year_amount": _v39_num(r.get("PREYEAR_SAME_PERIOD")),
+            "amount_lower": strict_number(r.get("PREDICT_AMT_LOWER")),
+            "amount_upper": strict_number(r.get("PREDICT_AMT_UPPER")),
+            "change_pct_lower": strict_number(r.get("ADD_AMP_LOWER")),
+            "change_pct_upper": strict_number(r.get("ADD_AMP_UPPER")),
+            "prior_year_amount": strict_number(r.get("PREYEAR_SAME_PERIOD")),
             "content": r.get("PREDICT_CONTENT"),
             "reason": r.get("CHANGE_REASON_EXPLAIN"),
         }
@@ -504,8 +392,19 @@ def get_a_share_earnings_forecast(ticker=None, report_date=None, limit=500) -> s
         rows,
         metadata={"provider": "eastmoney", "dataset": "earnings_forecast", "ticker": ticker},
     )
-    return _format_report(
+    coverage = datacenter_screening_coverage(
+        capability="earnings_forecast",
+        source_id="eastmoney.earnings_forecast",
+        scope=_screening_scope(
+            ticker=normalize_ticker_symbol(ticker) if ticker is not None else None,
+            report_date=period,
+        ),
+        page=query.page,
+        as_of=period or _today(),
+    )
+    return _screening_report(
         pd.DataFrame(out, columns=_FORECAST_COLUMNS),
+        coverage,
         title=f"China A-share earnings pre-announcements for {target}",
         caveat=(
             "EastMoney datacenter RPT_PUBLIC_OP_NEWPREDICT; one forecast is split across "
@@ -535,7 +434,7 @@ _SURVEY_COLUMNS = [
 @_source_contract
 def get_a_share_institution_survey(
     ticker=None, start=None, end=None, detail=False, limit=500
-) -> str:
+) -> CoveredText:
     """机构调研 (institution survey), EastMoney datacenter.
 
     ``detail=False``: one row per survey with ``org_count`` participating
@@ -544,8 +443,11 @@ def get_a_share_institution_survey(
     type and the attendee names, so those stay ``None``).
     ``start`` / ``end`` filter the notice date (``notice_date``); ``survey_date``
     is the actual reception day, usually a few days before the notice.
+
+    A ticker/date query the provider completed with no match is returned as a
+    ``CoveredText`` whose header says so, not raised.
     """
-    limit = _v39_limit(limit)
+    limit = strict_limit(limit)
     extra = '(IS_SOURCE="1")' + ("" if detail else '(NUMBERNEW="1")')
     filter_str = _em_event_filter(ticker, "NOTICE_DATE", start, end, extra)
     sort = (
@@ -554,9 +456,10 @@ def get_a_share_institution_survey(
         else ("NOTICE_DATE,SECURITY_CODE,RECEIVE_START_DATE", "-1,1,-1")
     )
     equal: dict[str, Any] = {"IS_SOURCE": "1"} if detail else {"IS_SOURCE": "1", "NUMBERNEW": "1"}
+    window = (strict_date_arg(start) if start else None, strict_date_arg(end) if end else None)
     if ticker is not None:
-        equal["SECURITY_CODE"] = _strict_stock_code(ticker)
-    rows = _em_event_rows(
+        equal["SECURITY_CODE"] = strict_stock_code(ticker)
+    query = _em_event_rows(
         "RPT_ORG_SURVEYNEW",
         filter_str,
         sort[0],
@@ -564,19 +467,18 @@ def get_a_share_institution_survey(
         limit,
         narrowed=bool(ticker or start or end),
         equal=equal,
-        dates={"NOTICE_DATE": (start and _v39_date(start), end and _v39_date(end))}
-        if start or end
-        else None,
+        dates={"NOTICE_DATE": window} if start or end else None,
     )
+    rows = query.rows
     out = []
     for r in rows:
         row = {
             "code": r["SECURITY_CODE"],
             "name": r.get("SECURITY_NAME_ABBR"),
-            "notice_date": _em_day(r.get("NOTICE_DATE")),
-            "survey_date": _em_day(r.get("RECEIVE_START_DATE")),
-            "survey_end": _em_day(r.get("RECEIVE_END_DATE")),
-            "org_count": _v39_num(r.get("SUM")),
+            "notice_date": strict_source_day(r.get("NOTICE_DATE")),
+            "survey_date": strict_source_day(r.get("RECEIVE_START_DATE")),
+            "survey_end": strict_source_day(r.get("RECEIVE_END_DATE")),
+            "org_count": strict_number(r.get("SUM")),
             "survey_way": r.get("RECEIVE_WAY_EXPLAIN"),
             "place": r.get("RECEIVE_PLACE"),
             "receptionist": r.get("RECEPTIONIST"),
@@ -601,8 +503,21 @@ def get_a_share_institution_survey(
             "detail": detail,
         },
     )
-    return _format_report(
+    coverage = datacenter_screening_coverage(
+        capability="institution_survey",
+        source_id="eastmoney.institution_survey",
+        scope=_screening_scope(
+            ticker=normalize_ticker_symbol(ticker) if ticker is not None else None,
+            notice_start=window[0],
+            notice_end=window[1],
+            level="detail" if detail else "summary",
+        ),
+        page=query.page,
+        as_of=window[1] or _today(),
+    )
+    return _screening_report(
         pd.DataFrame(out, columns=columns),
+        coverage,
         title=f"China A-share institution surveys for {target}",
         caveat=(
             "EastMoney datacenter RPT_ORG_SURVEYNEW; aggregated from the investor-relations "
@@ -648,7 +563,7 @@ _BUYBACK_COLUMNS = [
 
 
 @_source_contract
-def get_a_share_share_buyback(ticker=None, progress=None, limit=500) -> str:
+def get_a_share_share_buyback(ticker=None, progress=None, limit=500) -> CoveredText:
     """股票回购 (share buyback) — plan and execution progress, one plan per row.
 
     Sorted by latest notice date descending.  ``progress`` is ``None`` or one of
@@ -659,18 +574,21 @@ def get_a_share_share_buyback(ticker=None, progress=None, limit=500) -> str:
     codes (007 / 008; 13 of 5516 rows on 2026-09-20) whose names even its own
     page does not show: ``progress`` stays ``None`` and ``progress_code`` keeps
     the raw code.
+
+    A ticker/progress query the provider completed with no match is returned as
+    a ``CoveredText`` whose header says so, not raised.
     """
-    limit = _v39_limit(limit)
+    limit = strict_limit(limit)
     codes = {v: k for k, v in _BUYBACK_PROGRESS.items()}
     if progress is not None and progress not in codes:
         raise ValueError("progress 只能是 " + " / ".join(codes))
     equal: dict[str, Any] = {}
     if ticker is not None:
-        equal["DIM_SCODE"] = _strict_stock_code(ticker)  # this table's code field is DIM_SCODE
+        equal["DIM_SCODE"] = strict_stock_code(ticker)  # this table's code field is DIM_SCODE
     if progress:
         equal["REPURPROGRESS"] = codes[progress]
     filter_str = "".join(f'({field}="{value}")' for field, value in equal.items())
-    rows = _em_event_rows(
+    query = _em_event_rows(
         "RPTA_WEB_GETHGLIST_NEW",
         filter_str,
         "UPD,DIM_SCODE,REPURCODE",
@@ -679,26 +597,27 @@ def get_a_share_share_buyback(ticker=None, progress=None, limit=500) -> str:
         narrowed=bool(equal),
         equal=equal,
     )
+    rows = query.rows
     out = [
         {
             "code": r["DIM_SCODE"],
             "name": r.get("SECURITYSHORTNAME"),
             "progress": _BUYBACK_PROGRESS.get(r.get("REPURPROGRESS")),
             "progress_code": r.get("REPURPROGRESS"),
-            "plan_start": _em_day(r.get("REPURSTARTDATE")),
-            "plan_end": _em_day(r.get("REPURENDDATE")),
-            "price_cap": _v39_num(r.get("REPURPRICECAP")),
-            "shares_lower": _v39_num(r.get("REPURNUMLOWER")),
-            "shares_upper": _v39_num(r.get("REPURNUMCAP")),
-            "amount_lower": _v39_num(r.get("REPURAMOUNTLOWER")),
-            "amount_upper": _v39_num(r.get("REPURAMOUNTLIMIT")),
-            "pct_total_lower": _v39_num(r.get("ZSZXX")),
-            "pct_total_upper": _v39_num(r.get("ZSZSX")),
-            "done_shares": _v39_num(r.get("REPURNUM")),
-            "done_amount": _v39_num(r.get("REPURAMOUNT")),
-            "done_price_low": _v39_num(r.get("REPURPRICELOWER1")),
-            "done_price_high": _v39_num(r.get("REPURPRICECAP1")),
-            "latest_notice": _em_day(r.get("UPDATEDATE")),
+            "plan_start": strict_source_day(r.get("REPURSTARTDATE")),
+            "plan_end": strict_source_day(r.get("REPURENDDATE")),
+            "price_cap": strict_number(r.get("REPURPRICECAP")),
+            "shares_lower": strict_number(r.get("REPURNUMLOWER")),
+            "shares_upper": strict_number(r.get("REPURNUMCAP")),
+            "amount_lower": strict_number(r.get("REPURAMOUNTLOWER")),
+            "amount_upper": strict_number(r.get("REPURAMOUNTLIMIT")),
+            "pct_total_lower": strict_number(r.get("ZSZXX")),
+            "pct_total_upper": strict_number(r.get("ZSZSX")),
+            "done_shares": strict_number(r.get("REPURNUM")),
+            "done_amount": strict_number(r.get("REPURAMOUNT")),
+            "done_price_low": strict_number(r.get("REPURPRICELOWER1")),
+            "done_price_high": strict_number(r.get("REPURPRICECAP1")),
+            "latest_notice": strict_source_day(r.get("UPDATEDATE")),
             "objective": r.get("REPUROBJECTIVE"),
         }
         for r in rows
@@ -708,8 +627,19 @@ def get_a_share_share_buyback(ticker=None, progress=None, limit=500) -> str:
         rows,
         metadata={"provider": "eastmoney", "dataset": "share_buyback", "ticker": ticker},
     )
-    return _format_report(
+    coverage = datacenter_screening_coverage(
+        capability="share_buyback",
+        source_id="eastmoney.share_buyback",
+        scope=_screening_scope(
+            ticker=normalize_ticker_symbol(ticker) if ticker is not None else None,
+            progress=progress,
+        ),
+        page=query.page,
+        as_of=_today(),
+    )
+    return _screening_report(
         pd.DataFrame(out, columns=_BUYBACK_COLUMNS),
+        coverage,
         title=f"China A-share share buybacks for {target}",
         caveat=(
             "EastMoney datacenter RPTA_WEB_GETHGLIST_NEW; code field is DIM_SCODE; "
@@ -738,29 +668,33 @@ _PLEDGE_COLUMNS = [
 
 
 @_source_contract
-def get_a_share_equity_pledge(ticker=None, date=None, limit=5000) -> str:
+def get_a_share_equity_pledge(ticker=None, date=None, limit=5000) -> CoveredText:
     """股权质押比例 (equity pledge ratio) — ChinaClear weekly statistics via EastMoney.
 
     ``ticker`` given: that stock's history, newest date first.  ``date`` given:
     the whole market on that statistical day.  Neither: the whole market on the
     latest statistical day.  Both together raise ``ValueError`` (one is never
     silently dropped).  ChinaClear publishes weekly (usually Friday), so a date
-    that is not a statistical day raises ``ValueError``.
+    that is not a statistical day is reported as ``complete`` coverage with zero
+    rows and a note explaining the weekly cadence; the caller can tell that apart
+    from a failed fetch from the report header and the coverage object.
 
     ``pledge_ratio_pct`` is pledged shares as a percent of total share capital;
     shares are in 10k shares and market cap in 10k yuan.  ChinaClear covers
     SH/SZ only (the full market held 2212 rows on 2026-09-20 with no BSE row), so
     a BSE code raises ``ValueError`` instead of returning an empty table.
     """
-    limit = _v39_limit(limit)
+    limit = strict_limit(limit)
     if ticker is not None and date is not None:
         raise ValueError("ticker 与 date 只能给一个：ticker 取该股历次统计，date 取该统计日全市场")
-    code = _strict_stock_code(ticker) if ticker is not None else None
+    code = strict_stock_code(ticker) if ticker is not None else None
     if code is not None and infer_a_share_exchange(code) == "BJ":
         raise ValueError(f"{ticker} 是北交所证券；中国结算质押统计只覆盖沪深，没有北交所数据")
     report = "RPT_CSDC_LIST"
+    empty_note = None
+    day: str | None = None
     if code is not None:
-        rows = _em_event_rows(
+        query = _em_event_rows(
             report,
             _em_event_filter(code),
             "TRADE_DATE",
@@ -772,9 +706,9 @@ def get_a_share_equity_pledge(ticker=None, date=None, limit=5000) -> str:
     else:
         if date is None:
             latest = _em_event_rows(report, "", "TRADE_DATE", "-1", 1, narrowed=False)
-            date = latest[0]["TRADE_DATE"]
-        day = _v39_date(str(date)[:10])
-        rows = _em_event_rows(
+            date = latest.rows[0]["TRADE_DATE"]
+        day = strict_date_arg(str(date)[:10])
+        query = _em_event_rows(
             report,
             f"(TRADE_DATE='{day}')",
             "PLEDGE_RATIO,SECURITY_CODE",
@@ -783,14 +717,18 @@ def get_a_share_equity_pledge(ticker=None, date=None, limit=5000) -> str:
             narrowed=True,
             dates={"TRADE_DATE": (day, day)},
         )
-        if not rows:
-            raise ValueError(f"{day} 不是中国结算质押统计日（按周发布，通常为周五）")
+        if not query.rows:
+            empty_note = (
+                f"{day} 不是中国结算质押统计日（按周发布，通常为周五）："
+                "the provider completed the query and no matching record exists."
+            )
+    rows = query.rows
     out = []
     for r in rows:
-        total = _v39_num(r.get("REPURCHASE_BALANCE"))
+        total = strict_number(r.get("REPURCHASE_BALANCE"))
         free, locked = (
-            _v39_num(r.get("REPURCHASE_UNLIMITED_BALANCE")),
-            _v39_num(r.get("REPURCHASE_LIMITED_BALANCE")),
+            strict_number(r.get("REPURCHASE_UNLIMITED_BALANCE")),
+            strict_number(r.get("REPURCHASE_LIMITED_BALANCE")),
         )
         if (
             None not in (total, free, locked)
@@ -801,14 +739,14 @@ def get_a_share_equity_pledge(ticker=None, date=None, limit=5000) -> str:
             )
         out.append(
             {
-                "date": _em_day(r.get("TRADE_DATE")),
+                "date": strict_source_day(r.get("TRADE_DATE")),
                 "code": r["SECURITY_CODE"],
                 "name": r.get("SECURITY_NAME_ABBR"),
                 "industry": r.get("INDUSTRY"),
-                "pledge_ratio_pct": _v39_num(r.get("PLEDGE_RATIO")),
+                "pledge_ratio_pct": strict_number(r.get("PLEDGE_RATIO")),
                 "pledged_shares_10k": total,
-                "pledged_mktcap_10k": _v39_num(r.get("PLEDGE_MARKET_CAP")),
-                "pledge_count": _v39_num(r.get("PLEDGE_DEAL_NUM")),
+                "pledged_mktcap_10k": strict_number(r.get("PLEDGE_MARKET_CAP")),
+                "pledge_count": strict_number(r.get("PLEDGE_DEAL_NUM")),
                 "unrestricted_pledged_10k": free,
                 "restricted_pledged_10k": locked,
             }
@@ -825,14 +763,27 @@ def get_a_share_equity_pledge(ticker=None, date=None, limit=5000) -> str:
         rows,
         metadata={"provider": "eastmoney", "dataset": "equity_pledge", "ticker": ticker},
     )
-    return _format_report(
+    coverage = datacenter_screening_coverage(
+        capability="equity_pledge",
+        source_id="eastmoney.equity_pledge",
+        scope=(
+            f"ticker={normalize_ticker_symbol(ticker)}"
+            if code is not None
+            else _screening_scope(trade_date=day)
+        ),
+        page=query.page,
+        as_of=day or _today(),
+    )
+    return _screening_report(
         data,
+        coverage,
         title=f"China A-share equity pledge ratios for {target}",
         caveat=(
             "EastMoney datacenter RPT_CSDC_LIST; ChinaClear weekly statistics (usually Friday); "
             "SH/SZ only (no BSE); shares in 10k shares, market cap in 10k yuan; "
             "pledge_ratio_pct is % of total share capital."
         ),
+        empty_note=empty_note,
     )
 
 
@@ -864,7 +815,7 @@ _IPO_COLUMNS = [
 
 
 @_source_contract
-def get_a_share_ipo_calendar(limit=100) -> str:
+def get_a_share_ipo_calendar(limit=100) -> CoveredText:
     """新股申购日历 (new-issue subscription calendar), SH/SZ/BJ, apply date descending.
 
     Includes subscriptions that have not happened yet.  ``issue_price`` is
@@ -874,11 +825,16 @@ def get_a_share_ipo_calendar(limit=100) -> str:
     ceiling (10k yuan); ``win_rate_pct`` is the online winning rate in %;
     ``first_close_chg_pct`` is the first-day close gain in % (``None`` before
     listing).
+
+    This is a whole-market query, so an empty answer is still an interface
+    failure (raised); a ``limit`` that cut the list short is reported as
+    ``partial`` coverage with the ``row_cap_truncated`` degradation.
     """
-    limit = _v39_limit(limit)
-    rows = _em_event_rows(
+    limit = strict_limit(limit)
+    query = _em_event_rows(
         "RPTA_APP_IPOAPPLY", "", "APPLY_DATE,SECURITY_CODE", "-1,-1", limit, narrowed=False
     )
+    rows = query.rows
     out = [
         {
             "code": r["SECURITY_CODE"],
@@ -889,20 +845,20 @@ def get_a_share_ipo_calendar(limit=100) -> str:
             # MARKET_TYPE_NEW labels not-yet-listed names "深交所其他", but BSE
             # new issues only have the latter.
             "board": r.get("MARKET") or r.get("MARKET_TYPE_NEW"),
-            "apply_date": _em_day(r.get("APPLY_DATE")),
-            "ballot_date": _em_day(r.get("BALLOT_NUM_DATE")),
-            "pay_date": _em_day(r.get("BALLOT_PAY_DATE")),
-            "listing_date": _em_day(r.get("LISTING_DATE")),
-            "issue_price": _v39_num(r.get("ISSUE_PRICE")) or None,  # null or 0 before pricing
-            "issue_pe": _v39_num(r.get("AFTER_ISSUE_PE")),
-            "industry_pe": _v39_num(r.get("INDUSTRY_PE")),
-            "issue_shares_10k": _v39_num(r.get("ISSUE_NUM")),
-            "online_shares": _v39_num(r.get("ONLINE_ISSUE_NUM")),
-            "apply_upper_shares": _v39_num(r.get("ONLINE_APPLY_UPPER")),
-            "top_apply_mktcap_10k": _v39_num(r.get("TOP_APPLY_MARKETCAP")),
-            "win_rate_pct": _v39_num(r.get("ONLINE_ISSUE_LWR")),
-            "first_close": _v39_num(r.get("CLOSE_PRICE")),
-            "first_close_chg_pct": _v39_num(r.get("LD_CLOSE_CHANGE")),
+            "apply_date": strict_source_day(r.get("APPLY_DATE")),
+            "ballot_date": strict_source_day(r.get("BALLOT_NUM_DATE")),
+            "pay_date": strict_source_day(r.get("BALLOT_PAY_DATE")),
+            "listing_date": strict_source_day(r.get("LISTING_DATE")),
+            "issue_price": strict_number(r.get("ISSUE_PRICE")) or None,  # null or 0 before pricing
+            "issue_pe": strict_number(r.get("AFTER_ISSUE_PE")),
+            "industry_pe": strict_number(r.get("INDUSTRY_PE")),
+            "issue_shares_10k": strict_number(r.get("ISSUE_NUM")),
+            "online_shares": strict_number(r.get("ONLINE_ISSUE_NUM")),
+            "apply_upper_shares": strict_number(r.get("ONLINE_APPLY_UPPER")),
+            "top_apply_mktcap_10k": strict_number(r.get("TOP_APPLY_MARKETCAP")),
+            "win_rate_pct": strict_number(r.get("ONLINE_ISSUE_LWR")),
+            "first_close": strict_number(r.get("CLOSE_PRICE")),
+            "first_close_chg_pct": strict_number(r.get("LD_CLOSE_CHANGE")),
         }
         for r in rows
     ]
@@ -912,8 +868,16 @@ def get_a_share_ipo_calendar(limit=100) -> str:
     _capture_vendor_raw(
         rows, metadata={"provider": "eastmoney", "dataset": "ipo_calendar", "ticker": None}
     )
-    return _format_report(
+    coverage = datacenter_screening_coverage(
+        capability="ipo_calendar",
+        source_id="eastmoney.ipo_calendar",
+        scope="market-wide",
+        page=query.page,
+        as_of=_today(),
+    )
+    return _screening_report(
         data,
+        coverage,
         title="China A-share new-issue subscription calendar",
         caveat=(
             "EastMoney datacenter RPTA_APP_IPOAPPLY; apply date descending, includes upcoming "
@@ -937,12 +901,14 @@ class _ClistUnreachableError(ChinaDataUnavailableError):
 
 def _em_clist_all(
     fs: str, fields: str, page_size: int = 100
-) -> tuple[list[dict[str, Any]], str]:
+) -> tuple[list[dict[str, Any]], str, int]:
     """EastMoney clist full pagination; falls back to push2delay on transport failure.
 
     Network-level failures try the next host.  A server-side abnormal payload
     (including a non-JSON error page) raises without switching hosts, so it can
-    never be mistaken for a smaller but valid list.
+    never be mistaken for a smaller but valid list.  Returns the rows, the host
+    URL that answered, and how many pages were read, so the caller can claim
+    pagination exhaustion honestly.
     """
     errors: list[str] = []
     for host in EM_CLIST_HOSTS:
@@ -971,8 +937,8 @@ def _em_clist_all(
                     raise ChinaDataUnavailableError(
                         f"东财 clist 返回异常或无数据（fs={fs}）: {str(payload)[:100]}"
                     )
-                page_total = _v39_count(data.get("total"), f"东财 clist total（fs={fs}）")
-                diff = _v39_rows(data.get("diff"), f"东财 clist 的 diff（fs={fs}）")
+                page_total = strict_count(data.get("total"), f"东财 clist total（fs={fs}）")
+                diff = strict_rows(data.get("diff"), f"东财 clist 的 diff（fs={fs}）")
                 if total is None:
                     total = page_total
                 elif page_total != total:
@@ -997,11 +963,11 @@ def _em_clist_all(
             raise ChinaDataUnavailableError(
                 f"东财 clist 翻页后 {len(rows)} 条，与 total={total} 不符"
             )
-        return rows, url
+        return rows, url, page
     raise _ClistUnreachableError("东财 push2 / push2delay 均不可达: " + "; ".join(errors))
 
 
-def _st_list_baostock(reason: str) -> str:
+def _st_list_baostock(reason: str) -> CoveredText:
     """Fallback ST snapshot from baostock (SH/SZ only, no price) when EastMoney is down."""
     try:
         import baostock as bs
@@ -1060,18 +1026,40 @@ def _st_list_baostock(reason: str) -> str:
     _capture_vendor_raw(
         raw_rows, metadata={"provider": "baostock", "dataset": "st_stock_list", "ticker": None}
     )
-    coverage = "沪深（东财不可达，baostock 不含北交所）"
-    return _format_report(
-        data,
-        title="China A-share ST / *ST list (baostock fallback)",
-        caveat=f"SH/SZ only, no price; coverage={coverage}",
-        source="baostock",
-        extra_lines=(f"# Coverage: {coverage}", f"# Fallback reason: {reason}"),
+    # baostock answers in one unpaginated table, but it is an SH/SZ roster: the
+    # market-wide snapshot request is only partially covered, and saying
+    # "complete" here would silently drop the BSE from a "market-wide" claim.
+    coverage = ScreeningCoverageV1(
+        capability="st_stock_list",
+        source_id="baostock.st_stock_list",
+        item_count=len(data),
+        page_count=None,
+        pagination_exhausted=None,
+        completeness="partial",
+        sources=("baostock.st_stock_list",),
+        degradations=("fallback_sh_sz_only",),
+        as_of=_today(),
+        query_complete=False,
+        requested_scope="market-wide ST roster snapshot",
+    )
+    note = "沪深（东财不可达，baostock 不含北交所）"
+    return CoveredText(
+        _format_report(
+            data,
+            title="China A-share ST / *ST list (baostock fallback)",
+            caveat=f"SH/SZ only, no price; coverage={note}",
+            source="baostock",
+            extra_lines=(
+                f"# Coverage: {note} ({coverage.completeness}: fallback_sh_sz_only)",
+                f"# Fallback reason: {reason}",
+            ),
+        ),
+        coverage,
     )
 
 
 @_source_contract
-def get_a_share_st_stock_list() -> str:
+def get_a_share_st_stock_list() -> CoveredText:
     """全市场 ST / *ST 名单 (risk-warning snapshot) for the current day.
 
     SH/SZ come from EastMoney's 风险警示板 filter (includes B shares); the BSE is
@@ -1085,8 +1073,8 @@ def get_a_share_st_stock_list() -> str:
     complete 沪深京 roster, so it raises instead.
     """
     try:
-        shsz, url = _em_clist_all(_CLIST_SHSZ_RISK, _CLIST_FIELDS)
-        bj, bj_url = _em_clist_all(_CLIST_BSE_ALL, _CLIST_FIELDS)
+        shsz, url, shsz_pages = _em_clist_all(_CLIST_SHSZ_RISK, _CLIST_FIELDS)
+        bj, bj_url, bj_pages = _em_clist_all(_CLIST_BSE_ALL, _CLIST_FIELDS)
     except _ClistUnreachableError as exc:
         return _st_list_baostock(str(exc))
     if not shsz or not bj:
@@ -1122,8 +1110,8 @@ def get_a_share_st_stock_list() -> str:
                 "market": "bj" if is_bj else ("sh" if market_id == 1 else "sz"),
                 "name": name,
                 "st_type": "*ST" if name.startswith("*") else "ST",
-                "price": _v39_num(rec.get("f2")),
-                "pct_change": _v39_num(rec.get("f3")),
+                "price": strict_number(rec.get("f2")),
+                "pct_change": strict_number(rec.get("f3")),
             }
         )
     data = pd.DataFrame(rows, columns=_ST_COLUMNS)
@@ -1132,7 +1120,23 @@ def get_a_share_st_stock_list() -> str:
     _capture_vendor_raw(
         rows, metadata={"provider": "eastmoney", "dataset": "st_stock_list", "ticker": None}
     )
-    return _format_report(
+    # Both halves are read to the end of their own pagination and reconciled
+    # against the source's total before this point, so the roster claim is
+    # "complete" -- unlike a datacenter query it has no row cap.
+    coverage = ScreeningCoverageV1(
+        capability="st_stock_list",
+        source_id="eastmoney.st_stock_list",
+        item_count=len(data),
+        page_count=shsz_pages + bj_pages,
+        pagination_exhausted=True,
+        completeness="complete",
+        sources=("eastmoney.st_stock_list",),
+        degradations=(),
+        as_of=_today(),
+        query_complete=True,
+        requested_scope="market-wide ST roster snapshot",
+    )
+    report = _format_report(
         data,
         title="China A-share ST / *ST list (risk-warning board, SH/SZ/BJ)",
         caveat=(
@@ -1142,3 +1146,4 @@ def get_a_share_st_stock_list() -> str:
         ),
         extra_lines=("# Coverage: 沪深京",),
     )
+    return CoveredText(report, coverage)

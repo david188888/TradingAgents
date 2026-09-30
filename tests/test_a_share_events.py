@@ -1,10 +1,12 @@
 """Offline contract tests for the EastMoney event-driven A-share adapters.
 
-Every test monkeypatches the throttled ``em_get`` gateway, so no network call is
-made.  The focus is the part that is easy to get wrong: the pagination
-strictness (partial page sets must raise), the request contract (report name,
-filter columns, sort columns/types), the output field mapping, and the
-"genuinely empty" vs "interface broke" split.
+Every test monkeypatches the throttled ``em_get`` gateway (in both the adapter
+module and the shared ``eastmoney`` pager module), so no network call is made.
+The focus is the part that is easy to get wrong: the pagination strictness
+(partial page sets must raise), the request contract (report name, filter
+columns, sort columns/types), the output field mapping, and the "genuinely
+empty" vs "interface broke" versus "the cap cut it short" split that the
+``CoveredText`` / ``ScreeningCoverageV1`` contract now has to express.
 """
 
 from __future__ import annotations
@@ -17,9 +19,18 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from tradingagents.dataflows import a_share_events
+from tradingagents.dataflows import a_share_events, eastmoney
 from tradingagents.dataflows.china_capabilities import AshareCapabilityUnavailableError
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.coverage import CoveredText
+from tradingagents.dataflows.eastmoney import (
+    DatacenterPage,
+    em_datacenter_strict,
+    strict_date_arg,
+    strict_limit,
+    strict_number,
+    strict_source_day,
+)
 from tradingagents.dataflows.errors import VendorHTTPError
 
 # ---------------------------------------------------------------------------
@@ -43,7 +54,11 @@ def _payload(
 
 
 def _install(monkeypatch, responder):
-    """Replace the EastMoney gateway with an offline responder; return the call log."""
+    """Replace the EastMoney gateway with an offline responder; return the call log.
+
+    The datacenter pager lives in ``eastmoney`` and the clist snapshot uses the
+    adapter module's own import, so both names are patched to the same fake.
+    """
     calls: list[dict[str, Any]] = []
 
     def fake_em_get(url, **kwargs):
@@ -52,6 +67,7 @@ def _install(monkeypatch, responder):
         return responder(call)
 
     monkeypatch.setattr(a_share_events, "em_get", fake_em_get)
+    monkeypatch.setattr(eastmoney, "em_get", fake_em_get)
     monkeypatch.setattr(a_share_events, "_capture_vendor_raw", lambda *args, **kwargs: None)
     return calls
 
@@ -193,6 +209,12 @@ def test_earnings_forecast_maps_fields_and_request(monkeypatch):
     assert row["reason"] == "主营业务增长"
     assert "Source: eastmoney" in report
     assert "Total records: 1" in report
+    assert isinstance(report, CoveredText)
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 1
+    assert report.coverage.requested_scope == "ticker=600519.SS report_date=2026-09-30"
+    assert report.coverage.as_of == "2026-09-30"
+    assert "# Coverage: complete" in report
 
 
 def test_earnings_forecast_period_only_is_market_wide_and_narrowed(monkeypatch):
@@ -210,10 +232,20 @@ def test_earnings_forecast_rejects_shanghai_index(monkeypatch):
         a_share_events.get_a_share_earnings_forecast(ticker="SH000001")
 
 
-def test_earnings_forecast_narrowed_empty_degrades_instead_of_empty_table(monkeypatch):
+def test_earnings_forecast_narrowed_empty_is_a_covered_fact(monkeypatch):
+    """A narrowed query the provider completed with 0 rows must not raise."""
     _install(monkeypatch, lambda call: {"code": 9201, "message": "返回数据为空"})
-    with pytest.raises(ChinaDataUnavailableError, match="returned no rows"):
-        a_share_events.get_a_share_earnings_forecast(ticker="600519")
+    report = a_share_events.get_a_share_earnings_forecast(ticker="600519")
+    assert isinstance(report, str)
+    assert isinstance(report, CoveredText)
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+    assert report.coverage.query_complete is True
+    assert report.coverage.pagination_exhausted is True
+    assert "# Coverage: complete (0 matching records)" in report
+    assert "no matching record exists" in report
+    assert "# Total records: 0" in report
+    assert _parse_report(report).empty
 
 
 # ---------------------------------------------------------------------------
@@ -361,10 +393,22 @@ def test_equity_pledge_rejects_ticker_and_date_together():
         a_share_events.get_a_share_equity_pledge(ticker="600519", date="2026-09-18")
 
 
-def test_equity_pledge_non_statistical_date_raises_value_error(monkeypatch):
+def test_equity_pledge_non_statistical_date_is_a_complete_empty_fact(monkeypatch):
+    """A completed date query with no rows is a fact, not a caller error.
+
+    ChinaClear publishes weekly, so a non-statistical day has no rows; the
+    adapter reports that as complete coverage with a note instead of raising.
+    """
     _install(monkeypatch, lambda call: _payload([], count=0))
-    with pytest.raises(ValueError, match="不是中国结算质押统计日"):
-        a_share_events.get_a_share_equity_pledge(date="2026-09-17")
+    report = a_share_events.get_a_share_equity_pledge(date="2026-09-17")
+    assert isinstance(report, CoveredText)
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+    assert report.coverage.requested_scope == "trade_date=2026-09-17"
+    assert report.coverage.as_of == "2026-09-17"
+    assert "# Coverage: complete (0 matching records)" in report
+    assert "不是中国结算质押统计日" in report
+    assert "no matching record exists" in report
 
 
 def test_equity_pledge_rejects_balance_mismatch(monkeypatch):
@@ -468,6 +512,17 @@ def test_st_stock_list_combines_shsz_board_with_bse_name_filter(monkeypatch):
     assert float(out.iloc[1]["pct_change"]) == -1.5
     assert "Coverage: 沪深京" in report
     assert "push2.eastmoney.com" in report
+    # The roster reads both halves to the end of their pagination, so the
+    # snapshot is a complete screening coverage with a truthful scope.
+    assert isinstance(report, CoveredText)
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 3
+    assert report.coverage.query_complete is True
+    assert report.coverage.pagination_exhausted is True
+    assert report.coverage.page_count == 2
+    assert report.coverage.requested_scope == "market-wide ST roster snapshot"
+    assert report.coverage.source_id == "eastmoney.st_stock_list"
+    assert report.coverage.sources == ("eastmoney.st_stock_list",)
 
 
 def test_st_stock_list_requires_non_empty_bse_half(monkeypatch):
@@ -590,6 +645,13 @@ def test_st_stock_list_falls_back_to_baostock_when_both_hosts_down(monkeypatch):
     assert "Source: baostock" in report
     assert "Coverage: 沪深" in report
     assert "Fallback reason" in report
+    # An SH/SZ-only fallback cannot claim a market-wide snapshot is complete.
+    assert isinstance(report, CoveredText)
+    assert report.coverage.completeness == "partial"
+    assert report.coverage.query_complete is False
+    assert report.coverage.degradations == ("fallback_sh_sz_only",)
+    assert report.coverage.source_id == "baostock.st_stock_list"
+    assert report.coverage.requested_scope == "market-wide ST roster snapshot"
 
 
 def test_st_stock_list_without_baostock_degrades_typed(monkeypatch):
@@ -609,9 +671,10 @@ def test_clist_falls_back_to_delayed_host_on_transport_failure(monkeypatch):
         return {"rc": 0, "data": {"total": 1, "diff": [_clist_row("920575", 0, "*ST康乐")]}}
 
     monkeypatch.setattr(a_share_events, "em_get", fake_em_get)
-    rows, url = a_share_events._em_clist_all(_BSE, "f12,f13,f14,f2,f3")
+    rows, url, pages = a_share_events._em_clist_all(_BSE, "f12,f13,f14,f2,f3")
     assert url.startswith("https://push2delay.eastmoney.com")
     assert rows[0]["f12"] == "920575"
+    assert pages == 1
     assert attempted == [
         "https://push2.eastmoney.com/api/qt/clist/get",
         "https://push2delay.eastmoney.com/api/qt/clist/get",
@@ -657,13 +720,128 @@ def test_clist_row_count_must_match_self_reported_total(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Strict pagination contract (_em_datacenter_strict)
+# Screening coverage: complete-empty, partial truncation, typed failure
+# ---------------------------------------------------------------------------
+
+
+def _earnings(ticker=None, report_date=None, limit=500):
+    return a_share_events.get_a_share_earnings_forecast(
+        ticker=ticker, report_date=report_date, limit=limit
+    )
+
+
+def _survey(ticker=None, start=None, end=None):
+    return a_share_events.get_a_share_institution_survey(ticker=ticker, start=start, end=end)
+
+
+def _buyback(ticker=None, progress=None):
+    return a_share_events.get_a_share_share_buyback(ticker=ticker, progress=progress)
+
+
+_NARROWED_EMPTY_CALLS = [
+    pytest.param(lambda: _earnings(ticker="600519"), "ticker=600519.SS", id="forecast-ticker"),
+    pytest.param(
+        lambda: _earnings(report_date="2026-09-30"),
+        "report_date=2026-09-30",
+        id="forecast-period",
+    ),
+    pytest.param(lambda: _survey(ticker="688062"), "ticker=688062.SS", id="survey-ticker"),
+    pytest.param(
+        lambda: _survey(start="2026-09-01", end="2026-09-30"),
+        "notice_start=2026-09-01 notice_end=2026-09-30",
+        id="survey-window",
+    ),
+    pytest.param(lambda: _buyback(ticker="600519"), "ticker=600519.SS", id="buyback-ticker"),
+    pytest.param(lambda: _buyback(progress="实施中"), "progress=实施中", id="buyback-progress"),
+    pytest.param(
+        lambda: a_share_events.get_a_share_equity_pledge(ticker="600519"),
+        "ticker=600519.SS",
+        id="pledge-ticker",
+    ),
+    pytest.param(
+        lambda: a_share_events.get_a_share_equity_pledge(date="2026-09-18"),
+        "trade_date=2026-09-18",
+        id="pledge-date",
+    ),
+]
+
+
+@pytest.mark.parametrize(("call", "scope_part"), _NARROWED_EMPTY_CALLS)
+def test_narrowed_completed_empty_query_is_a_covered_fact(monkeypatch, call, scope_part):
+    """A completed 0-row narrowed query is a fact, never a fetch failure."""
+    _install(monkeypatch, lambda request: _payload([], count=0))
+    report = call()
+    assert isinstance(report, str)  # the legacy str path still holds
+    assert isinstance(report, CoveredText)
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+    assert report.coverage.query_complete is True
+    assert report.coverage.pagination_exhausted is True
+    assert report.coverage.degradations == ()
+    assert scope_part in report.coverage.requested_scope
+    assert "# Coverage: complete (0 matching records)" in report
+    assert "# Total records: 0" in report
+    assert "no matching record exists" in report
+    assert _parse_report(report).empty
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda: a_share_events.get_a_share_ipo_calendar(), id="ipo"),
+        pytest.param(lambda: _earnings(), id="forecast"),
+        pytest.param(lambda: a_share_events.get_a_share_equity_pledge(), id="pledge-latest"),
+    ],
+)
+def test_whole_market_empty_query_still_raises(monkeypatch, call):
+    _install(monkeypatch, lambda request: _payload([], count=0))
+    with pytest.raises(ChinaDataUnavailableError, match="全市场返回 0 行"):
+        call()
+
+
+def test_row_cap_truncation_is_partial_with_the_shared_code(monkeypatch):
+    rows = [dict(_IPO_ROW), {**_IPO_ROW, "SECURITY_CODE": "920575"}]
+    _install(monkeypatch, lambda request: _payload(rows, pages=1, count=2212))
+    report = a_share_events.get_a_share_ipo_calendar(limit=2)
+    assert isinstance(report, CoveredText)
+    assert report.coverage.completeness == "partial"
+    assert report.coverage.completeness != "complete"
+    assert report.coverage.degradations == ("row_cap_truncated",)
+    assert report.coverage.query_complete is False
+    assert report.coverage.item_count == 2
+    assert "# Coverage: partial (row_cap_truncated)" in report
+    assert "Coverage: complete" not in report
+
+
+def test_fetch_failure_raises_and_never_produces_a_coverage_object(monkeypatch):
+    def responder(request):  # pragma: no cover - raised, not returned
+        raise VendorHTTPError("eastmoney", 503)
+
+    _install(monkeypatch, responder)
+    with pytest.raises(ChinaDataUnavailableError, match="请求失败") as excinfo:
+        _earnings(ticker="600519")
+    assert not isinstance(excinfo.value, CoveredText)
+    assert not hasattr(excinfo.value, "coverage")
+
+
+def test_complete_with_rows_reports_complete_coverage(monkeypatch):
+    _install(monkeypatch, lambda request: _payload([dict(_FORECAST_ROW)]))
+    report = _earnings(ticker="600519")
+    assert report.coverage.completeness == "complete"
+    assert "# Coverage: complete" in report
+    assert "# Coverage: complete (" not in report
+
+
+# ---------------------------------------------------------------------------
+# Strict pagination contract (the shared ``eastmoney.em_datacenter_strict``)
 # ---------------------------------------------------------------------------
 
 
 def test_datacenter_9201_on_first_page_returns_empty(monkeypatch):
     _install(monkeypatch, lambda call: {"code": 9201, "message": "返回数据为空"})
-    assert a_share_events._em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1") == []
+    page = em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
+    assert page == DatacenterPage(rows=[], pages=1, count=0, pages_fetched=1, truncated=False)
+    assert page.pagination_exhausted is True
 
 
 def test_datacenter_9201_after_first_page_raises(monkeypatch):
@@ -675,7 +853,7 @@ def test_datacenter_9201_after_first_page_raises(monkeypatch):
 
     _install(monkeypatch, responder)
     with pytest.raises(ChinaDataUnavailableError, match="数据为空"):
-        a_share_events._em_datacenter_strict(
+        em_datacenter_strict(
             "RPT_X", sort_columns="A", sort_types="-1", page_size=2, max_rows=4
         )
 
@@ -684,7 +862,7 @@ def test_datacenter_non_zero_error_code_raises_with_code_and_message(monkeypatch
     _install(monkeypatch, lambda call: {"code": 9501, "message": "排序字段和顺序数量不一致",
                                         "result": None})
     with pytest.raises(ChinaDataUnavailableError, match=r"9501 排序字段和顺序数量不一致"):
-        a_share_events._em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
+        em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
 
 
 def test_datacenter_short_non_final_page_raises(monkeypatch):
@@ -694,7 +872,7 @@ def test_datacenter_short_non_final_page_raises(monkeypatch):
 
     _install(monkeypatch, responder)
     with pytest.raises(ChinaDataUnavailableError, match="非末页应为 3 条"):
-        a_share_events._em_datacenter_strict(
+        em_datacenter_strict(
             "RPT_X", sort_columns="A", sort_types="-1", page_size=3, max_rows=6
         )
 
@@ -707,7 +885,7 @@ def test_datacenter_empty_non_final_page_raises(monkeypatch):
 
     _install(monkeypatch, responder)
     with pytest.raises(ChinaDataUnavailableError, match="页是空的"):
-        a_share_events._em_datacenter_strict(
+        em_datacenter_strict(
             "RPT_X", sort_columns="A", sort_types="-1", page_size=1, max_rows=2
         )
 
@@ -722,7 +900,7 @@ def test_datacenter_page_or_count_change_across_pages_raises(monkeypatch):
 
     _install(monkeypatch, responder)
     with pytest.raises(ChinaDataUnavailableError, match="翻页时总页数"):
-        a_share_events._em_datacenter_strict(
+        em_datacenter_strict(
             "RPT_X", sort_columns="A", sort_types="-1", page_size=2, max_rows=6
         )
 
@@ -730,14 +908,14 @@ def test_datacenter_page_or_count_change_across_pages_raises(monkeypatch):
 def test_datacenter_final_total_mismatch_raises(monkeypatch):
     _install(monkeypatch, lambda call: _payload([dict(_FORECAST_ROW)], pages=1, count=3))
     with pytest.raises(ChinaDataUnavailableError, match="与总数 3 不符"):
-        a_share_events._em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
+        em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
 
 
 def test_datacenter_never_truncates_when_count_is_within_cap(monkeypatch):
     rows = [dict(_FORECAST_ROW), {**_FORECAST_ROW, "SECURITY_CODE": "000001"}]
     _install(monkeypatch, lambda call: _payload(rows, pages=1, count=1))
     with pytest.raises(ChinaDataUnavailableError, match="与总数 1 不符"):
-        a_share_events._em_datacenter_strict(
+        em_datacenter_strict(
             "RPT_X", sort_columns="A", sort_types="-1", page_size=10, max_rows=10
         )
 
@@ -745,16 +923,19 @@ def test_datacenter_never_truncates_when_count_is_within_cap(monkeypatch):
 def test_datacenter_truncates_only_when_count_exceeds_cap(monkeypatch):
     rows = [dict(_FORECAST_ROW), {**_FORECAST_ROW, "SECURITY_CODE": "000001"}]
     _install(monkeypatch, lambda call: _payload(rows, pages=2, count=2212))
-    out = a_share_events._em_datacenter_strict(
+    page = em_datacenter_strict(
         "RPT_X", sort_columns="A", sort_types="-1", page_size=2, max_rows=2
     )
-    assert len(out) == 2
+    assert len(page.rows) == 2
+    assert page.truncated is True
+    assert page.pagination_exhausted is False
+    assert page.count == 2212
 
 
 def test_datacenter_validates_sort_columns_and_types_before_request(monkeypatch):
     calls = _install(monkeypatch, lambda call: _payload([dict(_FORECAST_ROW)]))
     with pytest.raises(ValueError, match="个数不一致"):
-        a_share_events._em_datacenter_strict("RPT_X", sort_columns="A,B", sort_types="-1")
+        em_datacenter_strict("RPT_X", sort_columns="A,B", sort_types="-1")
     assert calls == []
 
 
@@ -762,26 +943,26 @@ def test_datacenter_rejects_non_object_data(monkeypatch):
     _install(monkeypatch, lambda call: {"code": 0, "result": {"pages": 1, "count": 1,
                                                              "data": ["not-a-dict"]}})
     with pytest.raises(ChinaDataUnavailableError, match="不是由对象组成的列表"):
-        a_share_events._em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
+        em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
 
 
 def test_datacenter_missing_pagination_info_raises(monkeypatch):
     _install(monkeypatch, lambda call: {"code": 0, "result": {"data": [dict(_FORECAST_ROW)]}})
-    with pytest.raises(ChinaDataUnavailableError, match="缺少分页信息"):
-        a_share_events._em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
+    with pytest.raises(ChinaDataUnavailableError, match="不是非负整数"):
+        em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
 
 
 def test_datacenter_provider_error_is_typed(monkeypatch):
     def fake_em_get(url, **kwargs):
         raise VendorHTTPError("eastmoney", 503)
 
-    monkeypatch.setattr(a_share_events, "em_get", fake_em_get)
+    monkeypatch.setattr(eastmoney, "em_get", fake_em_get)
     with pytest.raises(ChinaDataUnavailableError, match="请求失败"):
-        a_share_events._em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
+        em_datacenter_strict("RPT_X", sort_columns="A", sort_types="-1")
 
 
 # ---------------------------------------------------------------------------
-# Filter verification and duplicate detection (_em_event_rows)
+# Filter verification and duplicate detection (_em_event_rows -> EventQuery)
 # ---------------------------------------------------------------------------
 
 
@@ -789,7 +970,19 @@ def test_event_rows_full_market_zero_rows_raises_but_narrowed_is_empty(monkeypat
     _install(monkeypatch, lambda call: _payload([], count=0))
     with pytest.raises(ChinaDataUnavailableError, match="全市场返回 0 行"):
         a_share_events._em_event_rows("RPT_X", "", "A", "-1", 10, narrowed=False)
-    assert a_share_events._em_event_rows("RPT_X", "", "A", "-1", 10, narrowed=True) == []
+    query = a_share_events._em_event_rows("RPT_X", "", "A", "-1", 10, narrowed=True)
+    assert isinstance(query, a_share_events.EventQuery)
+    assert query.rows == []
+    assert query.page.pagination_exhausted is True
+
+
+def test_event_rows_carries_the_pagination_facts(monkeypatch):
+    _install(monkeypatch, lambda call: _payload([dict(_FORECAST_ROW)]))
+    query = a_share_events._em_event_rows("RPT_X", "", "A", "-1", 10, narrowed=True)
+    assert [row["SECURITY_CODE"] for row in query.rows] == ["600519"]
+    assert isinstance(query.page, DatacenterPage)
+    assert query.page.truncated is False
+    assert query.page.pagination_exhausted is True
 
 
 def test_event_rows_rejects_another_instrument(monkeypatch):
@@ -838,46 +1031,46 @@ def test_source_contract_wraps_missing_field(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_v39_num_normalizes_and_rejects_bad_values():
-    assert a_share_events._v39_num(None) is None
-    assert a_share_events._v39_num("") is None
-    assert a_share_events._v39_num("-") is None
-    assert a_share_events._v39_num("--") is None
-    assert a_share_events._v39_num("None") is None
-    assert a_share_events._v39_num("1,234.50") == 1234.5
-    assert a_share_events._v39_num(7) == 7.0
-    assert a_share_events._v39_num(float("nan")) is None
-    assert a_share_events._v39_num(float("inf")) is None
+def test_strict_number_normalizes_and_rejects_bad_values():
+    assert strict_number(None) is None
+    assert strict_number("") is None
+    assert strict_number("-") is None
+    assert strict_number("--") is None
+    assert strict_number("None") is None
+    assert strict_number("1,234.50") == 1234.5
+    assert strict_number(7) == 7.0
+    assert strict_number(float("nan")) is None
+    assert strict_number(float("inf")) is None
     with pytest.raises(ChinaDataUnavailableError, match="布尔值"):
-        a_share_events._v39_num(True)
+        strict_number(True)
     with pytest.raises(ChinaDataUnavailableError, match="无法识别的数值"):
-        a_share_events._v39_num("garbage")
+        strict_number("garbage")
 
 
-def test_v39_date_accepts_supported_forms_and_rejects_others():
-    assert a_share_events._v39_date("20260918") == "2026-09-18"
-    assert a_share_events._v39_date("2026-09-18") == "2026-09-18"
+def test_strict_date_arg_accepts_supported_forms_and_rejects_others():
+    assert strict_date_arg("20260918") == "2026-09-18"
+    assert strict_date_arg("2026-09-18") == "2026-09-18"
     with pytest.raises(ValueError):
-        a_share_events._v39_date("2026/09/18")
+        strict_date_arg("2026/09/18")
     with pytest.raises(ValueError):
-        a_share_events._v39_date("2026-13-40")
+        strict_date_arg("2026-13-40")
 
 
-def test_em_day_rejects_non_iso_spelling():
-    assert a_share_events._em_day(None) is None
-    assert a_share_events._em_day("2026-09-18 00:00:00") == "2026-09-18"
+def test_strict_source_day_rejects_non_iso_spelling():
+    assert strict_source_day(None) is None
+    assert strict_source_day("2026-09-18 00:00:00") == "2026-09-18"
     with pytest.raises(ChinaDataUnavailableError, match="无法识别的日期"):
-        a_share_events._em_day("18/09/2026")
+        strict_source_day("18/09/2026")
 
 
-def test_v39_limit_validates_range():
-    assert a_share_events._v39_limit(1) == 1
-    assert a_share_events._v39_limit("5000") == 5000
+def test_strict_limit_validates_range():
+    assert strict_limit(1) == 1
+    assert strict_limit("5000") == 5000
     for bad in (0, 5001, -1):
         with pytest.raises(ValueError, match="limit 范围"):
-            a_share_events._v39_limit(bad)
-    with pytest.raises(ValueError):
-        a_share_events._v39_limit("abc")
+            strict_limit(bad)
+    with pytest.raises(ValueError, match="必须是整数"):
+        strict_limit("abc")
 
 
 def test_public_limit_validation_raises_value_error():

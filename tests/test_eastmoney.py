@@ -114,10 +114,58 @@ def test_capital_flow_uses_shanghai_secid_and_reports_source(monkeypatch):
     assert "2026-07-20" in report
 
 
-def test_margin_financing_is_a_safe_empty_data_failure(monkeypatch):
-    monkeypatch.setattr(eastmoney, "em_get", lambda *_args, **_kwargs: {"result": {"data": []}})
+def _envelope(data, *, pages=1, count=None, code=0, message=""):
+    """The real EastMoney datacenter envelope the strict pager requires.
 
-    with pytest.raises(ChinaDataUnavailableError, match="no margin-financing"):
+    The old single-page call accepted ``{"result": {"data": []}}``; that shape
+    cannot distinguish a throttle from "no records", so every fake datacenter
+    answer now carries ``code``/``pages``/``count``.
+    """
+    return {
+        "code": code,
+        "message": message,
+        "result": {
+            "pages": pages,
+            "count": len(data) if count is None else count,
+            "data": data,
+        },
+    }
+
+
+def test_margin_financing_completed_empty_result_is_coverage_not_failure(monkeypatch):
+    monkeypatch.setattr(eastmoney, "em_get", lambda *_args, **_kwargs: _envelope([], count=0))
+
+    report = eastmoney.get_a_share_margin_financing("000001")
+
+    assert isinstance(report, str)
+    assert "# Coverage: complete (0 matching records)" in report
+    assert "# Note:" in report
+    assert "not a fetch failure" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+
+
+def test_margin_financing_page_one_9201_is_a_completed_empty_query(monkeypatch):
+    monkeypatch.setattr(
+        eastmoney,
+        "em_get",
+        lambda *_args, **_kwargs: {"code": 9201, "message": "数据为空"},
+    )
+
+    report = eastmoney.get_a_share_margin_financing("000001")
+
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+
+
+def test_margin_financing_nonzero_provider_code_raises(monkeypatch):
+    monkeypatch.setattr(
+        eastmoney,
+        "em_get",
+        lambda *_args, **_kwargs: _envelope([], code=9501, message="sortTypes 个数不一致"),
+    )
+
+    with pytest.raises(ChinaDataUnavailableError, match="9501"):
         eastmoney.get_a_share_margin_financing("000001")
 
 
@@ -128,7 +176,7 @@ def test_margin_financing_filters_by_scode_and_renders_rows(monkeypatch):
 
     def fake_em_get(url, *, params, **_kwargs):
         captured["params"] = params
-        return {"result": {"data": [{"DATE": "2026-08-03", "SCODE": "688825", "SECNAME": "x", "RZYE": 1}]}}
+        return _envelope([{"DATE": "2026-08-03", "SCODE": "688825", "SECNAME": "x", "RZYE": 1}])
 
     monkeypatch.setattr(eastmoney, "em_get", fake_em_get)
 
@@ -139,33 +187,52 @@ def test_margin_financing_filters_by_scode_and_renders_rows(monkeypatch):
     assert "SECURITY_CODE" not in flt
     assert captured["params"]["sortColumns"] == "DATE"
     assert "688825" in report
+    assert isinstance(report, str)
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.requested_scope == "ticker=688825.SH window=*..*"
+
+
+def test_margin_financing_rejects_rows_for_another_instrument(monkeypatch):
+    # A filter the interface ignored must raise, never render another
+    # instrument's margin balance as this ticker's.
+    monkeypatch.setattr(
+        eastmoney,
+        "em_get",
+        lambda *_args, **_kwargs: _envelope(
+            [{"DATE": "2026-08-03", "SCODE": "600519", "RZYE": 1}]
+        ),
+    )
+
+    with pytest.raises(ChinaDataUnavailableError, match="结果不可信"):
+        eastmoney.get_a_share_margin_financing("688825")
 
 
 def test_margin_financing_preserves_legacy_curr_date_keyword(monkeypatch):
     monkeypatch.setattr(
         eastmoney,
         "em_get",
-        lambda *_args, **_kwargs: {
-            "result": {"data": [{"DATE": "2026-08-03", "SCODE": "688825", "RZYE": 1}]}
-        },
+        lambda *_args, **_kwargs: _envelope(
+            [{"DATE": "2026-08-03", "SCODE": "688825", "RZYE": 1}]
+        ),
     )
 
     report = eastmoney.get_a_share_margin_financing("688825", curr_date="2026-08-03")
 
     assert "# Actual window: 2026-08-03 to 2026-08-03" in report
+    assert "# Requested as-of: 2026-08-03" in report
 
 
 def test_margin_financing_filters_requested_window_and_reports_actual_window(monkeypatch):
-    def fake_em_get(url, *, params, **_kwargs):
-        return {
-            "result": {
-                "data": [
-                    {"DATE": "2026-07-31", "SCODE": "688825", "RZYE": 3},
-                    {"DATE": "2026-07-15", "SCODE": "688825", "RZYE": 2},
-                    {"DATE": "2026-06-30", "SCODE": "688825", "RZYE": 1},
-                ]
-            }
-        }
+    captured = {}
+
+    def fake_em_get(_url, *, params, **_kwargs):
+        captured["params"] = params
+        return _envelope(
+            [
+                {"DATE": "2026-07-31", "SCODE": "688825", "RZYE": 3},
+                {"DATE": "2026-07-15", "SCODE": "688825", "RZYE": 2},
+            ]
+        )
 
     monkeypatch.setattr(eastmoney, "em_get", fake_em_get)
 
@@ -173,53 +240,84 @@ def test_margin_financing_filters_requested_window_and_reports_actual_window(mon
         "688825", "2026-07-01", "2026-07-31"
     )
 
+    assert "(DATE>='2026-07-01')" in captured["params"]["filter"]
+    assert "(DATE<='2026-07-31')" in captured["params"]["filter"]
     assert "# Requested window: 2026-07-01 to 2026-07-31" in report
     assert "# Actual window: 2026-07-15 to 2026-07-31" in report
-    assert "# Coverage completeness: partial" in report
-    assert "2026-06-30" not in report
+    assert "# Coverage: complete (2 matching records)" in report
+    assert "# Coverage completeness: complete" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.degradations == ()
 
 
-def test_margin_financing_marks_unexhausted_first_page_partial(monkeypatch):
+def test_margin_financing_rejects_out_of_window_rows(monkeypatch):
+    # A server that ignored the DATE filter returns another window's row; the
+    # adapter must not silently keep it (that is the old loose path's bug in
+    # reverse: filtering client-side hid the provider's behavior).
     monkeypatch.setattr(
         eastmoney,
         "em_get",
-        lambda *_args, **_kwargs: {
-            "result": {
-                "pages": 3,
-                "data": [{"DATE": "2026-07-31", "SCODE": "688825", "RZYE": 3}],
-            }
-        },
+        lambda *_args, **_kwargs: _envelope(
+            [{"DATE": "2026-06-30", "SCODE": "688825", "RZYE": 1}]
+        ),
     )
 
-    report = eastmoney.get_a_share_margin_financing(
-        "688825", "2026-07-01", "2026-07-31"
-    )
-
-    assert "# Coverage completeness: partial" in report
-    assert "# Pagination: pages=1; exhausted=false" in report
+    with pytest.raises(ChinaDataUnavailableError, match="结果不可信"):
+        eastmoney.get_a_share_margin_financing("688825", "2026-07-01", "2026-07-31")
 
 
-def test_margin_financing_does_not_call_incomplete_end_window_complete(monkeypatch):
+def test_margin_financing_completed_query_with_mid_window_rows_is_complete(monkeypatch):
+    # A completed query is decided by pagination exhaustion and the reconciled
+    # count, not by whether the rows touch both window edges: an instrument with
+    # no record on the first/last day simply has no such row.  Marking this
+    # `partial` would contradict `query_complete=True`.
     monkeypatch.setattr(
         eastmoney,
         "em_get",
-        lambda *_args, **_kwargs: {
-            "result": {
-                "pages": 1,
-                "data": [
-                    {"DATE": "2026-07-01", "SCODE": "688825", "RZYE": 1},
-                    {"DATE": "2026-07-30", "SCODE": "688825", "RZYE": 2},
-                ],
-            }
-        },
+        lambda *_args, **_kwargs: _envelope(
+            [
+                {
+                    "DATE": "2026-09-18 00:00:00",
+                    "SCODE": "600519",
+                    "SECURITY_NAME_ABBR": "贵州茅台",
+                    "RZYE": 100.0,
+                }
+            ]
+        ),
     )
 
-    report = eastmoney.get_a_share_margin_financing(
-        "688825", "2026-07-01", "2026-07-31"
-    )
+    report = eastmoney.get_a_share_margin_financing("600519.SH", "2026-09-01", "2026-09-30")
 
-    assert "# Coverage completeness: partial" in report
-    assert "# Pagination: pages=1; exhausted=true" in report
+    assert "# Requested window: 2026-09-01 to 2026-09-30" in report
+    assert "# Actual window: 2026-09-18 to 2026-09-18" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 1
+    assert report.coverage.query_complete is True
+    assert report.coverage.degradations == ()
+    assert "# Coverage completeness: partial" not in report
+
+
+def test_margin_financing_row_cap_truncation_is_partial(monkeypatch):
+    rows = [
+        {"DATE": "2026-08-03", "SCODE": "688825", "RZYE": index}
+        for index in range(2000)
+    ]
+
+    def fake_em_get(_url, *, params, **_kwargs):
+        page = int(params["pageNumber"])
+        start = (page - 1) * 500
+        return _envelope(rows[start : start + 500], pages=5, count=2500)
+
+    monkeypatch.setattr(eastmoney, "em_get", fake_em_get)
+
+    report = eastmoney.get_a_share_margin_financing("688825")
+
+    assert "# Coverage: partial (2000 matching records)" in report
+    assert report.coverage.completeness == "partial"
+    assert report.coverage.pagination_exhausted is False
+    assert report.coverage.page_count == 4
+    assert report.coverage.item_count == 2000
+    assert "row_cap_truncated" in report.coverage.degradations
 
 
 def test_margin_financing_rejects_single_sided_new_window(monkeypatch):
