@@ -131,16 +131,7 @@ export function CatalystProgress({
             </button>
           );
         })}
-        {/*
-          Cancel is available while the run is still in flight — queued or
-          running — which is what design 4.5's "取消" action means. It is also
-          rendered for a cancelled/interrupted run, because the run-view
-          endpoint's own cancel is idempotent and the layout re-reads the run
-          afterwards; hiding it there would strand a user whose cancel has not
-          yet been reflected in the projection. A terminal failure or a
-          blocked result has no cancel: nothing is running to stop.
-        */}
-        {state.id === "queued" || state.id === "running" || state.id === "cancelled_or_interrupted" ? (
+        {state.id === "queued" || state.id === "running" ? (
           <button type="button" onClick={onCancel} disabled={onCancel === undefined}>
             取消
           </button>

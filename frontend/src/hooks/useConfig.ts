@@ -38,7 +38,7 @@ const CATALYST_V1_STAGES: readonly string[] = ["准备证据", "专项分析", "
  * server's normalized view of the request is stable, not because the profile
  * honours them.
  */
-const CATALYST_COMPAT_DEPTH: ResearchDepth = 3;
+const CATALYST_COMPAT_DEPTH: ResearchDepth = 1;
 const CATALYST_COMPAT_HORIZON: ResearchHorizon = "medium";
 
 export interface UseConfigResult {
@@ -111,6 +111,7 @@ export interface UseConfigResult {
   /** The effective config the next catalyst run will run under. */
   effectiveCatalystConfig: EffectiveCatalystConfig;
   validationError: string | null;
+  catalystValidationError: string | null;
 }
 
 /**
@@ -368,7 +369,7 @@ export function useConfig(): UseConfigResult {
   // and no claim is made either way.
   const catalystProfileSupported: boolean | null = useMemo(() => {
     if (config === null) return null;
-    const declared = (config as { research_profiles?: { catalyst_v1?: { supported?: unknown; reason?: unknown } } })
+    const declared = config
       .research_profiles?.catalyst_v1;
     if (declared === undefined) return null;
     return declared.supported === true;
@@ -376,7 +377,7 @@ export function useConfig(): UseConfigResult {
 
   const catalystProfileReason: string | null = useMemo(() => {
     if (config === null) return null;
-    const declared = (config as { research_profiles?: { catalyst_v1?: { supported?: unknown; reason?: unknown } } })
+    const declared = config
       .research_profiles?.catalyst_v1;
     const reason = declared?.reason;
     return typeof reason === "string" ? reason : null;
@@ -385,28 +386,25 @@ export function useConfig(): UseConfigResult {
   /**
    * T27: the catalyst request builder.
    *
-   * Every field below is deliberate. The ones the classic form has and this
-   * builder does not — `selected_analysts`, `mode`, `horizon`, `holding` —
-   * are absent because `catalyst_v1` runs a fixed bounded sequence of four
-   * specialist roles, so a role list chosen under the old form is not a valid
-   * input to it and is not sent. `research_profile` is explicit: the server
-   * treats omission as `classic`, and a catalyst run that arrived without it
-   * would silently become the other research flow.
-   *
-   * The `research_question` is optional and, per design 4.1, carried in the
-   * case rather than as a request field on this wire; it is returned alongside
-   * so a caller can record what was asked.
+   * The fixed three-specialist flow does not read classic scheduling or
+   * holding selections. Required legacy fields use canonical compatibility
+   * defaults. Profile and optional question travel together on the request
+   * and become part of the persisted catalyst identity.
    */
-  function buildCatalystRequest(): RunCreateRequestDTO | null {
+  const catalystValidationError = !ticker.trim() ? "请输入股票代码"
+    : Array.from(researchQuestion.trim()).length > 400 ? "研究问题最多 400 个字符"
+    : !selectedProvider ? "请选择 LLM Provider"
+    : selectedProvider.requires_api_key && config?.configured_keys[llmProvider] !== true ? "所选 Provider 未配置 API Key"
+    : !quickThinkLlm || !deepThinkLlm ? "请选择研究模型" : null;
+
+  function buildCatalystRequest(question: string | null = researchQuestion): RunCreateRequestDTO | null {
     if (config === null) return null;
     const normalizedTicker = ticker.trim();
-    if (!normalizedTicker) return null;
+    const normalizedQuestion = (question ?? "").trim();
+    if (!normalizedTicker || Array.from(normalizedQuestion).length > 400) return null;
     // The classic holding-review validation does not apply here: a catalyst run
     // is a company research, and `buildRequest`'s holding errors must not block
     // it or leak their text into the new form.
-    if (mode === "holding_review" && holdingQuantity.trim() !== "" && !Number.isFinite(Number(holdingQuantity))) {
-      return null;
-    }
     return {
       ticker: normalizedTicker,
       analysis_date: analysisDate,
@@ -417,7 +415,7 @@ export function useConfig(): UseConfigResult {
       // by controls this profile never rendered. Sending the classic depth
       // here would submit a scheduling parameter the profile will ignore, and
       // the reader would reasonably read that as "my depth applied".
-      selected_analysts: [],
+      selected_analysts: ["market", "social", "news", "fundamentals"],
       research_depth: CATALYST_COMPAT_DEPTH,
       mode: "company_research",
       // Design 7.1: the old `horizon` field is kept for wire compatibility and
@@ -432,13 +430,14 @@ export function useConfig(): UseConfigResult {
       checkpoint_enabled: false,
       asset_type: null,
       research_profile: "catalyst_v1",
+      research_question: normalizedQuestion || null,
     };
   }
 
   const effectiveCatalystConfig: EffectiveCatalystConfig = {
     profile: researchProfile,
-    researchDepth,
-    horizon,
+    researchDepth: CATALYST_COMPAT_DEPTH,
+    horizon: CATALYST_COMPAT_HORIZON,
     llmProvider,
     quickThinkLlm,
     deepThinkLlm,
@@ -504,5 +503,6 @@ export function useConfig(): UseConfigResult {
     buildRequest,
     buildRequestForTicker,
     validationError,
+    catalystValidationError,
   };
 }

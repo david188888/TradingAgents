@@ -289,12 +289,6 @@ describe("T30 — every state in the design 4.5 matrix renders", () => {
 });
 
 describe("T30 — cancel, retry and resume keep their handlers", () => {
-  /*
-    The three are driven from different rows of the matrix, because that is
-    where each is offered: `blocked_or_error` offers retry, `cancelled_or_
-    interrupted` offers resume and cancel. Testing all three on one row would
-    pass even if the matrix stopped offering one of them.
-  */
   it("offers retry on a blocked run and calls through", () => {
     const onRetry = vi.fn();
     const onAudit = vi.fn();
@@ -319,28 +313,39 @@ describe("T30 — cancel, retry and resume keep their handlers", () => {
     expect(onAudit).toHaveBeenCalledOnce();
   });
 
-  it("offers resume and cancel on a cancelled run and calls through", () => {
+  it("offers resume on an interrupted run and calls through", () => {
     const onResume = vi.fn();
     const onCancel = vi.fn();
     render(
       <CatalystProgress
         progress={catalystStageProgress({
-          run_status: "cancelled",
+          run_status: "interrupted",
           stage_status: null,
           stage_durations_ms: null,
           counts: null,
         })}
-        state={catalystScreenState(inputs.cancelled_or_interrupted)}
+        state={catalystScreenState(input({ run_status: "interrupted" }))}
         onResume={onResume}
         onCancel={onCancel}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "恢复运行" }));
     expect(onResume).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-    expect(onCancel).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
+    expect(onCancel).not.toHaveBeenCalled();
     // Design 4.5: a cancelled run is explicitly not a complete result.
     expect(screen.getByText(/这不是一次完整结果/)).toBeInTheDocument();
+  });
+
+  it("offers neither resume nor cancel after cancellation", () => {
+    render(<CatalystProgress
+      progress={catalystStageProgress({ run_status: "cancelled", stage_status: null, stage_durations_ms: null, counts: null })}
+      state={catalystScreenState(inputs.cancelled_or_interrupted)}
+      onResume={vi.fn()} onCancel={vi.fn()} onNewRun={vi.fn()}
+    />);
+    expect(screen.queryByRole("button", { name: "恢复运行" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发起新研究" })).toBeInTheDocument();
   });
 
   it("offers cancel while a run is queued", () => {

@@ -98,8 +98,7 @@ describe("T27 — the catalyst request carries no classic-only fields", () => {
     // The four fields the form actually shows, plus the profile.
     expect(body?.ticker).toBe("600519");
     expect(body?.research_profile).toBe("catalyst_v1");
-    // `research_question` is case-side on this wire, never a request field.
-    expect(body).not.toHaveProperty("research_question");
+    expect(body?.research_question).toBeNull();
 
     /*
       The hidden classic controls.
@@ -112,9 +111,9 @@ describe("T27 — the catalyst request carries no classic-only fields", () => {
       field" — it is "never send the hidden form's value". The classic depth of
       5 must not travel, and the compatibility default must be what arrives.
     */
-    expect(body?.selected_analysts).toEqual([]);
+    expect(body?.selected_analysts).toEqual(["market", "social", "news", "fundamentals"]);
     expect(body?.research_depth).not.toBe(5);
-    expect(body?.research_depth).toBe(3);
+    expect(body?.research_depth).toBe(1);
     expect(body?.mode).toBe("company_research");
     // Design 7.1: the new entry point sends `horizon=medium` for compatibility.
     expect(body?.horizon).toBe("medium");
@@ -148,6 +147,7 @@ describe("T27 — the catalyst request carries no classic-only fields", () => {
       "quick_think_llm",
       "research_depth",
       "research_profile",
+      "research_question",
       "selected_analysts",
       "ticker",
     ]);

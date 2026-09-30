@@ -9,6 +9,7 @@
  */
 import { useState } from "react";
 import { BatchControls } from "./BatchControls";
+import { CatalystForm } from "./CatalystForm";
 import { requestCompletionNotificationPermission } from "../../hooks/useCompletionNotifications";
 import { useConfig } from "../../hooks/useConfig";
 import { useWorkbenchSelection, useWorkbenchStream } from "../../state/WorkbenchStore";
@@ -39,7 +40,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
     stream.status === "loading";
 
   function handleStart(): void {
-    const req = cfg.buildRequest();
+    const req = cfg.research_profile === "catalyst_v1" ? cfg.buildCatalystRequest() : cfg.buildRequest();
     if (req === null) return;
     setApiError(null);
     setVpnMessage(null);
@@ -88,6 +89,34 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
   const startDisabled =
     cfg.validationError !== null || runActive || starting || cfg.loading;
 
+  if (cfg.research_profile === "catalyst_v1") {
+    return <div className="controls">
+      <CatalystForm profile={cfg.research_profile} onProfileChange={cfg.setResearchProfile}
+        ticker={cfg.ticker} onTickerChange={cfg.setTicker} windowStart="" windowEnd={cfg.analysis_date}
+        onWindowChange={(_start, end) => cfg.setAnalysisDate(end)}
+        researchQuestion={cfg.research_question} onResearchQuestionChange={cfg.setResearchQuestion}
+        effective={cfg.effectiveCatalystConfig} onStart={handleStart} starting={starting}
+        disabled={runActive || cfg.loading || cfg.catalystValidationError !== null}
+        error={apiError ?? cfg.catalystValidationError} />
+      <details className="input-group">
+        <summary>模型设置</summary>
+        <label htmlFor="catalyst-provider">LLM Provider</label>
+        <select id="catalyst-provider" value={cfg.llm_provider} onChange={e => cfg.setLlmProvider(e.target.value)}>
+          {cfg.config?.providers.map(p => <option key={p.id} value={p.id}>{p.id}{p.configured ? " · 已配置" : " · 未配置"}</option>)}
+        </select>
+        <label htmlFor="catalyst-quick">专项与反证模型</label>
+        <select id="catalyst-quick" value={cfg.quick_think_llm} onChange={e => cfg.setQuickThinkLlm(e.target.value)}>
+          {cfg.quickOptions.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <label htmlFor="catalyst-deep">综合模型</label>
+        <select id="catalyst-deep" value={cfg.deep_think_llm} onChange={e => cfg.setDeepThinkLlm(e.target.value)}>
+          {cfg.deepOptions.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+      </details>
+      {runActive && <button type="button" className="cancel" onClick={handleCancel}>取消</button>}
+    </div>;
+  }
+
   return (
     <>
       <div className="analysis-mode-tabs" role="tablist" aria-label="分析模式">
@@ -95,6 +124,13 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         <button type="button" className="mode-tab" onClick={() => setAnalysisMode("batch")}>批量分析</button>
       </div>
       <div className="controls">
+        <div className="input-group">
+          <label htmlFor="ctrl-profile">研究流程</label>
+          <select id="ctrl-profile" value={cfg.research_profile} onChange={e => cfg.setResearchProfile(e.target.value === "catalyst_v1" ? "catalyst_v1" : "classic")}>
+            <option value="classic">旧版研究流程</option>
+            <option value="catalyst_v1">新版催化研究（试用）</option>
+          </select>
+        </div>
         <div className="eyebrow">New analysis</div>
         <div className="section-title">
         <h2>分析输入</h2>

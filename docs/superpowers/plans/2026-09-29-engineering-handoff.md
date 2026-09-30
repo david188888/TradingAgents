@@ -1,5 +1,7 @@
 # 催化研究重构：工程交接说明
 
+> **2026-09-30 接力更新**：用户已批准真实接线书面设计，本次已落地显式 Web profile → 中立执行器 → durable case/报告 → 工作台读取。此前“接线未获批、零生产调用方、表单未接入”的描述是历史状态。当前入口及限制见[操作说明](../../operations/catalyst-research.md)，验证和未完成事项见[新验收记录](2026-09-30-catalyst-wiring-acceptance.md)。classic 默认不变；未执行批量研究质量评估，未切默认，未推送或清理历史 worktree。以下保留原交接历史。
+
 - **Status: Updated 2026-09-30 — P3（E）与 P4（F）已全部完成、验证并合回 `main`，两棵 worktree 与分支已删除。当前 `main` HEAD = `1856391`（全部本地提交，未推送）。接线（§3.4）已出方案但未获批、未动代码。剩余阻塞在 §5 的四个产品卡点，其中 C-1 gate 住 T33 与整体验收判定。**
 - 创建日期：2026-09-29，最近更新：2026-09-30。交接对象：接手的工程师。
 - 上游：[执行计划](2026-09-29-catalyst-research-task-plan.md)（T01–T39 拆分与验收标准）、[设计](../specs/2026-09-28-catalyst-research-redesign.md)、[布局草图](../specs/2026-09-28-catalyst-research-layout.html)。

@@ -14,7 +14,7 @@ TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源�
 
 ## 研究流程
 
-命令行和 Web 工作台会将结构化请求交给同一套 LangGraph 流程。当前公开模式为 `company_research` 和 `holding_review`；命令行默认执行公司研究，持仓复盘需要通过 Web/API 提供持仓背景。图执行确定性数据预取，然后按顺序运行所选分析师，并在辩论前检查证据。
+默认的 `classic` profile 会将命令行和 Web 请求交给同一套 LangGraph 流程。当前公开模式为 `company_research` 和 `holding_review`；命令行默认执行公司研究，持仓复盘需要通过 Web/API 提供持仓背景。经典图执行确定性数据预取，然后按顺序运行所选分析师，并在辩论前检查证据。
 
 ```mermaid
 flowchart TD
@@ -33,6 +33,10 @@ flowchart TD
 Evidence Steward 会区分 `PASS`、`LOW_CONFIDENCE` 和 `FAIL_STOP`；意外的检查故障也会终止流程。运行完成并不代表数据完整，结果仍可能包含未知项或覆盖不足。研究产物从已提交的运行状态发布；Reader 和 Audit 视图展示运行时保存的结果，不会现场重新请求数据。旧版 Trader 和三方风险辩论已从当前执行图中移除。执行与持久化边界请参阅[架构说明](ARCHITECTURE.md)。
 
 ## 数据与 Agent 职责
+
+Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究。为服务端进程设置 `TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1` 后，可选择催化流程：冻结合格证据 → 三个专项 → 独立反证 → 单次综合 → 校验发布。结果为结构化 case 及其同源 Markdown 报告，固定展望未来 84 个日历日，可选研究问题随运行保存。classic 仍为默认。
+
+催化流程始终保存尝试预算与可恢复阶段记录，不受旧 checkpoint 开关控制。首批有界适配器覆盖 Tushare 身份/财务报表与巨潮公告覆盖；默认供应商链目前没有可证明资格的行情适配器，腾讯 qfq 未证明历史复权因子时也记为不可用。必需能力缺失会将优先级限制为“信息不足”。支持范围和操作见[催化研究说明](docs/operations/catalyst-research.md)。下方供应商与角色表描述 classic 流程。
 
 数据供应商路由由 `tradingagents/dataflows/` 管理。下表列出代表性接口，不表示每个供应商都能覆盖任意标的或日期。供应商故障和数据覆盖不足会被明确记录。
 

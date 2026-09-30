@@ -34,7 +34,7 @@ from tradingagents.observability.graph_tasks import GraphObservationRunContext
 from tradingagents.observability.observer import DurableRunObserver
 from tradingagents.observability.projections import RoleProjectionRunContext
 from tradingagents.observability.provenance import provenance_scope
-from tradingagents.observability.roles import ROLE_REGISTRY, role_instance_id
+from tradingagents.observability.roles import role_instance_id, roles_for_profile
 from tradingagents.runtime.contracts import (
     PRODUCTION_RUNTIME_CONTRACT,
     RuntimeContractSelection,
@@ -457,6 +457,14 @@ class SingleRunManager:
                 "effective_config": safe_config,
                 **(
                     {
+                        **request.profile_identity(),
+                        "catalyst_policy": request.catalyst_policy.model_dump(mode="json"),
+                    }
+                    if request.research_profile == "catalyst_v1"
+                    else {}
+                ),
+                **(
+                    {
                         "batch_id": batch_id,
                         "batch_ordinal": batch_ordinal,
                         "batch_input": batch_item.input_value,
@@ -495,7 +503,7 @@ class SingleRunManager:
         selected_analysts: tuple[str, ...],
     ) -> None:
         selected = set(selected_analysts)
-        for role in ROLE_REGISTRY:
+        for role in self._roles_for_run(run_id):
             included = role.analyst_key is None or role.analyst_key in selected
             status = "pending" if included else "skipped"
             reason = "selected" if included else "not_selected"
@@ -546,6 +554,7 @@ class SingleRunManager:
                     "quick_think_llm": snapshot.quick_think_llm,
                     "deep_think_llm": snapshot.deep_think_llm,
                     "checkpoint_enabled": bool(request.effective_config.get("checkpoint_enabled")),
+                    **({"research_profile": request.research_profile} if request.research_profile == "catalyst_v1" else {}),
                 },
                 status="running",
             )
@@ -608,6 +617,9 @@ class SingleRunManager:
                         request,
                         request.effective_config,
                     )
+                catalyst_kwargs = {}
+                if request.research_profile == "catalyst_v1":
+                    catalyst_kwargs["publication_authorizer"] = lambda journal: self._authorize_catalyst(run_id, token, journal)
                 result = runner.run(
                     request,
                     cancellation_token=token,
@@ -615,6 +627,7 @@ class SingleRunManager:
                     callbacks=[observer],
                     checkpoint_run_id=run_id,
                     checkpoint_guard=checkpoint_guard,
+                    **catalyst_kwargs,
                 )
                 status = self._begin_terminalization(run_id)
                 if status == "cancel_requested":
@@ -634,6 +647,18 @@ class SingleRunManager:
     def _begin_terminalization(self, run_id: str) -> str:
         self.scheduler.mark_terminalizing(run_id)
         return self.store.read_snapshot(run_id).status
+
+    def _authorize_catalyst(self, run_id, token, journal) -> None:
+        with self._guard:
+            token.raise_if_cancelled()
+            if self.store.read_snapshot(run_id).status == "cancel_requested":
+                raise AnalysisCancelled()
+            # Durable authorization is the linearization point shared with cancel().
+            journal.put("publication_authorized", True)
+            self.scheduler.mark_terminalizing(run_id)
+
+    def _roles_for_run(self, run_id):
+        return roles_for_profile(self.store.read_snapshot(run_id).metadata.get("research_profile", "classic"))
 
     def _finish_success(
         self,
@@ -728,6 +753,8 @@ class SingleRunManager:
             # read only committed artifacts and must never change the run's
             # completed terminal state.
             self._publish_thesis_diff(run_id, completed_at)
+        if request.research_profile == "catalyst_v1":
+            return
         try:
             from .debate_summary import schedule_debate_summary
 
@@ -968,7 +995,7 @@ class SingleRunManager:
         for actor_id, (status, event) in reduced.roles.items():
             if status != "running":
                 continue
-            role = next(role for role in ROLE_REGISTRY if role.actor_id == actor_id)
+            role = next(role for role in self._roles_for_run(run_id) if role.actor_id == actor_id)
             self.broker.publish(
                 RunEventDraft(
                     run_id,
@@ -999,7 +1026,7 @@ class SingleRunManager:
         for actor_id, (status, event) in reduced.roles.items():
             if status != "pending":
                 continue
-            role = next(role for role in ROLE_REGISTRY if role.actor_id == actor_id)
+            role = next(role for role in self._roles_for_run(run_id) if role.actor_id == actor_id)
             self.broker.publish(
                 RunEventDraft(
                     run_id,
@@ -1243,6 +1270,10 @@ def _request_from_snapshot(snapshot: RunSnapshot) -> AnalysisRequest:
         raise LegacyResumeNormalizationFailed(
             "company research snapshot unexpectedly includes holding context"
         )
+    from tradingagents.research.catalyst_evidence_policy import CatalystEvidencePolicyV1
+
+    profile = snapshot.metadata.get("research_profile", "classic")
+    policy_payload = snapshot.metadata.get("catalyst_policy")
     return AnalysisRequest(
         ticker=snapshot.ticker,
         analysis_date=snapshot.analysis_date,
@@ -1254,6 +1285,13 @@ def _request_from_snapshot(snapshot: RunSnapshot) -> AnalysisRequest:
         mode=mode,
         holding_context=holding_context,
         effective_config=config,
+        research_profile=profile,
+        research_question=snapshot.metadata.get("research_question"),
+        catalyst_policy=(
+            CatalystEvidencePolicyV1.model_validate(policy_payload)
+            if profile == "catalyst_v1" and policy_payload is not None
+            else None
+        ),
     )
 
 
@@ -1359,6 +1397,9 @@ def _default_runner_factory(
     request: AnalysisRequest,
     observer: DurableRunObserver,
 ) -> ManagedRunner:
+    if request.research_profile == "catalyst_v1":
+        from tradingagents.execution.catalyst_runner import CatalystRunner
+        return CatalystRunner(observer)
     from tradingagents.execution.runner import AnalysisRunner
     from tradingagents.graph.trading_graph import TradingAgentsGraph
 
@@ -1377,6 +1418,8 @@ def _default_checkpoint_guard_factory(
     request: AnalysisRequest,
     effective_config: Mapping[str, Any],
 ) -> Any:
+    if request.research_profile == "catalyst_v1":
+        return None
     from .fingerprint import FingerprintCheckpointGuard
 
     return FingerprintCheckpointGuard(
@@ -1394,6 +1437,16 @@ def _default_resume_preflight(
     runner_factory: RunnerFactory,
     guard_factory: CheckpointGuardFactory,
 ) -> Any:
+    if request.research_profile == "catalyst_v1":
+        from tradingagents.execution.catalyst_runner import (
+            CatalystResumeGuard,
+            validate_catalyst_resume,
+        )
+        try:
+            validate_catalyst_resume(store, snapshot.run_id, request)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise RunNotResumable("catalyst checkpoint missing, corrupt or incompatible") from exc
+        return CatalystResumeGuard()
     from tradingagents.execution.runner import AnalysisRunner, checkpoint_access
 
     from .fingerprint import CheckpointIncompatible
@@ -1473,6 +1526,10 @@ def _default_startup_reconciler(
     request: AnalysisRequest,
     observer: DurableRunObserver,
 ) -> None:
+    if request.research_profile == "catalyst_v1":
+        from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
+        load_checkpoint(observer.store, snapshot.run_id)
+        return
     from tradingagents.execution.runner import AnalysisRunner, checkpoint_access
 
     from .reconciliation import apply_reconciliation_plan, reconcile_checkpoint_frontier

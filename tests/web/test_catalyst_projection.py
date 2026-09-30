@@ -108,7 +108,7 @@ def _complete_case() -> CatalystResearchCase:
     return _case(run_id=RUN_ID, ticker=TICKER)
 
 
-def _write_raw_artifact(store: RunStore, run_id: str, payload: dict) -> None:
+def _write_raw_artifact(store: RunStore, run_id: str, payload: dict, *, status: str = "committed") -> None:
     """Store an artifact and record the event the graph would have recorded."""
     artifact = store.store_artifact(
         run_id, kind="catalyst-research-case-v1", value=payload
@@ -127,6 +127,7 @@ def _write_raw_artifact(store: RunStore, run_id: str, payload: dict) -> None:
                 "public_contract": "catalyst-research-case-v1",
                 "committed_sequence": 1,
             },
+            status=status,
         )
     )
 
@@ -167,6 +168,12 @@ def _checkpoint_draft(run_id: str) -> RunEventDraft:
 @pytest.fixture
 def store(tmp_path) -> RunStore:
     return RunStore(tmp_path / "runs")
+
+
+def test_uncommitted_case_event_is_never_a_readable_result(store):
+    _snapshot(store)
+    _write_raw_artifact(store, RUN_ID, _blocked_case().model_dump(mode="json"), status="candidate")
+    assert project_catalyst(store, RUN_ID)["state"] == "unavailable"
 
 
 # ---------------------------------------------------------------------------

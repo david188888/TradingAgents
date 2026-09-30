@@ -33,6 +33,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextvars import copy_context
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import Enum
@@ -52,6 +53,7 @@ from tradingagents.agents.schemas._catalyst_research import (
     SpecialistFinding,
 )
 from tradingagents.execution.budget import (
+    AttemptOutcome,
     BudgetBucket,
     BudgetLedger,
     BudgetLimitHit,
@@ -483,6 +485,13 @@ def _invoke_budgeted(
     agree; the parameter exists to make the *order* of claiming explicit
     rather than to change how much is charged.
     """
+    cached_result = getattr(ledger, "cached_result", None)
+    if callable(cached_result):
+        cached = cached_result(logical_call_id)
+        if cached is not None:
+            return cached
+    if reservation is None:
+        bucket = _resume_model_bucket(ledger, logical_call_id, bucket)
     granted = (
         reservation
         if reservation is not None
@@ -503,6 +512,9 @@ def _invoke_budgeted(
         )
         raise
     usage = result.get("usage") if isinstance(result, Mapping) else None
+    record_result = getattr(ledger, "record_result", None)
+    if callable(record_result):
+        record_result(logical_call_id, result)
     ledger.settle(
         granted,
         ok=True,
@@ -512,6 +524,19 @@ def _invoke_budgeted(
         usage_available=isinstance(usage, Mapping),
     )
     return result
+
+
+def _resume_model_bucket(ledger, logical_call_id, bucket):
+    # A repeated logical main call after an interrupted/failed dispatch is a
+    # network retry. It inherits the original spent unit and requires a new
+    # unit from the independent retry ceiling, not an extra free main call.
+    if bucket is BudgetBucket.MAIN_ANALYSIS and any(
+        record.logical_call_id == logical_call_id and record.dispatched_at is not None
+        and record.outcome in {AttemptOutcome.UNKNOWN, AttemptOutcome.FAILED}
+        for record in ledger.records()
+    ):
+        return BudgetBucket.NETWORK_RETRY
+    return bucket
 
 
 def render_specialist_prompt(view: SpecialistEvidenceView) -> str:
@@ -1163,7 +1188,11 @@ def execute_specialists(
         # blocking=True always returns True; the call is kept for its side
         # effect (holding the process-wide slot until release()), not its
         # result.
-        global_model_slots().acquire(blocking=True)
+        while not global_model_slots().acquire(timeout=0.1):
+            if cancel is not None and cancel():
+                if isinstance(grant, Reservation):
+                    ledger.release(grant, reason="cancelled_waiting_for_model_slot")
+                return SpecialistResult(role=role, status=RoleStatus.CANCELLED)
         try:
             return run_specialist(
                 role,
@@ -1203,8 +1232,11 @@ def execute_specialists(
             # happen, and would then hand the *next* role a refusal the serial
             # path never produces.
             continue
+        cached_result = getattr(ledger, "cached_result", None)
+        if callable(cached_result) and cached_result(f"specialist.{role}") is not None:
+            continue
         grants[role] = ledger.reserve(
-            BudgetBucket.MAIN_ANALYSIS,
+            _resume_model_bucket(ledger, f"specialist.{role}", BudgetBucket.MAIN_ANALYSIS),
             stage=f"specialist:{role}",
             logical_call_id=f"specialist.{role}",
         )
@@ -1215,7 +1247,7 @@ def execute_specialists(
         # A role absent from `grants` was skipped above for a reason that
         # makes run_specialist return before it would reserve, so handing it
         # the sentinel keeps it self-reserving and correct.
-        futures = [pool.submit(work, role, grants.get(role, _RESERVE_INTERNALLY)) for role in ROLE_ORDER]
+        futures = [pool.submit(copy_context().run, work, role, grants.get(role, _RESERVE_INTERNALLY)) for role in ROLE_ORDER]
         for future in futures:
             # Results are stored in submission order, not completion order, so
             # a role that finishes first cannot claim a slot in front of one
@@ -1250,7 +1282,7 @@ def build_process_state(
         RoleStatus.REFUSED,
         RoleStatus.CANCELLED,
     }
-    synthesis_failed = synthesis is None
+    synthesis_failed = synthesis is None or synthesis.rationale.startswith("code template;")
 
     hard = [
         code
@@ -1378,8 +1410,11 @@ def assemble_case(
                 # The precision and the evidence move together, because a
                 # "day" with no resolvable date evidence is the fabricated
                 # shape the schema exists to reject.
-                occurred_on=item.publication_date if resolvable else None,
-                date_precision="day" if resolvable else "unknown",
+                # A disclosure's publication day does not prove when the
+                # underlying business event occurred. The raw event contract
+                # supplies no occurrence date, so keep that date unknown.
+                occurred_on=None,
+                date_precision="unknown",
                 date_evidence_ids=tuple(item.evidence_ids) if resolvable else (),
             )
         )
@@ -1522,6 +1557,10 @@ def run_catalyst_research(
     def cancelled() -> bool:
         return cancel is not None and cancel()
 
+    journal = getattr(active_ledger, "journal", None)
+    if journal is not None:
+        journal.stage("specialists", "running")
+
     slots = execute_specialists(
         draft,
         caller=caller,
@@ -1530,6 +1569,10 @@ def run_catalyst_research(
         cancel=cancel,
     )
     findings = slots.merged_findings()
+    if journal is not None:
+        statuses = {result.role: "completed" if result.status in {RoleStatus.OK, RoleStatus.EMPTY} else "skipped" if result.status is RoleStatus.SKIPPED else "failed" for result in slots.ordered_results()}
+        journal.stage("specialists", "completed" if all(s == "completed" for s in statuses.values()) else "failed", role_statuses=statuses)
+        journal.stage("refutation", "running")
 
     if cancelled():
         # Design SS5.5: a late result from a cancelled run may finish, but it
@@ -1545,6 +1588,8 @@ def run_catalyst_research(
         run_id=request.run_id,
         cancel=cancel,
     )
+    if journal is not None:
+        journal.stage("refutation", "completed" if refutation.status is RoleStatus.OK else "failed")
     if cancelled():
         return _withheld_result(request, active_ledger, slots, "cancelled_before_synthesis")
 
@@ -1557,6 +1602,8 @@ def run_catalyst_research(
         brief_overflow=False,
         extra_reason_codes=extra_reason_codes,
     )
+    if journal is not None:
+        journal.stage("synthesis", "running")
     synthesis = run_synthesis(
         findings,
         refutation.challenges,
@@ -1620,6 +1667,8 @@ def run_catalyst_research(
         state,
         usage,
     )
+    if journal is not None:
+        journal.stage("synthesis", "failed" if state.synthesis_failed else "completed")
 
     if cancelled():
         return CatalystRunResult(

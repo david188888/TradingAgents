@@ -1,7 +1,7 @@
 # 催化研究真实接线与显式试用
 
 - 日期：2026-09-30。
-- 状态：用户已批准接线范围；本文是实现前设计，尚未实施。独立 spec reviewer 两轮审阅通过，待用户审阅书面设计。
+- 状态：独立 spec reviewer 两轮审阅通过，用户已批准书面设计；显式接线已实施。本文记录批准时设计，当前行为见[操作说明](../../operations/catalyst-research.md)，实测限制见[验收记录](../plans/2026-09-30-catalyst-wiring-acceptance.md)。
 - 基线：`main` @ `4f0fa11`，工作区干净。沿用 [原设计](2026-09-28-catalyst-research-redesign.md) 与 [最新交接](../plans/2026-09-29-engineering-handoff.md)，不重做 P0–P4。
 
 ## 1. 目标、范围与不变式

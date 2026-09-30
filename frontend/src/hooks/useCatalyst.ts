@@ -144,7 +144,7 @@ function readStages(caseBody: unknown): Pick<
   };
 }
 
-export function useCatalyst(runId: string | null): UseCatalystResult {
+export function useCatalyst(runId: string | null, progressRevision = ""): UseCatalystResult {
   const [revision, setRevision] = useState(0);
   const [value, setValue] = useState<CatalystState>(EMPTY);
   const runRef = useRef<string | null>(runId);
@@ -174,7 +174,7 @@ export function useCatalyst(runId: string | null): UseCatalystResult {
           state: next,
           brief,
           kase,
-          ...readStages(next.state === "ready" ? next.case : null),
+          ...readStages(next.state === "unsupported" ? null : next.stages ? next : next.state === "ready" ? next.case : null),
           loading: false,
           error: null,
         });
@@ -195,7 +195,7 @@ export function useCatalyst(runId: string | null): UseCatalystResult {
         });
       });
     return () => controller.abort();
-  }, [revision, runId]);
+  }, [revision, runId, progressRevision]);
 
   const refresh = useCallback((): void => setRevision((n) => n + 1), []);
 

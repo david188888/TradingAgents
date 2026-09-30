@@ -15,6 +15,7 @@ import { ResumableRunBar } from "../reader/ResumableRunBar";
 import { CatalystCasePage } from "../reader/CatalystCasePage";
 import { CatalystProgress } from "../reader/CatalystProgress";
 import { EvidenceDrawer } from "../reader/EvidenceDrawer";
+import { restoreFocus } from "../shared/drawerFocus";
 import { LegacyReader } from "../reader/LegacyReader";
 import { RunDisclosure } from "./RunDisclosure";
 import { DebateTimeline } from "../timeline/DebateTimeline";
@@ -84,7 +85,7 @@ export function WorkbenchLayout(): JSX.Element {
    * and the read is a plain GET of committed facts (no LLM, no data source), so
    * mounting it costs nothing.
    */
-  const catalyst = useCatalyst(run_id);
+  const catalyst = useCatalyst(run_id, JSON.stringify([state?.meta.catalyst_stages, state?.meta.status]));
 
   /**
    * Which contract produced this page. The completed page used to mount
@@ -98,6 +99,7 @@ export function WorkbenchLayout(): JSX.Element {
     runId: run_id,
     classicTerminal: view.view?.terminal === true,
     readState: catalyst.state,
+    profile: state?.meta.research_profile,
     loading: view.loading || catalyst.loading,
   });
 
@@ -127,7 +129,7 @@ export function WorkbenchLayout(): JSX.Element {
     setOpenRef(null);
     const trigger = catalystReturnFocusRef.current;
     catalystReturnFocusRef.current = null;
-    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    restoreFocus(trigger);
   };
 
   const handleCancelRun = async (): Promise<void> => {
@@ -366,7 +368,8 @@ export function WorkbenchLayout(): JSX.Element {
                bounded stages here, so a catalyst run in flight never shows a
                final research priority. */
             <>
-              <SwarmStatusCard state={state} streamStatus={stream.status} />
+              {state.meta.research_profile !== "catalyst_v1" && <SwarmStatusCard state={state} streamStatus={stream.status} />}
+              {state.meta.research_profile === "catalyst_v1" &&
               <CatalystProgress
                 progress={stageProgress}
                 state={screenState}
@@ -376,9 +379,11 @@ export function WorkbenchLayout(): JSX.Element {
                 onViewProcess={() => setLegacyLayer("process")}
                 onNewRun={() => selectRun(null)}
                 onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
-              />
-              <WorkflowMap onRoleSelected={handleRoleSelected} />
-              <RunDisclosure state={state} />
+              />}
+              {state.meta.research_profile !== "catalyst_v1" && <>
+                <WorkflowMap onRoleSelected={handleRoleSelected} />
+                <RunDisclosure state={state} />
+              </>}
             </>
           ) : view.view ? (
             view.view.view.run.status === "failed" ? (

@@ -122,6 +122,7 @@ export interface ConfigResponseDTO {
   checkpoint_available: boolean;
   wind: WindStatusDTO;
   defaults: ConfigDefaultsDTO;
+  research_profiles?: Partial<Record<ResearchProfile, { supported: boolean; reason: string | null }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +194,7 @@ export interface RunCreateRequestDTO {
    * rejected with a `CatalystRequestErrorCode` — never silently downgraded.
    */
   research_profile?: ResearchProfile;
+  research_question?: string | null;
   holding?: HoldingInputDTO;
   /** Legacy-only input. New clients must use holding instead. */
   portfolio?: PortfolioDTO | null;
@@ -1941,6 +1943,7 @@ export type CatalystUnavailableReason = "run_running" | "not_committed" | "missi
 export type CatalystUnsupportedReason = "classic_profile" | "unknown_profile";
 
 export interface CatalystReadyV1DTO {
+  stages?: Record<string, string>;
   state: "ready";
   schema_version: typeof CATALYST_ENDPOINT_VERSION;
   case_schema_version: typeof CATALYST_CASE_SCHEMA_VERSION;
@@ -1960,6 +1963,7 @@ export interface CatalystReadyV1DTO {
 }
 
 export interface CatalystUnavailableV1DTO {
+  stages?: Record<string, string>;
   state: "unavailable";
   schema_version: typeof CATALYST_ENDPOINT_VERSION;
   run_id: string;

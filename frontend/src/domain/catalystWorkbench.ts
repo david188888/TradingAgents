@@ -753,7 +753,7 @@ export function catalystScreenState(input: CatalystScreenInput): CatalystScreenS
       id: "cancelled_or_interrupted",
       title: input.run_status === "cancelled" ? "本次运行已取消" : "本次运行已中断",
       body: "这不是一次完整结果。已提交的资料只能作为研究过程查看，不构成研究结论。",
-      actions: ["resume", "new_run", "view_process"],
+      actions: input.run_status === "interrupted" ? ["resume", "new_run", "view_process"] : ["new_run", "view_process"],
       tone: "limited",
     };
   }
@@ -954,6 +954,7 @@ export interface CatalystRoute {
 }
 
 export interface CatalystRouteInput {
+  profile?: ResearchProfile;
   runId: string | null;
   /** True once the run has a terminal projection on the classic path. */
   classicTerminal: boolean;
@@ -984,7 +985,7 @@ export function catalystRoute(input: CatalystRouteInput): CatalystRoute {
     // the two cases: a completed classic run is a legacy record whatever the
     // catalyst read says, while a run that is live or still loading has
     // nothing to show and belongs to the progress surface.
-    if (input.classicTerminal) return { kind: "legacy", layer: "summary" };
+    if (input.classicTerminal && input.profile !== "catalyst_v1") return { kind: "legacy", layer: "summary" };
     return { kind: "live", layer: null };
   }
   // Order matters here, and the order is not arbitrary. A `catalyst_v1` run
@@ -998,7 +999,7 @@ export function catalystRoute(input: CatalystRouteInput): CatalystRoute {
   // stops the page from reaching for a classic summary and presenting it as a
   // research conclusion.
   if (state.state === "unsupported") return { kind: "legacy", layer: "summary" };
-  if (input.classicTerminal) return { kind: "legacy", layer: "summary" };
+  if (input.classicTerminal && input.profile !== "catalyst_v1") return { kind: "legacy", layer: "summary" };
   // `unavailable` on a non-terminal run: queued, running, or not yet
   // committed. The progress surface owns this; no summary, no priority.
   return { kind: "live", layer: null };

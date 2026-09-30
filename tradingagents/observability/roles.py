@@ -97,9 +97,23 @@ ROLE_REGISTRY: tuple[RoleDefinition, ...] = (
 ROLES_BY_ACTOR_ID = {role.actor_id: role for role in ROLE_REGISTRY}
 ROLES_BY_NODE_ID = {role.node_id: role for role in ROLE_REGISTRY}
 
+# The classic registry and its projections retain their exact membership.
+CATALYST_ROLE_REGISTRY = tuple(
+    RoleDefinition(f"catalyst.{key}", key, "catalyst", label, "verified-magnifier")
+    for key, label in (
+        ("evidence", "Evidence freeze"), ("catalyst_events", "Catalyst events"),
+        ("operating_delivery", "Operating delivery"), ("market_reaction", "Market reaction"),
+        ("refutation", "Independent refutation"), ("synthesis", "Synthesis"),
+    )
+)
+
+
+def roles_for_profile(profile: str = "classic") -> tuple[RoleDefinition, ...]:
+    return CATALYST_ROLE_REGISTRY if profile == "catalyst_v1" else ROLE_REGISTRY
+
 
 def role_instance_id(run_id: str, actor_id: str) -> str:
-    if actor_id not in ROLES_BY_ACTOR_ID:
+    if actor_id not in ROLES_BY_ACTOR_ID and actor_id not in {role.actor_id for role in CATALYST_ROLE_REGISTRY}:
         raise KeyError(f"unknown TradingAgents actor_id: {actor_id}")
     if not run_id:
         raise ValueError("run_id is required")

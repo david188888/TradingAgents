@@ -57,8 +57,9 @@ describe("T27 — the default catalyst form shows exactly four inputs", () => {
     render(<CatalystForm {...baseProps()} />);
 
     expect(screen.getByLabelText("公司")).toBeInTheDocument();
-    expect(screen.getByLabelText("起")).toBeInTheDocument();
-    expect(screen.getByLabelText("止")).toBeInTheDocument();
+    expect(screen.getByLabelText("研究截止日")).toBeInTheDocument();
+    expect(screen.getByText(/84 天/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "近 90 天" })).toBeNull();
     expect(screen.getByLabelText("研究问题（可选）")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始研究" })).toBeInTheDocument();
 
@@ -91,7 +92,7 @@ describe("T27 — profile switch shows the effective-config summary", () => {
     const summary = screen.getByTestId("catalyst-effective-config");
     expect(summary).toBeInTheDocument();
     expect(summary.textContent).toContain("准备证据 → 专项分析 → 反证核验 → 综合发布");
-    expect(summary.textContent).toContain("3 轮");
+    expect(summary.textContent).toContain("三个专项 → 单次反证 → 单次综合");
     expect(summary.textContent).toContain("gpt-4o-mini");
     expect(summary.textContent).toContain("gpt-4o");
     expect(summary.textContent).toContain("已支持");
@@ -130,12 +131,11 @@ describe("T27 — window presets and start gating", () => {
   it("applies a preset as a start/end pair through onWindowChange, not a hidden field", () => {
     const onWindowChange = vi.fn();
     render(<CatalystForm {...baseProps({ onWindowChange })} />);
-    fireEvent.click(screen.getByRole("button", { name: "近 90 天" }));
+    fireEvent.change(screen.getByLabelText("研究截止日"), { target: { value: "2026-09-30" } });
     expect(onWindowChange).toHaveBeenCalledTimes(1);
     const [start, end] = onWindowChange.mock.calls[0] as [string, string];
-    expect(start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(end).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(start < end).toBe(true);
+    expect(start).toBe("");
+    expect(end).toBe("2026-09-30");
   });
 
   it("disables start when the ticker is blank, even though the profile is supported", () => {

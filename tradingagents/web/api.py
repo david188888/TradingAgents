@@ -852,7 +852,7 @@ def _analysis_request(
             "The selected LLM provider is not configured on this local server.",
             fields=("llm_provider",),
         )
-    if body.checkpoint_enabled and not checkpoint_available:
+    if body.checkpoint_enabled and not checkpoint_available and body.research_profile != "catalyst_v1":
         raise ApiBoundaryError(
             422,
             "checkpoint_unavailable",
@@ -908,6 +908,7 @@ def _analysis_request(
             effective_config=effective_config,
             research_profile=research_profile,
             catalyst_policy=catalyst_policy,
+            research_question=body.research_question,
         ),
         configured_keys,
     )
@@ -1340,6 +1341,11 @@ def _configuration_payload(
         "depths": list(RESEARCH_DEPTHS),
         "output_languages": list(SUPPORTED_OUTPUT_LANGUAGES),
         "checkpoint_available": checkpoint_available,
+        "research_profiles": {
+            "classic": {"supported": True, "reason": None},
+            "catalyst_v1": {"supported": catalyst_profile_enabled(),
+                "reason": None if catalyst_profile_enabled() else "此服务尚未启用催化研究试用"},
+        },
         "wind": {
             "enabled": bool(DEFAULT_CONFIG.get("wind_enabled", False)),
             "configured": bool(environment.get("WIND_API_KEY")),

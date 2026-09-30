@@ -42,6 +42,7 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [Research package interoperability](operations/research-package-interoperability.md): external Agent consumption contract over the public research-package and reader fact layer.
 - [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
 - [Web batch analysis](operations/web-batch-analysis.md): 1-8 company batch research, global FIFO scheduler, concurrency, lifecycle, and notification limits.
+- [Catalyst trial operations](operations/catalyst-research.md): explicit entry, qualification limits, budgets, recovery and read semantics.
 
 ## Integrations
 
@@ -57,7 +58,8 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 
 These are execution proposals, not descriptions of current runtime behavior.
 
-- [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): approved product direction, single-column workbench layout, bounded agent workflow, data-source evaluation, implementation checklist, compatibility, and acceptance criteria. Product implementation is pending.
+- [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): original product direction and evaluation criteria. The explicit Web path is wired; default switching and batch quality evaluation remain separate decisions.
+- [Wiring design](superpowers/specs/2026-09-30-catalyst-production-wiring-design.md) and [acceptance record](superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md): approved scope and verification evidence.
 
 ## Historical / Archive
 

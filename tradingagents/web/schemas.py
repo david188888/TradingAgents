@@ -102,6 +102,16 @@ class RunCreateRequest(BaseModel):
     # is rejected with a readable error by the compatibility layer below; it is
     # never silently downgraded.
     research_profile: ResearchProfile = "classic"
+    research_question: str | None = Field(default=None, max_length=400)
+
+    @model_validator(mode="after")
+    def validate_question_profile(self) -> RunCreateRequest:
+        if self.research_question:
+            if self.research_profile != "catalyst_v1":
+                raise ValueError("research_question requires catalyst_v1")
+        elif self.research_question is not None:
+            self.research_question = None
+        return self
 
     @field_validator("ticker")
     @classmethod

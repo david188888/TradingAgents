@@ -35,29 +35,11 @@ export interface CatalystFormProps {
   error: string | null;
 }
 
-const WINDOW_PRESETS: ReadonlyArray<{ id: string; label: string; days: number }> = [
-  { id: "30d", label: "近 30 天", days: 30 },
-  { id: "90d", label: "近 90 天", days: 90 },
-  { id: "180d", label: "近 180 天", days: 180 },
-  { id: "365d", label: "近 1 年", days: 365 },
-];
-
-function isoDaysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function CatalystForm({
   profile,
   onProfileChange,
   ticker,
   onTickerChange,
-  windowStart,
   windowEnd,
   onWindowChange,
   researchQuestion,
@@ -103,8 +85,8 @@ export function CatalystForm({
               <dd>{effective.stages.join(" → ")}</dd>
             </div>
             <div>
-              <dt>研究深度</dt>
-              <dd>{effective.researchDepth} 轮</dd>
+              <dt>流程</dt>
+              <dd>三个专项 → 单次反证 → 单次综合</dd>
             </div>
             <div>
               <dt>模型</dt>
@@ -139,42 +121,21 @@ export function CatalystForm({
               type="text"
               value={ticker}
               onChange={(event) => onTickerChange(event.target.value)}
-              placeholder="如 600519 / AAPL"
+              placeholder="如 600519（A 股普通股票）"
             />
           </div>
 
           <div className="input-group">
-            <label htmlFor="catalyst-window">研究窗口</label>
-            <div className="catalyst-window-presets">
-              {WINDOW_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className="catalyst-window-preset"
-                  onClick={() =>
-                    onWindowChange(isoDaysAgo(preset.days), todayIso())
-                  }
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
+            <label htmlFor="catalyst-window-end">研究截止日</label>
             <div className="catalyst-window-range">
-              <label htmlFor="catalyst-window-start">起</label>
-              <input
-                id="catalyst-window-start"
-                type="date"
-                value={windowStart}
-                onChange={(event) => onWindowChange(event.target.value, windowEnd)}
-              />
-              <label htmlFor="catalyst-window-end">止</label>
               <input
                 id="catalyst-window-end"
                 type="date"
                 value={windowEnd}
-                onChange={(event) => onWindowChange(windowStart, event.target.value)}
+                onChange={(event) => onWindowChange("", event.target.value)}
               />
             </div>
+            <small>展望：自截止日起未来最多 12 周（84 天）。只使用截止时已公开的证据。</small>
           </div>
 
           <div className="input-group">
@@ -186,7 +147,7 @@ export function CatalystForm({
               onChange={(event) => onResearchQuestionChange(event.target.value)}
               placeholder="留空则由流程自行选择最值得验证的问题。"
             />
-            <small>问题会随本次运行记录。留空不会降低证据标准，只是没有指定切入点。</small>
+            <small>问题会随本次运行记录。{Array.from(researchQuestion.trim()).length}/400 字符。</small>
           </div>
         </>
       ) : null}

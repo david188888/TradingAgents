@@ -1317,6 +1317,8 @@ class AnalysisRunner:
         *,
         checkpoint_run_id: str | None,
     ) -> None:
+        if request.research_profile != "classic":
+            raise ValueError("the classic graph runner cannot execute catalyst_v1; use CatalystRunner")
         owner = self.owner
         if checkpoint_run_id is not None and not request.effective_config:
             raise ValueError("checkpointed web runs require complete effective_config")

@@ -71,6 +71,7 @@ class CatalystUnavailableV1(_ReadModel):
     run_status: str
     reason_code: str
     reason_codes: tuple[str, ...] = ()
+    stages: dict[str, str] = Field(default_factory=dict)
 
 
 class CatalystUnsupportedV1(_ReadModel):
@@ -105,6 +106,7 @@ class CatalystReadyV1(_ReadModel):
     limitations: tuple[str, ...] = ()
     brief_character_count: int = Field(ge=0)
     case: dict[str, Any]
+    stages: dict[str, str] = Field(default_factory=dict)
 
 
 def project_catalyst(store: RunStore, run_id: str) -> dict[str, Any]:
@@ -128,6 +130,11 @@ def project_catalyst(store: RunStore, run_id: str) -> dict[str, Any]:
         ).model_dump(mode="json")
 
     events = store.read_events(run_id)
+    stages = next((dict(e.payload["catalyst_stages"]) for e in reversed(events)
+        if e.type == "artifact.written" and e.status == "committed"
+        and isinstance(e.payload.get("catalyst_stages"), dict)), {})
+    if snapshot.status in {"failed", "cancelled", "interrupted"}:
+        stages = {key: snapshot.status if value == "running" else value for key, value in stages.items()}
     artifact_id = _latest_catalyst_artifact(events)
     if artifact_id is None:
         reason = "run_running" if snapshot.status not in _TERMINAL_STATUSES else "missing"
@@ -137,6 +144,7 @@ def project_catalyst(store: RunStore, run_id: str) -> dict[str, Any]:
             run_status=snapshot.status,
             reason_code=reason,
             reason_codes=(reason,),
+            stages=stages,
         ).model_dump(mode="json")
 
     try:
@@ -176,6 +184,7 @@ def project_catalyst(store: RunStore, run_id: str) -> dict[str, Any]:
         limitations=_limitation_texts(case),
         brief_character_count=case.brief.character_count,
         case=case.model_dump(mode="json"),
+        stages=stages,
     ).model_dump(mode="json")
 
 
@@ -202,7 +211,7 @@ def _latest_catalyst_artifact(events) -> str | None:
     """Return the highest committed_sequence catalyst artifact id."""
     best: tuple[int, str] | None = None
     for event in events:
-        if event.type != "artifact.written":
+        if event.type != "artifact.written" or event.status != "committed":
             continue
         payload = event.payload
         if payload.get("public_contract") != CATALYST_CONTRACT:

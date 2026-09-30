@@ -104,6 +104,7 @@ class AnalysisRequest:
     # horizon-policy-v2; "catalyst_v1" runs the bounded research flow under
     # catalyst-evidence-policy-v1. Omission is "classic".
     research_profile: ResearchProfile = "classic"
+    research_question: str | None = None
     # Frozen evidence policy parameters for catalyst_v1. None for classic,
     # which keeps horizon-policy-v2 and must not carry this bundle.
     #
@@ -155,6 +156,16 @@ class AnalysisRequest:
         if self.mode == "holding_review" and self.holding_context is None:
             raise ValueError("holding_review requires holding_context")
         profile = normalize_research_profile(self.research_profile)
+        question = self.research_question
+        if question is not None:
+            if not isinstance(question, str):
+                raise ValueError("research_question must be a string")
+            question = question.strip() or None
+            if question is not None and len(question) > 400:
+                raise ValueError("research_question cannot exceed 400 characters")
+            if question is not None and profile == CLASSIC_PROFILE:
+                raise ValueError("research_question requires catalyst_v1")
+            object.__setattr__(self, "research_question", question)
         if profile not in PROFILE_POLICY_VERSIONS:
             raise ValueError(f"unsupported research profile: {profile}")
         if profile == CATALYST_V1_PROFILE and self.catalyst_policy is None:
@@ -207,6 +218,7 @@ class AnalysisRequest:
         }
         if self.catalyst_policy is not None:
             identity["catalyst_policy"] = self.catalyst_policy.as_identity()
+        identity["research_question"] = self.research_question
         return identity
 
 

@@ -14,6 +14,30 @@
  * and `overflow-wrap: anywhere` on the text.
  */
 
+.catalyst-form textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-input);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.catalyst-form textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.catalyst-form .input-group small {
+  display: block;
+  margin-top: var(--sp-1);
+  color: var(--muted);
+}
+
 /* --------------------------------------------------------------------------
    The brief
    -------------------------------------------------------------------------- */
