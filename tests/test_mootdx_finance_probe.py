@@ -177,3 +177,38 @@ def test_finance_and_f10_adapters_request_the_finance_class(monkeypatch):
     mootdx_provider.get_a_share_f10("600519.SH")
 
     assert seen == ["finance", "finance"]
+
+
+def test_f10_reports_a_category_the_server_no_longer_serves(monkeypatch):
+    """A dead category must not read as "this company has nothing to report"."""
+    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda **kw: _SplitClient())
+
+    with pytest.raises(ChinaDataUnavailableError, match="no longer serves"):
+        mootdx_provider.get_a_share_f10("600519.SH", "财务分析")
+
+
+def test_f10_refuses_to_render_a_non_text_reply(monkeypatch):
+    """mootdx returns a dict for a missing category; rendering its repr would lie."""
+
+    class _DictReplyClient(_SplitClient):
+        def F10(self, symbol="000001", name="最新提示"):
+            self.calls.append("F10")
+            return {"error": "no such category"}
+
+    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda **kw: _DictReplyClient())
+
+    with pytest.raises(ChinaDataUnavailableError, match="instead of text"):
+        mootdx_provider.get_a_share_f10("600519.SH")
+
+
+def test_f10_still_works_when_the_category_list_is_unavailable(monkeypatch):
+    """F10C is advisory: a server that will not list categories must not block F10."""
+
+    class _NoListClient(_SplitClient):
+        def F10C(self, symbol="000001"):
+            raise RuntimeError("F10C unsupported")
+
+    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda **kw: _NoListClient())
+    monkeypatch.setattr(mootdx_provider, "_capture_vendor_raw", lambda *a, **kw: None)
+
+    assert "最新提示正文" in mootdx_provider.get_a_share_f10("600519.SH")

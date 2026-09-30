@@ -304,23 +304,60 @@ def get_fundamentals_mootdx(ticker: str, curr_date: str | None = None) -> str:
     ])
 
 
+def _available_f10_categories(client: Any) -> list[str] | None:
+    """The categories this server actually serves, or None if it will not say.
+
+    a-stock-data v3.9.0 §6.2: the F10 category set shrank server-side (2026-09
+    leaves only 「最新提示」), so requesting a category that no longer exists
+    cannot be told apart from "this company has nothing to report" by the reply
+    alone.  The category list is advisory: a server that refuses to answer the
+    ``F10C`` probe must not turn a working F10 call into a failure.
+    """
+    try:
+        listing = client.F10C(symbol="000001")
+    except Exception:
+        return None
+    if not isinstance(listing, (list, tuple)):
+        return None
+    names = [item.get("name") for item in listing if isinstance(item, dict)]
+    return [name for name in names if isinstance(name, str) and name]
+
+
 def get_a_share_f10(ticker: str, category: str = "最新提示") -> str:
     """Return a bounded mootdx F10 company-information section.
 
     Validated with ``check='finance'`` for the same reason as
-    :func:`get_fundamentals_mootdx` (a-stock-data #52).  Note that since
-    2026-09 TDX only serves the 「最新提示」 category; the other categories are
-    still accepted here but will come back empty and raise.
+    :func:`get_fundamentals_mootdx` (a-stock-data #52).  Since 2026-09 TDX only
+    serves the 「最新提示」 category, so an unavailable category is reported as
+    such instead of returning an empty section that reads like "nothing to
+    report".  A non-string reply is a schema change, never text to render.
     """
     allowed = {"最新提示", "公司概况", "财务分析", "股东研究", "股本结构", "资本运作", "业内点评", "行业分析", "公司大事"}
     if category not in allowed:
         raise ValueError(f"unsupported F10 category: {category}")
     code = _a_share_code(ticker)
     client = tdx_client(check=_TDX_CHECK_FINANCE)
+
+    served = _available_f10_categories(client)
+    if served is not None and category not in served:
+        raise ChinaDataUnavailableError(
+            f"mootdx F10 no longer serves {category!r} for {code}; the server "
+            f"currently offers {served}. Since 2026-09 the public TDX servers "
+            "answer only 「最新提示」."
+        )
+
     try:
-        text = str(client.F10(symbol=code, name=category) or "").strip()
+        raw = client.F10(symbol=code, name=category)
     except Exception as exc:
         raise ChinaDataUnavailableError(f"mootdx F10 failed for {code}: {type(exc).__name__}") from exc
+    if raw is not None and not isinstance(raw, str):
+        # mootdx returns a dict when the category does not exist; stringifying it
+        # would render a Python repr as if it were company disclosure.
+        raise ChinaDataUnavailableError(
+            f"mootdx F10 returned {type(raw).__name__} instead of text for {code}/{category}; "
+            "the category is probably gone."
+        )
+    text = (raw or "").strip()
     if not text:
         raise ChinaDataUnavailableError(f"mootdx returned no F10 text for {code}/{category}.")
     from tradingagents.observability.provenance import capture_vendor_raw
