@@ -75,7 +75,12 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
         <h4>挑战</h4><p>{challenge.statement}</p><p>拟核查：{challenge.proposed_test}</p>
       </article>)}
       {record.verifications.map((verification) => <article key={verification.verification_id}>
-        <h4>验证执行 · {VERIFICATION_LABELS[verification.status]}</h4><p>{verification.result}</p>
+        <h4>{verification.scope === "predicate_only" ? "条件核查" : "验证执行"} · {VERIFICATION_LABELS[verification.status]}</h4>
+        {verification.scope === "predicate_only" ? <>
+          <p>核查条件：{verification.condition_text}</p>
+          <p className="record-meta">仅核查指定条件，不证明整条假设，也不自动关闭挑战。</p>
+        </> : null}
+        <p>{verification.result}</p>
       </article>)}
       <h4>保存的来源内容</h4>
       {record.evidence.map((evidence) => <details key={evidence.evidence_id} className="record-evidence">

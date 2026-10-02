@@ -118,8 +118,12 @@ holding and catalyst cases into source content, claims, hypotheses, challenges,
 verification records and metrics. It checks artifact and source-case integrity;
 historical absence remains explicit, without backfill. Current adapters label
 inferences as converted and never treat model dispositions as executed tool
-verification. No independent verification executor or default-flow migration
-is implied. See [the contract](docs/contracts/research-record.md).
+verification. `execution/verification_executor.py` separately provides a
+programmatic bounded round for native V0 records in all three modes. It uses
+the existing durable ledger, saves predicate-scoped results and V1 lineage,
+and replays saved output without work. Production graphs do not call it;
+native publication and default-flow migration remain separate. See
+[the contract](docs/contracts/research-record.md).
 `frontend/src/api/contracts.ts` is the TypeScript facade for those wire
 contracts. The client consumes server-projected data; it does not define the
 domain schema or recover unavailable evidence by making provider calls.

@@ -110,7 +110,7 @@ export interface ResearchRecordV1DTO {
   claims: Array<{ claim_id: string; kind: "fact" | "inference" | "unknown"; statement: string; evidence_ids: string[]; supporting_fact_ids: string[]; limitations: string[] }>;
   hypotheses: Array<{ hypothesis_id: string; claim_id: string; input_snapshot_id: string; origin: "hypothesis_stage" | "adapted_inference"; assumptions: string[]; invalidation_conditions: string[]; limitations: string[] }>;
   challenges: Array<{ challenge_id: string; target_claim_ids: string[]; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; evidence_ids: string[]; proposed_test: string; reported_disposition: string | null }>;
-  verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string }>;
+  verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string; scope?: "unspecified" | "predicate_only"; hypothesis_id?: string | null; plan_sha256?: string | null; condition_role?: "necessary" | "invalidation" | null; condition_text?: string | null }>;
   metrics: QuantitativeMetricV1DTO[];
   limitations: string[];
 }

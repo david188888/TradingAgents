@@ -37,4 +37,19 @@ describe("saved research records", () => {
     expect(screen.getByText("来源内容未保存")).toBeInTheDocument();
     expect(screen.getByText(/无法展示原文/)).toBeInTheDocument();
   });
+
+  it("limits a numeric result to its specified condition", () => {
+    const verified = { ...response, record: { ...record, verifications: [{
+      verification_id: "check", challenge_id: "challenge", input_snapshot_id: "v0", output_snapshot_id: "v1",
+      method: "calculation" as const, status: "supports" as const, evidence_ids: ["derived"],
+      executed_at: "2026-09-30T00:00:00Z", result: "指定条件满足",
+      scope: "predicate_only" as const, hypothesis_id: "hypothesis", plan_sha256: "a".repeat(64),
+      condition_role: "necessary" as const, condition_text: "同期收入增长超过 10%",
+    }] } };
+    render(<ResearchRecordSection runId={record.run_id} response={verified} loading={false} error={false} />);
+    expect(screen.getByText("条件核查 · 支持")).toBeInTheDocument();
+    expect(screen.getByText(/核查条件：同期收入增长超过 10%/)).toBeInTheDocument();
+    expect(screen.getByText(/不证明整条假设，也不自动关闭挑战/)).toBeInTheDocument();
+    expect(screen.queryByText(/验证执行 · 支持/)).toBeNull();
+  });
 });

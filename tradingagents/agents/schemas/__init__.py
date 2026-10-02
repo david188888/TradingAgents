@@ -109,3 +109,11 @@ from ._sentiment import (  # noqa: F401  - facade re-export
     SentimentReport,
     render_sentiment_report,
 )
+from ._verification_plan import (  # noqa: F401 - facade re-export
+    FinancialConditionV1,
+    FinancialOperandV1,
+    MetricConditionV1,
+    NumericPredicateV1,
+    VerificationPlanV1,
+    VerificationTaskV1,
+)

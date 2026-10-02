@@ -147,6 +147,11 @@ class VerificationRecordV1(_RecordModel):
     evidence_ids: tuple[str, ...] = ()
     executed_at: datetime
     result: str = Field(min_length=1, max_length=1200)
+    scope: Literal["unspecified", "predicate_only"] = "unspecified"
+    hypothesis_id: str | None = Field(default=None, min_length=1, max_length=512)
+    plan_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    condition_role: Literal["necessary", "invalidation"] | None = None
+    condition_text: str | None = Field(default=None, min_length=1, max_length=1200)
 
     @model_validator(mode="after")
     def execution_requires_a_basis(self):
@@ -154,6 +159,11 @@ class VerificationRecordV1(_RecordModel):
             raise ValueError("verification execution requires a timezone")
         if self.status in {"supports", "contradicts"} and not self.evidence_ids:
             raise ValueError("a conclusive verification requires evidence")
+        binding = (self.hypothesis_id, self.plan_sha256, self.condition_role, self.condition_text)
+        if self.scope == "predicate_only" and not all(binding):
+            raise ValueError("predicate verification requires hypothesis and condition binding")
+        if self.scope == "unspecified" and any(binding):
+            raise ValueError("condition binding requires an explicit predicate scope")
         return self
 
 
@@ -219,7 +229,7 @@ class ResearchRecordV1(_RecordModel):
         evidence = index(self.evidence, "evidence_id")
         claims = index(self.claims, "claim_id")
         snapshots = index(self.snapshots, "snapshot_id")
-        index(self.hypotheses, "hypothesis_id")
+        hypotheses = index(self.hypotheses, "hypothesis_id")
         challenges = index(self.challenges, "challenge_id")
         index(self.verifications, "verification_id")
         index(self.metrics, "metric_id")
@@ -267,6 +277,18 @@ class ResearchRecordV1(_RecordModel):
             refs(verification.evidence_ids, set(snapshots[verification.output_snapshot_id].evidence_ids))
             if verification.status in {"supports", "contradicts"} and any(evidence[eid].availability != "available" for eid in verification.evidence_ids):
                 raise ValueError("unavailable evidence cannot resolve verification")
+            if verification.scope == "predicate_only":
+                hypothesis = hypotheses.get(verification.hypothesis_id)
+                challenge = challenges[verification.challenge_id]
+                if hypothesis is None or hypothesis.origin != "hypothesis_stage" or hypothesis.input_snapshot_id != verification.input_snapshot_id:
+                    raise ValueError("predicate verification requires a native input hypothesis")
+                if challenge.target_claim_ids != (hypothesis.claim_id,):
+                    raise ValueError("predicate verification must target exactly its hypothesis")
+                conditions = hypothesis.assumptions if verification.condition_role == "necessary" else hypothesis.invalidation_conditions
+                if verification.condition_text not in conditions:
+                    raise ValueError("verification condition is not saved in hypothesis")
+                if verification.condition_role == "invalidation" and verification.status == "supports":
+                    raise ValueError("absence of an invalidation cannot prove a hypothesis")
         for metric in self.metrics:
             refs(metric.input_evidence_ids, evidence.keys())
             if metric.window_end and metric.window_end > self.analysis_date:

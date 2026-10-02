@@ -65,6 +65,8 @@ The four analysts can be selected and ordered; the subsequent convergence path i
 
 New committed company, holding and catalyst cases also publish a [shared research record](docs/contracts/research-record.md). The Reader exposes saved source content and qualified catalyst price statistics. Converted inferences remain explicitly unverified; historical reports are not backfilled, and the default workflow remains classic.
 
+Native research records can use a programmatic bounded verification executor to check saved financial fields or metric thresholds with the existing durable budget. Results resolve only the specified condition. Production workflows do not call this executor yet; see the [shared record contract](docs/contracts/research-record.md).
+
 ## Quick start
 
 Python 3.10 or newer is required. Configure an API key for your chosen LLM provider and any optional data or news services you use; the default LLM provider is DeepSeek. Keep credentials in the ignored local files.

@@ -31,7 +31,7 @@ For any question about current behavior:
 - [Contract index](contracts/README.md): canonical Python, runtime, web, and frontend sources, plus change propagation rules.
 - [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
 - [Local price statistics](contracts/local-price-statistics.md): deterministic return-risk/ATR methods and frozen price evidence, separate from valuation.
-- [Shared research record](contracts/research-record.md): additive evidence/hypothesis/verification/metric contract for company, holding and catalyst research, including read-only Reader integration and compatibility limits.
+- [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, programmatic bounded condition verification, read-only Reader integration and production compatibility limits.
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.
 
@@ -70,6 +70,7 @@ These are execution proposals, not descriptions of current runtime behavior.
 
 - [Legacy learning-research composite](archive/legacy/learning-research-reader-2026-08-13.md): frozen historical reference for the learning research / Reader path and its implementation records.
 - [a-stock-data v3.10.0 branch handoff](superpowers/plans/2026-09-30-a-stock-data-v310-sync.md) and [research/data integration acceptance](superpowers/plans/2026-10-02-research-data-integration-acceptance.md): retained branch history, local merge, compatibility fixes, validation and remaining research migration work.
+- [Bounded verification design](superpowers/specs/2026-10-02-bounded-verification-design.md), [implementation](superpowers/plans/2026-10-02-bounded-verification-implementation.md) and [acceptance](superpowers/plans/2026-10-02-bounded-verification-acceptance.md): C1 programmatic execution, predicate semantics, durable recovery and validation; production C2 migration remains separate.
 - [Research data integrity design](archive/designs/2026-08-13-research-data-integrity-design.md): frozen design, implemented.
 - [Research data integrity plan](archive/plans/2026-08-13-research-data-integrity-plan.md): archived implementation plan, completed.
 - [Wind A-share integration plan](archive/plans/2026-08-12-wind-a-share-integration-plan.md): archived research and implementation plan for the Wind integration.
