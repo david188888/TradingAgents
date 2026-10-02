@@ -14,6 +14,19 @@ working while new code imports directly from this module.
 
 import logging
 
+from .a_share_events import (
+    get_a_share_earnings_forecast,
+    get_a_share_equity_pledge,
+    get_a_share_institution_survey,
+    get_a_share_ipo_calendar,
+    get_a_share_share_buyback,
+    get_a_share_st_stock_list,
+)
+from .a_share_official import (
+    get_a_share_margin_trading_backup,
+    get_a_share_sse_e_interaction,
+    get_a_share_trading_calendar,
+)
 from .a_stock_v37 import (
     get_a_share_adjust_factors,
     get_a_share_chip_distribution,
@@ -108,11 +121,19 @@ from .index_provider import (
 from .mootdx_provider import get_a_share_f10, get_fundamentals_mootdx, get_stock_mootdx
 from .option_provider import get_a_share_option_greeks, get_a_share_option_tquote
 from .sentiment_provider import get_a_share_hot_concept, get_a_share_hot_list
+from .sina_research import get_sina_research_reports
 from .tavily_news import (
     get_global_news_tavily,
     get_news_tavily,
 )
-from .tencent_kline import get_a_share_kline, get_a_share_kline_qfq
+from .tencent_kline import (
+    get_a_share_kline,
+    get_a_share_kline_monthly,
+    get_a_share_kline_monthly_qfq,
+    get_a_share_kline_qfq,
+    get_a_share_kline_weekly,
+    get_a_share_kline_weekly_qfq,
+)
 from .tencent_provider import get_a_share_valuation
 from .wind_provider import (
     get_equity_risk_metrics as get_wind_equity_risk_metrics,
@@ -196,8 +217,15 @@ TOOLS_CATEGORIES = {
     # bars and get a typed `unavailable` when the vendor cannot serve them,
     # instead of a raw frame wearing a qfq label.
     "a_share_kline": {
-        "description": "A-share daily bars via Tencent, raw and forward-adjusted as separate capabilities",
-        "tools": ["get_a_share_kline", "get_a_share_kline_qfq"],
+        "description": "A-share daily/weekly/monthly bars via Tencent, raw and forward-adjusted as separate capabilities",
+        "tools": [
+            "get_a_share_kline",
+            "get_a_share_kline_qfq",
+            "get_a_share_kline_weekly",
+            "get_a_share_kline_weekly_qfq",
+            "get_a_share_kline_monthly",
+            "get_a_share_kline_monthly_qfq",
+        ],
     },
     "a_share_research": {
         "description": "A-share research reports and consensus EPS forecast",
@@ -270,6 +298,26 @@ TOOLS_CATEGORIES = {
             "get_china_pmi",
         ],
     },
+    "a_share_event_data": {
+        "description": "a-stock-data v3.9.0 event-driven layer: earnings forecasts, institution surveys, buybacks, equity pledges, IPO calendar",
+        "tools": [
+            "get_a_share_earnings_forecast",
+            "get_a_share_institution_survey",
+            "get_a_share_share_buyback",
+            "get_a_share_equity_pledge",
+            "get_a_share_ipo_calendar",
+        ],
+    },
+    "a_share_official_extras": {
+        "description": "a-stock-data v3.9.0 gap-fill sources: ST roster, official trading calendar, exchange margin-trading backup, SSE e-interaction, Sina research-report list",
+        "tools": [
+            "get_a_share_st_stock_list",
+            "get_a_share_trading_calendar",
+            "get_a_share_margin_trading_backup",
+            "get_a_share_sse_e_interaction",
+            "get_a_share_research_reports_sina",
+        ],
+    },
     "a_share_telegraph": {
         "description": "CLS telegraph capability; unavailable unless a reviewed signer is configured",
         "tools": ["get_cls_telegraph"],
@@ -300,6 +348,11 @@ VENDOR_LIST = [
     "swsresearch",
     "pbc",
     "nbs",
+    # Official Shenzhen exchange endpoints (trading calendar, margin data) and
+    # the SSE-operated 上证e互动 question platform.  Separate vendor keys so the
+    # router's health tracking stays on each source's own rate-limit plane.
+    "szse",
+    "sse_e",
 ]
 
 # Vendor market capability matrix.
@@ -337,6 +390,8 @@ VENDOR_MARKETS: dict[str, frozenset[str]] = {
     "swsresearch": frozenset({"a_share"}),
     "pbc": frozenset({"a_share"}),
     "nbs": frozenset({"a_share"}),
+    "szse": frozenset({"a_share"}),
+    "sse_e": frozenset({"a_share"}),
 }
 
 # Mapping of methods to their vendor-specific implementations
@@ -455,6 +510,26 @@ VENDOR_METHODS = {
     "get_sw_industry_history": {"swsresearch": get_sw_industry_history},
     "get_china_social_financing": {"pbc": get_china_social_financing},
     "get_china_pmi": {"nbs": get_china_pmi},
+    # a-stock-data v3.9.0 Layer 14 event-driven endpoints.  Each pins one
+    # zero-key EastMoney datacenter report; the adapters carry the strict
+    # pagination/error-code contract (a whole-market query returning zero rows
+    # is an interface failure, not "no events").
+    "get_a_share_earnings_forecast": {"eastmoney": get_a_share_earnings_forecast},
+    "get_a_share_institution_survey": {"eastmoney": get_a_share_institution_survey},
+    "get_a_share_share_buyback": {"eastmoney": get_a_share_share_buyback},
+    "get_a_share_equity_pledge": {"eastmoney": get_a_share_equity_pledge},
+    "get_a_share_ipo_calendar": {"eastmoney": get_a_share_ipo_calendar},
+    # a-stock-data v3.9.0 §6.8 / §12.4 / official-backup set.  These are
+    # deliberately separate capabilities rather than vendors of an existing
+    # method: each has its own input contract (a calendar month, an exchange plus
+    # trade date, a platform page) and a plain-str return, so folding them into
+    # the coverage-carrying research/margin methods would let a caller receive a
+    # differently-scoped result under the same name.
+    "get_a_share_st_stock_list": {"eastmoney": get_a_share_st_stock_list},
+    "get_a_share_trading_calendar": {"szse": get_a_share_trading_calendar},
+    "get_a_share_margin_trading_backup": {"china_exchange": get_a_share_margin_trading_backup},
+    "get_a_share_sse_e_interaction": {"sse_e": get_a_share_sse_e_interaction},
+    "get_a_share_research_reports_sina": {"sina": get_sina_research_reports},
     # Optional, zero-key supplemental A-share capabilities.  They are kept
     # separate from OHLCV so a changed public endpoint cannot poison core
     # price/fundamental routing.
@@ -495,6 +570,13 @@ VENDOR_METHODS = {
     # request with raw bars, which design SS8.5 forbids.
     "get_a_share_kline": {"tencent": get_a_share_kline},
     "get_a_share_kline_qfq": {"tencent": get_a_share_kline_qfq},
+    # Bar width is part of the method identity for the same reason the
+    # adjustment convention is: a router allowed to satisfy a weekly request
+    # from the daily vendor would silently change the bar width.
+    "get_a_share_kline_weekly": {"tencent": get_a_share_kline_weekly},
+    "get_a_share_kline_weekly_qfq": {"tencent": get_a_share_kline_weekly_qfq},
+    "get_a_share_kline_monthly": {"tencent": get_a_share_kline_monthly},
+    "get_a_share_kline_monthly_qfq": {"tencent": get_a_share_kline_monthly_qfq},
     "get_a_share_fundamentals_mootdx": {"mootdx": get_fundamentals_mootdx},
     "get_a_share_f10": {"mootdx": get_a_share_f10},
     "get_a_share_research_reports": {"eastmoney": get_a_share_research_reports},

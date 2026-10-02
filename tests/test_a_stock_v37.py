@@ -80,6 +80,74 @@ def test_adjust_factors_hfq_kind_validation():
         a_stock_v37.get_a_share_adjust_factors("600519", "bad")
 
 
+def test_adjust_factors_joinquant_suffix_keeps_the_shanghai_index(monkeypatch):
+    """000001.XSHG is 上证指数, not 深市 000001 (平安银行) -- a-stock-data #55.
+
+    The Sina URL is prefix + bare code, so an unrecognised JoinQuant suffix
+    falls through to the digit map and silently requests the other market.
+    """
+    seen: list[str] = []
+
+    def _fake_get(url, **kwargs):
+        seen.append(url)
+        return _TextResp(text='var x={"data":[{"d":"2026-08-18","f":"1.0"}]};')
+
+    monkeypatch.setattr(a_stock_v37.requests, "get", _fake_get)
+    a_stock_v37.get_a_share_adjust_factors("000001.XSHG", "qfq")
+    a_stock_v37.get_a_share_adjust_factors("000001.XSHE", "qfq")
+
+    assert "company/sh000001/qfq.js" in seen[0]
+    assert "company/sz000001/qfq.js" in seen[1]
+
+
+# ---------------------------------------------------------------------------
+# §1.6 apply_adjust
+# ---------------------------------------------------------------------------
+
+_FACTORS = [{"date": "1900-01-01", "factor": 1.0}, {"date": "2026-06-01", "factor": 2.0}]
+_BARS = [
+    {"date": "2026-05-29", "open": 10.0, "close": 10.0},
+    {"date": "2026-06-01", "open": 20.0, "close": 20.0},
+]
+
+
+def test_qfq_divides_and_hfq_multiplies():
+    qfq = a_stock_v37.apply_adjust(_BARS, _FACTORS, "qfq")
+    hfq = a_stock_v37.apply_adjust(_BARS, _FACTORS, "hfq")
+
+    # qfq is a divisor, so the two sessions land on the same forward-adjusted price.
+    assert [bar["close"] for bar in qfq] == [10.0, 10.0]
+    # hfq is a multiplier over the same ladder.
+    assert [bar["close"] for bar in hfq] == [10.0, 40.0]
+    assert [bar["adj_factor"] for bar in qfq] == [1.0, 2.0]
+
+
+def test_apply_adjust_preserves_a_datetime_index():
+    frame = pd.DataFrame(
+        {
+            "datetime": ["2026-06-01 15:00", "2026-05-29 15:00"],
+            "close": [20.0, 10.0],
+        },
+        index=pd.to_datetime(["2026-06-01", "2026-05-29"]),
+    )
+    result = a_stock_v37.apply_adjust(frame, _FACTORS, "qfq")
+
+    assert isinstance(result.index, pd.DatetimeIndex)
+    assert result["close"].tolist() == [10.0, 10.0]
+
+
+def test_apply_adjust_refuses_partial_or_empty_factor_series():
+    """A partly adjusted series is indistinguishable from a correct one later."""
+    with pytest.raises(ValueError, match="因子列表为空"):
+        a_stock_v37.apply_adjust(_BARS, [], "qfq")
+    with pytest.raises(ValueError, match="早于因子序列最早日"):
+        a_stock_v37.apply_adjust(_BARS, [{"date": "2026-06-01", "factor": 1.0}], "qfq")
+    with pytest.raises(ValueError, match="复权因子为 0"):
+        a_stock_v37.apply_adjust(_BARS, [{"date": "1900-01-01", "factor": 0.0}], "qfq")
+    with pytest.raises(ValueError, match="kind 只能是"):
+        a_stock_v37.apply_adjust(_BARS, _FACTORS, "bad")
+
+
 # ---------------------------------------------------------------------------
 # §6.5 / §6.6 baostock endpoints
 # ---------------------------------------------------------------------------

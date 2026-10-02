@@ -16,25 +16,33 @@ independent rate-limit plane, for when EastMoney bans the IP.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pandas as pd
 import requests
 
 from .china_data import ChinaDataUnavailableError
-from .coverage import CoveredText, SourceCoverageV1
+from .coverage import CoveredText, ScreeningCoverageV1, SourceCoverageV1
 from .eastmoney import (
-    EASTMONEY_DATACENTER_URL,
-    _extract_records,
+    DatacenterPage,
+    datacenter_screening_coverage,
+    dedupe_datacenter_rows,
+    em_datacenter_strict,
     em_get,
     em_get_json,
+    strict_date_arg,
+    strict_limit,
+    strict_number,
+    strict_source_day,
 )
 from .ticker_utils import (
     is_a_share_ticker,
     normalize_ticker_symbol,
     strict_ticker_code,
     to_akshare_symbol,
+    to_tushare_symbol,
 )
 
 _EASTMONEY_QUOTE_REFERER = "https://quote.eastmoney.com/"
@@ -44,32 +52,113 @@ _REPORT_API_URL = "https://reportapi.eastmoney.com/report/list"
 _INDUSTRY_CLIST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
 _SLIST_URL = "https://push2.eastmoney.com/api/qt/slist/get"
 
+# Per-capability row caps.  Each is the most rows an adapter will retain from a
+# datacenter report; the shared pager only truncates when the source's own
+# ``count`` says more rows exist, and the truncation is reported as ``partial``
+# coverage instead of being hidden.  ``strict_limit`` rejects a mistyped cap at
+# import time rather than letting it silently disable the bound.
+_BULK_TRADES_MAX_ROWS = strict_limit(500, upper=2000)
+_SHAREHOLDER_COUNTS_MAX_ROWS = strict_limit(200, upper=2000)
+_LOCKUP_RELEASES_MAX_ROWS = strict_limit(500, upper=2000)
+_DRAGON_TIGER_MAX_ROWS = strict_limit(500, upper=2000)
+_DAILY_DRAGON_TIGER_MAX_ROWS = strict_limit(1500, upper=2000)
 
-def _eastmoney_datacenter(
-    report_name: str,
+
+def _require_filtered_rows(
+    rows: list[dict[str, Any]],
     *,
-    filter_str: str = "",
-    page_size: int = 50,
-    sort_columns: str = "",
-    sort_types: str = "-1",
-    columns: str = "ALL",
-) -> list[dict[str, Any]]:
-    """Query the EastMoney datacenter; return result rows or empty list."""
-    payload = em_get(
-        EASTMONEY_DATACENTER_URL,
-        params={
-            "reportName": report_name,
-            "columns": columns,
-            "filter": filter_str,
-            "pageNumber": "1",
-            "pageSize": str(page_size),
-            "sortColumns": sort_columns,
-            "sortTypes": sort_types,
-            "source": "WEB",
-            "client": "WEB",
-        },
+    report_name: str,
+    equal: Mapping[str, str] | None = None,
+    dates: Mapping[str, tuple[str | None, str | None]] | None = None,
+) -> None:
+    """Re-check a datacenter filter row by row and raise when it was ignored.
+
+    A server-side filter is only a request.  A renamed column, a dropped
+    condition or a stale cache page can return another instrument's rows while
+    the envelope still looks successful, so every retained row must satisfy what
+    the caller asked for.  A missing filter column is a schema change and also
+    raises rather than being rendered as the answer.
+    """
+    for row in rows:
+        for field, expected in (equal or {}).items():
+            value = row.get(field)
+            if value is None:
+                raise ChinaDataUnavailableError(
+                    f"东财 {report_name} 返回的行缺少 {field} 字段，无法确认筛选条件"
+                )
+            if str(value) != expected:
+                raise ChinaDataUnavailableError(
+                    f"东财 {report_name} 请求 {field}={expected}，却返回了 {value!r}，结果不可信"
+                )
+        for field, (low, high) in (dates or {}).items():
+            raw = row.get(field)
+            if raw is None:
+                raise ChinaDataUnavailableError(
+                    f"东财 {report_name} 返回的行缺少 {field} 字段，无法确认筛选条件"
+                )
+            try:
+                day = strict_source_day(raw)
+            except ChinaDataUnavailableError as exc:
+                raise ChinaDataUnavailableError(
+                    f"东财 {report_name} 的 {field} 无法识别: {raw!r}"
+                ) from exc
+            if day is None or (low and day < low) or (high and day > high):
+                raise ChinaDataUnavailableError(
+                    f"东财 {report_name} 请求 {field} 在 {low or ''}~{high or ''}，"
+                    f"却返回了 {day!r}，结果不可信"
+                )
+
+
+def _combine_screening_coverage(
+    *,
+    capability: str,
+    source_id: str,
+    scope: str,
+    as_of: str,
+    sub_pages: Sequence[DatacenterPage],
+    item_count: int,
+) -> ScreeningCoverageV1:
+    """Conjunction of sub-query coverages: complete only if every query was.
+
+    One EastMoney report can back only part of a capability (appearance records
+    plus the two seat reports, history plus the requested lockup window).  The
+    combination is therefore as complete as its least complete part: a
+    truncated or unproven sub-query downgrades the whole result with a
+    degradation code instead of being averaged away into ``complete``.
+    """
+    sub_records = [
+        datacenter_screening_coverage(
+            capability=capability,
+            source_id=source_id,
+            scope=scope,
+            page=page,
+            as_of=as_of,
+        )
+        for page in sub_pages
+    ]
+    complete = all(record.completeness == "complete" for record in sub_records)
+    degradations = [code for record in sub_records for code in record.degradations]
+    if not complete:
+        degradations.append("subquery_incomplete")
+    if complete:
+        completeness = "complete"
+    elif item_count or any(record.item_count for record in sub_records):
+        completeness = "partial"
+    else:
+        completeness = "unknown"
+    return ScreeningCoverageV1(
+        capability=capability,
+        source_id=source_id,
+        item_count=item_count,
+        page_count=max(1, sum(record.page_count or 1 for record in sub_records)),
+        pagination_exhausted=complete,
+        completeness=completeness,
+        sources=(source_id,),
+        degradations=tuple(dict.fromkeys(degradations)),
+        as_of=as_of,
+        query_complete=complete,
+        requested_scope=scope,
     )
-    return _extract_records(payload)
 
 
 def _require_a_share_code(ticker: str) -> str:
@@ -100,17 +189,45 @@ def _format_report(
     caveat: str,
     source: str = "eastmoney",
     as_of: str | None = None,
+    coverage: ScreeningCoverageV1 | None = None,
 ) -> str:
-    if data.empty:
+    """House-style source-labelled report.
+
+    An adapter without coverage still degrades loudly on an empty frame.  A
+    coverage-carrying adapter may legitimately have zero rows -- the source
+    completed the query and nothing matched -- and says so in the header
+    (``# Coverage: complete (0 matching records)`` plus an explicit note) so a
+    reader cannot mistake it for a fetch failure.
+    """
+    if data.empty and coverage is None:
         raise ChinaDataUnavailableError(f"{source} returned no rows for {title}.")
+    note = caveat
+    coverage_lines: list[str] = []
+    if coverage is not None:
+        coverage_lines.append(
+            f"# Coverage: {coverage.completeness} ({coverage.item_count} matching records)"
+        )
+        coverage_lines.append(f"# Scope: {coverage.requested_scope}")
+        coverage_lines.append(
+            f"# Pagination: pages={coverage.page_count}; "
+            f"exhausted={str(coverage.pagination_exhausted).lower()}"
+        )
+        if coverage.degradations:
+            coverage_lines.append(f"# Degradations: {', '.join(coverage.degradations)}")
+        if data.empty and coverage.completeness == "complete":
+            note = (
+                f"{caveat} The source completed the query and reported 0 matching "
+                "records; this is not a fetch failure."
+            )
     return "\n".join(
         [
             f"# {title}",
             f"# Source: {source}",
-            f"# Note: {caveat}",
+            f"# Note: {note}",
             f"# Total records: {len(data)}",
             f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             *([f"# Analysis cutoff: {as_of}"] if as_of else []),
+            *coverage_lines,
             "",
             data.to_csv(index=False),
         ]
@@ -123,136 +240,242 @@ def _capture_vendor_raw(data: Any, *, metadata: dict[str, Any]) -> None:
     capture_vendor_raw(data, metadata=dict(metadata))
 
 
-def get_a_share_dragon_tiger_em(ticker: str, trade_date: str, flag: str = "买入") -> str:
+def get_a_share_dragon_tiger_em(ticker: str, trade_date: str, flag: str = "买入") -> CoveredText:
     """A-share dragon-tiger board (个股龙虎榜) via EastMoney datacenter direct.
 
     Returns appearance records within a 30-day look-back from ``trade_date``
     plus TOP5 buy/sell seats for the latest appearance.  ``flag`` is accepted
     for signature compatibility with the former akshare adapter; EastMoney
     returns both sides in one call.
+
+    Three datacenter reports back this capability, so the returned coverage is
+    complete only when every query that had to run was complete; a truncated or
+    unproven sub-query makes the whole answer ``partial``/``unknown``.
     """
     code = _require_a_share_code(ticker)
-    start = (datetime.strptime(trade_date, "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
-    records = _eastmoney_datacenter(
+    day = strict_date_arg(trade_date)
+    start = (date.fromisoformat(day) - timedelta(days=30)).isoformat()
+    scope = f"ticker={to_tushare_symbol(ticker)} window={start}..{day}"
+    # Cap: 500 appearance rows for one instrument over 30 days; page_size=min(cap, 500).
+    records_page = em_datacenter_strict(
         "RPT_DAILYBILLBOARD_DETAILSNEW",
-        filter_str=f"(TRADE_DATE>='{start}')(TRADE_DATE<='{trade_date}')(SECURITY_CODE=\"{code}\")",
-        page_size=50,
+        filter_str=f"(TRADE_DATE>='{start}')(TRADE_DATE<='{day}')(SECURITY_CODE=\"{code}\")",
         sort_columns="TRADE_DATE",
         sort_types="-1",
+        page_size=min(_DRAGON_TIGER_MAX_ROWS, 500),
+        max_rows=_DRAGON_TIGER_MAX_ROWS,
     )
-    if not records:
-        raise ChinaDataUnavailableError(f"EastMoney returned no dragon-tiger records for {code}.")
+    records = dedupe_datacenter_rows(records_page, "RPT_DAILYBILLBOARD_DETAILSNEW")
+    _require_filtered_rows(
+        records,
+        report_name="RPT_DAILYBILLBOARD_DETAILSNEW",
+        equal={"SECURITY_CODE": code},
+        dates={"TRADE_DATE": (start, day)},
+    )
     records_df = pd.DataFrame(
         [
             {
-                "Date": str(r.get("TRADE_DATE", ""))[:10],
+                "Date": strict_source_day(r.get("TRADE_DATE")),
                 "Reason": r.get("EXPLANATION", ""),
-                "Net Buy (wan)": round((r.get("BILLBOARD_NET_AMT") or 0) / 10000, 1),
-                "Turnover %": round(float(r.get("TURNOVERRATE") or 0), 2),
+                "Net Buy (wan)": round((strict_number(r.get("BILLBOARD_NET_AMT")) or 0) / 10000, 1),
+                "Turnover %": round(strict_number(r.get("TURNOVERRATE")) or 0, 2),
             }
             for r in records
         ]
     )
+    title = f"China A-share dragon-tiger records for {normalize_ticker_symbol(ticker)}"
+    caveat = (
+        f"EastMoney datacenter; 30-day look-back from {day}; "
+        f"flag '{flag}' accepted but both sides returned."
+    )
     seats_rows: list[dict[str, Any]] = []
-    latest_date = records_df["Date"].iloc[0]
-    for side, report_name, sort_col in (
-        ("buy", "RPT_BILLBOARD_DAILYDETAILSBUY", "BUY"),
-        ("sell", "RPT_BILLBOARD_DAILYDETAILSSELL", "SELL"),
-    ):
-        detail = _eastmoney_datacenter(
-            report_name,
-            filter_str=f"(TRADE_DATE='{latest_date}')(SECURITY_CODE=\"{code}\")",
-            page_size=10,
-            sort_columns=sort_col,
-            sort_types="-1",
-        )
-        for row in detail[:5]:
-            seats_rows.append(
-                {
-                    "Side": side,
-                    "Seat": row.get("OPERATEDEPT_NAME", ""),
-                    "Buy (wan)": round((row.get("BUY") or 0) / 10000, 1),
-                    "Sell (wan)": round((row.get("SELL") or 0) / 10000, 1),
-                    "Net (wan)": round((row.get("NET") or 0) / 10000, 1),
-                }
+    seat_pages: list[DatacenterPage] = []
+    # The appearance list is sorted newest first, so the first row anchors the
+    # seat queries; with no appearance there is nothing to anchor them to.
+    latest_date = records_df["Date"].iloc[0] if not records_df.empty else day
+    if not records_df.empty:
+        for side, report_name, sort_col in (
+            ("buy", "RPT_BILLBOARD_DAILYDETAILSBUY", "BUY"),
+            ("sell", "RPT_BILLBOARD_DAILYDETAILSSELL", "SELL"),
+        ):
+            # Cap: 500 seat rows per side (only the TOP5 are rendered); page_size=min(cap, 500).
+            page = em_datacenter_strict(
+                report_name,
+                filter_str=f"(TRADE_DATE='{latest_date}')(SECURITY_CODE=\"{code}\")",
+                sort_columns=sort_col,
+                sort_types="-1",
+                page_size=min(_DRAGON_TIGER_MAX_ROWS, 500),
+                max_rows=_DRAGON_TIGER_MAX_ROWS,
             )
+            detail = dedupe_datacenter_rows(page, report_name)
+            _require_filtered_rows(
+                detail,
+                report_name=report_name,
+                equal={"SECURITY_CODE": code},
+                dates={"TRADE_DATE": (latest_date, latest_date)},
+            )
+            seat_pages.append(page)
+            for row in detail[:5]:
+                seats_rows.append(
+                    {
+                        "Side": side,
+                        "Seat": row.get("OPERATEDEPT_NAME", ""),
+                        "Buy (wan)": round((strict_number(row.get("BUY")) or 0) / 10000, 1),
+                        "Sell (wan)": round((strict_number(row.get("SELL")) or 0) / 10000, 1),
+                        "Net (wan)": round((strict_number(row.get("NET")) or 0) / 10000, 1),
+                    }
+                )
+    coverage = _combine_screening_coverage(
+        capability="dragon_tiger",
+        source_id="eastmoney.dragon_tiger",
+        scope=scope,
+        as_of=day,
+        sub_pages=(records_page, *seat_pages),
+        item_count=len(records),
+    )
     _capture_vendor_raw(
         {"records": records, "seats": seats_rows},
-        metadata={"provider": "eastmoney", "dataset": "dragon_tiger", "ticker": ticker},
+        metadata={
+            "provider": "eastmoney",
+            "dataset": "dragon_tiger",
+            "ticker": ticker,
+            "coverage": coverage.model_dump(mode="json"),
+        },
     )
     report = _format_report(
         records_df,
-        title=f"China A-share dragon-tiger records for {normalize_ticker_symbol(ticker)}",
-        caveat=f"EastMoney datacenter; 30-day look-back from {trade_date}; flag '{flag}' accepted but both sides returned.",
+        title=title,
+        caveat=caveat,
+        as_of=day,
+        coverage=coverage,
     )
     if seats_rows:
         report += f"\n\n## TOP5 buy/sell seats on {latest_date}\n\n" + pd.DataFrame(seats_rows).to_csv(index=False)
-    return report
+    return CoveredText(report, coverage)
 
 
-def get_a_share_lockup_releases_em(ticker: str, start_date: str, end_date: str) -> str:
-    """A-share lockup-release calendar (限售解禁) via EastMoney datacenter direct."""
+def get_a_share_lockup_releases_em(ticker: str, start_date: str, end_date: str) -> CoveredText:
+    """A-share lockup-release calendar (限售解禁) via EastMoney datacenter direct.
+
+    Two queries back this capability (the full history plus the requested
+    window), so coverage is complete only when both were; either truncation
+    downgrades the combined answer to ``partial``.
+    """
     code = _require_a_share_code(ticker)
-    history = _eastmoney_datacenter(
+    start = strict_date_arg(start_date)
+    end = strict_date_arg(end_date)
+    scope = (
+        f"ticker={to_tushare_symbol(ticker)} history=all "
+        f"upcoming={start}..{end}"
+    )
+    # Cap: 500 history rows for one instrument; page_size=min(cap, 500).
+    history_page = em_datacenter_strict(
         "RPT_LIFT_STAGE",
         filter_str=f'(SECURITY_CODE="{code}")',
-        page_size=15,
         sort_columns="FREE_DATE",
         sort_types="-1",
+        page_size=min(_LOCKUP_RELEASES_MAX_ROWS, 500),
+        max_rows=_LOCKUP_RELEASES_MAX_ROWS,
     )
-    upcoming = _eastmoney_datacenter(
+    history = dedupe_datacenter_rows(history_page, "RPT_LIFT_STAGE")
+    _require_filtered_rows(
+        history, report_name="RPT_LIFT_STAGE", equal={"SECURITY_CODE": code}
+    )
+    # Cap: 500 rows inside the requested window; page_size=min(cap, 500).
+    upcoming_page = em_datacenter_strict(
         "RPT_LIFT_STAGE",
-        filter_str=f'(SECURITY_CODE="{code}")(FREE_DATE>=\'{start_date}\')(FREE_DATE<=\'{end_date}\')',
-        page_size=20,
+        filter_str=f"(SECURITY_CODE=\"{code}\")(FREE_DATE>='{start}')(FREE_DATE<='{end}')",
         sort_columns="FREE_DATE",
         sort_types="1",
+        page_size=min(_LOCKUP_RELEASES_MAX_ROWS, 500),
+        max_rows=_LOCKUP_RELEASES_MAX_ROWS,
+    )
+    upcoming = dedupe_datacenter_rows(upcoming_page, "RPT_LIFT_STAGE")
+    _require_filtered_rows(
+        upcoming,
+        report_name="RPT_LIFT_STAGE",
+        equal={"SECURITY_CODE": code},
+        dates={"FREE_DATE": (start, end)},
     )
     rows: list[dict[str, Any]] = []
-    for scope, src in (("history", history), ("upcoming", upcoming)):
+    for scope_label, src in (("history", history), ("upcoming", upcoming)):
         for r in src:
             rows.append(
                 {
-                    "Scope": scope,
-                    "Date": str(r.get("FREE_DATE", ""))[:10],
+                    "Scope": scope_label,
+                    "Date": strict_source_day(r.get("FREE_DATE")),
                     "Type": r.get("FREE_SHARES_TYPE", ""),
                     "Shares (wan)": r.get("FREE_SHARES", 0),
                     "Able Shares (wan)": r.get("ABLE_FREE_SHARES", 0),
                     "Ratio": r.get("FREE_RATIO", 0),
                 }
             )
-    if not rows:
-        raise ChinaDataUnavailableError(f"EastMoney returned no lockup-release rows for {code}.")
+    coverage = _combine_screening_coverage(
+        capability="lockup_releases",
+        source_id="eastmoney.lockup_releases",
+        scope=scope,
+        as_of=end,
+        sub_pages=(history_page, upcoming_page),
+        item_count=len(rows),
+    )
     _capture_vendor_raw(
         {"history": history, "upcoming": upcoming},
-        metadata={"provider": "eastmoney", "dataset": "lockup_releases", "ticker": ticker},
+        metadata={
+            "provider": "eastmoney",
+            "dataset": "lockup_releases",
+            "ticker": ticker,
+            "coverage": coverage.model_dump(mode="json"),
+        },
     )
-    return _format_report(
-        pd.DataFrame(rows),
-        title=f"China A-share lockup releases for {normalize_ticker_symbol(ticker)}",
-        caveat="EastMoney datacenter RPT_LIFT_STAGE; FREE_SHARES_TYPE/FREE_SHARES are the 2026-renamed columns; ABLE_FREE_SHARES is actually-tradable shares.",
+    return CoveredText(
+        _format_report(
+            pd.DataFrame(rows),
+            title=f"China A-share lockup releases for {normalize_ticker_symbol(ticker)}",
+            caveat="EastMoney datacenter RPT_LIFT_STAGE; FREE_SHARES_TYPE/FREE_SHARES are the 2026-renamed columns; ABLE_FREE_SHARES is actually-tradable shares.",
+            as_of=end,
+            coverage=coverage,
+        ),
+        coverage,
     )
 
 
-def get_a_share_bulk_trades_em(ticker: str, start_date: str, end_date: str) -> str:
-    """A-share block trades (大宗交易) via EastMoney datacenter direct."""
+def get_a_share_bulk_trades_em(ticker: str, start_date: str, end_date: str) -> CoveredText:
+    """A-share block trades (大宗交易) via EastMoney datacenter direct.
+
+    A completed query with zero matching trades is reported as coverage
+    ``complete`` with ``0`` rows; it means the instrument has no block trade in
+    the window, which is an answer rather than a failure.
+    """
     code = _require_a_share_code(ticker)
-    data = _eastmoney_datacenter(
+    start = strict_date_arg(start_date)
+    end = strict_date_arg(end_date)
+    scope = f"ticker={to_tushare_symbol(ticker)} window={start}..{end}"
+    # Cap: 500 block-trade rows for one instrument; page_size=min(cap, 500).
+    page = em_datacenter_strict(
         "RPT_DATA_BLOCKTRADE",
-        filter_str=f'(SECURITY_CODE="{code}")',
-        page_size=30,
+        filter_str=f"(SECURITY_CODE=\"{code}\")(TRADE_DATE>='{start}')(TRADE_DATE<='{end}')",
         sort_columns="TRADE_DATE",
         sort_types="-1",
+        page_size=min(_BULK_TRADES_MAX_ROWS, 500),
+        max_rows=_BULK_TRADES_MAX_ROWS,
+    )
+    data = dedupe_datacenter_rows(page, "RPT_DATA_BLOCKTRADE")
+    _require_filtered_rows(
+        data,
+        report_name="RPT_DATA_BLOCKTRADE",
+        equal={"SECURITY_CODE": code},
+        dates={"TRADE_DATE": (start, end)},
     )
     rows = []
     for r in data:
-        close = r.get("CLOSE_PRICE") or 0
-        deal = r.get("DEAL_PRICE") or 0
+        close = strict_number(r.get("CLOSE_PRICE")) or 0
+        deal = strict_number(r.get("DEAL_PRICE")) or 0
         premium = ((deal / close - 1) * 100) if close else 0
         rows.append(
             {
-                "Date": str(r.get("TRADE_DATE", ""))[:10],
-                "Deal Price": deal,
-                "Close": close,
+                "Date": strict_source_day(r.get("TRADE_DATE")),
+                "Deal Price": r.get("DEAL_PRICE", 0),
+                "Close": r.get("CLOSE_PRICE", 0),
                 "Premium %": round(premium, 2),
                 "Volume": r.get("DEAL_VOLUME", 0),
                 "Amount": r.get("DEAL_AMT", 0),
@@ -260,29 +483,54 @@ def get_a_share_bulk_trades_em(ticker: str, start_date: str, end_date: str) -> s
                 "Seller": r.get("SELLER_NAME", ""),
             }
         )
-    if not rows:
-        raise ChinaDataUnavailableError(f"EastMoney returned no block-trade rows for {code}.")
-    _capture_vendor_raw(data, metadata={"provider": "eastmoney", "dataset": "bulk_trades", "ticker": ticker})
-    return _format_report(
-        pd.DataFrame(rows),
-        title=f"China A-share block trades for {normalize_ticker_symbol(ticker)}",
-        caveat="EastMoney datacenter RPT_DATA_BLOCKTRADE; premium % is deal price vs close.",
+    coverage = datacenter_screening_coverage(
+        capability="bulk_trades",
+        source_id="eastmoney.bulk_trades",
+        scope=scope,
+        page=page,
+        as_of=end,
+    )
+    _capture_vendor_raw(
+        data,
+        metadata={
+            "provider": "eastmoney",
+            "dataset": "bulk_trades",
+            "ticker": ticker,
+            "coverage": coverage.model_dump(mode="json"),
+        },
+    )
+    return CoveredText(
+        _format_report(
+            pd.DataFrame(rows),
+            title=f"China A-share block trades for {normalize_ticker_symbol(ticker)}",
+            caveat="EastMoney datacenter RPT_DATA_BLOCKTRADE; premium % is deal price vs close.",
+            as_of=end,
+            coverage=coverage,
+        ),
+        coverage,
     )
 
 
-def get_a_share_shareholder_counts_em(ticker: str) -> str:
+def get_a_share_shareholder_counts_em(ticker: str) -> CoveredText:
     """A-share shareholder-count changes (股东户数) via EastMoney datacenter direct."""
     code = _require_a_share_code(ticker)
-    data = _eastmoney_datacenter(
+    scope = f"ticker={to_tushare_symbol(ticker)} series=quarterly"
+    # Cap: 200 quarterly shareholder-count rows; page_size=min(cap, 500) -> 200.
+    page = em_datacenter_strict(
         "RPT_HOLDERNUMLATEST",
         filter_str=f'(SECURITY_CODE="{code}")',
-        page_size=10,
         sort_columns="END_DATE",
         sort_types="-1",
+        page_size=min(_SHAREHOLDER_COUNTS_MAX_ROWS, 500),
+        max_rows=_SHAREHOLDER_COUNTS_MAX_ROWS,
+    )
+    data = dedupe_datacenter_rows(page, "RPT_HOLDERNUMLATEST")
+    _require_filtered_rows(
+        data, report_name="RPT_HOLDERNUMLATEST", equal={"SECURITY_CODE": code}
     )
     rows = [
         {
-            "Date": str(r.get("END_DATE", ""))[:10],
+            "Date": strict_source_day(r.get("END_DATE")),
             "Holder Num": r.get("HOLDER_NUM", 0),
             "Change Num": r.get("HOLDER_NUM_CHANGE", 0),
             "Change %": r.get("HOLDER_NUM_RATIO", 0),
@@ -290,13 +538,30 @@ def get_a_share_shareholder_counts_em(ticker: str) -> str:
         }
         for r in data
     ]
-    if not rows:
-        raise ChinaDataUnavailableError(f"EastMoney returned no shareholder-count rows for {code}.")
-    _capture_vendor_raw(data, metadata={"provider": "eastmoney", "dataset": "shareholder_counts", "ticker": ticker})
-    return _format_report(
-        pd.DataFrame(rows),
-        title=f"China A-share shareholder counts for {normalize_ticker_symbol(ticker)}",
-        caveat="EastMoney datacenter RPT_HOLDERNUMLATEST; quarterly; declining holder count signals chip concentration.",
+    coverage = datacenter_screening_coverage(
+        capability="shareholder_counts",
+        source_id="eastmoney.shareholder_counts",
+        scope=scope,
+        page=page,
+        as_of=date.today().isoformat(),
+    )
+    _capture_vendor_raw(
+        data,
+        metadata={
+            "provider": "eastmoney",
+            "dataset": "shareholder_counts",
+            "ticker": ticker,
+            "coverage": coverage.model_dump(mode="json"),
+        },
+    )
+    return CoveredText(
+        _format_report(
+            pd.DataFrame(rows),
+            title=f"China A-share shareholder counts for {normalize_ticker_symbol(ticker)}",
+            caveat="EastMoney datacenter RPT_HOLDERNUMLATEST; quarterly; declining holder count signals chip concentration.",
+            coverage=coverage,
+        ),
+        coverage,
     )
 
 
@@ -448,14 +713,28 @@ def get_a_share_prev_limit_up_pool(trade_date: str) -> str:
     )
 
 
-def get_a_share_daily_dragon_tiger(trade_date: str) -> str:
-    """Market-wide dragon-tiger board (全市场龙虎榜) for one trade date."""
-    data = _eastmoney_datacenter(
+def get_a_share_daily_dragon_tiger(trade_date: str) -> CoveredText:
+    """Market-wide dragon-tiger board (全市场龙虎榜) for one trade date.
+
+    A completed query for a non-trading day (or a date with no appearances) is
+    coverage ``complete`` with ``0`` rows, not a failure.
+    """
+    day = strict_date_arg(trade_date)
+    scope = f"market=all window={day}"
+    # Cap: 1500 market-wide board rows for one trade date; page_size=min(cap, 500) -> 500.
+    page = em_datacenter_strict(
         "RPT_DAILYBILLBOARD_DETAILSNEW",
-        filter_str=f"(TRADE_DATE>='{trade_date}')(TRADE_DATE<='{trade_date}')",
-        page_size=500,
+        filter_str=f"(TRADE_DATE>='{day}')(TRADE_DATE<='{day}')",
         sort_columns="BILLBOARD_NET_AMT",
         sort_types="-1",
+        page_size=min(_DAILY_DRAGON_TIGER_MAX_ROWS, 500),
+        max_rows=_DAILY_DRAGON_TIGER_MAX_ROWS,
+    )
+    data = dedupe_datacenter_rows(page, "RPT_DAILYBILLBOARD_DETAILSNEW")
+    _require_filtered_rows(
+        data,
+        report_name="RPT_DAILYBILLBOARD_DETAILSNEW",
+        dates={"TRADE_DATE": (day, day)},
     )
     rows = [
         {
@@ -463,20 +742,38 @@ def get_a_share_daily_dragon_tiger(trade_date: str) -> str:
             "Name": r.get("SECURITY_NAME_ABBR", ""),
             "Reason": r.get("EXPLANATION", ""),
             "Close": r.get("CLOSE_PRICE") or 0,
-            "Change %": round(float(r.get("CHANGE_RATE") or 0), 2),
-            "Net Buy (wan)": round((r.get("BILLBOARD_NET_AMT") or 0) / 10000, 1),
-            "Buy (wan)": round((r.get("BILLBOARD_BUY_AMT") or 0) / 10000, 1),
-            "Sell (wan)": round((r.get("BILLBOARD_SELL_AMT") or 0) / 10000, 1),
+            "Change %": round(strict_number(r.get("CHANGE_RATE")) or 0, 2),
+            "Net Buy (wan)": round((strict_number(r.get("BILLBOARD_NET_AMT")) or 0) / 10000, 1),
+            "Buy (wan)": round((strict_number(r.get("BILLBOARD_BUY_AMT")) or 0) / 10000, 1),
+            "Sell (wan)": round((strict_number(r.get("BILLBOARD_SELL_AMT")) or 0) / 10000, 1),
         }
         for r in data
     ]
-    if not rows:
-        raise ChinaDataUnavailableError(f"EastMoney returned no market-wide dragon-tiger rows for {trade_date}.")
-    _capture_vendor_raw(data, metadata={"provider": "eastmoney", "dataset": "daily_dragon_tiger", "ticker": None})
-    return _format_report(
-        pd.DataFrame(rows),
-        title=f"China A-share market-wide dragon-tiger for {trade_date}",
-        caveat="EastMoney datacenter RPT_DAILYBILLBOARD_DETAILSNEW; ranked by net buy; non-trading day returns empty.",
+    coverage = datacenter_screening_coverage(
+        capability="daily_dragon_tiger",
+        source_id="eastmoney.daily_dragon_tiger",
+        scope=scope,
+        page=page,
+        as_of=day,
+    )
+    _capture_vendor_raw(
+        data,
+        metadata={
+            "provider": "eastmoney",
+            "dataset": "daily_dragon_tiger",
+            "ticker": None,
+            "coverage": coverage.model_dump(mode="json"),
+        },
+    )
+    return CoveredText(
+        _format_report(
+            pd.DataFrame(rows),
+            title=f"China A-share market-wide dragon-tiger for {day}",
+            caveat="EastMoney datacenter RPT_DAILYBILLBOARD_DETAILSNEW; ranked by net buy; non-trading day returns empty.",
+            as_of=day,
+            coverage=coverage,
+        ),
+        coverage,
     )
 
 
@@ -689,11 +986,16 @@ def get_a_share_research_reports(
         degradations.append("requested_window_unproven")
     elif invalid_published_count:
         completeness = "partial"
-    elif actual_start == start_date and actual_end == as_of:
-        completeness = "complete"
     else:
-        completeness = "partial"
-        degradations.append("requested_window_not_fully_observed")
+        # The report list was read to the end and the client-side window filter
+        # kept every report inside it, so the query covered the requested
+        # interval.  Whether a report exists on either boundary date is a
+        # property of a sparse event series, not evidence of incomplete
+        # fetching (same rule as the CNINFO announcement adapter), so the
+        # observed interval recorded here is the requested one.
+        completeness = "complete"
+        actual_start = start_date
+        actual_end = as_of
     coverage = SourceCoverageV1(
         capability="research_reports",
         source_id="eastmoney.research_reports",

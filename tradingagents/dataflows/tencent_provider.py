@@ -2,7 +2,7 @@
 
 Provides PE(TTM)/PB/market-cap/turnover/price-limits that mootdx does not
 carry.  Independent of EastMoney's rate-limit plane, so it stays usable when
-EastMoney bans an IP.  See a-stock-data SKILL.md §1.2.
+EastMoney bans an IP.  See a-stock-data SKILL.md §1.1 (v3.10.0 numbering; §1.2 before the Layer 1 renumber).
 
 Field index map (verified against a-stock-data V3.7.1, correcting the common
 "Tencent field 43 = PB" error -- 43 is amplitude%, 46 is PB):
@@ -41,7 +41,7 @@ def _tencent_prefix(ticker: str) -> str:
 def _parse_tencent_line(line: str) -> dict[str, Any] | None:
     """Parse one ``v_sh600519="..."`` line into a valuation row.
 
-    Field map verified against a-stock-data §1.2 (correcting the common
+    Field map verified against a-stock-data §1.1 (correcting the common
     "field 43 = PB" error — 43 is amplitude%, 46 is PB):
       3=price, 4=last_close, 31=change_amt, 32=change%, 37=amount(wan),
       38=turnover%, 39=PE_TTM, 43=amplitude%, 44=float_market_cap(yi),
@@ -60,7 +60,7 @@ def _parse_tencent_line(line: str) -> dict[str, Any] | None:
     # Stale-quote detection: Tencent answers HTTP 200 with a frozen last-trading
     # quote (volume 0, price == last close) for migrated BSE old-segment codes
     # and long-suspended tickers.  Never feed those into valuation (a-stock-data
-    # §1.2 verified bj832982 -> 112.60 while the real 920982 traded at 131.74).
+    # §1.1 verified bj832982 -> 112.60 while the real 920982 traded at 131.74).
     is_stale = bool(amount_wan == 0 and price == last_close and price > 0)
     stale_reason = None
     if is_stale and code[:2] in ("43", "83", "87"):

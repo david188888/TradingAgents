@@ -3,7 +3,7 @@
 New capabilities added by simonlin1212/a-stock-data v3.7.0, adapted to this
 project's degradable-adapter contract:
 
-- §1.4  adjust factors qfq/hfq (Sina, zero-key)  -> ``get_a_share_adjust_factors``
+- §1.6  adjust factors qfq/hfq (Sina, zero-key)  -> ``get_a_share_adjust_factors``
 - §6.5  valuation history (baostock)             -> ``get_a_share_valuation_history``
 - §6.6  listing / delisting dates (baostock)     -> ``get_a_share_listing_history``
 - §4.6  chip distribution CYQ (local derivation) -> ``get_a_share_chip_distribution``
@@ -135,7 +135,7 @@ def _capture_vendor_raw(data: Any, *, metadata: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# §1.4 复权因子 qfq / hfq (Sina, zero-key)
+# §1.6 复权因子 qfq / hfq (Sina, zero-key)
 # ---------------------------------------------------------------------------
 
 def get_a_share_adjust_factors(ticker: str, kind: str = "qfq") -> str:
@@ -150,10 +150,17 @@ def get_a_share_adjust_factors(ticker: str, kind: str = "qfq") -> str:
         raise ValueError(f"kind 只能是 'qfq' 或 'hfq'，收到 {kind!r}")
     code = _require_a_share_code(ticker, "adjust_factors")
     raw = str(ticker).strip()
-    m = re.match(r"^(sh|sz|bj)", raw, re.I) or re.search(r"\.(sh|sz|bj)$", raw, re.I)
-    prefix = m.group(1).lower() if m else {
-        "SH": "sh", "SZ": "sz", "BJ": "bj",
-    }[infer_a_share_exchange(code) or "SZ"]
+    # JoinQuant suffixes must be recognised here, not just routed away (a-stock-data
+    # v3.9.0 #55).  The URL is built by concatenating prefix + bare code, so a
+    # fall-through to the digit map resolves the ambiguous ``000xxx`` segment the
+    # wrong way: ``000001.XSHG`` (上证指数) would silently fetch 深市 000001
+    # (平安银行) instead.
+    m = re.match(r"^(sh|sz|bj)", raw, re.I) or re.search(r"\.(sh|sz|bj|xshg|xshe)$", raw, re.I)
+    prefix = (
+        {"xshg": "sh", "xshe": "sz"}.get(m.group(1).lower(), m.group(1).lower())
+        if m
+        else {"SH": "sh", "SZ": "sz", "BJ": "bj"}[infer_a_share_exchange(code) or "SZ"]
+    )
     symbol = f"{prefix}{code}"
     url = _SINA_ADJUST_URL.format(symbol=symbol, kind=kind)
     try:
@@ -183,6 +190,91 @@ def get_a_share_adjust_factors(ticker: str, kind: str = "qfq") -> str:
         "hfq 因子是乘数（后复权价=不复权价×因子）。跨除权日比价必须先套因子。"
     )
     return _render("adjust_factors", ticker, "sina", df, note)
+
+
+def apply_adjust(
+    bars: Any,
+    factors: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    kind: str = "qfq",
+    price_keys: tuple[str, ...] = ("open", "high", "low", "close"),
+) -> Any:
+    """Apply a Sina qfq/hfq factor step series to *unadjusted* bars.
+
+    ``bars`` may be a DataFrame carrying a ``date`` or ``datetime`` column (the
+    mootdx and Tencent shapes differ only in the column name) or a list of dicts
+    with a ``date`` key; the return type follows the input type.  The local OHLCV
+    chain deliberately stays unadjusted, so a cross-ex-dividend comparison has to
+    call this explicitly rather than trusting a raw price series.
+
+    🔴 ``qfq`` and ``hfq`` run in opposite directions and passing the wrong
+    ``kind`` does not raise -- it silently scales history by a few multiples:
+    a qfq factor is a **divisor** (forward-adjusted = raw ÷ factor) while an hfq
+    factor is a **multiplier** (backward-adjusted = raw × factor).  Each bar uses
+    the most recent factor whose effective date is not later than the bar.
+
+    An empty factor series, a bar older than the whole factor series, or a zero
+    factor all raise instead of quietly returning raw prices under an adjusted
+    label: a partly-adjusted series is indistinguishable from a correct one once
+    it reaches the caller.
+    """
+    if kind not in ("qfq", "hfq"):
+        raise ValueError(f"kind 只能是 'qfq' 或 'hfq'，收到 {kind!r}")
+    if not factors:
+        raise ValueError(
+            "复权因子列表为空，无法复权。请先确认 get_a_share_adjust_factors() 是否取到数据"
+            "（新浪对不支持的标的会返回空 data），不要用未复权价继续计算。"
+        )
+
+    is_frame = hasattr(bars, "columns") and hasattr(bars, "to_dict")
+    if is_frame:
+        date_col = next((c for c in ("date", "datetime") if c in bars.columns), None)
+        if date_col is None:
+            raise ValueError(f"DataFrame 需含 date 或 datetime 列，实际列={list(bars.columns)}")
+        rows = bars.to_dict("records")
+        for row in rows:
+            row["date"] = str(row[date_col])[:10]
+    else:
+        rows = [dict(bar) for bar in bars]
+        for row in rows:
+            if "date" not in row:
+                raise ValueError(f"每根 K 线需含 'date' 键，实际键={sorted(row)}")
+            row["date"] = str(row["date"])[:10]
+
+    ladder = sorted(factors, key=lambda item: item["date"])
+    adjusted: list[dict[str, Any]] = []
+    cursor, current = 0, None
+    for bar in sorted(rows, key=lambda item: item["date"]):
+        while cursor < len(ladder) and ladder[cursor]["date"] <= bar["date"]:
+            current = ladder[cursor]["factor"]
+            cursor += 1
+        if current is None:
+            raise ValueError(
+                f"K 线日期 {bar['date']} 早于因子序列最早日 {ladder[0]['date']}，无法复权；"
+                "不返回未复权价以免与已复权行混淆。"
+            )
+        if current == 0:
+            raise ValueError(f"复权因子为 0（{bar['date']}），无法换算。")
+        new_bar = dict(bar)
+        for key in price_keys:
+            value = new_bar.get(key)
+            if value is not None:
+                number = float(value)
+                new_bar[key] = round(number / current if kind == "qfq" else number * current, 4)
+        new_bar["adj_factor"] = current
+        adjusted.append(new_bar)
+
+    if not is_frame:
+        return adjusted
+
+    result = pd.DataFrame(adjusted)
+    # mootdx ``bars()`` carries a DatetimeIndex; rebuilding the frame would
+    # degrade it to a RangeIndex and break downstream time slicing / resampling.
+    index = getattr(bars, "index", None)
+    if index is not None and not isinstance(index, pd.RangeIndex):
+        order = sorted(range(len(bars)), key=lambda n: str(bars.iloc[n][date_col])[:10])
+        result.index = index[order]
+        result.index.name = index.name
+    return result
 
 
 # ---------------------------------------------------------------------------

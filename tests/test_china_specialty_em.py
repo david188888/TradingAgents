@@ -4,63 +4,161 @@ from __future__ import annotations
 
 import pytest
 
-from tradingagents.dataflows import china_specialty_em
+from tradingagents.dataflows import china_specialty_em, eastmoney
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.coverage import CoveredText
+from tradingagents.dataflows.errors import VendorHTTPError
+
+
+def _envelope(data, *, pages=1, count=None, code=0, message=""):
+    """The real EastMoney datacenter envelope, which the strict pager requires.
+
+    A bare ``{"result": {"data": [...]}}`` is exactly the loose shape the old
+    helper accepted; it cannot prove pagination or distinguish a throttle from
+    "no records", so the fakes must carry ``code``/``pages``/``count`` too.
+    """
+    return {
+        "code": code,
+        "message": message,
+        "result": {
+            "pages": pages,
+            "count": len(data) if count is None else count,
+            "data": data,
+        },
+    }
+
+
+def _install_em_get(monkeypatch, handler):
+    """Patch the transport the strict pager actually resolves.
+
+    ``em_datacenter_strict`` lives in ``eastmoney`` and looks up ``em_get`` in
+    that module's globals, so patching ``china_specialty_em.em_get`` would not
+    intercept a datacenter request.
+    """
+    monkeypatch.setattr(eastmoney, "em_get", handler)
 
 
 def test_dragon_tiger_em_parses_records_and_seats(monkeypatch):
     records = [
-        {"TRADE_DATE": "2026-07-20", "EXPLANATION": "日涨幅偏离值达7%", "BILLBOARD_NET_AMT": 50000000, "TURNOVERRATE": "3.2"},
+        {"TRADE_DATE": "2026-07-20", "SECURITY_CODE": "000001", "EXPLANATION": "日涨幅偏离值达7%", "BILLBOARD_NET_AMT": 50000000, "TURNOVERRATE": "3.2"},
     ]
-    buy_seats = [{"OPERATEDEPT_NAME": "机构专用", "BUY": 30000000, "SELL": 0, "NET": 30000000}]
-    sell_seats = [{"OPERATEDEPT_NAME": "营业部A", "BUY": 0, "SELL": 20000000, "NET": -20000000}]
+    buy_seats = [{"TRADE_DATE": "2026-07-20", "SECURITY_CODE": "000001", "OPERATEDEPT_NAME": "机构专用", "BUY": 30000000, "SELL": 0, "NET": 30000000}]
+    sell_seats = [{"TRADE_DATE": "2026-07-20", "SECURITY_CODE": "000001", "OPERATEDEPT_NAME": "营业部A", "BUY": 0, "SELL": 20000000, "NET": -20000000}]
 
-    def fake_datacenter(report_name, **kwargs):
+    def handler(_url, *, params, **_kwargs):
+        report_name = params["reportName"]
         if report_name == "RPT_DAILYBILLBOARD_DETAILSNEW":
-            return records
+            return _envelope(records)
         if report_name == "RPT_BILLBOARD_DAILYDETAILSBUY":
-            return buy_seats
+            return _envelope(buy_seats)
         if report_name == "RPT_BILLBOARD_DAILYDETAILSSELL":
-            return sell_seats
-        return []
+            return _envelope(sell_seats)
+        raise AssertionError(report_name)
 
-    monkeypatch.setattr(china_specialty_em, "_eastmoney_datacenter", fake_datacenter)
+    _install_em_get(monkeypatch, handler)
 
     report = china_specialty_em.get_a_share_dragon_tiger_em("000001", "2026-07-20")
 
+    assert isinstance(report, str)
+    assert isinstance(report, CoveredText)
     assert "Source: eastmoney" in report
     assert "2026-07-20" in report
     assert "机构专用" in report
     assert "TOP5 buy/sell seats" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 1
+    assert report.coverage.requested_scope.startswith("ticker=000001.SZ window=")
 
 
-def test_dragon_tiger_em_raises_on_empty(monkeypatch):
-    monkeypatch.setattr(china_specialty_em, "_eastmoney_datacenter", lambda *a, **kw: [])
-    with pytest.raises(ChinaDataUnavailableError, match="no dragon-tiger records"):
+def test_dragon_tiger_em_completed_query_with_zero_rows_does_not_raise(monkeypatch):
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope([], count=0))
+
+    report = china_specialty_em.get_a_share_dragon_tiger_em("000001", "2026-07-20")
+
+    assert isinstance(report, str)
+    assert "# Coverage: complete (0 matching records)" in report
+    assert "# Note:" in report
+    assert "not a fetch failure" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+    # No appearance means no latest date, so no seat section to anchor.
+    assert "TOP5" not in report
+
+
+def test_dragon_tiger_em_page_one_9201_is_a_legitimate_empty_result(monkeypatch):
+    _install_em_get(
+        monkeypatch,
+        lambda *_args, **_kwargs: {"code": 9201, "message": "数据为空"},
+    )
+
+    report = china_specialty_em.get_a_share_dragon_tiger_em("000001", "2026-07-20")
+
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+
+
+def test_dragon_tiger_em_nonzero_provider_code_raises(monkeypatch):
+    _install_em_get(
+        monkeypatch,
+        lambda *_args, **_kwargs: _envelope([], code=9501, message="sortTypes 个数不一致"),
+    )
+
+    with pytest.raises(ChinaDataUnavailableError, match="9501"):
+        china_specialty_em.get_a_share_dragon_tiger_em("000001", "2026-07-20")
+
+
+def test_dragon_tiger_em_transport_error_stays_typed(monkeypatch):
+    def handler(*_args, **_kwargs):
+        raise VendorHTTPError("eastmoney", 503)
+
+    _install_em_get(monkeypatch, handler)
+
+    with pytest.raises(ChinaDataUnavailableError, match="请求失败"):
+        china_specialty_em.get_a_share_dragon_tiger_em("000001", "2026-07-20")
+
+
+def test_dragon_tiger_em_rejects_rows_for_another_instrument(monkeypatch):
+    # A filter the interface ignored must raise, never render another
+    # instrument's board appearances as this ticker's.
+    _install_em_get(
+        monkeypatch,
+        lambda *_args, **_kwargs: _envelope(
+            [{"TRADE_DATE": "2026-07-20", "SECURITY_CODE": "600519", "BILLBOARD_NET_AMT": 1}]
+        ),
+    )
+
+    with pytest.raises(ChinaDataUnavailableError, match="结果不可信"):
         china_specialty_em.get_a_share_dragon_tiger_em("000001", "2026-07-20")
 
 
 def test_lockup_releases_em_parses_history_and_upcoming(monkeypatch):
-    history = [{"FREE_DATE": "2026-01-15", "FREE_SHARES_TYPE": "定向增发", "FREE_SHARES": 1000, "ABLE_FREE_SHARES": 800, "FREE_RATIO": 0.1}]
-    upcoming = [{"FREE_DATE": "2026-08-01", "FREE_SHARES_TYPE": "股权激励", "FREE_SHARES": 500, "ABLE_FREE_SHARES": 500, "FREE_RATIO": 0.05}]
+    history = [{"FREE_DATE": "2026-01-15", "SECURITY_CODE": "000001", "FREE_SHARES_TYPE": "定向增发", "FREE_SHARES": 1000, "ABLE_FREE_SHARES": 800, "FREE_RATIO": 0.1}]
+    upcoming = [{"FREE_DATE": "2026-08-01", "SECURITY_CODE": "000001", "FREE_SHARES_TYPE": "股权激励", "FREE_SHARES": 500, "ABLE_FREE_SHARES": 500, "FREE_RATIO": 0.05}]
 
-    def fake_datacenter(report_name, **kwargs):
-        filter_str = kwargs.get("filter_str", "")
-        return upcoming if "FREE_DATE>=" in filter_str else history
+    def handler(_url, *, params, **_kwargs):
+        assert params["reportName"] == "RPT_LIFT_STAGE"
+        return _envelope(upcoming if "FREE_DATE>=" in params["filter"] else history)
 
-    monkeypatch.setattr(china_specialty_em, "_eastmoney_datacenter", fake_datacenter)
+    _install_em_get(monkeypatch, handler)
 
     report = china_specialty_em.get_a_share_lockup_releases_em("000001", "2026-07-01", "2026-12-31")
 
+    assert isinstance(report, str)
     assert "history" in report
     assert "upcoming" in report
     assert "定向增发" in report
     assert "股权激励" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 2
+    assert report.coverage.requested_scope == (
+        "ticker=000001.SZ history=all upcoming=2026-07-01..2026-12-31"
+    )
 
 
 def test_bulk_trades_em_parses_premium(monkeypatch):
     data = [
         {
+            "SECURITY_CODE": "000001",
             "TRADE_DATE": "2026-07-20",
             "DEAL_PRICE": 10.5,
             "CLOSE_PRICE": 10.0,
@@ -70,22 +168,90 @@ def test_bulk_trades_em_parses_premium(monkeypatch):
             "SELLER_NAME": "卖方",
         }
     ]
-    monkeypatch.setattr(china_specialty_em, "_eastmoney_datacenter", lambda *a, **kw: data)
+    captured: dict = {}
+
+    def handler(_url, *, params, **_kwargs):
+        captured["params"] = params
+        return _envelope(data)
+
+    _install_em_get(monkeypatch, handler)
 
     report = china_specialty_em.get_a_share_bulk_trades_em("000001", "2026-07-01", "2026-07-31")
 
+    assert isinstance(report, str)
     assert "Premium %" in report
     assert "买方" in report
+    assert 'SECURITY_CODE="000001"' in captured["params"]["filter"]
+    assert "TRADE_DATE>='2026-07-01'" in captured["params"]["filter"]
+    assert "TRADE_DATE<='2026-07-31'" in captured["params"]["filter"]
+    assert captured["params"]["sortColumns"] == "TRADE_DATE"
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 1
+    assert report.coverage.requested_scope == "ticker=000001.SZ window=2026-07-01..2026-07-31"
+
+
+def test_bulk_trades_em_completed_empty_result_is_complete(monkeypatch):
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope([], count=0))
+
+    report = china_specialty_em.get_a_share_bulk_trades_em("000001", "2026-07-01", "2026-07-31")
+
+    assert isinstance(report, CoveredText)
+    assert "# Coverage: complete (0 matching records)" in report
+    assert "# Note:" in report
+    assert "not a fetch failure" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
 
 
 def test_shareholder_counts_em_parses(monkeypatch):
-    data = [{"END_DATE": "2026-06-30", "HOLDER_NUM": 10000, "HOLDER_NUM_CHANGE": -500, "HOLDER_NUM_RATIO": -4.76, "AVG_HOLD_NUM": 1000}]
-    monkeypatch.setattr(china_specialty_em, "_eastmoney_datacenter", lambda *a, **kw: data)
+    data = [{"END_DATE": "2026-06-30", "SECURITY_CODE": "000001", "HOLDER_NUM": 10000, "HOLDER_NUM_CHANGE": -500, "HOLDER_NUM_RATIO": -4.76, "AVG_HOLD_NUM": 1000}]
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope(data))
 
     report = china_specialty_em.get_a_share_shareholder_counts_em("000001")
 
+    assert isinstance(report, str)
     assert "Holder Num" in report
     assert "10000" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.requested_scope == "ticker=000001.SZ series=quarterly"
+
+
+def test_shareholder_counts_em_row_cap_truncation_is_partial(monkeypatch):
+    rows = [
+        {"END_DATE": "2026-06-30", "SECURITY_CODE": "000001", "HOLDER_NUM": index + 1}
+        for index in range(200)
+    ]
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope(rows, pages=2, count=250))
+
+    report = china_specialty_em.get_a_share_shareholder_counts_em("000001")
+
+    assert "# Coverage: partial (200 matching records)" in report
+    assert report.coverage.completeness == "partial"
+    assert report.coverage.pagination_exhausted is False
+    assert report.coverage.item_count == 200
+    assert "row_cap_truncated" in report.coverage.degradations
+
+
+def test_shareholder_counts_em_partial_pagination_raises(monkeypatch):
+    rows = [
+        {"END_DATE": "2026-06-30", "SECURITY_CODE": "000001", "HOLDER_NUM": index + 1}
+        for index in range(100)
+    ]
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope(rows, pages=2, count=250))
+
+    with pytest.raises(ChinaDataUnavailableError, match="结果不完整"):
+        china_specialty_em.get_a_share_shareholder_counts_em("000001")
+
+
+def test_shareholder_counts_em_changed_schema_raises(monkeypatch):
+    # SECURITY_CODE disappearing is a schema change, not an answer.
+    _install_em_get(
+        monkeypatch,
+        lambda *_args, **_kwargs: _envelope([{"END_DATE": "2026-06-30", "HOLDER_NUM": 1}]),
+    )
+
+    with pytest.raises(ChinaDataUnavailableError, match="无法确认筛选条件"):
+        china_specialty_em.get_a_share_shareholder_counts_em("000001")
 
 
 def test_limit_up_ladder_em_parses_pool(monkeypatch):
@@ -121,6 +287,7 @@ def test_daily_dragon_tiger_em_parses(monkeypatch):
         {
             "SECURITY_CODE": "000001",
             "SECURITY_NAME_ABBR": "平安银行",
+            "TRADE_DATE": "2026-07-20",
             "EXPLANATION": "日涨幅偏离值",
             "CLOSE_PRICE": 15.0,
             "CHANGE_RATE": 10.0,
@@ -129,12 +296,54 @@ def test_daily_dragon_tiger_em_parses(monkeypatch):
             "BILLBOARD_SELL_AMT": 30000000,
         }
     ]
-    monkeypatch.setattr(china_specialty_em, "_eastmoney_datacenter", lambda *a, **kw: data)
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope(data))
 
     report = china_specialty_em.get_a_share_daily_dragon_tiger("2026-07-20")
 
+    assert isinstance(report, str)
     assert "平安银行" in report
     assert "Net Buy (wan)" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 1
+    assert report.coverage.requested_scope == "market=all window=2026-07-20"
+
+
+def test_daily_dragon_tiger_em_rejects_out_of_window_rows(monkeypatch):
+    # The trade-date filter is only a request: a page for another day must raise
+    # instead of being rendered as this date's board.
+    data = [
+        {
+            "SECURITY_CODE": "000001",
+            "SECURITY_NAME_ABBR": "平安银行",
+            "TRADE_DATE": "2026-07-21",
+            "BILLBOARD_NET_AMT": 50000000,
+        }
+    ]
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope(data))
+
+    with pytest.raises(ChinaDataUnavailableError, match="结果不可信"):
+        china_specialty_em.get_a_share_daily_dragon_tiger("2026-07-20")
+
+
+def test_daily_dragon_tiger_em_completed_empty_result_is_complete(monkeypatch):
+    _install_em_get(monkeypatch, lambda *_args, **_kwargs: _envelope([], count=0))
+
+    report = china_specialty_em.get_a_share_daily_dragon_tiger("2026-07-20")
+
+    assert isinstance(report, CoveredText)
+    assert "# Coverage: complete (0 matching records)" in report
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.item_count == 0
+
+
+def test_daily_dragon_tiger_em_nonzero_provider_code_raises(monkeypatch):
+    _install_em_get(
+        monkeypatch,
+        lambda *_args, **_kwargs: _envelope([], code=114514, message="拒绝访问"),
+    )
+
+    with pytest.raises(ChinaDataUnavailableError, match="114514"):
+        china_specialty_em.get_a_share_daily_dragon_tiger("2026-07-20")
 
 
 def test_specialty_em_rejects_non_a_share():
@@ -275,6 +484,27 @@ def test_research_reports_filters_window_and_proves_complete_pagination(monkeypa
     assert "future" not in report
     assert "old" not in report
     assert report.coverage.completeness == "complete"
+    assert report.coverage.actual_start == "2026-08-01"
+    assert report.coverage.actual_end == "2026-08-04"
+
+
+def test_research_reports_completed_mid_window_query_is_complete(monkeypatch):
+    # The list was read to the end, so the query covered the requested interval
+    # even though no report exists on either boundary date: a sparse event
+    # series must not be reported as a partial fetch.
+    payload = {
+        "data": [{"publishDate": "2026-08-03", "title": "mid", "orgSName": "A"}],
+        "TotalPage": 1,
+    }
+    monkeypatch.setattr(china_specialty_em, "em_get", lambda *_a, **_k: payload)
+
+    report = china_specialty_em.get_a_share_research_reports(
+        "000001", as_of="2026-08-04", start_date="2026-08-01"
+    )
+
+    assert report.coverage.completeness == "complete"
+    assert report.coverage.degradations == ()
+    assert report.coverage.pagination_exhausted is True
     assert report.coverage.actual_start == "2026-08-01"
     assert report.coverage.actual_end == "2026-08-04"
 

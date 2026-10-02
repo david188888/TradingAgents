@@ -220,7 +220,7 @@ def test_mootdx_finance_snapshot_keeps_source_type_and_cutoff(monkeypatch):
         def finance(self, symbol):
             return pd.DataFrame([{"symbol": symbol, "eps": 1.2, "profit": 100000000}])
 
-    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda: Client())
+    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda **kwargs: Client())
     monkeypatch.setattr(mootdx_provider, "_capture_vendor_raw", lambda *args, **kwargs: None)
     report = mootdx_provider.get_fundamentals_mootdx("000338.SZ", "2026-08-05")
     assert "quarterly snapshot" in report
@@ -228,6 +228,34 @@ def test_mootdx_finance_snapshot_keeps_source_type_and_cutoff(monkeypatch):
     assert "profit" in report
 
 
+
+
+def test_bulk_trades_capability_returns_covered_text_through_the_router(monkeypatch):
+    """The datacenter-backed capability keeps str compatibility and coverage.
+
+    ``em_datacenter_strict`` resolves ``eastmoney.em_get``, so the fake envelope
+    is installed there; a completed empty screen must come back as
+    ``CoveredText`` with ``complete``/0 rather than raising through the router.
+    """
+    from tradingagents.dataflows import eastmoney, interface
+
+    monkeypatch.setattr(
+        eastmoney,
+        "em_get",
+        lambda *_args, **_kwargs: {
+            "code": 0,
+            "result": {"pages": 1, "count": 0, "data": []},
+        },
+    )
+    monkeypatch.setattr(interface, "get_vendor", lambda _category, method=None: "eastmoney")
+
+    result = interface.route_to_vendor(
+        "get_a_share_bulk_trades", "000001.SZ", "2026-07-01", "2026-07-31"
+    )
+
+    assert isinstance(result, str)
+    assert result.coverage.completeness == "complete"
+    assert result.coverage.item_count == 0
 
 
 def test_dragon_tiger_capability_passes_analysis_date(monkeypatch):

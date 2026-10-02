@@ -63,6 +63,7 @@ These are execution proposals, not descriptions of current runtime behavior.
 - [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): original product direction and evaluation criteria. The explicit Web path is wired; default switching and batch quality evaluation remain separate decisions.
 - [Wiring design](superpowers/specs/2026-09-30-catalyst-production-wiring-design.md) and [acceptance record](superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md): approved scope and verification evidence.
 - [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): user-reviewed direction and mockup for company/catalyst/holding research; engineering migration is in progress.
+- [a-stock-data v3.10.0 sync and merge reference](superpowers/plans/2026-09-30-a-stock-data-v310-sync.md): the branch, its commits, the coverage-contract extension it depends on, expected merge conflicts, the baseline-comparison verification method, and the deliberate exclusions.
 
 ## Historical / Archive
 

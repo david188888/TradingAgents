@@ -91,15 +91,22 @@ class SourceCoverageV1(BaseModel):
         if self.page_count is None and self.pagination_exhausted is not None:
             raise ValueError("pagination_exhausted requires page_count")
         if self.completeness == "complete":
+            # A payload capability and a screening capability mean different
+            # things by "complete".  For a document/payload set, zero retained
+            # items is not a usable result; for a screen, "the provider answered
+            # the whole query and nothing matched" *is* the result.  Subclasses
+            # opt in explicitly; the default keeps the payload rule.
             if self.item_count == 0:
-                raise ValueError("complete coverage requires at least one retained item")
-            if self.actual_start is None or self.actual_end is None:
-                raise ValueError("complete coverage requires an observed window")
-            if self.requested_start and (
-                self.actual_start != self.requested_start
-                or self.actual_end != self.requested_end
-            ):
-                raise ValueError("complete coverage must span the full requested window")
+                if not self._allows_complete_without_items():
+                    raise ValueError("complete coverage requires at least one retained item")
+            elif self._requires_observed_window_for_complete():
+                if self.actual_start is None or self.actual_end is None:
+                    raise ValueError("complete coverage requires an observed window")
+                if self.requested_start and (
+                    self.actual_start != self.requested_start
+                    or self.actual_end != self.requested_end
+                ):
+                    raise ValueError("complete coverage must span the full requested window")
             if self.page_count is not None and self.pagination_exhausted is not True:
                 raise ValueError("complete paginated coverage requires pagination_exhausted=true")
         elif self.completeness == "unavailable":
@@ -114,6 +121,26 @@ class SourceCoverageV1(BaseModel):
 
     def _allows_zero_usable_items(self) -> bool:
         return False
+
+    def _allows_complete_without_items(self) -> bool:
+        """Whether ``complete`` may carry zero retained items.
+
+        Payload capabilities return False: an empty payload is a degradation,
+        not coverage.  Screening capabilities override this so that a query the
+        provider provably completed with no match is reported as the *fact* it
+        is, instead of being collapsed into the same state as a fetch failure.
+        """
+        return False
+
+    def _requires_observed_window_for_complete(self) -> bool:
+        """Whether ``complete`` must name the date window it observed.
+
+        True for window-shaped payload queries.  A screening capability may
+        override this: its completeness claim is about the *query*, and the
+        adapter re-verifies each returned row against the requested filters,
+        which is the stronger guarantee.
+        """
+        return True
 
 
 class PriceSeriesCoverageV1(SourceCoverageV1):
@@ -195,6 +222,72 @@ class SecDisclosureCoverageV1(SourceCoverageV1):
         if self.completeness != expected:
             raise ValueError("SEC completeness does not match search and document closure")
         return self
+
+
+class ScreeningCoverageV1(SourceCoverageV1):
+    """Coverage for a provider query whose honest answer may be "nothing matched".
+
+    A screener is not a payload capability.  "This company filed a performance
+    forecast inside the window" and "the provider answered the whole window and
+    no forecast exists" are *different facts*, and a caller that cannot tell
+    them apart will read a throttled vendor as a negative finding.  This
+    subclass makes the second fact expressible as ``complete`` with zero items,
+    which the base contract deliberately reserves for payload capabilities.
+
+    ``query_complete`` is the load-bearing field: it may only be true when the
+    provider's own pagination was exhausted and its self-reported totals were
+    reconciled against the rows actually read.  A partial scan, an unknown page
+    count, or a truncated result set is ``partial``/``unknown`` and must carry a
+    degradation code -- never ``complete``.
+    """
+
+    coverage_kind: Literal["screening-coverage-v1"] = "screening-coverage-v1"
+    # True only when the provider's pagination was exhausted and its
+    # self-reported totals reconciled with the rows actually read.
+    query_complete: bool
+    # What was screened, in the provider's own terms (ticker, report period,
+    # market-wide snapshot, ...).  Recorded because "nothing matched" is only
+    # meaningful next to the scope that was searched.
+    requested_scope: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_screening_semantics(self) -> ScreeningCoverageV1:
+        if self.query_complete != (self.pagination_exhausted is True):
+            raise ValueError(
+                "query_complete must match proven pagination exhaustion"
+            )
+        if self.completeness == "complete":
+            if not self.query_complete:
+                raise ValueError("complete screening coverage requires a completed query")
+            if self.degradations:
+                raise ValueError(
+                    "complete screening coverage cannot carry a degradation; "
+                    "a completed query with no match is a fact, not a degradation"
+                )
+        if self.completeness == "unavailable" and self.query_complete:
+            raise ValueError("an unavailable source cannot have completed the query")
+        return self
+
+    def _allows_complete_without_items(self) -> bool:
+        # Only ``query_complete`` gates the base contract here; the
+        # "complete carries no degradation" rule lives in this class's own
+        # validator so the failure names the real reason.
+        return self.query_complete
+
+    def _requires_observed_window_for_complete(self) -> bool:
+        # A screen's completeness is a claim about the query, not about a date
+        # window: "the provider answered every page and nothing matched" is
+        # complete even though no row exists to bound a window.  Window-shaped
+        # screens still record the requested window; adapters additionally
+        # re-verify each returned row against the requested filters, which is a
+        # stronger guarantee than a window comparison.
+        return False
+
+    def _allows_zero_usable_items(self) -> bool:
+        # A screen can legitimately match nothing before its pagination budget
+        # is spent.  That is not coverage -- the degradation code recorded by
+        # the caller is what stops it reading as one.
+        return self.item_count == 0 and bool(self.degradations)
 
 
 class CoveredText(str):

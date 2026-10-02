@@ -47,7 +47,7 @@ Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究�
 | 新闻与披露 | `get_news`、`get_a_share_cninfo_announcements`、`get_a_share_exchange_announcements` | 使用已配置的搜索/新闻服务以及巨潮或交易所披露；部分查询会使用明确标注为公开备份的东方财富来源。 |
 | A 股研究补充数据 | `get_a_share_dragon_tiger`、`get_a_share_lockup_releases`、`get_a_share_adjust_factors`、`get_a_share_valuation_history`、`get_china_pmi` | 根据接口分别来自东方财富、新浪、baostock 和国家统计局。 |
 
-部分 A 股数据补充适配器参考了 [Simon Lin 的 a-stock-data](https://github.com/simonlin1212/a-stock-data)，包括复权因子、历史估值、上市信息、筹码分布和宏观数据。这些适配器由本项目自行实现并路由；运行本项目不需要安装完整的 a-stock-data 工具包。数据来源和降级行为见 [A 股数据能力说明](docs/operations/a-share-data-capabilities.md)。
+部分 A 股数据补充适配器参考了 [Simon Lin 的 a-stock-data](https://github.com/simonlin1212/a-stock-data)（对齐上游 v3.10.0，手写移植而非 vendor），包括复权因子与 `apply_adjust` 换算、历史估值、上市信息、筹码分布、宏观数据，以及东财事件驱动层（业绩预告/机构调研/回购/股权质押/新股日历）、ST 名单、深交所交易日历、沪深官方两融、上证e互动和新浪研报列表。这些适配器由本项目自行实现并路由；运行本项目不需要安装完整的 a-stock-data 工具包。上游基准、数据来源和降级行为见 [A 股数据能力说明](docs/operations/a-share-data-capabilities.md)。
 
 | Agent 或阶段 | 主要职责 |
 | --- | --- |

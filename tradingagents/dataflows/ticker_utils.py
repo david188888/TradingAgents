@@ -32,10 +32,17 @@ _BJ_NEW_SEGMENT_PREFIX = "92"
 # understand a bare six-digit code.  A market identifier may appear either as
 # a prefix (SH600519) or a suffix (600519.SH), never both.  Anchored so a
 # 7-digit or mixed string is rejected instead of silently truncated.
+# ``.XSHG`` / ``.XSHE`` are JoinQuant's spellings of the same two markets
+# (a-stock-data #55); accepting them keeps a pasted backtest code from being
+# rejected as malformed, while the contradiction check below still refuses a
+# suffix that disagrees with the code's segment.
 _STRICT_TICKER_RE = re.compile(
-    r"^(?:(SH|SZ|BJ)(\d{6})|(\d{6})(?:\.(SH|SZ|BJ))?)$",
+    r"^(?:(SH|SZ|BJ)(\d{6})|(\d{6})(?:\.(SH|SZ|BJ|XSHG|XSHE))?)$",
     re.IGNORECASE,
 )
+
+# JoinQuant suffix -> the canonical local exchange identifier.
+_JOINQUANT_EXCHANGE = {"XSHG": "SH", "XSHE": "SZ"}
 
 
 def infer_a_share_exchange(code: str) -> str | None:
@@ -70,22 +77,24 @@ def _natural_market(digits: str) -> str:
 def strict_ticker_code(code: str, *, stock_only: bool = False) -> str:
     """Parse a supported ticker form into a bare six-digit A-share code.
 
-    Accepts ``600519`` / ``SH600519`` / ``600519.SH`` / ``BJ920982``.  Raises
-    ``ValueError`` on malformed or ambiguous input instead of guessing a code:
-    silently picking the wrong instrument (for example ``SH000001`` as Ping An
-    Bank, or truncating ``6005190`` to ``600519``) is worse than failing
-    loudly.  ``stock_only`` rejects explicit Shanghai index codes (``000xxx``)
-    for stock-only endpoints such as research reports and consensus forecasts.
+    Accepts ``600519`` / ``SH600519`` / ``600519.SH`` / ``BJ920982`` and the
+    JoinQuant spellings ``600519.XSHG`` / ``000001.XSHE``.  Raises ``ValueError``
+    on malformed or ambiguous input instead of guessing a code: silently picking
+    the wrong instrument (for example ``SH000001`` as Ping An Bank, or
+    truncating ``6005190`` to ``600519``) is worse than failing loudly.
+    ``stock_only`` rejects explicit Shanghai index codes (``000xxx``) for
+    stock-only endpoints such as research reports and consensus forecasts.
     """
     raw = str(code or "").strip()
     match = _STRICT_TICKER_RE.match(raw)
     if not match:
         raise ValueError(
             f"无法把 {code!r} 解析为 6 位股票代码；支持格式：600519 / "
-            "SH600519 / 600519.SH（前缀与后缀二选一，不能同时写）"
+            "SH600519 / 600519.SH / 600519.XSHG（前缀与后缀二选一，不能同时写）"
         )
     digits = match.group(2) or match.group(3)
-    market = (match.group(1) or match.group(4) or "").lower()
+    suffix = (match.group(1) or match.group(4) or "").upper()
+    market = _JOINQUANT_EXCHANGE.get(suffix, suffix).lower()
     if market:
         if digits.startswith("000"):
             # 000xxx is shared between Shanghai indices and Shenzhen stocks.
@@ -129,9 +138,10 @@ def normalize_ticker_symbol(ticker: str) -> str:
         strict_ticker_code(f"{exchange}{code}")
         return _format_canonical_a_share(code, exchange)
 
-    suffix_match = re.fullmatch(r"(\d{6})(SH|SS|SZ|BJ)", compact)
+    suffix_match = re.fullmatch(r"(\d{6})(SH|SS|SZ|BJ|XSHG|XSHE)", compact)
     if suffix_match:
         code, exchange = suffix_match.groups()
+        exchange = _JOINQUANT_EXCHANGE.get(exchange, exchange)
         strict_ticker_code(f"{code}.{'SH' if exchange == 'SS' else exchange}")
         return _format_canonical_a_share(code, exchange)
 
@@ -175,6 +185,21 @@ def to_akshare_prefixed_symbol(ticker: str) -> str:
         return tushare_symbol
     code, exchange = tushare_symbol.split(".", 1)
     return f"{exchange}{code}"
+
+
+def to_joinquant_symbol(ticker: str) -> str:
+    """Convert to JoinQuant's suffix convention: ``600519.XSHG`` / ``000001.XSHE``.
+
+    Beijing codes have no JoinQuant spelling; pass-through is intentionally not
+    invented here, so a BSE ticker raises instead of silently becoming a
+    Shanghai/Shenzhen symbol (a-stock-data #55 / ``to_joinquant()``).
+    """
+    canonical = to_tushare_symbol(ticker)
+    if canonical.endswith(".SH"):
+        return canonical[:-3] + ".XSHG"
+    if canonical.endswith(".SZ"):
+        return canonical[:-3] + ".XSHE"
+    raise ValueError(f"{ticker!r} 没有对应的聚宽代码（北交所等市场不在聚宽 A 股命名空间内）。")
 
 
 def _format_canonical_a_share(code: str, exchange: str) -> str:
