@@ -92,6 +92,18 @@ from ._research_case_draft import (
     ScenarioDraft,
     render_learning_case_draft,
 )
+from ._research_record import (  # noqa: F401 - facade re-export
+    RESEARCH_RECORD_CONTRACT,
+    EvidenceSnapshotV1,
+    QuantitativeMetricV1,
+    RecordClaimV1,
+    ResearchChallengeV1,
+    ResearchHypothesisV1,
+    ResearchRecordV1,
+    SourceContentV1,
+    SourceEvidenceV1,
+    VerificationRecordV1,
+)
 from ._sentiment import (  # noqa: F401  - facade re-export
     SentimentBand,
     SentimentReport,

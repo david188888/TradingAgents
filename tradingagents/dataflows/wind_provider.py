@@ -1,6 +1,6 @@
 """Wind AIFin Market data provider.
 
-Wraps the official ``wind-mcp-skill`` CLI (pinned 2.0.1) as a transport and
+Wraps the official ``wind-mcp-skill`` CLI (pinned 2.0.4) as a transport and
 exposes source-neutral capabilities for A-share indices, China macro EDB series,
 and equity risk metrics.
 
@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 WIND_VENDOR = "wind"
-SKILL_VERSION = "2.0.1"
+SKILL_VERSION = "2.0.4"
 
 # Default serial concurrency (Wind requirement).
 DEFAULT_MAX_CONCURRENCY = 1
@@ -505,7 +505,9 @@ def _extract_edb_series(data: Any) -> list[WindEdbSeries]:
     """
     if not isinstance(data, dict):
         return []
-    payload = data.get("data")
+    payload = data.get("metrics", data.get("data"))
+    if isinstance(payload, dict) and isinstance(payload.get("metrics"), list):
+        payload = payload["metrics"]
     # Normal shape: data.data is a list (may also have data.code)
     if isinstance(payload, dict) and isinstance(payload.get("data"), list):
         payload = payload["data"]
@@ -516,7 +518,9 @@ def _extract_edb_series(data: Any) -> list[WindEdbSeries]:
         if not isinstance(item, dict):
             logger.warning("Skipping non-dict EDB item: %s", type(item).__name__)
             continue
-        meta = item.get("meta") or {}
+        # 2.0.4 search returns flat metadata; query returns {meta,date,value}.
+        # Older persisted fixture payloads remain readable.
+        meta = item.get("meta") or (item if "code" in item else {})
         if not isinstance(meta, dict):
             logger.warning("Skipping malformed EDB metadata: %s", type(meta).__name__)
             meta = {}
@@ -558,7 +562,7 @@ def _parse_envelope(stdout: str, server_type: str, tool_name: str) -> WindEnvelo
 
     # Error envelope from CLI
     if envelope.get("ok") is False:
-        err = envelope.get("error", {})
+        err = envelope.get("error") or envelope
         code = str(err.get("code", "UNKNOWN"))
         msg = err.get("message", str(err.get("details", "")))
         raise _classify_wind_code(code, msg, err.get("details", {}))
@@ -663,7 +667,7 @@ def _classify_cli_error(
     try:
         envelope = json.loads(raw)
         if envelope.get("ok") is False:
-            err = envelope.get("error", {})
+            err = envelope.get("error") or envelope
             return _classify_wind_code(
                 str(err.get("code", "UNKNOWN")),
                 err.get("message", err.get("agent_action", raw[:300])),
@@ -869,6 +873,7 @@ def get_stock_adjusted_price_history(
         "end_date": end_date,
         "period": "1d",
         "aftype": "0",
+        "afdate": end_date,
         "issusp": "0",
     }
     envelope = _call_wind("stock_data", "get_stock_kline", params)
@@ -937,7 +942,7 @@ def get_stock_adjusted_price_history(
         ),
         as_of=end_date,
         price_basis="qfq",
-        adjustment_source="wind.stock_data.get_stock_kline(aftype=0)",
+        adjustment_source=f"wind.stock_data.get_stock_kline(aftype=0,afdate={end_date})",
         adjustment_verified=True,
         granularity="daily",
     )
@@ -948,6 +953,7 @@ def get_stock_adjusted_price_history(
             "dataset": "adjusted_price_history",
             "symbol": symbol,
             "price_basis": "qfq",
+            "adjustment_anchor": end_date,
         },
     )
     text = "\n".join(
@@ -955,7 +961,7 @@ def get_stock_adjusted_price_history(
             f"# Adjusted stock data for {symbol} ({windcode}) from {start_date} to {end_date}",
             f"# Source: wind (stock_data.get_stock_kline, skill {SKILL_VERSION})",
             "# Price basis: qfq",
-            "# Adjustment source: wind.stock_data.get_stock_kline(aftype=0)",
+            f"# Adjustment source: wind.stock_data.get_stock_kline(aftype=0,afdate={end_date})",
             "# This series is for historical returns, trend, and indicators; do not use it as an executable current-price quote.",
             "",
             _table_to_csv(table),
@@ -1183,8 +1189,8 @@ def search_macro_series(query: str) -> str:
     """
     envelope = _call_wind(
         "economic_data",
-        "natural_language_get_edb_data",
-        {"executionMode": "search", "question": query},
+        "search_economic_indicator",
+        {"question": query},
     )
     series_list = _extract_edb_series(envelope.data)
     if not series_list:
@@ -1205,7 +1211,7 @@ def search_macro_series(query: str) -> str:
     text = "\n".join(
         [
             f"# EDB search results for: {query}",
-            f"# Source: wind (economic_data.natural_language_get_edb_data, skill {SKILL_VERSION})",
+            f"# Source: wind (economic_data.search_economic_indicator, skill {SKILL_VERSION})",
             f"# Retrieved: {_today()}",
             f"# {len(series_list)} indicator(s) found. Review codes before using in production fetch.",
             "",
@@ -1214,7 +1220,7 @@ def search_macro_series(query: str) -> str:
     )
     coverage = _make_coverage(
         "macro_series_search",
-        "natural_language_get_edb_data",
+        "search_economic_indicator",
         item_count=len(series_list),
         completeness="unknown",
     )
@@ -1248,9 +1254,8 @@ def get_macro_series(
 
     envelope = _call_wind(
         "economic_data",
-        "natural_language_get_edb_data",
+        "query_economic_indicator_data",
         {
-            "executionMode": "fetch",
             "question": ",".join(codes),
             "beginDate": start_date,
             "endDate": end_date,
@@ -1282,7 +1287,7 @@ def get_macro_series(
     text = "\n".join(
         [
             f"# EDB series: {series_ids}",
-            f"# Source: wind (economic_data.natural_language_get_edb_data, skill {SKILL_VERSION})",
+            f"# Source: wind (economic_data.query_economic_indicator_data, skill {SKILL_VERSION})",
             f"# Window: {start_date} to {end_date}",
             f"# Retrieved: {_today()}",
             f"# {total_obs} observation(s) across {len(series_list)} series",
@@ -1292,7 +1297,7 @@ def get_macro_series(
     )
     coverage = _make_coverage(
         "macro_series",
-        "natural_language_get_edb_data",
+        "query_economic_indicator_data",
         item_count=total_obs,
         requested_start=start_date,
         requested_end=end_date,

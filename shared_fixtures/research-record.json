@@ -1,0 +1,142 @@
+{
+  "state": "ready",
+  "schema_version": 1,
+  "run_id": "run-record",
+  "record": {
+    "schema_version": "research-record-v1",
+    "run_id": "run-record",
+    "ticker": "600519",
+    "mode": "company_research",
+    "analysis_date": "2026-09-30",
+    "construction": "native",
+    "source_case_contract": null,
+    "source_case_sha256": null,
+    "snapshots": [
+      {
+        "version": 0,
+        "snapshot_id": "v0.754e3e74670564ea1693e3814ea52d5079a1e91a090d8c95fda3f7eb9f3583a2",
+        "parent_snapshot_id": null,
+        "evidence_ids": [
+          "e1"
+        ],
+        "content_sha256": "754e3e74670564ea1693e3814ea52d5079a1e91a090d8c95fda3f7eb9f3583a2"
+      }
+    ],
+    "evidence": [
+      {
+        "evidence_id": "e1",
+        "source_name": "fixture",
+        "source_kind": "official",
+        "source_family_id": null,
+        "availability": "available",
+        "public_url": null,
+        "published_at": null,
+        "usable_as_of": null,
+        "captured_at": null,
+        "content": {
+          "kind": "excerpt",
+          "text": "收入增长，但利润率下降。",
+          "locator_label": "经营概况 · 第 8 页",
+          "content_sha256": "609fe71b9a0fcb35ae3f576f3333e474678a4471787b8be1b893245d4800e1a3",
+          "truncated": false
+        },
+        "limitations": [
+          "document_body_not_saved"
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "claim_id": "f1",
+        "kind": "fact",
+        "statement": "披露收入上升",
+        "evidence_ids": [
+          "e1"
+        ],
+        "supporting_fact_ids": [],
+        "limitations": []
+      },
+      {
+        "claim_id": "i1",
+        "kind": "inference",
+        "statement": "改善可能延续",
+        "evidence_ids": [
+          "e1"
+        ],
+        "supporting_fact_ids": [
+          "f1"
+        ],
+        "limitations": []
+      }
+    ],
+    "hypotheses": [
+      {
+        "hypothesis_id": "h1",
+        "claim_id": "i1",
+        "input_snapshot_id": "v0.754e3e74670564ea1693e3814ea52d5079a1e91a090d8c95fda3f7eb9f3583a2",
+        "origin": "hypothesis_stage",
+        "assumptions": [],
+        "invalidation_conditions": [
+          "下一期收入回落"
+        ],
+        "limitations": []
+      }
+    ],
+    "challenges": [
+      {
+        "challenge_id": "c1",
+        "target_claim_ids": [
+          "i1"
+        ],
+        "statement": "改善是否只来自一次性事项",
+        "severity": "critical",
+        "risk_type": "operations",
+        "evidence_ids": [],
+        "proposed_test": "核对收入分项",
+        "reported_disposition": null
+      }
+    ],
+    "verifications": [],
+    "metrics": [
+      {
+        "metric_id": "var",
+        "label": "单日历史 5% 分位",
+        "availability": "available",
+        "value": 0.012,
+        "unit": "signed_return_fraction",
+        "method": "signed daily q(0.05)",
+        "calculation_version": "return-risk-v1",
+        "input_evidence_ids": [
+          "e1"
+        ],
+        "input_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "window_start": "2026-09-01",
+        "window_end": "2026-09-30",
+        "sample_size": 20,
+        "tail_sample_size": 1,
+        "unavailable_reason": null,
+        "limitations": []
+      },
+      {
+        "metric_id": "beta",
+        "label": "Beta",
+        "availability": "unavailable",
+        "value": null,
+        "unit": "dimensionless",
+        "method": "signed daily q(0.05)",
+        "calculation_version": "return-risk-v1",
+        "input_evidence_ids": [
+          "e1"
+        ],
+        "input_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "window_start": "2026-09-01",
+        "window_end": "2026-09-30",
+        "sample_size": 20,
+        "tail_sample_size": null,
+        "unavailable_reason": "qualified_benchmark_not_supplied",
+        "limitations": []
+      }
+    ],
+    "limitations": []
+  }
+}

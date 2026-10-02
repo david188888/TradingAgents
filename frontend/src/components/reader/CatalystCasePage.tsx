@@ -38,6 +38,7 @@ export interface CatalystCasePageProps {
   onOpenAudit: () => void;
   /** 更多研究 — the entry point back into the form. */
   onNewResearch: () => void;
+  recordPanel?: JSX.Element;
 }
 
 export function CatalystCasePage({
@@ -50,6 +51,7 @@ export function CatalystCasePage({
   processPane,
   onOpenAudit,
   onNewResearch,
+  recordPanel,
 }: CatalystCasePageProps): JSX.Element {
   const [tab, setTab] = useState<CatalystTabId>("brief");
 
@@ -68,6 +70,8 @@ export function CatalystCasePage({
           onOpenEvidence={onOpenEvidence}
         />
       </div>
+
+      {recordPanel}
 
       <div className="catalyst-page-actions">
         <button type="button" className="primary" onClick={onNewResearch}>

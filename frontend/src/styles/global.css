@@ -93,3 +93,16 @@ a {
 .hidden {
   display: none !important;
 }
+
+.research-record { margin-block: 1.5rem; min-width: 0; }
+.record-meta { color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.record-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; }
+.record-metric { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; }
+.record-metric h4 { margin: 0 0 .5rem; font-weight: 500; }
+.record-metric strong { font-size: 1.45rem; font-variant-numeric: tabular-nums; }
+.record-metric details { margin-top: .75rem; font-size: .85rem; overflow-wrap: anywhere; }
+.record-detail { margin-top: 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; }
+.research-record summary { cursor: pointer; }
+.record-evidence { margin-block: .8rem; }
+.record-source-content { min-width: 0; }
+.record-source-content pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; font-size: .9rem; line-height: 1.6; padding: .8rem; border-left: 3px solid var(--line); }

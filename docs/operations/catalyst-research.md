@@ -37,12 +37,25 @@ substituted. Opaque SDK fallbacks are unavailable here.
 | Security identity | Tushare REST `stock_basic`; exact code, unique identity and listing date at/before cutoff. Current company name is not historical identity evidence. |
 | Event coverage | CNINFO direct transport, 90-day publication lookback with bounded pagination; only proven complete coverage qualifies. Each filing cites its own source record. Publication date is not inferred to be occurrence date. |
 | Fundamentals | Tushare REST income, balance sheet and cash flow; consolidated statements, publication/final-publication and reporting dates at/before cutoff, eight distinct periods per statement. Fewer periods are partial. Credentials do not prove API entitlement. |
-| Price history | No qualified adapter for the default chain. Bounded Tencent qfq requires explicit vendor selection and verified PIT adjustment provenance; existing unverified provenance is rejected. Raw prices or current factors cannot qualify it. |
+| Price history | Direct Tushare REST `trade_cal`, `daily` and `adj_factor` is admitted when explicitly present in the configured chain. All calendar dates, settled sessions, security codes, OHLC and dated factors are checked. OHLC is scaled to the last price session's factor. Only capture on the research-cutoff date can qualify without an archive vintage; retrospective factors remain unverified. Tencent qfq still needs explicit selection and verified PIT provenance; existing unverified provenance is rejected. |
 
 Unavailable/partial required capabilities cap priority at
 `insufficient_information`. Source errors and truncated windows cannot prove
-no events. This trial currently cannot establish a complete live research case
-through the default price chain.
+no events. A cutoff anchor alone cannot qualify historical factor vintage.
+Missing price sessions, including possible suspensions, are recorded without
+filling prices or asserting their cause. The first explicitly selected bounded
+price adapter is used; opaque Wind CLI/SDK paths are recorded as unsupported
+for this profile, even though classic can use Wind. An explicit Wind-only
+selection cannot silently call Tushare prices.
+
+Qualifying Tushare price evidence includes code-computed volatility, signed
+daily historical VaR/ES, observed maximum drawdown and Wilder ATR when their
+own inputs/sample limits permit. Missing a qualified benchmark leaves beta
+unavailable without suppressing single-security statistics. The input hash,
+calculation versions, adjustment anchor and limitations are frozen with the
+source payload and checkpointed before specialist dispatch. The market
+specialist reads this saved payload; a dedicated homepage metrics projection
+is not yet part of the published case. See [local price statistics](../contracts/local-price-statistics.md).
 
 ## Budget, cancellation and recovery
 
@@ -84,3 +97,12 @@ remain in the run's `reports/` directory in the local durable store.
 See [architecture](../../ARCHITECTURE.md) for ownership and default paths.
 Verification history and research-quality decisions belong in the
 [wiring acceptance record](../superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md).
+
+New case publication also emits an additive
+[shared research record](../contracts/research-record.md). The Reader presents
+up to four saved price-statistic cards below the brief, with ES/Beta and method
+details expandable. Citation drawers resolve saved claims/challenges to all
+their directly cited sources and show admitted source content before metadata.
+Missing original bodies remain missing; model dispositions never become
+executed verification. This integration does not change the existing catalyst
+workflow, default profile or data-qualification rules.

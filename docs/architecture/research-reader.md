@@ -34,10 +34,11 @@ The execution commit path publishes `research-case-v2` with current-run provenan
 
 - `typed`: a readable `ResearchCaseV2` projection with research tilt, claims, scenarios, review items, analyst cards, coverage, omissions, optional thesis diff, and bounded audit counts.
 - `research-package-v1`: a separate read-only structured package at `/api/runs/{run_id}/reader/package` for metric definitions, point-in-time observations, peer comparisons, logic edges, and portable Agent consumption. Its absence or partial unknowns never upgrades a Reader conclusion.
+- `research-record-v1`: an additive committed record at `/api/runs/{run_id}/reader/record` shared with catalyst research. It carries admitted public source content, inference dependencies and saved quantitative metrics. Converted inferences are not executed verification. This separate endpoint exposes public content hashes/snapshots; it excludes private locators and raw envelopes. See [contract and compatibility limits](../contracts/research-record.md).
 - `legacy`: a historical run without a typed case; it remains explicitly legacy and does not fabricate typed fields.
 - `unavailable`: a typed case is missing, unreadable, or unsupported; the response carries a stable reason code and audit counts.
 
-The projection reads persisted artifacts and events only. It is side-effect free, does not call an LLM or network, and does not expose raw evidence payloads, prompt text, locators, content hashes, or internal snapshots.
+The original Reader projection reads persisted artifacts and events only. It is side-effect free, does not call an LLM or network, and does not expose raw evidence payloads, prompt text, locators, content hashes, or internal snapshots. The separate shared-record endpoint admits only its explicitly public content and provenance.
 
 ## Companion And Audit Boundaries
 

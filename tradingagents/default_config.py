@@ -415,7 +415,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "wind_max_concurrency": 1,
     "wind_request_timeout_seconds": 120,
     "wind_strict_edb_allowlist": False,
-    "wind_pinned_skill_version": "2.0.1",
+    "wind_pinned_skill_version": "2.0.4",
     # Methodology scorecards deliberately keep subjective cutoffs in config,
     # rather than burying them in a skill prompt. They are interpretation aids,
     # not trading rules: missing inputs must remain unavailable.

@@ -295,4 +295,12 @@ class CatalystRunner:
             committed_sequence=barrier.sequence,
             promoted={("catalyst.final", "catalyst-research-case-v1")} if published else set(),
         )
+        from tradingagents.execution.record_publisher import promote_research_record
+        from tradingagents.research.record_assembly import record_from_catalyst
+        promote_research_record(
+            self.observer,
+            build=lambda: record_from_catalyst(case, journal.state.get("evidence_context", {})),
+            graph_task_id="catalyst.final", checkpoint_event_id=barrier.event_id,
+            committed_sequence=barrier.sequence, promoted=set(),
+        )
         return AnalysisResult({"research_profile": "catalyst_v1", "catalyst_case": case.model_dump(mode="json")}, "research_only")

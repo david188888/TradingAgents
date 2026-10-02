@@ -33,6 +33,7 @@ export const API = {
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
   reader: (run_id: string) => `/api/runs/${run_id}/reader`,
   readerPackage: (run_id: string) => `/api/runs/${run_id}/reader/package`,
+  readerRecord: (run_id: string) => `/api/runs/${run_id}/reader/record`,
   readerCompanion: (run_id: string) => `/api/runs/${run_id}/reader/companion`,
   audit: (run_id: string) => `/api/runs/${run_id}/audit`,
   auditDetail: (run_id: string) => `/api/runs/${run_id}/audit/detail`,
@@ -53,6 +54,70 @@ export const API = {
 } as const;
 
 export const EVENT_SCHEMA_VERSION = 1 as const;
+
+// Canonical: agents/schemas/_research_record.py and web/research_record_projection.py.
+export interface SourceContentV1DTO {
+  kind: "excerpt" | "source_fields" | "saved_summary";
+  text: string;
+  locator_label: string;
+  content_sha256: string;
+  truncated: boolean;
+}
+
+export interface SourceEvidenceV1DTO {
+  evidence_id: string;
+  source_name: string;
+  source_kind: "official" | "vendor" | "media" | "derived" | "analysis_report" | "unknown";
+  source_family_id: string | null;
+  availability: "available" | "unavailable" | "unverified";
+  public_url: string | null;
+  published_at: string | null;
+  usable_as_of: string | null;
+  captured_at: string | null;
+  content: SourceContentV1DTO | null;
+  limitations: string[];
+}
+
+export interface QuantitativeMetricV1DTO {
+  metric_id: string;
+  label: string;
+  availability: "available" | "unavailable";
+  value: number | null;
+  unit: string;
+  method: string;
+  calculation_version: string;
+  input_evidence_ids: string[];
+  input_sha256: string;
+  window_start: string | null;
+  window_end: string | null;
+  sample_size: number | null;
+  tail_sample_size: number | null;
+  unavailable_reason: string | null;
+  limitations: string[];
+}
+
+export interface ResearchRecordV1DTO {
+  schema_version: "research-record-v1";
+  run_id: string;
+  ticker: string;
+  mode: "company_research" | "catalyst_research" | "holding_review";
+  analysis_date: string;
+  construction: "adapted_case" | "native";
+  source_case_contract: "research-case-v2" | "catalyst-research-case-v1" | null;
+  source_case_sha256: string | null;
+  snapshots: Array<{ version: 0 | 1; snapshot_id: string; parent_snapshot_id: string | null; evidence_ids: string[]; content_sha256: string }>;
+  evidence: SourceEvidenceV1DTO[];
+  claims: Array<{ claim_id: string; kind: "fact" | "inference" | "unknown"; statement: string; evidence_ids: string[]; supporting_fact_ids: string[]; limitations: string[] }>;
+  hypotheses: Array<{ hypothesis_id: string; claim_id: string; input_snapshot_id: string; origin: "hypothesis_stage" | "adapted_inference"; assumptions: string[]; invalidation_conditions: string[]; limitations: string[] }>;
+  challenges: Array<{ challenge_id: string; target_claim_ids: string[]; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; evidence_ids: string[]; proposed_test: string; reported_disposition: string | null }>;
+  verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string }>;
+  metrics: QuantitativeMetricV1DTO[];
+  limitations: string[];
+}
+
+export type ResearchRecordResponseDTO =
+  | { state: "ready"; schema_version: 1; run_id: string; record: ResearchRecordV1DTO }
+  | { state: "unavailable"; schema_version: 1; run_id: string; reason_code: "not_published" | "publication_failed" | "corrupt" | "source_case_mismatch" };
 
 /** SSE terminal events — the stream is closed by the server after these. */
 export const TERMINAL_STREAM_EVENTS = [

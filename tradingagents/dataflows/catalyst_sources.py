@@ -19,6 +19,11 @@ from tradingagents.dataflows.catalyst_events import CatalystEventV1, classify_ea
 from tradingagents.dataflows.china_specialty import get_a_share_cninfo_announcements
 from tradingagents.dataflows.tencent_kline import get_a_share_kline_qfq_df
 from tradingagents.dataflows.ticker_utils import to_tushare_symbol
+from tradingagents.dataflows.tushare_price_history import (
+    PriceHistoryQualificationError,
+    prepare_tushare_price_history,
+    settled_sessions,
+)
 from tradingagents.research.evidence_freeze import (
     CAP_EVENT_COVERAGE,
     CAP_FUNDAMENTALS,
@@ -96,10 +101,12 @@ class CatalystSources:
             try:
                 operation()
             except Exception as exc:
+                safe_code = exc.code if isinstance(exc, PriceHistoryQualificationError) else type(exc).__name__
+                detail = exc.detail if isinstance(exc, PriceHistoryQualificationError) else {}
                 inputs.capabilities.append(FrozenCapability(
                     capability=capability, status=CapabilityStatus.UNAVAILABLE, required=True,
-                    reason=f"{capability}_unavailable:{type(exc).__name__}",
-                    degradations=(f"{capability}_unavailable",),
+                    reason=f"{capability}_unavailable:{safe_code}",
+                    degradations=(f"{capability}_unavailable", safe_code), detail=detail,
                 ))
 
         def get_identity():
@@ -191,13 +198,51 @@ class CatalystSources:
             ))
 
         def get_prices():
-            self.require_vendor("tencent", "core_stock_apis", "get_adjusted_price_history")
+            config = request.effective_config
+            selected = config.get("tool_vendors", {}).get("get_adjusted_price_history") or config.get("data_vendors", {}).get("core_stock_apis", "")
+            candidates = [item.strip() for item in selected.split(",")]
+            # Wind CLI/opaque SDKs do not expose their HTTP attempts to this
+            # bounded profile. Choose only an explicitly selected adapter.
+            vendor = next((item for item in candidates if item in {"tushare", "tencent"}), None)
+            if vendor is None:
+                raise ValueError("configured_source_has_no_bounded_adapter")
             if identity is None:
                 raise ValueError("listing_date_unknown")
             start = max(history_start, _iso_api_date(identity["list_date"]))
             exchange = {"SH":"SSE","SZ":"SZSE","BJ":"BSE"}[ts_code.rsplit(".",1)[1]]
             calendar = self.fetch("calendar", lambda: self.tushare("trade_cal", "cal_date,is_open",
                 exchange=exchange, start_date=start.replace("-",""), end_date=compact_end))
+            if vendor == "tushare":
+                captured_at = datetime.now(timezone.utc)
+                sessions = settled_sessions(calendar, start=start, cutoff=inputs.cutoff, captured_at=captured_at)
+                end = sessions[-1].replace("-", "")
+                daily = self.fetch("price_daily", lambda: self.tushare(
+                    "daily", "ts_code,trade_date,open,high,low,close",
+                    ts_code=ts_code, start_date=start.replace("-", ""), end_date=end))
+                factors = self.fetch("price_factors", lambda: self.tushare(
+                    "adj_factor", "ts_code,trade_date,adj_factor",
+                    ts_code=ts_code, start_date=start.replace("-", ""), end_date=end))
+                result = prepare_tushare_price_history(daily, factors, calendar,
+                    ts_code=ts_code, start=start, cutoff=inputs.cutoff, captured_at=captured_at)
+                provenance = result["provenance"]
+                provenance["bounded_adapter_selection"] = {
+                    "configured_chain": candidates, "selected": vendor,
+                    "unsupported_before_selected": candidates[:candidates.index(vendor)],
+                }
+                if not provenance["window_covered"] or provenance["pit_status"] != "verified":
+                    raise PriceHistoryQualificationError("price_window_or_vintage_unqualified", **provenance)
+                from tradingagents.research.price_statistics import build_price_statistics
+                result["computed_statistics"] = build_price_statistics(result["bars"], provenance)
+                self.evidence(inputs, CAP_PRICE, "tushare.adjusted_daily", result)
+                inputs.prices.extend(PriceObservation(observed_on=row["Date"], close=row["Close"],
+                    adjustment="qfq", source="tushare", pit_verified=True) for row in result["bars"])
+                inputs.capabilities.append(FrozenCapability(
+                    capability=CAP_PRICE, status=CapabilityStatus.QUALIFIED, required=True,
+                    sources=("tushare.daily", "tushare.adj_factor", "tushare.trade_cal"),
+                    reason="dated factors, settled calendar, CNY units and current-cutoff capture checked",
+                    detail=provenance,
+                ))
+                return
             days = sorted(_iso_api_date(r["cal_date"]) for r in calendar if str(r["is_open"]) == "1")
             if len(days) < 2:
                 raise ValueError("insufficient_verified_trading_days")

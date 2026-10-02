@@ -28,6 +28,7 @@ import type {
   RunViewEnvelopeDTO,
   ReaderResponseDTO,
   ResearchPackageDTO,
+  ResearchRecordResponseDTO,
   RunCreateRequestDTO,
   RunSnapshotDTO,
   RunSummaryDTO,
@@ -216,6 +217,11 @@ export function getResearchPackage(
 ): Promise<ResearchPackageDTO> {
   assertRunId(run_id);
   return request<ResearchPackageDTO>("GET", API.readerPackage(run_id), undefined, signal);
+}
+
+export function getResearchRecord(run_id: string, signal?: AbortSignal): Promise<ResearchRecordResponseDTO> {
+  assertRunId(run_id);
+  return request<ResearchRecordResponseDTO>("GET", API.readerRecord(run_id), undefined, signal);
 }
 
 /** GET /api/runs/{run_id}/reader/companion?kind=...&id=... */

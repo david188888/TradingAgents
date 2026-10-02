@@ -74,6 +74,14 @@ retries and charges every dispatch. Process-wide model and data concurrency
 ceilings are two each. Active execution defaults to 300 seconds, excluding
 scheduler queue time.
 
+The bounded price path admits directly observed Tushare REST attempts. It
+validates daily bars, dated factors and complete settled-session calendars,
+anchors OHLC to the last price session, and rejects unverified retrospective
+factor vintage. Code-computed risk and ATR statistics are included in the
+frozen price evidence payload, with independent sample/input degradation;
+saved results are projected into the additive `research-record-v1` contract
+and the Reader's quantitative context, independently of valuation.
+
 `runtime/catalyst_checkpoint.py` persists attempt transitions, source results,
 frozen inputs, prompt digests, role results, stage status and the final candidate
 as committed run artifacts. Recovery checks identity and integrity, reuses saved
@@ -105,6 +113,13 @@ publication.
 The FastAPI adapter exposes raw run/artifact access plus read-only projections:
 the Reader (`/api/runs/{id}/reader`), the structured package
 (`/api/runs/{id}/reader/package`), run view, audit views, and market views.
+The shared record (`/api/runs/{id}/reader/record`) adapts committed company,
+holding and catalyst cases into source content, claims, hypotheses, challenges,
+verification records and metrics. It checks artifact and source-case integrity;
+historical absence remains explicit, without backfill. Current adapters label
+inferences as converted and never treat model dispositions as executed tool
+verification. No independent verification executor or default-flow migration
+is implied. See [the contract](docs/contracts/research-record.md).
 `frontend/src/api/contracts.ts` is the TypeScript facade for those wire
 contracts. The client consumes server-projected data; it does not define the
 domain schema or recover unavailable evidence by making provider calls.

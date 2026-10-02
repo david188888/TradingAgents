@@ -12,7 +12,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import catalystMinimalComplete from "../../../../shared_fixtures/catalyst/catalyst_minimal_complete.json";
-import type { CatalystEvidenceDTO, CatalystEventDTO } from "../../api/contracts";
+import type { CatalystEvidenceDTO, CatalystEventDTO, SourceEvidenceV1DTO } from "../../api/contracts";
 import { parseCatalystCase } from "../../domain/catalystWorkbench";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 
@@ -78,6 +78,40 @@ describe("EvidenceDrawer", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("rejects saved source content from another run with a colliding evidence id", () => {
+    const own = kase.evidence[0];
+    const source: SourceEvidenceV1DTO = {
+      evidence_id: own.evidence_id, source_name: "fixture", source_kind: "official",
+      source_family_id: null, availability: "available", public_url: null,
+      published_at: null, usable_as_of: null, captured_at: null, limitations: [],
+      content: { kind: "excerpt", text: "FOREIGN SAVED CONTENT", locator_label: "正文", content_sha256: "a".repeat(64), truncated: false },
+    };
+    const { rerender } = render(<EvidenceDrawer runId={RUN_ID} evidence={kase.evidence} events={[]}
+      sourceRecord={{ run_id: "other-run", evidence: [source] }} openId={own.evidence_id} background={[]} onClose={() => undefined} />);
+    expect(screen.queryByText("FOREIGN SAVED CONTENT")).toBeNull();
+    rerender(<EvidenceDrawer runId={RUN_ID} evidence={kase.evidence} events={[]}
+      sourceRecord={{ run_id: RUN_ID, evidence: [source] }} openId={own.evidence_id} background={[]} onClose={() => undefined} />);
+    expect(screen.getByText("FOREIGN SAVED CONTENT")).toBeInTheDocument();
+  });
+
+  it("resolves a claim to all its saved sources without upgrading it to verification", () => {
+    const ids = kase.evidence.slice(0, 2).map((item) => item.evidence_id);
+    render(<EvidenceDrawer runId={RUN_ID} evidence={kase.evidence} events={[]}
+      sourceRecord={{ run_id: RUN_ID, evidence: [], claims: [{ claim_id: "claim-one", kind: "inference", statement: "推断", evidence_ids: ids, supporting_fact_ids: [], limitations: [] }] }}
+      openId="claim-one" background={[]} onClose={() => undefined} />);
+    expect(screen.queryByText(/无法解析/)).toBeNull();
+    expect(screen.getAllByText("来源内容未保存")).toHaveLength(ids.length);
+    for (const source of kase.evidence.slice(0, 2)) expect(screen.getAllByText(source.source_name).length).toBeGreaterThan(0);
+  });
+
+  it("shows a challenge's intended check without pretending it has counterevidence", () => {
+    render(<EvidenceDrawer runId={RUN_ID} evidence={kase.evidence} events={[]}
+      sourceRecord={{ run_id: RUN_ID, evidence: [], challenges: [{ challenge_id: "challenge-one", target_claim_ids: ["claim-one"], statement: "缺乏利润率分项", severity: "critical", risk_type: "operations", evidence_ids: [], proposed_test: "读取分项披露", reported_disposition: null }] }}
+      openId="challenge-one" background={[]} onClose={() => undefined} />);
+    expect(screen.getByText(/拟核查：读取分项披露/)).toBeInTheDocument();
+    expect(screen.getByText(/没有直接引用已保存的反证来源/)).toBeInTheDocument();
   });
 
   it("renders nothing when no reference is open", () => {

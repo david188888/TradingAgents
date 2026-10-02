@@ -36,7 +36,7 @@ The Evidence Steward distinguishes `PASS`, `LOW_CONFIDENCE`, and `FAIL_STOP`; an
 
 The web workbench also supports explicit trials of `catalyst_v1` for A-share company research. Enable it for the server process with `TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1`, then select the catalyst workflow. It freezes cutoff-qualified evidence, runs three specialists, independent refutation, and one synthesis, and publishes a validated case and its Markdown report. Its fixed outlook is the next 84 calendar days; the optional research question is saved with the run. Classic remains the default.
 
-Catalyst uses durable attempt budgets and resumable stage records independently of the classic checkpoint toggle. Its initial bounded adapters cover Tushare identity/financial statements and CNINFO announcement coverage. It currently has no qualified price-history adapter for the default vendor chain; Tencent qfq without verified historical adjustment factors is also unavailable. Missing capabilities cap priority at insufficient information. See [catalyst operation and limits](docs/operations/catalyst-research.md). The following provider and agent tables describe the classic profile.
+Catalyst uses durable attempt budgets and resumable stage records independently of the classic checkpoint toggle. Its bounded adapters cover Tushare identity/financial statements, CNINFO announcements and Tushare dated-factor price history. Price history requires complete settled-session coverage and cutoff-qualified factor provenance; retrospective retrieval without an archive vintage and unverified Tencent qfq remain unavailable. Qualified Tushare evidence includes code-computed risk/ATR statistics where inputs permit. Missing capabilities cap priority at insufficient information. See [catalyst operation and limits](docs/operations/catalyst-research.md). The following provider and agent tables describe the classic profile.
 
 Provider routing is local to `tradingagents/dataflows/`. The table names representative interfaces, not a promise that every provider is available for every ticker or date. Provider failures and incomplete coverage are reported explicitly.
 
@@ -62,6 +62,8 @@ Some supplemental A-share adapters were informed by [Simon Lin's a-stock-data](h
 | Portfolio Manager | Closes the run with a research-only review and, for holding review, a holding summary; it does not generate an order. |
 
 The four analysts can be selected and ordered; the subsequent convergence path is fixed. The web workbench streams progress via FastAPI/SSE and presents the persisted report, Reader, and audit history through a bundled React/TypeScript frontend.
+
+New committed company, holding and catalyst cases also publish a [shared research record](docs/contracts/research-record.md). The Reader exposes saved source content and qualified catalyst price statistics. Converted inferences remain explicitly unverified; historical reports are not backfilled, and the default workflow remains classic.
 
 ## Quick start
 

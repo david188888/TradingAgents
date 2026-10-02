@@ -38,6 +38,7 @@ from tradingagents.research.catalyst_evidence_policy import (
     normalize_research_profile,
 )
 from tradingagents.runtime.run_models import generate_run_id
+from tradingagents.web.research_record_projection import project_research_record
 
 from .audit_models import AuditSelection
 from .audit_projection import (
@@ -544,6 +545,10 @@ def create_app(
                 "research_package_unavailable",
                 "The public research package is not available for this run.",
             ) from exc
+
+    @app.get("/api/runs/{run_id}/reader/record")
+    def get_reader_record(run_id: str) -> dict[str, Any]:
+        return project_research_record(selected_store, run_id)
 
     @app.get("/api/runs/{run_id}/reader/companion")
     def get_reader_companion(

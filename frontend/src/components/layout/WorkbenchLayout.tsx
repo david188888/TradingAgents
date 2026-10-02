@@ -15,6 +15,7 @@ import { ResumableRunBar } from "../reader/ResumableRunBar";
 import { CatalystCasePage } from "../reader/CatalystCasePage";
 import { CatalystProgress } from "../reader/CatalystProgress";
 import { EvidenceDrawer } from "../reader/EvidenceDrawer";
+import { ResearchRecordSection } from "../reader/ResearchRecordSection";
 import { restoreFocus } from "../shared/drawerFocus";
 import { LegacyReader } from "../reader/LegacyReader";
 import { RunDisclosure } from "./RunDisclosure";
@@ -26,6 +27,7 @@ import { notifyRun } from "../../hooks/useCompletionNotifications";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { useRunHistory } from "../../hooks/useRunHistory";
 import { useCatalyst } from "../../hooks/useCatalyst";
+import { useResearchRecord } from "../../hooks/useResearchRecord";
 import {
   catalystRoute,
   catalystScreenState,
@@ -86,6 +88,8 @@ export function WorkbenchLayout(): JSX.Element {
    * mounting it costs nothing.
    */
   const catalyst = useCatalyst(run_id, JSON.stringify([state?.meta.catalyst_stages, state?.meta.status]));
+  const recordRunId = view.view?.view.run.status === "completed" && view.view.view.run.run_id === run_id ? run_id : null;
+  const researchRecord = useResearchRecord(recordRunId);
 
   /**
    * Which contract produced this page. The completed page used to mount
@@ -408,6 +412,7 @@ export function WorkbenchLayout(): JSX.Element {
                   openAudit({ section: "overview" }, document.body)
                 }
                 onNewResearch={() => selectRun(null)}
+                recordPanel={<ResearchRecordSection runId={run_id} {...researchRecord} />}
                 detailPane={
                   view.view ? <ReaderSurface runId={run_id} onOpenAudit={openAudit} /> : null
                 }
@@ -439,7 +444,7 @@ export function WorkbenchLayout(): JSX.Element {
                 the old `research_rating` is shown as a rating and never mapped
                 onto the four new categories.
               */
-              <LegacyReader
+              <><LegacyReader
                 runId={run_id}
                 ticker={view.view.view.run.ticker}
                 /*
@@ -453,7 +458,7 @@ export function WorkbenchLayout(): JSX.Element {
                 layer={legacyLayer}
                 onLayerChange={setLegacyLayer}
                 onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
-              />
+              /><ResearchRecordSection runId={run_id} {...researchRecord} /></>
             ) : (
               /* Terminal but neither completed nor failed (cancelled /
                  interrupted historical run): the honest fallback. */
@@ -522,6 +527,7 @@ export function WorkbenchLayout(): JSX.Element {
           runId={run_id}
           evidence={catalyst.kase.evidence}
           events={catalyst.kase.events}
+          sourceRecord={researchRecord.response?.state === "ready" ? researchRecord.response.record : undefined}
           openId={openRef?.id ?? null}
           title={openRef?.title ?? null}
           background={[topbarRef.current, layoutRef.current]}

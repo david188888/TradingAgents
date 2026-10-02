@@ -30,6 +30,8 @@ For any question about current behavior:
 
 - [Contract index](contracts/README.md): canonical Python, runtime, web, and frontend sources, plus change propagation rules.
 - [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
+- [Local price statistics](contracts/local-price-statistics.md): deterministic return-risk/ATR methods and frozen price evidence, separate from valuation.
+- [Shared research record](contracts/research-record.md): additive evidence/hypothesis/verification/metric contract for company, holding and catalyst research, including read-only Reader integration and compatibility limits.
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.
 
@@ -60,6 +62,7 @@ These are execution proposals, not descriptions of current runtime behavior.
 
 - [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): original product direction and evaluation criteria. The explicit Web path is wired; default switching and batch quality evaluation remain separate decisions.
 - [Wiring design](superpowers/specs/2026-09-30-catalyst-production-wiring-design.md) and [acceptance record](superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md): approved scope and verification evidence.
+- [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): user-reviewed direction and mockup for company/catalyst/holding research; engineering migration is in progress.
 
 ## Historical / Archive
 

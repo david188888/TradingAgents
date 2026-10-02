@@ -36,7 +36,7 @@ Evidence Steward 会区分 `PASS`、`LOW_CONFIDENCE` 和 `FAIL_STOP`；意外的
 
 Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究。为服务端进程设置 `TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1` 后，可选择催化流程：冻结合格证据 → 三个专项 → 独立反证 → 单次综合 → 校验发布。结果为结构化 case 及其同源 Markdown 报告，固定展望未来 84 个日历日，可选研究问题随运行保存。classic 仍为默认。
 
-催化流程始终保存尝试预算与可恢复阶段记录，不受旧 checkpoint 开关控制。首批有界适配器覆盖 Tushare 身份/财务报表与巨潮公告覆盖；默认供应商链目前没有可证明资格的行情适配器，腾讯 qfq 未证明历史复权因子时也记为不可用。必需能力缺失会将优先级限制为“信息不足”。支持范围和操作见[催化研究说明](docs/operations/catalyst-research.md)。下方供应商与角色表描述 classic 流程。
+催化流程始终保存尝试预算与可恢复阶段记录，不受旧 checkpoint 开关控制。有界适配器覆盖 Tushare 身份/财务报表、巨潮公告和 Tushare 日行情＋逐日复权因子。行情要求完整已结算交易日覆盖和截止合格的因子来源；历史检索缺少当时快照，以及未验证的腾讯 qfq，仍记为不可用。合格 Tushare 证据会附带输入条件允许的代码计算风险/ATR 指标。必需能力缺失会将优先级限制为“信息不足”。支持范围和操作见[催化研究说明](docs/operations/catalyst-research.md)。下方供应商与角色表描述 classic 流程。
 
 数据供应商路由由 `tradingagents/dataflows/` 管理。下表列出代表性接口，不表示每个供应商都能覆盖任意标的或日期。供应商故障和数据覆盖不足会被明确记录。
 
@@ -62,6 +62,8 @@ Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究�
 | Portfolio Manager（组合经理） | 以研究复核结束运行；持仓复盘时附上持仓摘要，不生成交易订单。 |
 
 四位分析师可以由用户选择和排序；其后的收敛流程固定。Web 工作台通过 FastAPI/SSE 推送运行进度，并由内置的 React/TypeScript 前端展示已保存的报告、Reader 和审计记录。
+
+新提交的公司研究、持仓复盘和催化案例还会发布[统一研究记录](docs/contracts/research-record.md)。Reader 展示已保存的来源内容与合格催化行情的代码计算指标；转换来的推断明确保留未验证状态。旧报告不补算，默认流程仍为 classic。
 
 ## 快速开始
 
