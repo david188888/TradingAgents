@@ -18,8 +18,9 @@ import re
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
@@ -30,6 +31,7 @@ from tradingagents.dataflows.date_window import as_of, trade_date_from_state
 from tradingagents.dataflows.errors import (
     DataSourceUnavailableError,
     VendorError,
+    VendorRequestError,
 )
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.market_data_validator import build_verified_market_snapshot
@@ -153,7 +155,29 @@ def _eps_forecast(symbol: str, curr_date: str, _request: str) -> str:
 # source can never be read downstream as "this company had no such event".
 
 
-def _earnings_forecast(symbol: str, _curr_date: str, _request: str) -> str:
+def _current_a_share_date() -> date:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
+
+
+def _require_current_a_share_snapshot(curr_date: str, source: str) -> None:
+    """Keep live/latest-only sources out of historical research contexts.
+
+    These source interfaces do not accept a publication cutoff or expose an
+    archived vintage. A reporting period is not a publication date. Reject
+    before dispatch rather than labelling today's snapshot with a past date.
+    """
+    try:
+        cutoff = date.fromisoformat(curr_date)
+        if cutoff.isoformat() != curr_date:
+            raise ValueError("noncanonical date")
+    except (TypeError, ValueError) as exc:
+        raise VendorRequestError(source, "live_snapshot_cutoff_invalid") from exc
+    if cutoff != _current_a_share_date():
+        raise VendorRequestError(source, "live_snapshot_vintage_unavailable")
+
+
+def _earnings_forecast(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
     return route_to_vendor("get_a_share_earnings_forecast", symbol)
 
 
@@ -166,23 +190,28 @@ def _institution_survey(symbol: str, curr_date: str, _request: str) -> str:
     )
 
 
-def _share_buyback(symbol: str, _curr_date: str, _request: str) -> str:
+def _share_buyback(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
     return route_to_vendor("get_a_share_share_buyback", symbol)
 
 
-def _equity_pledge(symbol: str, _curr_date: str, _request: str) -> str:
+def _equity_pledge(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
     return route_to_vendor("get_a_share_equity_pledge", symbol)
 
 
-def _ipo_calendar(_symbol: str, _curr_date: str, _request: str) -> str:
+def _ipo_calendar(_symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
     return route_to_vendor("get_a_share_ipo_calendar", 30)
 
 
 def _sse_e_interaction(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "sse_e")
     return route_to_vendor("get_a_share_sse_e_interaction", symbol, "questions")
 
 
-def _sina_research_reports(symbol: str, _curr_date: str, _request: str) -> str:
+def _sina_research_reports(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "sina")
     return route_to_vendor("get_a_share_research_reports_sina", symbol)
 
 

@@ -14,10 +14,9 @@ missing, raises ``ChinaDataUnavailableError`` instead of reporting "no reports".
 
 Coverage: Sina exposes no total row count and no pagination metadata, so a page
 that parsed rows is only ever ``partial`` (``no_source_reported_total``) — the
-adapter cannot prove it saw the whole list.  A page carrying the explicit
-没有找到相关内容 marker with zero parsed rows is the one case the source itself
-states the list ended, and is reported as ``complete`` with zero items in a
-``CoveredText`` whose header says so.
+adapter cannot prove it saw the whole list. An empty page remains ambiguous
+after the bounded retry, because throttling uses the same marker as genuine
+absence; it raises a typed unavailable instead of certifying "no reports".
 """
 
 from __future__ import annotations
@@ -27,6 +26,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timezone
+from threading import Lock
 from typing import Any
 
 import pandas as pd
@@ -43,6 +43,7 @@ SINA_REPORT_REFERER = "https://finance.sina.com.cn/"
 # plus one retry keeps batch paging honest at the cost of being slow.
 SINA_REPORT_MIN_INTERVAL = 6.0
 _sina_report_last = [0.0]
+_sina_report_lock = Lock()
 _SINA_EMPTY_NOTE = "没有找到相关内容"
 _SINA_REPORT_ROW = re.compile(
     r"<tr>\s*<td>\d+</td>\s*<td class=\"tal f14\">\s*<a[^>]*?title=\"([^\"]*)\"[^>]*?"
@@ -69,10 +70,9 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> Cover
     ratings and no target prices** — the report header says so; use the
     EastMoney adapter when those fields are required.
 
-    The returned ``CoveredText`` carries a ``ScreeningCoverageV1``: ``complete``
-    with zero items only when the page itself says 没有找到相关内容, otherwise
-    ``partial`` with ``no_source_reported_total`` because Sina never reports a
-    total to reconcile against.
+    The returned ``CoveredText`` carries ``partial`` screening coverage with
+    ``no_source_reported_total``. Repeated empty responses are unavailable:
+    neither the marker nor a spaced retry proves the source is not throttled.
     """
     try:
         page_no = int(page)
@@ -112,12 +112,17 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> Cover
             }
         )
     # Every page numbers its rows from 1 (observed on pages 2 and 3 too), so the
-    # numbered rows must all parse.  Zero rows is only a real "no reports" when
-    # the page says 没有找到相关内容 (past the last page / no research at all).
+    # numbered rows must all parse. Missing markers and malformed rows remain
+    # schema failures; a correctly shaped empty table remains ambiguous.
     numbered = len(_SINA_NUMBERED_ROW.findall(text))
     if len(rows) != numbered or (not rows and _SINA_EMPTY_NOTE not in text):
         raise ChinaDataUnavailableError(
             f"新浪研报表格有 {numbered} 行带序号、解析出 {len(rows)} 条，行结构可能已变"
+        )
+    if not rows:
+        raise ChinaDataUnavailableError(
+            "新浪研报重试后仍返回空页，无法区分限流与确实没有研报 "
+            "(ambiguous_empty_response)"
         )
     _capture_vendor_raw(
         text,
@@ -129,40 +134,20 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> Cover
         },
     )
     frame = _frame(rows, columns=_SINA_COLUMNS, source="sina", url=url)
-    if rows:
-        # Sina never reports how many rows or pages exist, so the retained page
-        # cannot prove it covered the whole list: partial, with the reason.
-        coverage = ScreeningCoverageV1(
-            capability="research_reports",
-            source_id="sina.research_reports",
-            item_count=len(rows),
-            page_count=None,
-            pagination_exhausted=None,
-            completeness="partial",
-            sources=("sina.research_reports",),
-            degradations=("no_source_reported_total",),
-            as_of=date.today().isoformat(),
-            query_complete=False,
-            requested_scope=scope,
-        )
-        coverage_line = "# Coverage: partial (no_source_reported_total)"
-    else:
-        # The 没有找到相关内容 marker is the source's own statement that the list
-        # ends here: the query for this page completed and matched nothing.
-        coverage = ScreeningCoverageV1(
-            capability="research_reports",
-            source_id="sina.research_reports",
-            item_count=0,
-            page_count=1,
-            pagination_exhausted=True,
-            completeness="complete",
-            sources=("sina.research_reports",),
-            degradations=(),
-            as_of=date.today().isoformat(),
-            query_complete=True,
-            requested_scope=scope,
-        )
-        coverage_line = "# Coverage: complete (0 matching records)"
+    # A nonempty page still cannot prove coverage of the whole list.
+    coverage = ScreeningCoverageV1(
+        capability="research_reports",
+        source_id="sina.research_reports",
+        item_count=len(rows),
+        page_count=None,
+        pagination_exhausted=None,
+        completeness="partial",
+        sources=("sina.research_reports",),
+        degradations=("no_source_reported_total",),
+        as_of=date.today().isoformat(),
+        query_complete=False,
+        requested_scope=scope,
+    )
     report = _format_report(
         frame,
         title=title,
@@ -173,13 +158,7 @@ def get_sina_research_reports(ticker: str | None = None, page: int = 1) -> Cover
         ),
         source="sina",
         source_url=url,
-        coverage_line=coverage_line,
-        empty_note=(
-            "页面明确写着「没有找到相关内容」（翻过末页或该股确实没有研报），"
-            "因此 0 条是来源事实而不是解析失败。"
-            if not rows
-            else None
-        ),
+        coverage_line="# Coverage: partial (no_source_reported_total)",
     )
     return CoveredText(report, coverage)
 
@@ -189,22 +168,24 @@ def _sina_report_page(
 ) -> tuple[requests.Response, str]:
     """Fetch one page, enforcing the minimum interval and retrying a fake empty page.
 
-    The timestamp is refreshed even when the request raises, so a failed call
-    still counts against the throttle window.
+    Serialize spacing, requests, and retries across threads. The monotonic
+    timestamp is refreshed even when a request raises, so failures count
+    against the throttle window and wall-clock adjustments cannot erase it.
     """
     response: requests.Response | None = None
     text = ""
-    for _ in range(2):
-        wait = SINA_REPORT_MIN_INTERVAL - (time.time() - _sina_report_last[0])
-        if wait > 0:
-            time.sleep(wait)
-        try:
-            response = _request("GET", url, params=params)
-        finally:
-            _sina_report_last[0] = time.time()
-        text = response.content.decode("gbk", "replace")
-        if _SINA_EMPTY_NOTE not in text:
-            return response, text
+    with _sina_report_lock:
+        for _ in range(2):
+            wait = SINA_REPORT_MIN_INTERVAL - (time.monotonic() - _sina_report_last[0])
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                response = _request("GET", url, params=params)
+            finally:
+                _sina_report_last[0] = time.monotonic()
+            text = response.content.decode("gbk", "replace")
+            if _SINA_EMPTY_NOTE not in text:
+                return response, text
     assert response is not None  # the loop always runs at least once
     return response, text
 

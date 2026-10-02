@@ -1,7 +1,9 @@
 # a-stock-data v3.10.0 同步与合并参考
 
-- **Status: Proposed**
+- **Status: Historical**
 - **Do not use this document as evidence of current implementation behavior.** 当前行为的事实源是代码、passing tests，以及 [A 股补充数据能力](../../operations/a-share-data-capabilities.md)（`Status: Current`）。本文是**分支合并与交接记录**：说明这条分支改了什么、怎么合、合完怎么验、以及哪些地方是刻意的决定而不是遗漏。
+
+2026-10-02 已将分支 tip `4b2fcb8` 合入本地 `codex/research-data-integration-20261002`，合并提交 `78038c6`。原有研究/Reader 改动保存在 `90d0199`。本文以下内容保留分支合并前的交接背景；实际整合、追加修复和同环境验收见[整合验收记录](2026-10-02-research-data-integration-acceptance.md)。原推荐命令含 stash，仅为旧交接文本，本次没有手动 stash 或重置工作区。
 
 ## 1. 这条分支是什么
 

@@ -148,6 +148,22 @@ def test_apply_adjust_refuses_partial_or_empty_factor_series():
         a_stock_v37.apply_adjust(_BARS, _FACTORS, "bad")
 
 
+@pytest.mark.parametrize("factor", [float("nan"), float("inf"), float("-inf"), -1.0])
+def test_apply_adjust_refuses_nonfinite_or_negative_factors(factor):
+    with pytest.raises(ValueError, match="有限正数"):
+        a_stock_v37.apply_adjust(_BARS, [{"date": "1900-01-01", "factor": factor}])
+
+
+@pytest.mark.parametrize("value,factor,kind", [
+    (float("nan"), 1.0, "qfq"), (float("inf"), 1.0, "qfq"),
+    (1e308, 1e-308, "qfq"), (1e308, 1e308, "hfq"),
+])
+def test_apply_adjust_refuses_nonfinite_prices_or_overflow(value, factor, kind):
+    with pytest.raises(ValueError, match="有限数"):
+        a_stock_v37.apply_adjust([{"date": "2026-09-30", "close": value}],
+                                [{"date": "1900-01-01", "factor": factor}], kind)
+
+
 # ---------------------------------------------------------------------------
 # §6.5 / §6.6 baostock endpoints
 # ---------------------------------------------------------------------------

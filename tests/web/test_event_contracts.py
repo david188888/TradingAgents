@@ -115,6 +115,7 @@ def test_persisted_event_is_derived_from_draft_with_required_envelope():
         ("data.cache_hit", {"turn_id": "turn"}),
         ("report.updated", {"turn_id": "turn"}),
         ("artifact.written", {"artifact_id": "artifact"}),
+        ("artifact.projection_unavailable", {"public_contract": "research-record-v1"}),
         ("stats.updated", {}),
     ],
 )

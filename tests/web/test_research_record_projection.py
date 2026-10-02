@@ -13,6 +13,7 @@ from tradingagents.research.record_assembly import record_from_catalyst, record_
 from tradingagents.runtime.run_models import RunSnapshot
 from tradingagents.runtime.store import RunNotFound, RunStore
 from tradingagents.web.api import create_app
+from tradingagents.web.manager import SingleRunManager
 from tradingagents.web.research_record_projection import project_research_record
 
 RUN_ID = "run_20260930T010203000000Z_abcd1234"
@@ -148,9 +149,25 @@ def test_conflicting_replay_does_not_replace_committed_record(tmp_path):
 def test_http_reads_are_only_committed_records_and_missing_run_is_404(tmp_path):
     store = RunStore(tmp_path)
     publish(store)
-    with TestClient(create_app(store=store)) as client:
+    # This fixture stores committed artifacts without executing a real run.
+    # Leaving its snapshot "created" would let normal app startup enqueue a
+    # background production run that survives this read-only test.
+    store.write_snapshot_atomic(store.read_snapshot(RUN_ID).evolve(status="completed"))
+    dispatches = []
+
+    def unexpected_runner(request, observer):
+        dispatches.append(request)
+        raise AssertionError("HTTP record reads must not dispatch research")
+
+    manager = SingleRunManager(store, runner_factory=unexpected_runner)
+    before_events = list(store.read_events(RUN_ID))
+    with TestClient(create_app(manager=manager)) as client:
         assert client.get(f"/api/runs/{RUN_ID}/reader/record").json()["state"] == "ready"
         assert client.get("/api/runs/run_20260930T010203000000Z_deadbeef/reader/record").status_code == 404
+        assert manager.scheduler.active_run_ids == ()
+        assert not manager.scheduler.pending
+    assert dispatches == []
+    assert list(store.read_events(RUN_ID)) == before_events
 
 
 @pytest.mark.parametrize("mode", ["company_research", "holding_review"])

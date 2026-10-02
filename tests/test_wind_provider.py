@@ -855,7 +855,9 @@ class TestConfigFlag:
 
     def test_explicitly_disabled_returns_data_unavailable(self):
         """Turning Wind off must still degrade gracefully without a crash."""
-        with config_scope({"wind_enabled": False}):
+        # Pin the subject provider: the default EastMoney fallback is live and
+        # may succeed, which is valid routing rather than a Wind-disable bug.
+        with config_scope({"wind_enabled": False, "tool_vendors": {"get_index_snapshot": "wind"}}):
             result = route_to_vendor("get_index_snapshot", "000300.SH")
         assert "DATA_UNAVAILABLE" in str(result)
         assert "disabled" in str(result).lower() or "wind" in str(result).lower()

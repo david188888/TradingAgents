@@ -63,13 +63,13 @@ These are execution proposals, not descriptions of current runtime behavior.
 - [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): original product direction and evaluation criteria. The explicit Web path is wired; default switching and batch quality evaluation remain separate decisions.
 - [Wiring design](superpowers/specs/2026-09-30-catalyst-production-wiring-design.md) and [acceptance record](superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md): approved scope and verification evidence.
 - [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): user-reviewed direction and mockup for company/catalyst/holding research; engineering migration is in progress.
-- [a-stock-data v3.10.0 sync and merge reference](superpowers/plans/2026-09-30-a-stock-data-v310-sync.md): the branch, its commits, the coverage-contract extension it depends on, expected merge conflicts, the baseline-comparison verification method, and the deliberate exclusions.
 
 ## Historical / Archive
 
 `Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
 
 - [Legacy learning-research composite](archive/legacy/learning-research-reader-2026-08-13.md): frozen historical reference for the learning research / Reader path and its implementation records.
+- [a-stock-data v3.10.0 branch handoff](superpowers/plans/2026-09-30-a-stock-data-v310-sync.md) and [research/data integration acceptance](superpowers/plans/2026-10-02-research-data-integration-acceptance.md): retained branch history, local merge, compatibility fixes, validation and remaining research migration work.
 - [Research data integrity design](archive/designs/2026-08-13-research-data-integrity-design.md): frozen design, implemented.
 - [Research data integrity plan](archive/plans/2026-08-13-research-data-integrity-plan.md): archived implementation plan, completed.
 - [Wind A-share integration plan](archive/plans/2026-08-12-wind-a-share-integration-plan.md): archived research and implementation plan for the Wind integration.

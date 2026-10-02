@@ -61,7 +61,6 @@ KlinePeriod = Literal["day", "week", "month"]
 # requested start.  Stepping one *day* back from a weekly bar's date re-requests
 # the same week, the cursor stops advancing, and the walk reports a false
 # truncation -- so the step has to match the bar width.
-_PERIOD_STEP_DAYS = {"day": 1, "week": 7, "month": 31}
 
 # Coverage granularity per bar period (PriceSeriesCoverageV1 vocabulary).
 _PERIOD_GRANULARITY = {"day": "daily", "week": "weekly", "month": "monthly"}
@@ -314,13 +313,17 @@ def _fetch_window(
             # A short page means the provider has nothing older in this window.
             window_covered = True
             break
-        # Full page: assume truncation and step back past the oldest row.  The
-        # step must match the bar width: for weekly bars a one-day step lands
-        # inside the same week, the cursor stops advancing, and the walk would
-        # raise a truncation error on a window it had actually covered.
-        previous = (
-            datetime.strptime(oldest, "%Y-%m-%d") - timedelta(days=_PERIOD_STEP_DAYS[period])
-        ).strftime("%Y-%m-%d")
+        # End at the previous calendar period, rather than subtracting a fixed
+        # number of days from the last trading day. A holiday-shortened week or
+        # a short month would otherwise skip an entire older bar.
+        oldest_day = datetime.strptime(oldest, "%Y-%m-%d")
+        if period == "week":
+            previous_day = oldest_day - timedelta(days=oldest_day.weekday() + 1)
+        elif period == "month":
+            previous_day = oldest_day.replace(day=1) - timedelta(days=1)
+        else:
+            previous_day = oldest_day - timedelta(days=1)
+        previous = previous_day.strftime("%Y-%m-%d")
         if previous >= cursor:
             # The cursor failed to advance, so another identical request would
             # repeat forever.  Coverage is unproven -- report it, do not guess.

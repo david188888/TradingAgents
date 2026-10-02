@@ -1,6 +1,6 @@
 # 证据驱动研究：分批实施与验收
 
-Status: In progress — 方案与阅读样稿已认可，工程分批进行。
+Status: Proposed — 方案与阅读样稿已认可；A/B 与有限 D 已实施，其余工程分批进行。
 
 Do not use this document as evidence of current implementation behavior.
 
@@ -48,3 +48,5 @@ Do not use this document as evidence of current implementation behavior.
 A 批已完成本地数据/计算实施和限定检查，见[基础层验收记录](2026-09-30-research-foundation-acceptance.md)。数据权限的小窗口检查不代表全接口权限；历史复权 vintage、完整正式案例质量仍未获验证。
 
 B 批已实现 `research-record-v1`、三模式兼容生产者、提交后持久化、幂等恢复、读取校验及 TypeScript 消费者。D 批已有限接入保存的来源内容、量化卡片与引用解析。见[统一记录验收](2026-09-30-research-record-acceptance.md)。当前没有独立验证执行器，也没有替换 classic 的研究图；分维度判断、模式专项政策和完整统一阅读层次仍需 C/D 批继续完成。E 批尚未执行。当前状态以代码和验收记录为准，不以本计划的勾选代替。
+
+2026-10-02 按用户要求先整合数据源分支，保留 A/B 与有限 D 的提交，再合入 `feat/a-stock-data-v3.10-sync`。事件能力增加不自动扩展 catalyst 资格或 prefetch；追加保护处理实时工具历史日期、Sina 空页歧义及腾讯跨周期分页。见[本地整合验收](2026-10-02-research-data-integration-acceptance.md)。C、完整 D 和 E 的状态不因数据分支合并而变化。

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -212,8 +213,8 @@ def apply_adjust(
     factor is a **multiplier** (backward-adjusted = raw × factor).  Each bar uses
     the most recent factor whose effective date is not later than the bar.
 
-    An empty factor series, a bar older than the whole factor series, or a zero
-    factor all raise instead of quietly returning raw prices under an adjusted
+    An empty factor series, a bar older than the whole factor series, or an
+    invalid/nonpositive factor all raise instead of returning raw prices under an adjusted
     label: a partly-adjusted series is indistinguishable from a correct one once
     it reaches the caller.
     """
@@ -240,7 +241,15 @@ def apply_adjust(
                 raise ValueError(f"每根 K 线需含 'date' 键，实际键={sorted(row)}")
             row["date"] = str(row["date"])[:10]
 
-    ladder = sorted(factors, key=lambda item: item["date"])
+    ladder = []
+    for item in factors:
+        factor = float(item["factor"])
+        if factor == 0:
+            raise ValueError(f"复权因子为 0（{item['date']}），无法换算。")
+        if not math.isfinite(factor) or factor < 0:
+            raise ValueError(f"复权因子必须为有限正数（{item['date']}）。")
+        ladder.append({**item, "factor": factor})
+    ladder.sort(key=lambda item: item["date"])
     adjusted: list[dict[str, Any]] = []
     cursor, current = 0, None
     for bar in sorted(rows, key=lambda item: item["date"]):
@@ -252,14 +261,15 @@ def apply_adjust(
                 f"K 线日期 {bar['date']} 早于因子序列最早日 {ladder[0]['date']}，无法复权；"
                 "不返回未复权价以免与已复权行混淆。"
             )
-        if current == 0:
-            raise ValueError(f"复权因子为 0（{bar['date']}），无法换算。")
         new_bar = dict(bar)
         for key in price_keys:
             value = new_bar.get(key)
             if value is not None:
                 number = float(value)
-                new_bar[key] = round(number / current if kind == "qfq" else number * current, 4)
+                converted = number / current if kind == "qfq" else number * current
+                if not math.isfinite(number) or not math.isfinite(converted):
+                    raise ValueError(f"复权价格必须为有限数（{bar['date']} / {key}）。")
+                new_bar[key] = round(converted, 4)
         new_bar["adj_factor"] = current
         adjusted.append(new_bar)
 

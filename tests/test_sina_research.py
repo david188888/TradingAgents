@@ -9,6 +9,8 @@ numbered-row count that must agree with the parsed rows.
 from __future__ import annotations
 
 import io
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event, Lock
 
 import pandas as pd
 import pytest
@@ -38,7 +40,7 @@ class _Clock:
         self.now = start
         self.sleeps: list[float] = []
 
-    def time(self) -> float:
+    def monotonic(self) -> float:
         return self.now
 
     def sleep(self, seconds: float) -> None:
@@ -116,6 +118,9 @@ def test_sina_market_wide_uses_lastest_endpoint(monkeypatch):
     assert frame["author"].iloc[0] == "张三"
     assert frame["report_id"].iloc[0] == 1234567
     assert frame["url"].iloc[0].startswith("https://vip.stock.finance.sina.com.cn/")
+    assert report.coverage.completeness == "partial"
+    assert report.coverage.query_complete is False
+    assert report.coverage.degradations == ("no_source_reported_total",)
 
 
 def test_sina_report_states_no_ratings_or_target_prices(monkeypatch):
@@ -178,17 +183,69 @@ def test_sina_keeps_the_interval_between_consecutive_requests(monkeypatch):
     assert clock.sleeps == [sina_research.SINA_REPORT_MIN_INTERVAL]
 
 
-def test_sina_real_empty_page_is_a_fact(monkeypatch):
+def test_sina_repeated_empty_page_cannot_prove_absence(monkeypatch):
     clock, calls = _install(monkeypatch, [_EMPTY_PAGE])
 
-    report = sina_research.get_sina_research_reports("600519")
+    with pytest.raises(ChinaDataUnavailableError, match="ambiguous_empty_response"):
+        sina_research.get_sina_research_reports("600519")
 
-    # Two attempts, both a genuine empty page: this is "no reports", not a failure.
+    # A persistent throttle can answer exactly like genuine absence both times.
     assert len(calls) == 2
     assert clock.sleeps == [sina_research.SINA_REPORT_MIN_INTERVAL]
-    assert "# Total records: 0" in report
-    assert "没有找到相关内容" in report
-    assert _report_frame(report).empty
+
+
+def test_sina_parallel_calls_serialize_requests_and_spacing(monkeypatch):
+    clock, _calls = _install(monkeypatch, [_page(_row(1))])
+    first_http_entered = Event()
+    release_first_http = Event()
+    second_lock_attempted = Event()
+    second_http_entered = Event()
+    calls: list[dict] = []
+
+    class ObservedLock:
+        """Signal the second acquisition before it blocks on the real lock."""
+
+        def __init__(self):
+            self.lock = Lock()
+            self.attempts = 0
+
+        def __enter__(self):
+            self.attempts += 1
+            if self.attempts == 2:
+                second_lock_attempted.set()
+            self.lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            self.lock.release()
+
+    monkeypatch.setattr(sina_research, "_sina_report_lock", ObservedLock())
+
+    def fake_get(url, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            first_http_entered.set()
+            assert release_first_http.wait(timeout=2)
+        else:
+            second_http_entered.set()
+        return _gbk(_page(_row(1)))
+
+    monkeypatch.setattr(sina_research.requests, "get", fake_get)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(sina_research.get_sina_research_reports, "600519")
+        try:
+            assert first_http_entered.wait(timeout=2)
+            second = executor.submit(sina_research.get_sina_research_reports, "000001")
+            assert second_lock_attempted.wait(timeout=2)
+            assert not second_http_entered.is_set()
+        finally:
+            release_first_http.set()
+        assert first.result(timeout=2).coverage.completeness == "partial"
+        assert second.result(timeout=2).coverage.completeness == "partial"
+    assert second_http_entered.is_set()
+    assert len(calls) == 2
+    # The fake monotonic clock advances without any real time.sleep call.
+    assert clock.sleeps == [sina_research.SINA_REPORT_MIN_INTERVAL]
 
 
 def test_sina_zero_rows_without_the_empty_marker_raises(monkeypatch):
@@ -233,7 +290,8 @@ def test_sina_http_failure_is_typed(monkeypatch):
 
 
 def test_sina_transport_failure_is_typed(monkeypatch):
-    monkeypatch.setattr(sina_research, "time", _Clock())
+    clock = _Clock()
+    monkeypatch.setattr(sina_research, "time", clock)
     monkeypatch.setattr(sina_research, "_sina_report_last", [0.0])
 
     def fake_get(url, **kwargs):
@@ -243,3 +301,8 @@ def test_sina_transport_failure_is_typed(monkeypatch):
 
     with pytest.raises(ChinaDataUnavailableError, match="ConnectionError"):
         sina_research.get_sina_research_reports()
+    monkeypatch.setattr(
+        sina_research.requests, "get", lambda *args, **kwargs: _gbk(_page(_row(1)))
+    )
+    assert sina_research.get_sina_research_reports().coverage.completeness == "partial"
+    assert clock.sleeps == [sina_research.SINA_REPORT_MIN_INTERVAL]

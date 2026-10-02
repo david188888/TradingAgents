@@ -124,7 +124,7 @@ def test_qfq_weekly_answered_with_raw_week_bars_is_unavailable(monkeypatch):
         )
 
 
-def test_weekly_walk_steps_back_a_week_not_a_day(monkeypatch):
+def test_weekly_walk_ends_before_the_oldest_calendar_week(monkeypatch):
     """A full weekly page must move the cursor by the bar width.
 
     With a one-day step the next request lands inside the same weekly bar, the
@@ -138,7 +138,7 @@ def test_weekly_walk_steps_back_a_week_not_a_day(monkeypatch):
         _row((oldest + timedelta(days=7 * i)).isoformat(), 10.0 + (i % 50))
         for i in range(count)
     ]
-    second_end = (oldest - timedelta(days=7)).isoformat()
+    second_end = (oldest - timedelta(days=oldest.weekday() + 1)).isoformat()
     session = _FakeSession(
         {
             first_end: _page("sh600519", "week", full_page_rows),
@@ -154,9 +154,35 @@ def test_weekly_walk_steps_back_a_week_not_a_day(monkeypatch):
     )
 
     assert session.ends == [first_end, second_end]
-    # Exactly one week back from the oldest row, not one day.
-    assert (date.fromisoformat(second_end) + timedelta(days=7)).isoformat() == oldest.isoformat()
+    assert date.fromisoformat(second_end).weekday() == 6
     assert "2005-01-07" in frame["Date"].tolist()
+
+
+@pytest.mark.parametrize("period,dates,end,now,expected_ends", [
+    ("week", ["2026-09-04", "2026-09-11", "2026-09-18", "2026-09-25", "2026-09-30", "2026-10-09"],
+     "2026-10-09", datetime(2026, 10, 15, 16), ["2026-10-09", "2026-09-27", "2026-09-13"]),
+    ("month", ["2026-01-30", "2026-02-27", "2026-03-31", "2026-04-30", "2026-05-29", "2026-06-30"],
+     "2026-06-30", datetime(2026, 7, 15, 16), ["2026-06-30", "2026-04-30", "2026-02-28"]),
+])
+@pytest.mark.parametrize("adjust", [None, "qfq"])
+def test_calendar_paging_preserves_shortened_periods(monkeypatch, period, dates, end, now, expected_ends, adjust):
+    monkeypatch.setattr(tk, "TENCENT_REQUEST_ROW_CAP", 2)
+    key = f"qfq{period}" if adjust else period
+
+    class WindowSession(_FakeSession):
+        def get(self, url, params=None, headers=None, timeout=None):
+            param = params["param"]
+            self.requests.append(param)
+            cursor = param.split(",")[3]
+            rows = [_row(day, 10.0) for day in dates if day <= cursor][-2:]
+            return _FakeResponse(_page("sh600519", key, rows))
+
+    session = WindowSession({})
+    getter = tk.get_a_share_kline_qfq_df if adjust else tk.get_a_share_kline_df
+    frame, provenance = getter("600519.SH", dates[0], end, period=period, session=session, now=now)
+    assert frame["Date"].tolist() == dates
+    assert session.ends == expected_ends
+    assert provenance["window_covered"] is True
 
 
 def test_settled_boundary_uses_the_last_closed_period():

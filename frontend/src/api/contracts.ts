@@ -1031,6 +1031,13 @@ export interface ArtifactWrittenPayload {
   locator: string;
 }
 
+/** Mirror of artifact.projection_unavailable required payload fields. */
+export interface ArtifactProjectionUnavailablePayload {
+  public_contract: string;
+  graph_task_id: string;
+  reason_code: string;
+}
+
 // ---------------------------------------------------------------------------
 // Discriminated payload union.
 //
@@ -1091,7 +1098,8 @@ export type EventPayloadByType =
   | { type: "data.failed"; payload: DataFailedPayload }
   | { type: "data.interrupted"; payload: DataInterruptedPayload }
   | { type: "data.cache_hit"; payload: DataCacheHitPayload }
-  | { type: "artifact.written"; payload: ArtifactWrittenPayload };
+  | { type: "artifact.written"; payload: ArtifactWrittenPayload }
+  | { type: "artifact.projection_unavailable"; payload: ArtifactProjectionUnavailablePayload };
 
 /** Any payload shape, without the wrapping `type`. */
 export type AnyEventPayload = EventPayloadByType["payload"];

@@ -106,6 +106,9 @@ BASE_REQUIRED_PAYLOADS: dict[str, frozenset[str]] = {
             "locator",
         }
     ),
+    "artifact.projection_unavailable": frozenset(
+        {"public_contract", "graph_task_id", "reason_code"}
+    ),
 }
 
 
