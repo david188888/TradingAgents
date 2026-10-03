@@ -8,11 +8,22 @@ import time
 from dataclasses import asdict, dataclass
 from types import SimpleNamespace
 
+import requests
+
 from tradingagents.dataflows.catalyst_sources import CatalystSources
 from tradingagents.dataflows.catalyst_transport import BudgetedSession
-from tradingagents.execution.budget import BudgetBucket
+from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
+from tradingagents.dataflows.native_sources import NativeSources
+from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
+from tradingagents.execution.budget import BudgetBucket, BudgetConflictError, BudgetExhausted
 from tradingagents.execution.config_identity import prepare_effective_config
-from tradingagents.execution.models import AnalysisRequest, AnalysisResult, CancellationToken
+from tradingagents.execution.models import (
+    AnalysisCancelled,
+    AnalysisRequest,
+    AnalysisResult,
+    CancellationToken,
+)
 from tradingagents.execution.native_model import NativeModelCaller
 from tradingagents.execution.native_publication import publish_native_record
 from tradingagents.graph.native_research import load_native_seed, run_native_research
@@ -25,13 +36,14 @@ from tradingagents.runtime.catalyst_checkpoint import (
     load_checkpoint,
 )
 
-WORKFLOW_VERSION = "evidence-production-v1"
+WORKFLOW_VERSION = "evidence-production-v2"
+LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 
 
-def native_identity(request):
+def native_identity(request, *, workflow_version=WORKFLOW_VERSION):
     return {
         **request.profile_identity(),
-        "workflow_version": WORKFLOW_VERSION,
+        "workflow_version": workflow_version,
         "ticker": request.ticker,
         "mode": request.mode,
         "cutoff": request.analysis_date,
@@ -50,7 +62,8 @@ def validate_native_resume(store, run_id, request):
     if request.research_profile != "evidence_v1":
         raise CatalystCheckpointConflict("native resume profile mismatch")
     state = load_checkpoint(store, run_id)
-    if state is None or state["identity"] != native_identity(request):
+    version = state["identity"].get("workflow_version") if state is not None else None
+    if version not in {WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -72,7 +85,7 @@ def validate_native_resume(store, run_id, request):
 
 class NativeRunner:
     def __init__(
-        self, observer, *, sources_factory=CatalystSources, caller_factory=NativeModelCaller
+        self, observer, *, sources_factory=None, caller_factory=NativeModelCaller
     ):
         self.observer, self.sources_factory, self.caller_factory = (
             observer,
@@ -143,7 +156,8 @@ class NativeRunner:
         resume = isinstance(checkpoint_guard, NativeResumeGuard)
         if resume:
             validate_native_resume(self.observer.store, run_id, request)
-        journal = CatalystJournal(self.observer, native_identity(request), require_existing=resume)
+        version = load_checkpoint(self.observer.store, run_id)["identity"]["workflow_version"] if resume else WORKFLOW_VERSION
+        journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version), require_existing=resume)
         seed = load_native_seed(journal.ledger)
         if seed is None:
             active()
@@ -155,6 +169,10 @@ class NativeRunner:
                 saved = journal.ledger.cached_result(logical)
                 if saved is not None:
                     if "error" in saved:
+                        if saved["error"] in {"CatalystCheckpointConflict", "BudgetConflictError", "BudgetExhausted", "AnalysisCancelled", "TimeoutError"}:
+                            raise CatalystCheckpointConflict("saved source control failure cannot become provider fallback")
+                        if saved.get("source_error_code"):
+                            raise NativeSourceUnavailable(saved["source_error_code"])
                         raise ValueError(saved["error"])
                     # Exact JSON text survives RFC8785 numeric normalization.
                     return json.loads(saved["value_json"])
@@ -173,9 +191,17 @@ class NativeRunner:
                     value = operation()
                     encoded = json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
                 except Exception as exc:
-                    if journal.failed:
+                    if journal.failed or isinstance(exc, (
+                        CatalystCheckpointConflict, BudgetConflictError, BudgetExhausted,
+                        AnalysisCancelled, TimeoutError,
+                    )):
                         raise
-                    journal.ledger.record_result(logical, {"error": type(exc).__name__})
+                    error = {"error": type(exc).__name__}
+                    if isinstance(exc, (NativeSourceUnavailable, PriceHistoryQualificationError)):
+                        error["source_error_code"] = exc.code
+                    elif isinstance(exc, (requests.RequestException, ChinaDataUnavailableError)):
+                        error["source_error_code"] = "source_transport_unavailable"
+                    journal.ledger.record_result(logical, error)
                     journal.ledger.settle(grant, ok=False, usage_available=False)
                     raise
                 journal.ledger.record_result(logical, {"value_json": encoded})
@@ -189,9 +215,11 @@ class NativeRunner:
             with BudgetedSession(
                 journal.ledger, active, lambda: deadline - time.monotonic()
             ) as session:
-                draft, context = self.sources_factory(
+                factory = self.sources_factory or (CatalystSources if version == LEGACY_WORKFLOW_VERSION else NativeSources)
+                draft, context = factory(
                     source_request, run_id, session, fetch
                 ).collect()
+            journal.put("native_source_admission", [cap.model_dump(mode="json") for cap in draft.capabilities])
             active()
             holding = request.holding_context
             seed = build_native_record(

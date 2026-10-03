@@ -87,10 +87,43 @@ outlook from the collector's compatibility adapter.
 
 The code-owned source policy fixes 7/30/90-day event windows, 250 trading days
 of price history and eight financial-reporting quarters. Source windows are
-separate from research outlook. The native runner reuses the bounded Tushare
-identity/financial/price and CNINFO announcement collector, respecting the
-configured vendor chain and cutoff qualification described in
-[source qualification](catalyst-research.md#sources-and-qualification).
+separate from research outlook. New native runs use the bounded
+`dataflows/native_sources.py` collector shared by all three modes:
+
+| Capability | Native default candidates, in order |
+| --- | --- |
+| Security identity | EastMoney exact profile, Sina labelled company profile, Tushare stock_basic |
+| Financial tables | Sina direct income/balance/cashflow, then Tushare separately per failed table |
+| Official disclosures | Existing CNINFO official query, including its bounded official fallback |
+| Calendar | Complete SZSE monthly natural-day grid for Shenzhen securities, then Tushare |
+| Adjusted prices | Tencent raw daily bars plus dated Sina qfq divisors, then Tushare daily/factors |
+
+Sina financial admission requires consolidated scope, CNY yuan fields and real
+publication dates; an update timestamp after cutoff is excluded. Provider
+metadata is saved with the normalized source response. Qualified tables survive
+other table failures. Providers remain separate source families, and C1 numeric
+comparisons still require the same exact family. Tencent raw requests include
+the mandatory empty adjustment field. Public adjustment applies Sina's divisor
+to all OHLC and re-anchors to the last settled session, checking the complete
+calendar, current-cutoff capture and input hash. Generic Tencent qfq remains
+unqualified; older cutoffs still need an archived factor vintage. SZSE calendar
+is not borrowed for Shanghai/Beijing securities; those currently use the backup.
+
+Programmatic `effective_config.evidence_source_vendors` can replace any of
+`identity`, `financial`, `calendar`, `price`, `events` with an ordered subset of
+its candidates (empty disables it). `evidence_source_exclusions` removes named
+vendors afterwards. These native-only keys are bound to checkpoint identity;
+legacy `data_vendors`/`tool_vendors` keep their classic/catalyst meaning.
+Classic defaults are unchanged. Failed attempts and selected table providers
+are persisted in `native_source_admission`. A Tushare rate-limit rejection
+suppresses further Tushare attempts in that run; public sources remain eligible.
+All attempts share the existing capability/HTTP ceilings and active deadline.
+Cancellation, budget exhaustion and checkpoint conflicts stop execution.
+
+The `evidence-production-v2` workflow binds this collector topology. Original
+`evidence-production-v1` checkpoints recover with the original collector when
+V0 is missing, or replay their saved V0 without new source calls. A new topology
+is never inserted into an old interrupted run.
 Having credentials does not establish entitlement, complete coverage or
 point-in-time provenance. Opaque SDK sources and unqualified historical factors
 remain unavailable; a source gap never proves an event did not occur.
@@ -109,6 +142,11 @@ workers. Context isolation is not statistical independence. Hypotheses cite
 facts and retain invalidation conditions and alternative explanations. The
 challenge stage sees anonymous hypotheses; it need not manufacture opposing
 positions when evidence is clear.
+
+The model adapter checks specialist fact IDs before saving a proposal. A
+schema-valid fabricated reference can use the existing single structured
+repair allowance; it cannot enter the kernel or cause unbounded retries.
+Kernel reference guards remain authoritative, including old cached proposals.
 
 Verification is a closed local operation on saved financial fields or metrics.
 It is not an unrestricted model tool loop or additional data search. Checks

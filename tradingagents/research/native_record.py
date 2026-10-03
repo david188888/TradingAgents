@@ -28,6 +28,11 @@ from tradingagents.research.evidence_freeze import (
     FrozenEvidenceDraft,
 )
 from tradingagents.research.record_assembly import _catalyst_content, _price_metrics, _safe_url
+from tradingagents.research.source_families import (
+    FINANCIAL_SOURCES,
+    IDENTITY_SOURCES,
+    PRICE_SOURCES,
+)
 from tradingagents.research.verification_tools import (
     _date,
     _financial_operand,
@@ -38,11 +43,10 @@ from tradingagents.research.verification_tools import (
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 Mode = Literal["company_research", "catalyst_research", "holding_review"]
 _SOURCE_CAPABILITIES = {
-    "tushare.stock_basic": CAP_IDENTITY,
-    "tushare.financial_statements": CAP_FUNDAMENTALS,
+    **dict.fromkeys(IDENTITY_SOURCES, CAP_IDENTITY),
+    **dict.fromkeys(FINANCIAL_SOURCES, CAP_FUNDAMENTALS),
     "cninfo": CAP_EVENT_COVERAGE,
-    "tushare.adjusted_daily": CAP_PRICE,
-    "tencent.qfq": CAP_PRICE,
+    **dict.fromkeys(PRICE_SOURCES, CAP_PRICE),
 }
 
 
@@ -92,9 +96,11 @@ def _financial_content(payload, ticker: str) -> SourceContentV1 | None:
 
 
 def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceContentV1 | None:
-    if item.source_name == "tushare.financial_statements":
+    if item.source_name in FINANCIAL_SOURCES:
         return _financial_content(payload, ticker)
-    if item.source_name == "tencent.qfq":
+    if item.source_name in IDENTITY_SOURCES:
+        return _catalyst_content("tushare.stock_basic", payload)
+    if item.source_name in PRICE_SOURCES:
         return _catalyst_content("tushare.adjusted_daily", payload)
     return _catalyst_content(item.source_name, payload)
 
@@ -136,7 +142,7 @@ def _source_record(item: CatalystEvidence, draft: FrozenEvidenceDraft, payload) 
     public_url = _safe_url(item.public_url)
     if item.public_url and public_url is None:
         limitation.append("source_public_url_not_admitted")
-    if item.source_name in {"tushare.adjusted_daily", "tencent.qfq"}:
+    if item.source_name in PRICE_SOURCES:
         try:
             provenance = payload["provenance"]
             bars = payload["bars"]
@@ -196,7 +202,7 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
         raise ValueError("duplicate frozen source evidence")
 
     identity_ok = draft.status_of(CAP_IDENTITY) is CapabilityStatus.QUALIFIED
-    identities = [item for item in sources if item.source_name == "tushare.stock_basic" and item.availability == "available"]
+    identities = [item for item in sources if item.source_name in IDENTITY_SOURCES and item.availability == "available"]
     identity_ok = identity_ok and len(identities) == 1
     if identity_ok:
         identity_payload = payloads[identities[0].evidence_id]
@@ -232,7 +238,7 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     for source in sources:
         if source.availability != "available" or source.content is None:
             continue
-        if source.source_name == "tushare.financial_statements":
+        if source.source_name in FINANCIAL_SOURCES:
             selected = json.loads(source.content.text)
             for table, rows in selected.items():
                 for row in rows:
@@ -255,7 +261,7 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
             title = payload.get("Title")
             if isinstance(title, str) and title and len(title) <= 1000 and source.published_at is not None:
                 facts.append(_fact(source, "event_context", "Title;Published", f"{source.published_at.astimezone(SHANGHAI).date()} 的公告列表披露标题“{title}”；仅为标题，尚未核对正文或实施情况。"))
-        elif source.source_name in {"tushare.adjusted_daily", "tencent.qfq"}:
+        elif source.source_name in PRICE_SOURCES:
             payload = payloads[source.evidence_id]
             last_bar = max(payload["bars"], key=lambda item: item["Date"])
             try:

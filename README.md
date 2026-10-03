@@ -67,6 +67,12 @@ New committed company, holding and catalyst cases also publish a [shared researc
 
 The explicit `evidence_v1` Web API profile covers A-share company, catalyst and holding research through the native kernel: qualified facts → isolated operating/event/market specialists → one challenge stage → bounded condition verification → one dimension-gated synthesis. Enable native creation with `TRADINGAGENTS_EVIDENCE_ENABLED=true`; this independent flag does not change the classic default or add a workbench selector. Reader and Markdown consume its mandatory `research-record-v1`, showing the judgement, key evidence, risk, next check and quantitative context. Missing valuation inputs or original holding thesis remain explicit limits; predicate checks do not close economic challenges. Run completion is separate from research completeness/quality, and no paid accuracy comparison has been performed. See [API trials and recovery](docs/operations/evidence-research.md) and the [shared record contract](docs/contracts/research-record.md).
 
+New native runs prioritize bounded public sources for identity, financial tables,
+calendar and adjusted daily prices, with Tushare as backup. Financial tables
+degrade independently and retain their provider provenance; cutoff, units,
+settled-session coverage and factor vintage remain admission requirements.
+Original native checkpoints retain their original source topology on recovery.
+
 ## Quick start
 
 Python 3.10 or newer is required. Configure an API key for your chosen LLM provider and any optional data or news services you use; the default LLM provider is DeepSeek. Keep credentials in the ignored local files.

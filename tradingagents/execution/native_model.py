@@ -136,7 +136,7 @@ class NativeModelCaller:
             + "Schema:\n" + schema + "\nSaved research context:\n" + payload
         )
 
-    def _parse(self, stage: str, response: Any) -> dict[str, Any]:
+    def _parse(self, stage: str, response: Any, context: Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
             content = normalize_content(response).content
             value = json.loads(content, object_pairs_hook=_unique_object)
@@ -144,6 +144,11 @@ class NativeModelCaller:
                 raise ValueError
             # JSON-mode validation preserves date handling in condition schemas.
             proposal = STAGE_SCHEMAS[stage].model_validate_json(json.dumps(value, allow_nan=False))
+            if context is not None and stage in {"operating_quality", "event_context", "market_context"}:
+                allowed = {fact["claim_id"] for fact in context.get("facts", [])}
+                for hypothesis in proposal.hypotheses:
+                    if not set(hypothesis.supporting_fact_ids) <= allowed:
+                        raise ValueError("specialist reference outside supplied facts")
             return proposal.model_dump(mode="json")
         except Exception:
             raise NativeModelUnavailable("native model response invalid") from None
@@ -251,13 +256,13 @@ class NativeModelCaller:
             raise NativeModelUnavailable("native model response unavailable; dispatch cannot be repeated")
         response = self._invoke(stage, prompt, lambda: self._dispatch_main(stage))
         try:
-            value = self._parse(stage, response)
+            value = self._parse(stage, response, context)
         except NativeModelUnavailable:
-            value = self._repair(stage, repair_prompt, repair_digest)
+            value = self._repair(stage, repair_prompt, repair_digest, context)
         self.ledger.record_result("native.adapter." + stage, {"prompt_sha256": digest, "proposal": value})
         return value
 
-    def _repair(self, stage: str, prompt: str, digest: str) -> dict[str, Any]:
+    def _repair(self, stage: str, prompt: str, digest: str, context: Mapping[str, Any] | None = None) -> dict[str, Any]:
         self._ensure_active()
         self._bind("native.prompt." + stage + ".repair", digest)
         logical = "native." + stage + ".repair"
@@ -269,7 +274,7 @@ class NativeModelCaller:
             raise BudgetExhausted(token)
         try:
             response = self._invoke(stage, prompt, lambda: self.ledger.mark_dispatched(token))
-            value = self._parse(stage, response)
+            value = self._parse(stage, response, context)
         except Exception:
             if self.ledger.journal.failed:
                 raise

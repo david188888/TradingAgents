@@ -406,3 +406,60 @@ def test_missing_all_sources_completes_workflow_without_research_success(runtime
         )
         == terminal.summary
     )
+
+
+@pytest.mark.parametrize("before_seed", [True, False])
+def test_v1_resume_keeps_original_collector_and_reuses_saved_results(runtime, monkeypatch, before_seed):
+    import tradingagents.execution.native_runner as native
+
+    manager, caller = runtime
+    req = _complete_request(request())
+    snapshot = manager._create_run(req, configured_keys={}, queued=False)
+    observer = DurableRunObserver(manager.store, snapshot.run_id, development_assertions=False)
+    current = native.WORKFLOW_VERSION
+    monkeypatch.setattr(native, "WORKFLOW_VERSION", native.LEGACY_WORKFLOW_VERSION)
+    Sources.crash_before_seed = before_seed
+    def stopped(_):
+        raise ProcessStopped()
+    with pytest.raises(ProcessStopped):
+        NativeRunner(observer, sources_factory=Sources, caller_factory=lambda **kwargs: caller).run(
+            req, publication_authorizer=stopped)
+    monkeypatch.setattr(native, "WORKFLOW_VERSION", current)
+    monkeypatch.setattr(native, "CatalystSources", Sources)
+    monkeypatch.setattr(native, "NativeSources", lambda *a: pytest.fail("v1 frontier used new topology"))
+    validate_native_resume(manager.store, snapshot.run_id, req)
+    from tradingagents.execution.native_runner import NativeResumeGuard
+    NativeRunner(observer, caller_factory=lambda **kwargs: caller).run(req,
+        checkpoint_guard=NativeResumeGuard(), publication_authorizer=lambda journal: journal.put("publication_authorized", True))
+    assert len(Sources.operations) == 4 and len(caller.calls) == 5
+    assert load_checkpoint(manager.store, snapshot.run_id)["identity"]["workflow_version"] == native.LEGACY_WORKFLOW_VERSION
+
+
+def test_typed_source_failure_replay_does_not_repeat_transport(runtime):
+    from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
+    from tradingagents.execution.native_runner import NativeResumeGuard
+
+    manager, caller = runtime
+    req = _complete_request(request())
+    snapshot = manager._create_run(req, configured_keys={}, queued=False)
+    observer = DurableRunObserver(manager.store, snapshot.run_id, development_assertions=False)
+    calls, errors = [], []
+    class TypedSources(Sources):
+        def collect(self):
+            def unavailable():
+                calls.append("transport")
+                raise NativeSourceUnavailable("tushare_rate_limited")
+            try:
+                self.fetch("typed.tushare", unavailable)
+            except NativeSourceUnavailable as exc:
+                errors.append(exc.code)
+            return super().collect()
+    def stopped(_):
+        raise ProcessStopped()
+    Sources.crash_before_seed = True
+    with pytest.raises(ProcessStopped):
+        NativeRunner(observer, sources_factory=TypedSources, caller_factory=lambda **kwargs: caller).run(req, publication_authorizer=stopped)
+    NativeRunner(observer, sources_factory=TypedSources, caller_factory=lambda **kwargs: caller).run(req,
+        checkpoint_guard=NativeResumeGuard(), publication_authorizer=lambda journal: journal.put("publication_authorized", True))
+    assert calls == ["transport"]
+    assert errors == ["tushare_rate_limited", "tushare_rate_limited"]

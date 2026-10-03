@@ -15,6 +15,7 @@ from tradingagents.observability.observer import DurableRunObserver
 from tradingagents.research.evidence_freeze import CAP_PRICE
 from tradingagents.research.native_record import build_native_record
 from tradingagents.research.price_statistics import build_price_statistics
+from tradingagents.research.source_families import FINANCIAL_SOURCES, PRICE_SOURCES
 from tradingagents.runtime.catalyst_checkpoint import CatalystJournal, load_checkpoint
 from tradingagents.runtime.reports import build_markdown_from_native_record
 from tradingagents.runtime.run_models import RunSnapshot
@@ -36,7 +37,7 @@ class PipelineCaller:
             sources = {item["evidence_id"]: item["source_name"] for item in context["sources"]}
             names = set(sources.values())
             if stage == "operating_quality":
-                assert names <= {"tushare.financial_statements", "user.original_thesis"}
+                assert names <= FINANCIAL_SOURCES | {"user.original_thesis"}
                 financial = next(fact for fact in context["facts"] if "income.revenue" in fact["statement"])
                 support = [financial["claim_id"]]
                 support.extend(fact["claim_id"] for fact in context["facts"]
@@ -48,7 +49,7 @@ class PipelineCaller:
                         "predicate": {"operator": "lt", "threshold": "110", "unit": "CNY"}}}
                 statement = "收入兑现可能支撑经营改善，持续性仍待核查。"
             else:
-                assert names == ({"cninfo.announcements"} if stage == "event_context" else {"tushare.adjusted_daily"})
+                assert names <= ({"cninfo.announcements"} if stage == "event_context" else PRICE_SOURCES)
                 support = [context["facts"][0]["claim_id"]]
                 condition = {"condition_role": "invalidation", "text": "后续合格证据与目前解释相矛盾"}
                 statement = "公告的经济影响尚待正文核对。" if stage == "event_context" else "历史市场表现可能反映关注变化，不能据此估值。"
@@ -66,9 +67,9 @@ class PipelineCaller:
         assert record["verifications"] and record["verifications"][0]["scope"] == "predicate_only"
         sources = {item["evidence_id"]: item["source_name"] for item in record["evidence"]}
         inferences = [item for item in record["claims"] if item["kind"] == "inference"]
-        financial = next(item for item in inferences if "tushare.financial_statements" in {sources[key] for key in item["evidence_ids"]})
+        financial = next(item for item in inferences if FINANCIAL_SOURCES & {sources[key] for key in item["evidence_ids"]})
         event = next(item for item in inferences if "cninfo.announcements" in {sources[key] for key in item["evidence_ids"]})
-        market = next(item for item in inferences if "tushare.adjusted_daily" in {sources[key] for key in item["evidence_ids"]})
+        market = next(item for item in inferences if PRICE_SOURCES & {sources[key] for key in item["evidence_ids"]})
         dimension_claims = {"operating_quality": financial, "holding_thesis": financial,
             "catalyst_delivery": event, "market_context": market}
         dimensions = []
@@ -84,7 +85,8 @@ class PipelineCaller:
 
 
 @pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])
-def test_programmatic_three_mode_spine_publishes_projects_reports_and_replays_without_calls(tmp_path, monkeypatch, mode):
+@pytest.mark.parametrize("public_sources", [False, True])
+def test_programmatic_three_mode_spine_publishes_projects_reports_and_replays_without_calls(tmp_path, monkeypatch, mode, public_sources):
     """Actual stores/adapters; mock proposals; no route/default migration claim."""
     def forbidden(*args, **kwargs):
         pytest.fail("programmatic acceptance must not call a real provider or model")
@@ -110,6 +112,12 @@ def test_programmatic_three_mode_spine_publishes_projects_reports_and_replays_wi
     draft, context = fixture(extra=((CAP_PRICE, "tushare.adjusted_daily", prices, None),))
     draft = draft.model_copy(update={"run_id": snapshot.run_id,
         "evidence": tuple({**item, "run_id": snapshot.run_id} for item in draft.evidence)})
+    if public_sources:
+        renames = {"tushare.stock_basic": "sina.company_profile", "tushare.financial_statements": "sina.financial_statements", "tushare.adjusted_daily": "tencent.sina_adjusted_daily"}
+        draft = draft.model_copy(update={"evidence": tuple({**item,
+            "source_name": renames.get(item["source_name"], item["source_name"]),
+            "source_family_id": renames.get(item["source_name"], item["source_name"])+":"+item["source_family_id"].split(":", 1)[1],
+        } for item in draft.evidence)})
     journal.put("draft", draft.model_dump(mode="json"))
     journal.put("evidence_context", context)
     seed = build_native_record(draft, context, mode=mode, original_thesis=thesis, holding_facts_as_of=thesis_date)

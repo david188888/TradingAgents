@@ -4,6 +4,7 @@ from tradingagents.agents.schemas._research_assessment import (
     DIMENSIONS_BY_MODE,
     DimensionAssessmentV1,
 )
+from tradingagents.research.source_families import FINANCIAL_SOURCES, PRICE_SOURCES
 
 ROLE_ORDER = ("operating_quality", "event_context", "market_context")
 QUESTIONS = {
@@ -25,7 +26,7 @@ def fact_views(record):
                or sources[key].usable_as_of is None for key in fact.evidence_ids):
             continue
         names = [sources[key].source_name for key in fact.evidence_ids]
-        if any(name == "tushare.financial_statements" for name in names):
+        if any(name in FINANCIAL_SOURCES for name in names):
             views["operating_quality"].append(fact)
         elif any(name == "cninfo.announcements" for name in names):
             views["event_context"].append(fact)
@@ -33,7 +34,7 @@ def fact_views(record):
             if record.mode == "holding_review":
                 views["operating_quality"].append(fact)
         elif (set(fact.evidence_ids) & metric_sources or
-              any(name in {"tushare.adjusted_daily", "tencent.qfq"} for name in names)):
+              any(name in PRICE_SOURCES for name in names)):
             views["market_context"].append(fact)
     return {role: tuple(items) for role, items in views.items()}
 
@@ -42,7 +43,7 @@ def dimension_policy(record):
     views = fact_views(record)
     thesis = any(source.source_name == "user.original_thesis" and source.availability == "available"
                  for source in record.evidence)
-    financial = any(any(source.source_name == "tushare.financial_statements"
+    financial = any(any(source.source_name in FINANCIAL_SOURCES
                         for source in record.evidence if source.evidence_id in fact.evidence_ids)
                     for fact in views["operating_quality"])
     policies = {
@@ -94,7 +95,7 @@ def gate_dimensions(record, proposed):
         names = {source.source_name for fact in cited_facts for source in record.evidence
                  if source.evidence_id in fact.evidence_ids}
         if item.dimension in {"operating_quality", "holding_thesis"} and item.claim_ids:
-            if "tushare.financial_statements" not in names:
+            if not FINANCIAL_SOURCES & names:
                 raise ValueError("operating judgement requires cited financial evidence")
             if item.dimension == "holding_thesis" and "user.original_thesis" not in names:
                 raise ValueError("holding judgement requires cited original thesis")

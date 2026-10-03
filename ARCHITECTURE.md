@@ -44,6 +44,12 @@ omitted profiles and existing forms retain classic defaults. The native trial
 is exposed through the Web API and neutral runner, without a new workbench
 selector or CLI profile option. Its `evidence-policy-v1` fixes historical source
 windows and is distinct from both catalyst lookahead and runtime horizon policy.
+New native runs use `dataflows/native_sources.py` for capability-specific public
+source chains and Tushare backup; `research/source_families.py` owns the finite
+identity/financial/price admission registry shared by facts, specialist views
+and verification. Financial fallback preserves separate provider bundles.
+Workflow v2 records source admission and typed failures; v1 recovery retains its
+original collector or saved V0. See [native source policy](docs/operations/evidence-research.md#evidence-and-workflow).
 
 ## Workflow And Research Routing
 

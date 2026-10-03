@@ -177,6 +177,10 @@ def _request_page(
     param = f"{code},{period},{start},{end},{count}"
     if adjust == "qfq":
         param += ",qfq"
+    else:
+        # The sixth field is required even for raw prices. Omitting it yields
+        # a successful JSON response with no day series (live probe 2026-10-03).
+        param += ","
     http = session or requests
     try:
         resp = http.get(

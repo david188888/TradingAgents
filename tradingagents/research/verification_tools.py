@@ -110,9 +110,11 @@ def _invalid_constant(_):
 def _financial_operand(
     record: ResearchRecordV1, operand: FinancialOperandV1
 ) -> tuple[Decimal, dict]:
+    from tradingagents.research.source_families import FINANCIAL_SOURCES
+
     source = _qualified_source(record, operand.evidence_id)
     if (
-        source.source_name != "tushare.financial_statements"
+        source.source_name not in FINANCIAL_SOURCES
         or source.source_kind not in {"official", "vendor"}
         or not source.source_family_id
     ):

@@ -341,3 +341,16 @@ def test_reasoning_blocks_are_not_used_as_structured_output(journal, monkeypatch
     assert result["hypotheses"] == []
     assert SECRET not in json.dumps(journal.state)
     assert len(stub.prompts) == 1
+
+
+def test_schema_valid_fabricated_fact_id_uses_bounded_repair_before_cache(journal, monkeypatch):
+    main(journal)
+    invalid = {"hypotheses": [{"statement": "条件性经营假设", "supporting_fact_ids": ["f.fabricated"],
+        "conditions": [{"condition_role": "invalidation", "text": "后续资料不支持该解释"}],
+        "alternative_explanation": "一次性因素"}]}
+    stub, _ = sdk(monkeypatch, [invalid, valid("operating_quality")])
+    result = caller(journal)("operating_quality", {"facts": [{"claim_id": "f.allowed"}]})
+    assert result["hypotheses"] == []
+    assert len(stub.prompts) == 2
+    assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 1
+    assert "f.fabricated" not in json.dumps(journal.state["results"])
