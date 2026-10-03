@@ -1,12 +1,13 @@
 # C2：原生研究接线实施
 
-Status: Proposed
+Status: Historical
 
-Implementation note: shared kernel implemented; public routing decision pending.
+Implementation note: shared kernel and independent evidence_v1 public routing implemented.
+See [public wiring acceptance](2026-10-03-native-research-public-wiring-acceptance.md).
 
 Do not use this document as evidence of current implementation behavior.
 
-依据[设计](../specs/2026-10-02-native-research-wiring-design.md)与既有 A–E 计划。接口兼容选择由用户确认后冻结；其他内核工作不依赖该选择。
+依据[设计](../specs/2026-10-02-native-research-wiring-design.md)与既有 A–E 计划。用户已确认独立 evidence_v1；classic 默认及 catalyst_v1 旧执行/恢复保留。
 
 1. canonical 原生综合与阶段输出模型；校验模式维度、声明类型、snapshot／引用／条件来源。原 Record 缺省兼容。
 2. 纯 source→native V0/fact/metric、模式政策和窄事实/字段视图；financial 同期字段保留、声明与事实区别、缺持仓原假设／估值降级。
@@ -24,6 +25,6 @@ Do not use this document as evidence of current implementation behavior.
 | 3 | `graph/native_research.py` | `test_native_research.py`：隔离、一次挑战、C1先于综合、重放、未知调用、取消与局部降级 |
 | 4 | `execution/native_model.py`、`native_publication.py`、`runtime/reports.py` | `test_native_model.py`、`test_native_publication.py`、`test_native_report.py`：期限/repair、发布屏障/冲突、Markdown同源 |
 | 有限 D | `frontend/.../ResearchRecordSection.tsx`、API DTO及生成静态资源 | component/Vitest、typecheck、build；不等同浏览器E2E |
-| 5 | 尚未修改 profile/API/manager/factory/resume/roles | 等待新 `evidence_v1` 或扩展 `catalyst_v1` 的明确选择，再实施 |
+| 5 | `execution/native_runner.py`、native policy/request、API/manager/roles/DTO/native Reader | `test_native_production_wiring.py`、`test_evidence_api.py`、native projection 与前端测试；完整 D/E 仍待完成 |
 
-本阶段不会把 programmatic kernel 冒充已接通的公开生产流程；也不会迁移默认 classic，或把局部研究标为成功。
+本阶段公开接线已完成离线验收；没有进行付费模型/供应商评估，不迁移默认 classic，不把局部研究标为成功。

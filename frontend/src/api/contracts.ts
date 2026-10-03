@@ -214,7 +214,7 @@ export interface ConfigResponseDTO {
   checkpoint_available: boolean;
   wind: WindStatusDTO;
   defaults: ConfigDefaultsDTO;
-  research_profiles?: Partial<Record<ResearchProfile, { supported: boolean; reason: string | null }>>;
+  research_profiles?: Partial<Record<ResearchProfile, { supported: boolean; reason: string | null; checkpoint_available?: boolean }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +223,8 @@ export interface ConfigResponseDTO {
 
 export type ResearchDepth = 1 | 3 | 5;
 export type AssetTypeLiteral = "stock" | "crypto";
-export type ResearchMode = "company_research" | "holding_review";
+/** catalyst_research is admitted only by the explicit evidence_v1 profile. */
+export type ResearchMode = "company_research" | "catalyst_research" | "holding_review";
 export type ResearchHorizon = "short" | "medium" | "long";
 // `research_profile` is omitted by every pre-catalyst client; the server
 // treats an omitted value as "classic". The narrowed alias below is the
@@ -287,6 +288,8 @@ export interface RunCreateRequestDTO {
    */
   research_profile?: ResearchProfile;
   research_question?: string | null;
+  /** Frozen server policy; clients may omit it to use the profile default. */
+  evidence_policy?: NativeEvidencePolicyV1DTO;
   holding?: HoldingInputDTO;
   /** Legacy-only input. New clients must use holding instead. */
   portfolio?: PortfolioDTO | null;
@@ -578,6 +581,8 @@ export interface RunViewEnvelopeDTO {
   view: {
     run: {
       run_id: string;
+      /** Explicit producer identity for new projections; absent on old servers. */
+      research_profile?: ResearchProfile;
       ticker: string;
       status: RunStatusLiteral;
       mode: ResearchMode;
@@ -648,6 +653,11 @@ export type ApiErrorCode =
   | "companion_not_found"
   | "company_not_found"
   | "duplicate_ticker"
+  | "evidence_horizon_not_supported"
+  | "evidence_legacy_scheduling_params_not_applicable"
+  | "evidence_market_unsupported"
+  | "evidence_mode_unsupported"
+  | "evidence_profile_unavailable"
   | "event_cursor_mismatch"
   | "frontend_unavailable"
   | "history_corrupted"
@@ -659,6 +669,7 @@ export type ApiErrorCode =
   | "holding_legacy_conflict"
   | "holding_nav_invalid"
   | "holding_not_allowed"
+  | "holding_original_thesis_invalid"
   | "holding_quantity_invalid"
   | "holding_required"
   | "holding_ticker_mismatch"
@@ -1636,7 +1647,7 @@ export interface AuditRunSummaryDTO {
   item_id: "run";
   status: "completed" | "failed" | "cancelled" | "interrupted";
   ticker: string;
-  mode: "company_research" | "holding_review" | null;
+  mode: ResearchMode | null;
   horizon: "short" | "medium" | "long" | null;
   created_at: string;
   completed_at: string | null;
@@ -1767,7 +1778,7 @@ export interface AuditDetailDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Catalyst research profile (research_profile: classic | catalyst_v1)
+// Research profiles (classic | catalyst_v1 | evidence_v1)
 // ---------------------------------------------------------------------------
 // Mirrors, in this order of authority:
 //   tradingagents/research/catalyst_evidence_policy.py  (profile + policy version)
@@ -1779,11 +1790,21 @@ export interface AuditDetailDTO {
 // an already-active test gate. `catalyst-evidence-policy-v1` is a data-requirement
 // version; the two must never share a field, a module, or a literal.
 
-export type ResearchProfile = "classic" | "catalyst_v1";
-export const RESEARCH_PROFILES: readonly ResearchProfile[] = ["classic", "catalyst_v1"];
+export type ResearchProfile = "classic" | "catalyst_v1" | "evidence_v1";
+export const RESEARCH_PROFILES: readonly ResearchProfile[] = ["classic", "catalyst_v1", "evidence_v1"];
 
 export const CATALYST_EVIDENCE_POLICY_VERSION = "catalyst-evidence-policy-v1" as const;
 export type CatalystEvidencePolicyVersion = typeof CATALYST_EVIDENCE_POLICY_VERSION;
+export const NATIVE_EVIDENCE_POLICY_VERSION = "evidence-policy-v1" as const;
+
+/** Canonical: research/native_evidence_policy.py; these are source windows, not an outlook. */
+export interface NativeEvidencePolicyV1DTO {
+  policy_version: typeof NATIVE_EVIDENCE_POLICY_VERSION;
+  profile: "evidence_v1";
+  event_lookback_calendar_days: [7, 30, 90];
+  price_history_trading_days: 250;
+  fundamentals_quarters: 8;
+}
 
 export const CATALYST_CASE_SCHEMA_VERSION = "catalyst-research-case-v1" as const;
 export const CATALYST_CASE_SCHEMA_NUMBER = 1 as const;
@@ -1795,6 +1816,7 @@ export const CATALYST_ENDPOINT_VERSION = 1 as const;
 export const PROFILE_POLICY_VERSIONS: Readonly<Record<ResearchProfile, string>> = {
   classic: "horizon-policy-v2",
   catalyst_v1: CATALYST_EVIDENCE_POLICY_VERSION,
+  evidence_v1: NATIVE_EVIDENCE_POLICY_VERSION,
 };
 
 /**

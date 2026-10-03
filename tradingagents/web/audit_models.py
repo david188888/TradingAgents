@@ -73,7 +73,7 @@ class AuditRunSummary(_AuditModel):
     item_id: Literal["run"] = "run"
     status: Literal["completed", "failed", "cancelled", "interrupted"]
     ticker: str
-    mode: Literal["company_research", "holding_review"] | None = None
+    mode: Literal["company_research", "holding_review", "catalyst_research"] | None = None
     horizon: Literal["short", "medium", "long"] | None = None
     created_at: str
     completed_at: str | None = None

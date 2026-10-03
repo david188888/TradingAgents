@@ -16,6 +16,7 @@ import { CatalystCasePage } from "../reader/CatalystCasePage";
 import { CatalystProgress } from "../reader/CatalystProgress";
 import { EvidenceDrawer } from "../reader/EvidenceDrawer";
 import { ResearchRecordSection } from "../reader/ResearchRecordSection";
+import { NativeResearchPage } from "../reader/NativeResearchPage";
 import { restoreFocus } from "../shared/drawerFocus";
 import { LegacyReader } from "../reader/LegacyReader";
 import { RunDisclosure } from "./RunDisclosure";
@@ -80,6 +81,10 @@ export function WorkbenchLayout(): JSX.Element {
   const [legacyLayer, setLegacyLayer] = useState<LegacyLayerId>("summary");
   const [openRef, setOpenRef] = useState<{ id: string; title: string | null } | null>(null);
   const state = stream.state;
+  const selectedViewRun = view.view?.view.run.run_id === run_id ? view.view.view.run : null;
+  const selectedState = state?.meta.run_id === run_id ? state : null;
+  const selectedProfile = selectedViewRun?.research_profile ?? selectedState?.meta.research_profile;
+  const isNative = selectedProfile === "evidence_v1";
 
   /**
    * T26. The catalyst projection is read once per selected run, alongside the
@@ -87,8 +92,8 @@ export function WorkbenchLayout(): JSX.Element {
    * and the read is a plain GET of committed facts (no LLM, no data source), so
    * mounting it costs nothing.
    */
-  const catalyst = useCatalyst(run_id, JSON.stringify([state?.meta.catalyst_stages, state?.meta.status]));
-  const recordRunId = view.view?.view.run.status === "completed" && view.view.view.run.run_id === run_id ? run_id : null;
+  const catalyst = useCatalyst(isNative ? null : run_id, JSON.stringify([state?.meta.catalyst_stages, state?.meta.status]));
+  const recordRunId = selectedViewRun?.status === "completed" || (isNative && selectedState?.meta.status === "completed") ? run_id : null;
   const researchRecord = useResearchRecord(recordRunId);
 
   /**
@@ -355,6 +360,19 @@ export function WorkbenchLayout(): JSX.Element {
               <span className="eyebrow">研究工作台</span>
               <h2>选择一次运行</h2>
             </section>
+          ) : isNative ? (
+            <NativeResearchPage
+              runId={run_id}
+              ticker={selectedViewRun?.ticker ?? selectedState?.meta.ticker ?? ""}
+              status={selectedViewRun?.status ?? selectedState?.meta.status ?? "created"}
+              state={selectedState}
+              {...researchRecord}
+              onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+              onCancel={() => void handleCancelRun()}
+              onRetry={() => void handleRetryRun()}
+              onResume={() => void handleResumeRun()}
+              onNewResearch={() => selectRun(null)}
+            />
           ) : view.loading && !state ? (
             <section className="reader-skeleton" aria-busy="true">
               <span className="eyebrow">正在读取研究投影</span>
@@ -522,7 +540,7 @@ export function WorkbenchLayout(): JSX.Element {
           onClose={() => setAuditOpen(false)}
         />
       ) : null}
-      {run_id !== null && catalyst.kase !== null ? (
+      {!isNative && run_id !== null && catalyst.kase !== null ? (
         <EvidenceDrawer
           runId={run_id}
           evidence={catalyst.kase.evidence}

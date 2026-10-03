@@ -37,6 +37,10 @@ from tradingagents.research.catalyst_evidence_policy import (
     catalyst_evidence_policy_v1,
     normalize_research_profile,
 )
+from tradingagents.research.native_evidence_policy import (
+    NativeEvidencePolicyV1,
+    is_native_stock_ticker,
+)
 from tradingagents.runtime.run_models import generate_run_id
 from tradingagents.web.research_record_projection import project_research_record
 
@@ -500,12 +504,18 @@ def create_app(
         # Global (non-A-share) tickers route through yfinance, which is
         # unreachable from a mainland network without a VPN. Fail fast with a
         # 503 before creating the run instead of wasting the whole analysis.
-        connectivity_check(body.ticker)
+        # Native trial admission is local and must reject unsupported markets
+        # or a disabled profile before a connectivity probe can run. Preserve
+        # the existing preflight order for the two compatibility profiles.
+        if body.research_profile != "evidence_v1":
+            connectivity_check(body.ticker)
         request_model, configured_keys = _analysis_request(
             body,
             selected_environment,
             checkpoint_available=checkpoint_available,
         )
+        if body.research_profile == "evidence_v1":
+            connectivity_check(request_model.ticker)
         return selected_manager.start(
             request_model,
             configured_keys=configured_keys,
@@ -857,7 +867,7 @@ def _analysis_request(
             "The selected LLM provider is not configured on this local server.",
             fields=("llm_provider",),
         )
-    if body.checkpoint_enabled and not checkpoint_available and body.research_profile != "catalyst_v1":
+    if body.checkpoint_enabled and not checkpoint_available and body.research_profile not in {"catalyst_v1", "evidence_v1"}:
         raise ApiBoundaryError(
             422,
             "checkpoint_unavailable",
@@ -892,6 +902,12 @@ def _analysis_request(
         "max_risk_discuss_rounds": body.research_depth,
     }
     configured_keys = _configured_keys(environment)
+    if body.research_profile == "evidence_v1" and body.holding is not None:
+        thesis = body.holding.original_thesis
+        if thesis is not None and (not isinstance(thesis, str) or len(thesis) > 4000):
+            raise ApiBoundaryError(422, "holding_original_thesis_invalid",
+                "The original holding thesis must be a string of at most 4000 characters.",
+                fields=("holding.original_thesis",))
     mode, holding_context = _normalize_research_context(body, canonical_ticker)
     research_profile, catalyst_policy = _normalize_research_profile(
         body,
@@ -914,6 +930,7 @@ def _analysis_request(
             research_profile=research_profile,
             catalyst_policy=catalyst_policy,
             research_question=body.research_question,
+            evidence_policy=(body.evidence_policy or NativeEvidencePolicyV1()) if research_profile == "evidence_v1" else None,
         ),
         configured_keys,
     )
@@ -940,12 +957,31 @@ def _normalize_research_profile(
         raise ApiBoundaryError(
             422,
             CATALYST_PROFILE_UNAVAILABLE,
-            "The requested research profile is not supported. Use classic or catalyst_v1.",
+            "The requested research profile is not supported. Use classic, catalyst_v1 or evidence_v1.",
             fields=("research_profile",),
         ) from exc
 
     if profile == CLASSIC_PROFILE:
         return CLASSIC_PROFILE, None
+
+    if profile == "evidence_v1":
+        if not evidence_profile_enabled():
+            raise ApiBoundaryError(403, "evidence_profile_unavailable",
+                "The evidence_v1 research profile is not enabled on this server. Use research_profile=classic.",
+                fields=("research_profile",))
+        if asset_type != "stock" or not is_native_stock_ticker(canonical_ticker):
+            raise ApiBoundaryError(422, "evidence_market_unsupported",
+                "research_profile=evidence_v1 supports A-share common stocks only. Use research_profile=classic for other markets or asset types.",
+                fields=("research_profile", "ticker", "asset_type"))
+        if body.horizon != "medium":
+            raise ApiBoundaryError(422, "evidence_horizon_not_supported",
+                "research_profile=evidence_v1 does not use the classic horizon setting. Send horizon=medium or omit it.",
+                fields=("horizon",))
+        if not _catalyst_legacy_scheduling_is_default(body):
+            raise ApiBoundaryError(422, "evidence_legacy_scheduling_params_not_applicable",
+                "research_profile=evidence_v1 fixes its own roles and one challenge stage. Omit selected_analysts and research_depth, or send their default values.",
+                fields=("selected_analysts", "research_depth"))
+        return "evidence_v1", None
 
     if not catalyst_profile_enabled():
         raise ApiBoundaryError(
@@ -1009,6 +1045,14 @@ def catalyst_profile_enabled() -> bool:
     return bool(DEFAULT_CONFIG.get("catalyst_profile_enabled", False))
 
 
+def evidence_profile_enabled() -> bool:
+    """Creation-only native trial flag; existing durable runs remain readable."""
+    override = os.environ.get("TRADINGAGENTS_EVIDENCE_ENABLED")
+    if override is not None and override.strip():
+        return override.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(DEFAULT_CONFIG.get("evidence_profile_enabled", False))
+
+
 def _catalyst_legacy_scheduling_is_default(body: RunCreateRequest) -> bool:
     """True when the classic scheduling fields carry no explicit selection."""
     return (
@@ -1027,7 +1071,7 @@ def _is_a_share_ticker(canonical_ticker: str) -> bool:
 def _normalize_research_context(
     body: RunCreateRequest,
     canonical_ticker: str,
-) -> tuple[Literal["company_research", "holding_review"], HoldingContext | None]:
+) -> tuple[Literal["company_research", "catalyst_research", "holding_review"], HoldingContext | None]:
     """Resolve new and legacy holding input without inventing account facts."""
     holding = body.holding
     portfolio = body.portfolio
@@ -1043,19 +1087,24 @@ def _normalize_research_context(
     if mode is None:
         mode = "holding_review" if holding is not None or portfolio is not None else "company_research"
 
-    if mode == "company_research":
+    if mode == "catalyst_research" and body.research_profile != "evidence_v1":
+        raise ApiBoundaryError(422, "evidence_mode_unsupported",
+            "mode=catalyst_research requires research_profile=evidence_v1. The existing catalyst_v1 entry point uses company_research.",
+            fields=("research_profile", "mode"))
+
+    if mode in {"company_research", "catalyst_research"}:
         if holding is not None:
             raise ApiBoundaryError(
                 422,
                 "holding_not_allowed",
-                "Company research cannot include holding facts.",
+                "Company research cannot include holding facts." if mode == "company_research" else "Catalyst research cannot include holding facts.",
                 fields=("holding",),
             )
         if portfolio is not None:
             raise ApiBoundaryError(
                 422,
                 "legacy_portfolio_not_allowed",
-                "Company research cannot include a legacy portfolio.",
+                "Company research cannot include a legacy portfolio." if mode == "company_research" else "Catalyst research cannot include a legacy portfolio.",
                 fields=("portfolio",),
             )
         return mode, None
@@ -1350,6 +1399,9 @@ def _configuration_payload(
             "classic": {"supported": True, "reason": None},
             "catalyst_v1": {"supported": catalyst_profile_enabled(),
                 "reason": None if catalyst_profile_enabled() else "此服务尚未启用催化研究试用"},
+            "evidence_v1": {"supported": evidence_profile_enabled(),
+                "reason": None if evidence_profile_enabled() else "此服务尚未启用证据驱动研究试用",
+                "checkpoint_available": True},
         },
         "wind": {
             "enabled": bool(DEFAULT_CONFIG.get("wind_enabled", False)),

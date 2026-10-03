@@ -25,6 +25,7 @@ import {
   BRIEF_CHARACTER_BUDGET,
   CATALYST_CASE_SCHEMA_VERSION,
   CATALYST_EVIDENCE_POLICY_VERSION,
+  NATIVE_EVIDENCE_POLICY_VERSION,
   CATALYST_ENDPOINT_VERSION,
   CATALYST_REQUEST_ERROR_CODES,
   PRIORITY_BLOCKING_REASONS,
@@ -360,9 +361,11 @@ describe("profile and policy versioning", () => {
     expect(CATALYST_CASE_SCHEMA_VERSION).not.toBe(String(CATALYST_ENDPOINT_VERSION));
   });
 
-  it("exposes both profiles, classic first", () => {
+  it("keeps old profiles first and exposes the explicit native profile", () => {
     const profiles: readonly ResearchProfile[] = RESEARCH_PROFILES;
-    expect(profiles).toEqual(["classic", "catalyst_v1"]);
+    expect(profiles).toEqual(["classic", "catalyst_v1", "evidence_v1"]);
+    expect(PROFILE_POLICY_VERSIONS.evidence_v1).toBe(NATIVE_EVIDENCE_POLICY_VERSION);
+    expect(NATIVE_EVIDENCE_POLICY_VERSION).toBe("evidence-policy-v1");
   });
 
   it("publishes the frozen request error codes", () => {

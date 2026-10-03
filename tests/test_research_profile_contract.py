@@ -479,7 +479,7 @@ def test_analysis_request_annotations_stay_resolvable():
     consumer would die with NameError on the first request.
     """
     hints = typing.get_type_hints(AnalysisRequest)
-    assert set(typing.get_args(hints["research_profile"])) == {"classic", "catalyst_v1"}
+    assert set(typing.get_args(hints["research_profile"])) == {"classic", "catalyst_v1", "evidence_v1"}
 
 
 def test_catalyst_policy_field_is_a_real_policy_object_not_a_lookalike():

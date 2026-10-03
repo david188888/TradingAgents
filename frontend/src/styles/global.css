@@ -95,6 +95,7 @@ a {
 }
 
 .research-record { margin-block: 1.5rem; min-width: 0; }
+.native-research-page { max-width: 920px; margin-inline: auto; min-width: 0; padding-bottom: 2rem; overflow-wrap: anywhere; }
 .record-meta { color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
 .record-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; }
 .record-metric { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 12px; }

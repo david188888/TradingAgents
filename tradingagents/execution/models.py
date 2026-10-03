@@ -11,10 +11,10 @@ from typing import Any, Literal
 
 from tradingagents.analysts import ANALYST_WIRE_KEYS
 
-ResearchMode = Literal["company_research", "holding_review"]
+ResearchMode = Literal["company_research", "holding_review", "catalyst_research"]
 # Omitting research_profile is exactly equivalent to "classic"; the default is
 # applied by normalize_research_profile so it cannot drift between entry points.
-ResearchProfile = Literal["classic", "catalyst_v1"]
+ResearchProfile = Literal["classic", "catalyst_v1", "evidence_v1"]
 # Typed learning modes produce research narratives, not trade outcomes: they
 # must not write into the trading-reflection memory (see AnalysisRunner).
 LEARNING_MODES: frozenset[str] = frozenset({"company_research", "holding_review"})
@@ -119,6 +119,7 @@ class AnalysisRequest:
     # __post_init__ rejects anything that is not the real policy object, so a
     # value can never reach the wire under the wrong type.
     catalyst_policy: Mapping[str, Any] | None = None
+    evidence_policy: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         # Imported here: tradingagents.research.__init__ imports this module
@@ -149,13 +150,47 @@ class AnalysisRequest:
             raise ValueError("debate and risk rounds must be positive")
         if self.horizon not in {"short", "medium", "long"}:
             raise ValueError(f"unsupported investment horizon: {self.horizon}")
-        if self.mode not in {"company_research", "holding_review"}:
+        if self.mode not in {"company_research", "holding_review", "catalyst_research"}:
             raise ValueError(f"unsupported research mode: {self.mode}")
         if self.mode == "company_research" and self.holding_context is not None:
             raise ValueError("company_research cannot include holding_context")
         if self.mode == "holding_review" and self.holding_context is None:
             raise ValueError("holding_review requires holding_context")
         profile = normalize_research_profile(self.research_profile)
+        if self.mode == "catalyst_research" and profile != "evidence_v1":
+            raise ValueError("catalyst_research mode requires evidence_v1")
+        if self.mode == "catalyst_research" and self.holding_context is not None:
+            raise ValueError("catalyst_research cannot include holding_context")
+        from tradingagents.research.native_evidence_policy import NativeEvidencePolicyV1
+        if profile == "evidence_v1":
+            if self.asset_type != "stock":
+                raise ValueError("evidence_v1 requires A-share common stocks")
+            from tradingagents.research.native_evidence_policy import is_native_stock_ticker
+            if not is_native_stock_ticker(self.ticker):
+                raise ValueError("evidence_v1 requires A-share common stocks")
+            if self.catalyst_policy is not None:
+                raise ValueError("evidence_v1 cannot carry catalyst_policy")
+            if self.evidence_policy is None:
+                object.__setattr__(self, "evidence_policy", NativeEvidencePolicyV1())
+            if not isinstance(self.evidence_policy, NativeEvidencePolicyV1):
+                raise ValueError("evidence_policy must be a NativeEvidencePolicyV1 instance")
+            if (self.horizon != "medium" or self.selected_analysts != ANALYST_WIRE_KEYS
+                    or self.max_debate_rounds != 1 or self.max_risk_discuss_rounds != 1):
+                raise ValueError("evidence_v1 does not accept classic scheduling parameters")
+            if self.mode == "holding_review":
+                holding = self.holding_context
+                if not isinstance(holding, HoldingContext):
+                    raise ValueError("evidence_v1 holding review requires HoldingContext")
+                from tradingagents.dataflows.ticker_utils import to_tushare_symbol
+                if to_tushare_symbol(holding.ticker) != to_tushare_symbol(self.ticker):
+                    raise ValueError("native holding ticker must match the research security")
+                thesis = holding.original_thesis
+                if thesis is not None and (not isinstance(thesis, str) or len(thesis) > 4000):
+                    raise ValueError("native original_thesis must be a string of at most 4000 characters")
+                if date.fromisoformat(holding.facts_as_of) > date.fromisoformat(self.analysis_date):
+                    raise ValueError("native holding facts_as_of cannot follow the research cutoff")
+        elif self.evidence_policy is not None:
+            raise ValueError("evidence_policy requires evidence_v1")
         question = self.research_question
         if question is not None:
             if not isinstance(question, str):
@@ -218,6 +253,8 @@ class AnalysisRequest:
         }
         if self.catalyst_policy is not None:
             identity["catalyst_policy"] = self.catalyst_policy.as_identity()
+        if self.evidence_policy is not None:
+            identity["evidence_policy"] = self.evidence_policy.as_identity()
         identity["research_question"] = self.research_question
         return identity
 

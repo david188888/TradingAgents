@@ -59,6 +59,7 @@ def run_summary_v1(snapshot: RunSnapshot, *, data_quality_level: str) -> dict[st
         "error_message": snapshot.error_message,
         "duration_ms": duration_ms,
         "data_quality_level": data_quality_level,
+        **({"research_profile": "evidence_v1"} if snapshot.metadata.get("research_profile") == "evidence_v1" else {}),
     }
 
 

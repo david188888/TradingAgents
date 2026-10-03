@@ -59,6 +59,9 @@ def project_research_record(store: Any, run_id: str) -> dict[str, Any]:
             mode = "catalyst_research" if (snapshot.metadata or {}).get("research_profile") == "catalyst_v1" else snapshot.mode
             if record.run_id != run_id or record.ticker != snapshot.ticker or record.mode != mode or record.analysis_date != date.fromisoformat(snapshot.analysis_date):
                 raise ValueError("research record identity mismatch")
+            if (snapshot.metadata or {}).get("research_profile") == "evidence_v1" and (
+                    record.construction != "native" or record.assessment is None):
+                raise ValueError("native profile requires its assessed native record")
         except Exception:
             reason = "corrupt"
         else:

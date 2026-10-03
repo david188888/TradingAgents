@@ -31,7 +31,7 @@ For any question about current behavior:
 - [Contract index](contracts/README.md): canonical Python, runtime, web, and frontend sources, plus change propagation rules.
 - [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
 - [Local price statistics](contracts/local-price-statistics.md): deterministic return-risk/ATR methods and frozen price evidence, separate from valuation.
-- [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, programmatic native kernel and bounded verification, mandatory native publication, read-only Reader and production compatibility limits.
+- [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, native three-mode workflow and bounded verification, mandatory publication, read-only Reader and compatibility limits.
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.
 
@@ -45,6 +45,7 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
 - [Web batch analysis](operations/web-batch-analysis.md): 1-8 company batch research, global FIFO scheduler, concurrency, lifecycle, and notification limits.
 - [Catalyst trial operations](operations/catalyst-research.md): explicit entry, qualification limits, budgets, recovery and read semantics.
+- [Evidence research API trials](operations/evidence-research.md): explicit `evidence_v1` for company/catalyst/holding research, independent creation flag, native facts/conditions/synthesis, durable recovery and the single Reader; classic stays default.
 
 ## Integrations
 
@@ -63,7 +64,7 @@ These are execution proposals, not descriptions of current runtime behavior.
 - [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): original product direction and evaluation criteria. The explicit Web path is wired; default switching and batch quality evaluation remain separate decisions.
 - [Wiring design](superpowers/specs/2026-09-30-catalyst-production-wiring-design.md) and [acceptance record](superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md): approved scope and verification evidence.
 - [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): user-reviewed direction and mockup for company/catalyst/holding research; engineering migration is in progress.
-- [Native research wiring design](superpowers/specs/2026-10-02-native-research-wiring-design.md) and [implementation checklist](superpowers/plans/2026-10-02-native-research-wiring-implementation.md): C2 shared kernel and pending public compatibility-route decision.
+- [Native research wiring design](superpowers/specs/2026-10-02-native-research-wiring-design.md) and [implementation checklist](superpowers/plans/2026-10-02-native-research-wiring-implementation.md): shared-kernel and explicit profile design. Current behavior is documented in [API trial operations](operations/evidence-research.md).
 
 ## Historical / Archive
 

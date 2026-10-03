@@ -14,7 +14,7 @@ Watch a 20-second walkthrough of a completed A-share research-only sample. Engli
 
 ## Research pipeline
 
-The default `classic` profile turns CLI and web requests into the same LangGraph run. The public modes are `company_research` and `holding_review`; the CLI starts company research, while holding review requires context supplied through the Web/API. The classic graph runs selected analysts in order after deterministic data prefetch, then checks the evidence before debate.
+The default `classic` profile turns CLI and web requests into the same LangGraph run. Its modes are `company_research` and `holding_review`; the CLI starts company research, while holding review requires context supplied through the Web/API. The classic graph runs selected analysts in order after deterministic data prefetch, then checks the evidence before debate.
 
 ```mermaid
 flowchart TD
@@ -65,7 +65,7 @@ The four analysts can be selected and ordered; the subsequent convergence path i
 
 New committed company, holding and catalyst cases also publish a [shared research record](docs/contracts/research-record.md). The Reader exposes saved source content and qualified catalyst price statistics. Converted inferences remain explicitly unverified; historical reports are not backfilled, and the default workflow remains classic.
 
-The programmatic native research kernel connects qualified facts, isolated specialists, one challenge, bounded numeric verification and dimension-gated synthesis for all three research modes. Reader and Markdown can consume its mandatory published record. Public profile/RunManager wiring remains pending; the default flow is unchanged. Checks resolve only the specified condition, and accuracy improvement has not been measured; see the [shared record contract](docs/contracts/research-record.md).
+The explicit `evidence_v1` Web API profile covers A-share company, catalyst and holding research through the native kernel: qualified facts → isolated operating/event/market specialists → one challenge stage → bounded condition verification → one dimension-gated synthesis. Enable native creation with `TRADINGAGENTS_EVIDENCE_ENABLED=true`; this independent flag does not change the classic default or add a workbench selector. Reader and Markdown consume its mandatory `research-record-v1`, showing the judgement, key evidence, risk, next check and quantitative context. Missing valuation inputs or original holding thesis remain explicit limits; predicate checks do not close economic challenges. Run completion is separate from research completeness/quality, and no paid accuracy comparison has been performed. See [API trials and recovery](docs/operations/evidence-research.md) and the [shared record contract](docs/contracts/research-record.md).
 
 ## Quick start
 

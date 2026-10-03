@@ -115,12 +115,13 @@ def test_the_executor_does_not_yet_reference_the_catalyst_workflow() -> None:
 
 
 def test_research_mode_still_offers_holding_review_alongside_company_research() -> None:
-    assert set(get_args(ResearchMode)) == {"company_research", "holding_review"}
+    assert set(get_args(ResearchMode)) == {"company_research", "holding_review", "catalyst_research"}
     assert frozenset({"company_research", "holding_review"}) == LEARNING_MODES
 
 
-def test_research_profile_still_offers_exactly_classic_and_catalyst_v1() -> None:
-    assert set(get_args(ResearchProfile)) == {"classic", "catalyst_v1"}
+def test_profiles_add_explicit_native_trial_without_replacing_classic_default() -> None:
+    assert set(get_args(ResearchProfile)) == {"classic", "catalyst_v1", "evidence_v1"}
+    assert AnalysisRequest("600519", "2026-09-30").research_profile == "classic"
 
 
 def test_the_long_horizon_value_still_exists_on_the_request() -> None:

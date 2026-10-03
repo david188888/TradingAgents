@@ -13,6 +13,7 @@ import type {
   ObservationCommitV1DTO,
   ObservationTaskKind,
   ResearchDepth,
+  ResearchProfile,
 } from "../api/contracts";
 
 // ---------------------------------------------------------------------------
@@ -188,7 +189,7 @@ export type ApplicationStatus =
   | "abandoned";
 
 export interface RunMeta {
-  research_profile?: "classic" | "catalyst_v1";
+  research_profile?: ResearchProfile;
   catalyst_stages?: Record<string, string>;
   run_id: string;
   status: ApplicationStatus;
@@ -296,6 +297,20 @@ export interface RoleDefinition {
   display_name: string;
   icon_id: string;
   analyst_key: string | null;
+}
+
+/** Mirrors the independent native registry in observability/roles.py. */
+export const NATIVE_ROLE_REGISTRY: readonly RoleDefinition[] = [
+  ["evidence", "Evidence freeze"],
+  ["operating_quality", "Operating quality"],
+  ["event_context", "Event context"],
+  ["market_context", "Market context"],
+  ["challenge", "Independent challenge"],
+  ["synthesis", "Synthesis"],
+].map(([key, label]) => ({ actor_id: `native.${key}`, node_id: key, team_id: "native", display_name: label, icon_id: "verified-magnifier", analyst_key: null }));
+
+export function rolesForProfile(profile?: ResearchProfile): readonly RoleDefinition[] {
+  return profile === "evidence_v1" ? NATIVE_ROLE_REGISTRY : ROLE_REGISTRY;
 }
 
 export const ROLE_REGISTRY: readonly RoleDefinition[] = [

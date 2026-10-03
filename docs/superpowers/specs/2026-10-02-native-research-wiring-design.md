@@ -1,10 +1,10 @@
 # C2：原生三模式研究与生产接线
 
-Status: Proposed
+Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 
-承接已认可的[统一方案](2026-09-30-evidence-driven-research-and-reader-proposal.md)和[C1](../plans/2026-10-02-bounded-verification-acceptance.md)。research-only、已有总预算和旧 run 只读／恢复语义为不变量。用户已授权继续 C2；公开试用入口的兼容选择正在确认，入口相关修改在确认前不实施。
+承接已认可的[统一方案](2026-09-30-evidence-driven-research-and-reader-proposal.md)和[C1](../plans/2026-10-02-bounded-verification-acceptance.md)。research-only、已有总预算和旧 run 只读／恢复语义为不变量。用户已授权继续 C2；用户随后确认推荐的独立 evidence_v1 接线方案，旧 profiles 保留。实施与验收查[公开接线验收](../plans/2026-10-03-native-research-public-wiring-acceptance.md)。
 
 ## 共享内核
 
@@ -34,7 +34,7 @@ Native publication 为 mandatory gate：验证候选与已提交相同 task 是�
 
 ## 公开接线选择
 
-推荐独立 `evidence_v1` 试用入口，公开 mode 接受 company_research／catalyst_research／holding_review，默认仍 classic，旧 catalyst_v1 保留原执行和恢复。使用服务端 feature flag 控制新建；试用新 profile 不新增界面选择项，先支持显式程序接口／Web API。对应 request／snapshot／manager factory／resume／retry／event roles／TypeScript／读写契约须一致，不能静默退回 classic。普通 CLI 原路径保留；不得声称已有新的 CLI 参数。若用户选择直接改造 catalyst_v1，先调整接口细化及 checkpoint/role 版本边界再实施接线。
+已确认独立 `evidence_v1` 试用入口，公开 mode 接受 company_research／catalyst_research／holding_review，默认仍 classic，旧 catalyst_v1 保留原执行和恢复。使用服务端 feature flag 控制新建；试用新 profile 不新增界面选择项，先支持显式程序接口／Web API。对应 request／snapshot／manager factory／resume／retry／event roles／TypeScript／读写契约须一致，不能静默退回 classic。普通 CLI 原路径保留；不得声称已有新的 CLI 参数。扩展 catalyst_v1 的替代方案未采用。
 
 ## 验证与交付
 

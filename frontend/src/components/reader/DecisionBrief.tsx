@@ -1,4 +1,4 @@
-import type { ReaderBriefDTO, RunViewEnvelopeDTO } from "../../api/contracts";
+import type { ReaderBriefDTO, ResearchMode, RunViewEnvelopeDTO } from "../../api/contracts";
 import type { AuditOpenHandler } from "./AuditCenter";
 
 export interface DecisionBriefProps {
@@ -15,8 +15,8 @@ function qualityLabel(level: string): string {
   }[level] ?? "版本不支持";
 }
 
-function modeLabel(mode: "company_research" | "holding_review"): string {
-  return mode === "holding_review" ? "持仓复盘" : "公司研究";
+function modeLabel(mode: ResearchMode): string {
+  return mode === "holding_review" ? "持仓复盘" : mode === "catalyst_research" ? "催化研究" : "公司研究";
 }
 
 export function DecisionBrief({ envelope, onOpenAudit }: DecisionBriefProps): JSX.Element {

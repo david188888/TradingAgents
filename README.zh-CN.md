@@ -14,7 +14,7 @@ TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源�
 
 ## 研究流程
 
-默认的 `classic` profile 会将命令行和 Web 请求交给同一套 LangGraph 流程。当前公开模式为 `company_research` 和 `holding_review`；命令行默认执行公司研究，持仓复盘需要通过 Web/API 提供持仓背景。经典图执行确定性数据预取，然后按顺序运行所选分析师，并在辩论前检查证据。
+默认的 `classic` profile 会将命令行和 Web 请求交给同一套 LangGraph 流程。其模式为 `company_research` 和 `holding_review`；命令行默认执行公司研究，持仓复盘需要通过 Web/API 提供持仓背景。经典图执行确定性数据预取，然后按顺序运行所选分析师，并在辩论前检查证据。
 
 ```mermaid
 flowchart TD
@@ -65,7 +65,7 @@ Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究�
 
 新提交的公司研究、持仓复盘和催化案例还会发布[统一研究记录](docs/contracts/research-record.md)。Reader 展示已保存的来源内容与合格催化行情的代码计算指标；转换来的推断明确保留未验证状态。旧报告不补算，默认流程仍为 classic。
 
-程序接口的原生研究内核已连接三模式合格事实、独立专项、一次挑战、有界数值核查和分维度综合。Reader 与 Markdown 可读取其强制发布的同一记录；公开 profile／RunManager 接线仍待确认，默认流程保持。核查只证明指定条件，本阶段尚未测量准确率变化；契约和恢复边界见[统一研究记录](docs/contracts/research-record.md)。
+显式 Web API profile `evidence_v1` 通过原生内核覆盖 A 股公司研究、催化研究和持仓复盘：合格事实 → 隔离的经营／事件／市场专项 → 一次挑战 → 有界条件核查 → 单次分维度综合。设置 `TRADINGAGENTS_EVIDENCE_ENABLED=true` 可启用新建试用；此独立开关不改变 classic 默认，也不新增工作台选择器。Reader 与 Markdown 读取强制发布的同一 `research-record-v1`，优先展示判断、关键依据、主要风险、下一核查和量化背景。缺少估值资料或原持仓假设时保留对应限制；条件核查不能关闭经济挑战。运行完成与研究完整性／质量分开，本阶段未进行付费准确率对照。操作与恢复见[API 试用说明](docs/operations/evidence-research.md)和[统一研究记录](docs/contracts/research-record.md)。
 
 ## 快速开始
 

@@ -1,6 +1,6 @@
 # Shared research record
 
-Status: Current — compatibility publication and programmatic native research kernel.
+Status: Current — compatibility publication and evidence_v1 native research execution.
 
 `agents/schemas/_research_record.py` owns `research-record-v1`.
 `research/record_assembly.py` adapts committed company research, holding review
@@ -20,8 +20,8 @@ invent assumptions, falsifiers or an original holding thesis.
 V0 hashes the saved public evidence content and metadata. V1 preserves that
 content and adds verification evidence; it requires an execution record. A
 hypothesis cannot depend on evidence absent from its input snapshot. These are
-contract constraints. Both existing production workflows still publish empty
-executed verification lists. Model challenge dispositions remain reported assessments.
+contract constraints. The classic and catalyst_v1 compatibility workflows still publish empty
+executed verification lists; evidence_v1 executes bounded native checks. Model challenge dispositions remain reported assessments.
 
 ## Programmatic verification
 
@@ -30,7 +30,8 @@ executed verification lists. Model challenge dispositions remain reported assess
 V0 native record, a bounded plan and that run's existing `DurableBudgetLedger`.
 Company, catalyst and holding records use the same function. Compatibility
 inferences cannot be verified through it because they have no saved native
-falsification condition. This function is not called by production graphs.
+falsification condition. The evidence_v1 shared kernel calls it before final synthesis; old production
+graphs do not call it.
 
 The plan binds a single-target challenge, native hypothesis and exact saved
 assumption or invalidation text. Code accepts at most three allowlisted checks
@@ -63,9 +64,9 @@ metrics. Successful arithmetic adds derived evidence with input lineage; it
 retains its source family and never becomes an independent source. An executed
 unavailable check may add V1 without new evidence; zero execution creates no
 V1. The validated output and operation outcomes are stored in the checkpoint.
-The native programmatic kernel can publish this output through the mandatory
-publication gate below. Public request/profile and RunManager integration are
-not enabled. The Reader accepts committed native records without a paired case;
+The native kernel publishes this output through the mandatory publication
+gate below. The opt-in evidence_v1 request/profile and RunManager integration
+cover all three modes; classic remains the default. The Reader accepts committed native records without a paired case;
 the paired-case check applies only to compatibility records.
 
 ## Native shared kernel
@@ -112,7 +113,7 @@ refer to the admitted public content, not private files.
 
 ## Metrics and reading
 
-Saved qualified catalyst Tushare price evidence projects annualized volatility,
+Saved qualified native and catalyst Tushare price evidence projects annualized volatility,
 signed historical return quantile, ES, drawdown, ATR and unavailable Beta when
 no qualified benchmark exists. The projection does not recalculate metrics.
 Each item carries its input reference/hash, method, unit, window, sample,
@@ -126,6 +127,8 @@ Compatibility-record failure preserves the source case and emits a safe
 `artifact.projection_unavailable` event. Native callers use
 `execution/native_publication.py::publish_native_record`: a frozen candidate,
 lifecycle authorization and committed checkpoint must precede public promotion.
+NativeRunner also reenters consumer lifecycle arbitration when replaying an already
+committed record after interruption; the publisher itself retains read-only replay.
 Publication failure raises rather than using the additive fallback. Native
 Markdown is rendered from that same record without another model call.
 
@@ -135,9 +138,13 @@ unavailable reason; missing runs use the existing 404. Missing historical
 records remain missing. Reading, expanding and refreshing never backfill,
 dispatch models or query providers.
 
-The workbench shows saved quantitative context below the catalyst brief and
-alongside the classic Reader, with detailed evidence/hypotheses/verification
-records collapsed. The catalyst citation drawer shows saved source content
+The evidence_v1 workbench uses the native record as its single main Reader: judgement,
+key grounds, principal challenge, next check and quantitative context appear before
+collapsed evidence/hypothesis/verification details. It does not fetch or mount the
+classic/catalyst case Reader. Running native roles are shown without a new selector.
+Existing profiles retain saved quantitative context below the catalyst brief and
+alongside the classic Reader. The catalyst citation drawer shows saved source content
 before locator metadata. Records and source content are bound to the selected
-run; missing content or unavailable values are not estimated. This is a limited
-integration into existing Readers, not the complete approved unified layout.
+run; missing content or unavailable values are not estimated. This is the minimal native Reader integration; complete D browser/layout acceptance
+and E same-evidence quality/cost comparison remain outstanding. See
+[evidence research operations](../operations/evidence-research.md).
