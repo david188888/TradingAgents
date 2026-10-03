@@ -117,3 +117,15 @@ describe("saved research records", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 });
+
+it("keeps scoped unknowns separate from saved global financial coverage", () => {
+  const scoped = { ...record, assessment: { ...assessment, limitations: [
+    "global_coverage:fundamentals:qualified", "global_coverage:operating_detail:unavailable",
+    "specialist_unknown:event_context:本专项未见财务明细", "specialist_unknown:缺少行情",
+  ] } };
+  render(<ResearchRecordSection runId={record.run_id} response={{ ...response, record: scoped }} loading={false} error={false} />);
+  expect(screen.getByText("全局覆盖 · 财务三表：合格资料可用")).toBeInTheDocument();
+  expect(screen.getByText("全局覆盖 · 经营披露明细：未取得合格资料")).toBeInTheDocument();
+  expect(screen.getByText("事件专项待核查（仅代表该专项视图）：本专项未见财务明细")).toBeInTheDocument();
+  expect(screen.getByText(/旧记录未保存专项范围，不能认定为全局缺失/)).toBeInTheDocument();
+});

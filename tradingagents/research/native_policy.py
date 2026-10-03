@@ -4,7 +4,12 @@ from tradingagents.agents.schemas._research_assessment import (
     DIMENSIONS_BY_MODE,
     DimensionAssessmentV1,
 )
-from tradingagents.research.source_families import FINANCIAL_SOURCES, PRICE_SOURCES
+from tradingagents.research.source_families import (
+    BODY_SOURCES,
+    FINANCIAL_SOURCES,
+    OPERATING_SOURCES,
+    PRICE_SOURCES,
+)
 
 ROLE_ORDER = ("operating_quality", "event_context", "market_context")
 QUESTIONS = {
@@ -26,8 +31,11 @@ def fact_views(record):
                or sources[key].usable_as_of is None for key in fact.evidence_ids):
             continue
         names = [sources[key].source_name for key in fact.evidence_ids]
-        if any(name in FINANCIAL_SOURCES for name in names):
+        if any(name in FINANCIAL_SOURCES | OPERATING_SOURCES for name in names):
             views["operating_quality"].append(fact)
+        elif any(name in BODY_SOURCES for name in names):
+            role = "operating_quality" if "native_dimension:operating_quality" in fact.limitations else "event_context"
+            views[role].append(fact)
         elif any(name == "cninfo.announcements" for name in names):
             views["event_context"].append(fact)
         elif any(name == "user.original_thesis" for name in names):
@@ -39,11 +47,25 @@ def fact_views(record):
     return {role: tuple(items) for role, items in views.items()}
 
 
-def dimension_policy(record):
+def global_coverage(record):
+    """Collector coverage, not the model's impression of its isolated view."""
+    coverage = {}
+    for item in record.limitations:
+        if item.startswith("global_coverage:"):
+            _, capability, status = item.split(":", 2)
+            coverage[capability] = {"status": status, "gaps": []}
+    for item in record.limitations:
+        if item.startswith("global_gap:"):
+            _, capability, reason = item.split(":", 2)
+            coverage.setdefault(capability, {"status": "unknown", "gaps": []})["gaps"].append(reason)
+    return coverage
+
+
+def dimension_policy(record, *, scoped=False):
     views = fact_views(record)
     thesis = any(source.source_name == "user.original_thesis" and source.availability == "available"
                  for source in record.evidence)
-    financial = any(any(source.source_name in FINANCIAL_SOURCES
+    financial = any(any(source.source_name in FINANCIAL_SOURCES | OPERATING_SOURCES
                         for source in record.evidence if source.evidence_id in fact.evidence_ids)
                     for fact in views["operating_quality"])
     policies = {
@@ -53,10 +75,14 @@ def dimension_policy(record):
         "catalyst_delivery": ("conditional" if views["event_context"] else "unresolved", "qualified_event_evidence_missing"),
         "holding_thesis": ("conditional" if thesis and financial else "unresolved", "original_thesis_or_new_operating_evidence_missing"),
     }
+    if scoped:
+        for name, (status, _reason) in policies.items():
+            if status != "unresolved":
+                policies[name] = (status, "dimension_judgement_requires_further_validation")
     return {name: policies[name] for name in DIMENSIONS_BY_MODE[record.mode]}
 
 
-def gate_dimensions(record, proposed):
+def gate_dimensions(record, proposed, *, scoped=False):
     """Propagate challenged dependencies, never permit narrative to raise a ceiling."""
     order = DIMENSIONS_BY_MODE[record.mode]
     supplied = {item.dimension: item for item in proposed}
@@ -71,7 +97,7 @@ def gate_dimensions(record, proposed):
         item = supplied[name]
         if len(set(item.claim_ids)) != len(item.claim_ids) or not set(item.claim_ids) <= claims.keys():
             raise ValueError("synthesis contains an invalid claim reference")
-        ceiling, missing = dimension_policy(record)[item.dimension]
+        ceiling, missing = dimension_policy(record, scoped=scoped)[item.dimension]
         # An unavailable dimension cannot acquire support from another role.
         # Preserve the raw proposal in the journal, but publish only the
         # code-owned missing-data judgement and explicitly record discarded refs.
@@ -95,7 +121,7 @@ def gate_dimensions(record, proposed):
         names = {source.source_name for fact in cited_facts for source in record.evidence
                  if source.evidence_id in fact.evidence_ids}
         if item.dimension in {"operating_quality", "holding_thesis"} and item.claim_ids:
-            if not FINANCIAL_SOURCES & names:
+            if not (FINANCIAL_SOURCES | OPERATING_SOURCES) & names:
                 raise ValueError("operating judgement requires cited financial evidence")
             if item.dimension == "holding_thesis" and "user.original_thesis" not in names:
                 raise ValueError("holding judgement requires cited original thesis")
@@ -118,7 +144,7 @@ def gate_dimensions(record, proposed):
         if relevant:
             limits.append("unresolved_challenge_dependency")
         if item.dimension == "catalyst_delivery" and ceiling != "unresolved":
-            limits.append("announcement_titles_do_not_prove_delivery")
+            limits.append("company_disclosure_not_independent_delivery_verification" if BODY_SOURCES & names else "announcement_titles_do_not_prove_delivery")
         if status == "unresolved" and not limits:
             limits.append("dimension_unresolved")
         output.append(DimensionAssessmentV1(dimension=item.dimension, status=status,

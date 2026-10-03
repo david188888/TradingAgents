@@ -1,4 +1,5 @@
 import type { QuantitativeMetricV1DTO, ResearchRecordResponseDTO, ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
+import { limitationLabel } from "../../domain/researchCoverage";
 
 const CONTENT_LABELS = { excerpt: "原文摘录", source_fields: "原始数据字段", saved_summary: "已保存摘要" };
 
@@ -69,9 +70,11 @@ function NativeAssessment({ record }: { record: ResearchRecordV1DTO }): JSX.Elem
         <p>{dimension.judgement}</p>
         {dimension.claim_ids.map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} />)}
         {dimension.challenge_ids.map((challengeId) => <p key={challengeId}>未解决挑战：{record.challenges.find((item) => item.challenge_id === challengeId)?.statement}</p>)}
-        {dimension.limitations.map((limitation, index) => <p className="record-meta" key={index}>{limitation}</p>)}
+        {dimension.limitations.map((limitation, index) => <p className="record-meta" key={index}>{limitationLabel(limitation)}</p>)}
       </section>)}
-      {assessment.limitations.map((limitation, index) => <p className="record-meta" key={index}>{limitation}</p>)}
+      <h4>全局覆盖与专项待查</h4>
+      <p className="record-meta">专项只读取对应证据子集；专项未见资料不等于整个研究没有资料。</p>
+      {[...new Set([...record.limitations, ...assessment.limitations])].map((limitation, index) => <p className="record-meta" key={index}>{limitationLabel(limitation)}</p>)}
     </details>
   </section>;
 }

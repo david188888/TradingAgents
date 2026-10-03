@@ -13,6 +13,7 @@ import requests
 from tradingagents.dataflows.catalyst_sources import CatalystSources
 from tradingagents.dataflows.catalyst_transport import BudgetedSession
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.native_disclosures import DisclosureSources
 from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
 from tradingagents.dataflows.native_sources import NativeSources
 from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
@@ -36,7 +37,8 @@ from tradingagents.runtime.catalyst_checkpoint import (
     load_checkpoint,
 )
 
-WORKFLOW_VERSION = "evidence-production-v2"
+WORKFLOW_VERSION = "evidence-production-v3"
+PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 
 
@@ -63,7 +65,7 @@ def validate_native_resume(store, run_id, request):
         raise CatalystCheckpointConflict("native resume profile mismatch")
     state = load_checkpoint(store, run_id)
     version = state["identity"].get("workflow_version") if state is not None else None
-    if version not in {WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
+    if version not in {WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -215,7 +217,11 @@ class NativeRunner:
             with BudgetedSession(
                 journal.ledger, active, lambda: deadline - time.monotonic()
             ) as session:
-                factory = self.sources_factory or (CatalystSources if version == LEGACY_WORKFLOW_VERSION else NativeSources)
+                factory = self.sources_factory or {
+                    LEGACY_WORKFLOW_VERSION: CatalystSources,
+                    PUBLIC_WORKFLOW_VERSION: NativeSources,
+                    "evidence-production-v3": DisclosureSources,
+                }[version]
                 draft, context = factory(
                     source_request, run_id, session, fetch
                 ).collect()
@@ -228,6 +234,7 @@ class NativeRunner:
                 mode=request.mode,
                 original_thesis=holding.original_thesis if holding else None,
                 holding_facts_as_of=holding.facts_as_of if holding else None,
+                include_coverage=version == "evidence-production-v3",
             )
             if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat()) != (
                 run_id,
@@ -269,6 +276,7 @@ class NativeRunner:
             ledger=journal.ledger,
             research_question=request.research_question,
             cancelled=cancelled,
+            scoped=version == "evidence-production-v3",
         )
         active()
         # Cached proposals close interrupted roles; stages lacking qualified

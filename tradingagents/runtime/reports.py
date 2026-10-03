@@ -322,6 +322,7 @@ def _markdown_text(value: str) -> str:
 def build_markdown_from_native_record(record: Any) -> str:
     """One deterministic Reader/report source; never invokes a summary model."""
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
+    from tradingagents.research.coverage_labels import limitation_label
 
     record = ResearchRecordV1.model_validate(record.model_dump(mode="json"))
     assessment = record.assessment
@@ -371,7 +372,7 @@ def build_markdown_from_native_record(record: Any) -> str:
         if dimension.claim_ids:
             lines.append("  依据：" + "、".join(text(key) for key in dimension.claim_ids))
         if dimension.limitations:
-            lines.append("  限制：" + "；".join(text(item) for item in dimension.limitations))
+            lines.append("  限制：" + "；".join(text(limitation_label(item)) for item in dimension.limitations))
     lines.extend(["", "## 未解决挑战与实际核查", ""])
     for challenge in record.challenges:
         lines.append(f"- **{challenge.severity} / {challenge.risk_type}**：{text(challenge.statement)}（{text(challenge.challenge_id)}）；待核查：{text(challenge.proposed_test)}")
@@ -407,5 +408,5 @@ def build_markdown_from_native_record(record: Any) -> str:
             lines.extend(["限制：" + "；".join(text(item) for item in source.limitations), ""])
     limitations = tuple(dict.fromkeys((*record.limitations, *assessment.limitations)))
     if limitations:
-        lines.extend(["## 覆盖限制", "", *("- " + text(item) for item in limitations), ""])
+        lines.extend(["## 全局覆盖与专项待查", "", *("- " + text(limitation_label(item)) for item in limitations), ""])
     return "\n".join(lines).rstrip() + "\n"

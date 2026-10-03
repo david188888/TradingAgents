@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from contextlib import suppress
 from datetime import date, datetime, time
 from typing import Literal
@@ -29,8 +30,10 @@ from tradingagents.research.evidence_freeze import (
 )
 from tradingagents.research.record_assembly import _catalyst_content, _price_metrics, _safe_url
 from tradingagents.research.source_families import (
+    BODY_SOURCES,
     FINANCIAL_SOURCES,
     IDENTITY_SOURCES,
+    OPERATING_SOURCES,
     PRICE_SOURCES,
 )
 from tradingagents.research.verification_tools import (
@@ -46,6 +49,8 @@ _SOURCE_CAPABILITIES = {
     **dict.fromkeys(IDENTITY_SOURCES, CAP_IDENTITY),
     **dict.fromkeys(FINANCIAL_SOURCES, CAP_FUNDAMENTALS),
     "cninfo": CAP_EVENT_COVERAGE,
+    **dict.fromkeys(BODY_SOURCES, "announcement_bodies"),
+    **dict.fromkeys(OPERATING_SOURCES, "operating_detail"),
     **dict.fromkeys(PRICE_SOURCES, CAP_PRICE),
 }
 
@@ -96,6 +101,26 @@ def _financial_content(payload, ticker: str) -> SourceContentV1 | None:
 
 
 def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceContentV1 | None:
+    if item.source_name in BODY_SOURCES | OPERATING_SOURCES:
+        if not isinstance(payload, dict) or payload.get("ts_code") != ticker:
+            return None
+        if (not all(isinstance(payload.get(key), str) and payload[key] for key in ("title", "document_id", "pdf_sha256", "published"))
+                or not re.fullmatch(r"[a-f0-9]{64}", payload["pdf_sha256"])
+                or not isinstance(payload.get("page_count"), int)):
+            return None
+        if item.source_name in OPERATING_SOURCES and not isinstance(payload.get("row"), dict):
+            return None
+        page = payload.get("page") if item.source_name in BODY_SOURCES else payload.get("row", {}).get("page")
+        if not isinstance(page, int) or isinstance(page, bool) or not 1 <= page <= payload.get("page_count", 0):
+            return None
+        label = f"{payload['title'][:80]} · PDF 第 {page} 页 · 文档 {payload['document_id']} · SHA256 {payload['pdf_sha256']}"
+        if item.source_name in BODY_SOURCES:
+            text = payload.get("text")
+            if not isinstance(text, str) or not 1 <= len(text) <= 4000:
+                return None
+            return SourceContentV1(kind="excerpt", text=text, locator_label=label[:200],
+                content_sha256=hashlib.sha256(text.encode()).hexdigest(), truncated=payload.get("truncated", False))
+        return _content(payload, label[:200])
     if item.source_name in FINANCIAL_SOURCES:
         return _financial_content(payload, ticker)
     if item.source_name in IDENTITY_SOURCES:
@@ -130,6 +155,21 @@ def _source_record(item: CatalystEvidence, draft: FrozenEvidenceDraft, payload) 
     if content is None:
         availability = "unavailable"
         limitation.append("source_fields_missing_invalid_or_exceed_public_limit")
+    if item.source_name in BODY_SOURCES | OPERATING_SOURCES:
+        limitation = [reason for reason in limitation if reason != "source_fields_are_not_full_document_text"]
+        limitation.extend(("company_disclosure_not_independent_delivery_verification", "selected_document_content_not_all_disclosures"))
+        try:
+            if (_date(payload.get("published")) != item.published_at.astimezone(SHANGHAI).date()
+                    or not isinstance(payload.get("pdf_sha256"), str)
+                    or len(payload["pdf_sha256"]) != 64):
+                raise _Unavailable("document_metadata_unqualified")
+            if item.source_name in OPERATING_SOURCES and (
+                _date(payload.get("report_period")) > _date(payload.get("published"))
+                or payload["row"]["unit"] != "CNY"):
+                raise _Unavailable("document_metadata_unqualified")
+        except (_Unavailable, AttributeError, KeyError, TypeError):
+            availability = "unavailable"
+            limitation.append("document_metadata_unqualified")
     if item.source_name == "cninfo":
         limitation.append("announcement_list_title_not_body_or_implementation_proof")
         try:
@@ -156,7 +196,9 @@ def _source_record(item: CatalystEvidence, draft: FrozenEvidenceDraft, payload) 
             limitation.append("price_history_point_in_time_or_unit_unqualified")
     return SourceEvidenceV1(evidence_id=item.evidence_id,
         source_name="cninfo.announcements" if item.source_name == "cninfo" else item.source_name,
-        source_kind=item.source_tier, source_family_id=item.source_family_id,
+        source_kind=item.source_tier, source_family_id=(
+            f"cninfo.document:{payload['document_id']}:{payload['pdf_sha256']}"
+            if item.source_name in BODY_SOURCES | OPERATING_SOURCES and content is not None else item.source_family_id),
         availability=availability, public_url=public_url,
         published_at=item.published_at if item.published_at is None or item.published_at.tzinfo else None,
         usable_as_of=usable_as_of, captured_at=item.captured_at,
@@ -171,7 +213,8 @@ def _fact(source: SourceEvidenceV1, dimension: str, locator: str, statement: str
 
 def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode,
                         original_thesis: str | None = None,
-                        holding_facts_as_of: str | None = None) -> ResearchRecordV1:
+                        holding_facts_as_of: str | None = None,
+                        include_coverage: bool = False) -> ResearchRecordV1:
     """Retain proven fields only; source coverage gaps never prove absence.
 
     Context bytes are bound to the collector's source-family digest before any
@@ -227,10 +270,13 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
             limitations=("user_declaration_not_independently_verified",)))
 
     evidence = tuple(sources)
+    coverage = tuple(f"global_coverage:{cap.capability}:{cap.status.value}" for cap in draft.capabilities) if include_coverage else ()
+    gaps = tuple(f"global_gap:{cap.capability}:{gap}" for cap in draft.capabilities for gap in cap.degradations) if include_coverage else ()
+    identity_limits = () if identity_ok else ("security_identity_unqualified",)
     seed = ResearchRecordV1(run_id=draft.run_id, ticker=draft.ticker, mode=mode,
         analysis_date=cutoff, construction="native", evidence=evidence,
         snapshots=(make_evidence_snapshot(evidence),),
-        limitations=() if identity_ok else ("security_identity_unqualified",))
+        limitations=(*coverage, *gaps, *identity_limits))
     if not identity_ok:
         return seed
     facts = []
@@ -256,6 +302,16 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                             continue
                         facts.append(_fact(source, "operating_quality", f"{table}[end_date={period}].{field}",
                             f"合并财务字段：报告期 {period}，{table}.{field} = {value} CNY。"))
+        elif source.source_name in BODY_SOURCES:
+            payload = payloads[source.evidence_id]
+            dimension = "operating_quality" if payload.get("report_period") else "event_context"
+            facts.append(_fact(source, dimension, f"document[{payload['document_id']}].page[{payload['page']}]",
+                f"公司于 {payload['published']} 披露“{payload['title'][:100]}”；PDF 第 {payload['page']} 页原文已保存。该页为公司披露，不证明计划已经兑现。"))
+        elif source.source_name in OPERATING_SOURCES:
+            row = payloads[source.evidence_id]["row"]
+            numbers = "，".join(f"{key}={row[key]}" for key in ("revenue", "prior_revenue", "cost", "gross_margin_percent", "revenue_share_percent") if key in row)
+            facts.append(_fact(source, "operating_quality", f"operating[{row['classification']}:{row['name']}].page[{row['page']}]",
+                f"公司经营披露：报告期 {row['report_period']}，{row['classification']} 分类“{row['name']}”，{numbers}；金额 CNY，百分比字段单位 %，原表见 PDF 第 {row['page']} 页。"))
         elif source.source_name == "cninfo.announcements":
             payload = payloads[source.evidence_id]
             title = payload.get("Title")

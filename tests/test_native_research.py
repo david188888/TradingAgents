@@ -351,3 +351,25 @@ def test_fact_partition_isolation_and_two_worker_bound(tmp_path):
         return base(stage, context)
     run_native_research(seed, caller=tracked, ledger=journal.ledger)
     assert maximum == 2
+
+
+def test_scoped_unknowns_cannot_be_confused_with_global_source_coverage(tmp_path):
+    journal=journal_for(tmp_path)
+    base=Caller(challenge=False,check=False)
+    seen={}
+    def caller(stage,context):
+        seen[stage]=context
+        proposal=base(stage,context)
+        if stage == 'operating_quality':
+            proposal['unknowns'] = ['尚未取得产品毛利细分']
+        return proposal
+    record=run_native_research(seed_for(journal),caller=caller,ledger=journal.ledger,scoped=True)
+    assert seen['operating_quality']['view_scope']['role']=='operating_quality'
+    assert 'global_coverage' in seen['synthesis']
+    assert seen['synthesis']['dimension_policy']['operating_quality'][1]=='dimension_judgement_requires_further_validation'
+    assert 'specialist_unknown:operating_quality:尚未取得产品毛利细分' in record.limitations
+    from tradingagents.runtime.reports import build_markdown_from_native_record
+    report=build_markdown_from_native_record(record)
+    assert '经营专项待核查（仅代表该专项视图）' in report
+    assert 'specialist\\_unknown' not in report
+    assert run_native_research(seed_for(journal),caller=lambda *_:pytest.fail('cached replay dispatched'),ledger=journal.ledger,scoped=True)==record

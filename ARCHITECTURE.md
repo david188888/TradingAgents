@@ -48,8 +48,13 @@ New native runs use `dataflows/native_sources.py` for capability-specific public
 source chains and Tushare backup; `research/source_families.py` owns the finite
 identity/financial/price admission registry shared by facts, specialist views
 and verification. Financial fallback preserves separate provider bundles.
-Workflow v2 records source admission and typed failures; v1 recovery retains its
-original collector or saved V0. See [native source policy](docs/operations/evidence-research.md#evidence-and-workflow).
+Workflow v3 extends the collector with `dataflows/native_disclosures.py` and
+the pure `disclosure_documents.py` PDF/table qualifier. Separate official
+excerpt and operating-row families feed role-specific facts; they are not C1
+financial statement operands. Global capability coverage and scoped specialist
+unknowns remain distinct in saved limitations, synthesis context and readers.
+V1/v2 recovery retains its original collector and kernel/prompt input semantics
+or replays saved V0/output. See [native source policy](docs/operations/evidence-research.md#evidence-and-workflow).
 
 ## Workflow And Research Routing
 

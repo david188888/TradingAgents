@@ -148,3 +148,20 @@ before locator metadata. Records and source content are bound to the selected
 run; missing content or unavailable values are not estimated. This is the minimal native Reader integration; complete D browser/layout acceptance
 and E same-evidence quality/cost comparison remain outstanding. See
 [evidence research operations](../operations/evidence-research.md).
+
+## Official document content and coverage scope
+
+Native v3 retains the v1 wire shape. `cninfo.document_excerpt` is saved as
+`excerpt`, with a PDF page locator and document hash; bounded excerpts are not
+full document coverage. `cninfo.operating_detail` retains qualified row fields,
+original row/header/unit, period, classification and page/hash. Both are official
+company disclosures, not independent implementation verification. Operating rows
+are separate from the closed Sina/Tushare financial families accepted by C1.
+
+Collector-produced limitations use `global_coverage:<capability>:<status>` and
+`global_gap:<capability>:<reason>`. New specialist unknowns are
+`specialist_unknown:<role>:<text>`; the role is code-owned. Synthesis receives
+collector coverage in addition to these scoped unknowns. Read projections
+label each scope explicitly, and do not upgrade old unscoped unknowns into a
+global missing-source finding. These strings are additive annotations, not
+new model permissions or a change to the frozen evidence qualification rules.

@@ -409,7 +409,8 @@ def test_missing_all_sources_completes_workflow_without_research_success(runtime
 
 
 @pytest.mark.parametrize("before_seed", [True, False])
-def test_v1_resume_keeps_original_collector_and_reuses_saved_results(runtime, monkeypatch, before_seed):
+@pytest.mark.parametrize("version", ["evidence-production-v1", "evidence-production-v2"])
+def test_v1_v2_resume_keeps_original_collector_and_reuses_saved_results(runtime, monkeypatch, before_seed, version):
     import tradingagents.execution.native_runner as native
 
     manager, caller = runtime
@@ -417,7 +418,7 @@ def test_v1_resume_keeps_original_collector_and_reuses_saved_results(runtime, mo
     snapshot = manager._create_run(req, configured_keys={}, queued=False)
     observer = DurableRunObserver(manager.store, snapshot.run_id, development_assertions=False)
     current = native.WORKFLOW_VERSION
-    monkeypatch.setattr(native, "WORKFLOW_VERSION", native.LEGACY_WORKFLOW_VERSION)
+    monkeypatch.setattr(native, "WORKFLOW_VERSION", version)
     Sources.crash_before_seed = before_seed
     def stopped(_):
         raise ProcessStopped()
@@ -425,14 +426,15 @@ def test_v1_resume_keeps_original_collector_and_reuses_saved_results(runtime, mo
         NativeRunner(observer, sources_factory=Sources, caller_factory=lambda **kwargs: caller).run(
             req, publication_authorizer=stopped)
     monkeypatch.setattr(native, "WORKFLOW_VERSION", current)
-    monkeypatch.setattr(native, "CatalystSources", Sources)
-    monkeypatch.setattr(native, "NativeSources", lambda *a: pytest.fail("v1 frontier used new topology"))
+    monkeypatch.setattr(native, "CatalystSources", Sources if version == native.LEGACY_WORKFLOW_VERSION else lambda *a: pytest.fail("v2 used v1 topology"))
+    monkeypatch.setattr(native, "NativeSources", Sources if version == native.PUBLIC_WORKFLOW_VERSION else lambda *a: pytest.fail("v1 used v2 topology"))
+    monkeypatch.setattr(native, "DisclosureSources", lambda *a: pytest.fail("old frontier used v3 topology"))
     validate_native_resume(manager.store, snapshot.run_id, req)
     from tradingagents.execution.native_runner import NativeResumeGuard
     NativeRunner(observer, caller_factory=lambda **kwargs: caller).run(req,
         checkpoint_guard=NativeResumeGuard(), publication_authorizer=lambda journal: journal.put("publication_authorized", True))
     assert len(Sources.operations) == 4 and len(caller.calls) == 5
-    assert load_checkpoint(manager.store, snapshot.run_id)["identity"]["workflow_version"] == native.LEGACY_WORKFLOW_VERSION
+    assert load_checkpoint(manager.store, snapshot.run_id)["identity"]["workflow_version"] == version
 
 
 def test_typed_source_failure_replay_does_not_repeat_transport(runtime):

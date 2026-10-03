@@ -30,6 +30,7 @@ from tradingagents.research.native_policy import (
     dimension_policy,
     fact_views,
     gate_dimensions,
+    global_coverage,
 )
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
@@ -129,7 +130,7 @@ def load_native_seed(ledger: DurableBudgetLedger) -> ResearchRecordV1 | None:
 def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                         ledger: DurableBudgetLedger, research_question: str | None = None,
                         cancelled: Callable[[], bool] = lambda: False,
-                        concurrency: int = 2) -> ResearchRecordV1:
+                        concurrency: int = 2, scoped: bool = False) -> ResearchRecordV1:
     seed = ResearchRecordV1.model_validate_json(seed.model_dump_json())
     if (seed.construction != "native" or len(seed.snapshots) != 1 or seed.hypotheses
             or seed.challenges or seed.verifications or seed.assessment
@@ -147,7 +148,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     question = research_question if research_question is not None else QUESTIONS[seed.mode]
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 400:
         raise ValueError("research question must contain 1..400 characters")
-    identity = {"workflow_version": WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
+    identity = {"workflow_version": "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
     _bound_put(ledger.journal, "native_seed", seed.model_dump(mode="json"))
     _bound_put(ledger.journal, "native_input", identity)
@@ -170,6 +171,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             "metrics": [item.model_dump(mode="json") for item in seed.metrics
                         if set(item.input_evidence_ids) <= source_ids] if role == "market_context" else [],
             "instruction": "只提出证据绑定的假设、必要与失效条件、替代解释。不得创造事实。"}
+        if scoped:
+            contexts[role]["view_scope"] = {"role": role, "coverage_is": "isolated_specialist_input_only",
+                "instruction": "未在本专项看到的资料不等于全局缺失；unknowns只描述本专项待查问题。"}
         logical = "native." + role
         if ledger.cached_result(logical) is None and not any(
             item.logical_call_id == logical and item.dispatched_at is not None for item in ledger.records()
@@ -220,7 +224,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                 bound = {"hypothesis_id": hid, "input_snapshot_id": seed.snapshots[0].snapshot_id,
                          **condition.model_dump(mode="json")}
                 conditions["condition." + canonical_sha256(bound)] = bound
-        limits.extend("specialist_unknown:" + item for item in proposal.unknowns)
+        limits.extend("specialist_unknown:" + (role+":" if scoped else "") + item for item in proposal.unknowns)
     current = _validated(seed, claims=claims, hypotheses=hypotheses, limitations=limits)
     _bound_put(ledger.journal, "native_conditions", conditions)
     # Opaque IDs and no author role/order metadata: challenge the claim rather
@@ -230,6 +234,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             "claims": sorted(current.model_dump(mode="json")["claims"], key=lambda item: item["claim_id"]),
             "hypotheses": sorted(hypotheses, key=lambda item: item["hypothesis_id"])}, "conditions": conditions,
         "instruction": "检验假设的证据与替代解释；明确材料可返回零挑战；只引用给定假设和条件，不强制看多或看空。"}
+    if scoped:
+        critic_context["global_coverage"] = global_coverage(current)
+        critic_context["coverage_scope_instruction"] = "specialist_unknown为专项待查，不得据此断言全局来源缺失。"
     critique = _call("challenge", critic_context, ChallengesProposalV1, caller=caller,
                      ledger=ledger, cancelled=cancelled) if hypotheses else ChallengesProposalV1()
     challenges, tasks = [], []
@@ -259,20 +266,24 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         "tasks": tasks}))
     execution = execute_verification(current, plan, ledger=ledger, cancelled=cancelled)
     current = execution.record
-    synthesis = _call("synthesis", {"mode": seed.mode, "question": question,
+    synthesis_context = {"mode": seed.mode, "question": question,
         "record": current.model_dump(mode="json"), "verification": execution.model_dump(mode="json"),
-        "dimension_policy": dimension_policy(current),
-        "instruction": "核查仅证明条件；不能据此关闭经济假设挑战。按dimension_policy顺序输出维度，所有挑战保留unresolved。"},
+        "dimension_policy": dimension_policy(current, scoped=scoped),
+        "instruction": "核查仅证明条件；不能据此关闭经济假设挑战。按dimension_policy顺序输出维度，所有挑战保留unresolved。"}
+    if scoped:
+        synthesis_context["global_coverage"] = global_coverage(current)
+        synthesis_context["coverage_scope_instruction"] = "专项未知项只代表对应专项输入/分析范围。全局缺失只按global_coverage和已保存来源判断；不得把缺经营明细写成无财务、把缺基准写成无行情。"
+    synthesis = _call("synthesis", synthesis_context,
         SynthesisProposalV1, caller=caller, ledger=ledger, cancelled=cancelled) if seed.claims else None
     if synthesis is None:
         limits.append("native_synthesis_unavailable")
         dimensions = tuple(DimensionAssessmentV1(dimension=name, status="unresolved", judgement="证据或综合环节不足。",
-                            limitations=(reason,)) for name, (_, reason) in dimension_policy(current).items())
+                            limitations=(reason,)) for name, (_, reason) in dimension_policy(current, scoped=scoped).items())
         judgement, next_check, keys, primary = "资料或综合环节不足，暂不能形成完整研究判断。", "补齐缺失资料并重新核查。", (), None
         challenge_assessments = tuple(ChallengeAssessmentV1(challenge_id=item.challenge_id,
                                      rationale="未完成对整体假设的核查。") for item in current.challenges)
     else:
-        dimensions = gate_dimensions(current, synthesis.dimensions)
+        dimensions = gate_dimensions(current, synthesis.dimensions, scoped=scoped)
         judgement, next_check, keys, primary = synthesis.judgement, synthesis.next_check, synthesis.key_claim_ids, synthesis.primary_challenge_id
         challenge_assessments = synthesis.challenge_assessments
         critical_ids = {item.challenge_id for item in current.challenges if item.severity == "critical"}

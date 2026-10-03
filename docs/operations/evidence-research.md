@@ -120,9 +120,10 @@ suppresses further Tushare attempts in that run; public sources remain eligible.
 All attempts share the existing capability/HTTP ceilings and active deadline.
 Cancellation, budget exhaustion and checkpoint conflicts stop execution.
 
-The `evidence-production-v2` workflow binds this collector topology. Original
-`evidence-production-v1` checkpoints recover with the original collector when
-V0 is missing, or replay their saved V0 without new source calls. A new topology
+The `evidence-production-v3` workflow binds the document extension below and
+scoped coverage contexts. Original `evidence-production-v1` and v2 checkpoints
+recover with their original collectors and kernel/prompt inputs when V0 is
+missing, or replay saved V0/output without new source calls. A new topology
 is never inserted into an old interrupted run.
 Having credentials does not establish entitlement, complete coverage or
 point-in-time provenance. Opaque SDK sources and unqualified historical factors
@@ -154,6 +155,12 @@ bind a hypothesis, challenge, immutable condition and input snapshot. Actual
 checks create V1 lineage while preserving V0; zero execution creates no V1.
 A successful predicate check does not prove the whole hypothesis or close an
 economic challenge. Derived arithmetic retains its source family.
+
+Specialist unknowns in v3 carry their code-owned role; they describe isolated
+inputs, not global source absence. Synthesis also receives collector coverage.
+Reader/Markdown separate `global_coverage`, `global_gap` and specialist unknown
+labels; old unscoped unknowns explicitly retain unknown scope. A conditional
+dimension with usable inputs is not labelled as missing those same inputs.
 
 The synthesis follows code-owned dimensions and evidence ceilings. Unavailable
 valuation inputs constrain valuation; missing qualified prices constrain market
@@ -224,3 +231,41 @@ documents a real source/model trial, a cached replay and a provider-limited
 second run; it does not establish complete research or predictive accuracy.
 See [the shared record contract](../contracts/research-record.md) and
 [architecture](../../ARCHITECTURE.md) for canonical ownership.
+
+## Official document admission
+
+New v3 runs share `DisclosureSources` in all three modes. The existing CNINFO
+90-day announcement list remains distinct from document coverage. When no
+formal annual/interim report occurs in that list, a separate bounded 550-day
+catalogue query supplies candidates. Selection is deterministic by publication
+and identifier: at most one formal report and three recent operating/project/
+governance event disclosures. Summaries, unsupported revisions and duplicate
+attachments cannot stand in for the report. Native CNINFO disable/exclusion
+also disables its document extension.
+
+Downloads use the existing BudgetedSession and durable fetch keys, without
+redirects, credentials or hidden retries. Only validated static.cninfo.com.cn
+attachment paths matching the official announcement ID are accepted. Documents
+have a 20 MiB / 500-page ceiling; the optional china installation includes
+pypdf. Encrypted, corrupt, scanned/empty, wrong-security, wrong-issuer or
+future-report documents remain unavailable. Cancellation/deadline/checkpoint
+errors stop execution; exhausting supplementary document budget stops that
+supplement and retains prior qualified evidence. Historical cutoffs currently
+have no archived PDF vintage and explicitly skip new body admission.
+
+Saved excerpts include document ID/hash, publication, parser version and PDF
+page. Only selected pages and bounded text are saved: this is partial body
+coverage even when the catalogue is complete. Company plans and management
+statements remain company disclosures, not independently verified delivery.
+Operating extraction supports explicit five-column revenue composition and
+six-column revenue/cost/margin layouts, including inherited page headers and
+wrapped labels. Only yuan/ten-thousand-yuan CNY units are admitted; report
+periods and classification groups stay distinct. Decimal arithmetic checks
+reported margin precision; malformed columns invalidate that table while
+retaining other qualified tables and excerpts. Incomplete classification totals
+are labelled; no residual rows, missing values or estimates are manufactured.
+These families are excluded from C1's financial-statement operand registry.
+
+The saved record represents source status independently for financials,
+announcement lists, selected bodies, operating rows and prices. Source
+availability never establishes that all economic questions are answered.

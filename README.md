@@ -72,6 +72,11 @@ calendar and adjusted daily prices, with Tushare as backup. Financial tables
 degrade independently and retain their provider provenance; cutoff, units,
 settled-session coverage and factor vintage remain admission requirements.
 Original native checkpoints retain their original source topology on recovery.
+New native runs also admit bounded official PDF excerpts and disclosed operating
+breakdowns, with document hashes, page locators, units and report periods.
+Selected excerpts do not imply all announcement bodies were covered. The Reader
+and report label specialist unknowns by their isolated view, separately from
+global source coverage. See [document admission](docs/operations/evidence-research.md#official-document-admission).
 
 ## Quick start
 
