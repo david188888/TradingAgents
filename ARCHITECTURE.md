@@ -121,8 +121,12 @@ inferences as converted and never treat model dispositions as executed tool
 verification. `execution/verification_executor.py` separately provides a
 programmatic bounded round for native V0 records in all three modes. It uses
 the existing durable ledger, saves predicate-scoped results and V1 lineage,
-and replays saved output without work. Production graphs do not call it;
-native publication and default-flow migration remain separate. See
+and replays saved output without work. The programmatic native kernel in
+`graph/native_research.py` connects facts-only V0, isolated specialists,
+one challenge, C1 and dimension-gated synthesis. Its SDK adapter and mandatory
+record publisher live in `execution/native_model.py` and
+`execution/native_publication.py`; Markdown and Reader consume that same record.
+Public profile/RunManager wiring and default-flow migration remain separate. See
 [the contract](docs/contracts/research-record.md).
 `frontend/src/api/contracts.ts` is the TypeScript facade for those wire
 contracts. The client consumes server-projected data; it does not define the

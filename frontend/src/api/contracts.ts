@@ -96,6 +96,32 @@ export interface QuantitativeMetricV1DTO {
   limitations: string[];
 }
 
+// Canonical: agents/schemas/_research_assessment.py.
+export interface DimensionAssessmentV1DTO {
+  dimension: "operating_quality" | "valuation" | "market_context" | "catalyst_delivery" | "holding_thesis";
+  status: "supported" | "conditional" | "unresolved";
+  judgement: string;
+  claim_ids: string[];
+  challenge_ids: string[];
+  limitations: string[];
+}
+
+export interface ResearchAssessmentV1DTO {
+  schema_version: "research-assessment-v1";
+  input_snapshot_id: string;
+  research_question: string;
+  judgement: string;
+  dimensions: DimensionAssessmentV1DTO[];
+  key_claim_ids: string[];
+  primary_challenge_id: string | null;
+  next_check: string;
+  challenge_assessments: Array<{ challenge_id: string; outcome: "unresolved"; rationale: string }>;
+  completeness: "complete" | "partial";
+  quality: "PASS" | "LOW_CONFIDENCE";
+  forward_window_calendar_days: 84 | null;
+  limitations: string[];
+}
+
 export interface ResearchRecordV1DTO {
   schema_version: "research-record-v1";
   run_id: string;
@@ -112,6 +138,7 @@ export interface ResearchRecordV1DTO {
   challenges: Array<{ challenge_id: string; target_claim_ids: string[]; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; evidence_ids: string[]; proposed_test: string; reported_disposition: string | null }>;
   verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string; scope?: "unspecified" | "predicate_only"; hypothesis_id?: string | null; plan_sha256?: string | null; condition_role?: "necessary" | "invalidation" | null; condition_text?: string | null }>;
   metrics: QuantitativeMetricV1DTO[];
+  assessment?: ResearchAssessmentV1DTO | null;
   limitations: string[];
 }
 

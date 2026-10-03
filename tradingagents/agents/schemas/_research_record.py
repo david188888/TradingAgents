@@ -13,7 +13,9 @@ from datetime import date, datetime
 from typing import Literal
 from urllib.parse import parse_qsl, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+
+from ._research_assessment import DIMENSIONS_BY_MODE, ResearchAssessmentV1
 
 RESEARCH_RECORD_CONTRACT = "research-record-v1"
 
@@ -214,7 +216,16 @@ class ResearchRecordV1(_RecordModel):
     challenges: tuple[ResearchChallengeV1, ...] = ()
     verifications: tuple[VerificationRecordV1, ...] = ()
     metrics: tuple[QuantitativeMetricV1, ...] = ()
+    assessment: ResearchAssessmentV1 | None = None
     limitations: tuple[str, ...] = ()
+
+    @model_serializer(mode="wrap")
+    def serialize_compatible_record(self, handler):
+        value = handler(self)
+        # Preserve existing checkpoint digests and old wire records exactly.
+        if self.assessment is None:
+            value.pop("assessment", None)
+        return value
 
     @model_validator(mode="after")
     def validate_reference_graph(self):
@@ -295,4 +306,35 @@ class ResearchRecordV1(_RecordModel):
                 raise ValueError("metric window is after research cutoff")
             if metric.availability == "available" and any(evidence[eid].availability != "available" for eid in metric.input_evidence_ids):
                 raise ValueError("available metrics require available input evidence")
+        if self.assessment is not None:
+            assessment = self.assessment
+            if self.construction != "native" or assessment.input_snapshot_id != self.snapshots[-1].snapshot_id:
+                raise ValueError("assessment requires the native final snapshot")
+            if tuple(item.dimension for item in assessment.dimensions) != DIMENSIONS_BY_MODE[self.mode]:
+                raise ValueError("native mode dimensions are missing, duplicated or reordered")
+            refs(assessment.key_claim_ids, {key for key, item in claims.items() if item.kind != "unknown"})
+            if assessment.primary_challenge_id is not None and assessment.primary_challenge_id not in challenges:
+                raise ValueError("primary challenge is missing")
+            dispositions = index(assessment.challenge_assessments, "challenge_id")
+            if dispositions.keys() != challenges.keys():
+                raise ValueError("every native challenge requires an explicit assessment")
+            if (assessment.forward_window_calendar_days == 84) != (self.mode == "catalyst_research"):
+                raise ValueError("only catalyst research has an 84-day forward window")
+            for dimension in assessment.dimensions:
+                refs(dimension.claim_ids, {key for key, item in claims.items() if item.kind != "unknown"})
+                refs(dimension.challenge_ids, challenges.keys())
+                if dimension.status != "unresolved" and not dimension.claim_ids:
+                    raise ValueError("a dimensional judgement requires claim references")
+                if dimension.status == "supported" and any(claims[key].kind != "fact" for key in dimension.claim_ids):
+                    raise ValueError("inference-based judgements remain conditional")
+                if dimension.status != "unresolved" and any(evidence[eid].availability != "available"
+                    for key in dimension.claim_ids for eid in claims[key].evidence_ids):
+                    raise ValueError("unqualified evidence cannot support dimensional judgement")
+                if dimension.status == "unresolved" and not dimension.limitations:
+                    raise ValueError("unresolved dimension requires a limitation")
+                if dimension.challenge_ids and dimension.status == "supported":
+                    raise ValueError("challenged judgement cannot be asserted as proven")
+            if assessment.quality == "PASS" and (assessment.completeness != "complete" or challenges
+                or any(item.status == "unresolved" for item in assessment.dimensions)):
+                raise ValueError("partial or challenged native research is LOW_CONFIDENCE")
         return self

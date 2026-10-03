@@ -1,6 +1,6 @@
 # Shared research record
 
-Status: Current — compatibility publication and programmatic bounded verification.
+Status: Current — compatibility publication and programmatic native research kernel.
 
 `agents/schemas/_research_record.py` owns `research-record-v1`.
 `research/record_assembly.py` adapts committed company research, holding review
@@ -63,8 +63,43 @@ metrics. Successful arithmetic adds derived evidence with input lineage; it
 retains its source family and never becomes an independent source. An executed
 unavailable check may add V1 without new evidence; zero execution creates no
 V1. The validated output and operation outcomes are stored in the checkpoint.
-This programmatic output has no native Reader publication path yet; the existing
-Reader endpoint still requires a paired source case as described below.
+The native programmatic kernel can publish this output through the mandatory
+publication gate below. Public request/profile and RunManager integration are
+not enabled. The Reader accepts committed native records without a paired case;
+the paired-case check applies only to compatibility records.
+
+## Native shared kernel
+
+`research/native_record.py::build_native_record` derives V0 facts from saved,
+qualified source fields. It binds source identity and context digests, retains
+source families, labels title-only disclosures and user thesis declarations,
+and uses the same financial operand parser as C1. It performs no retrieval.
+
+`graph/native_research.py::run_native_research` accepts this facts-only record
+and the run's existing durable ledger. Operating, event and market specialists
+see separate fact views. Reservations and merge order are fixed, with at most
+two specialist workers. Each hypothesis requires cited facts, an invalidation
+condition and an alternative explanation. One anonymous challenge stage can
+return zero challenges. Immutable condition bindings compile up to three C1
+checks before one synthesis; no fixed bullish/bearish stance is required.
+
+The optional `assessment`, owned by `_research_assessment.py`, binds the final
+snapshot, ordered mode dimensions, up to three key claims, primary challenge
+and next check. Missing valuation inputs or original holding thesis constrain
+the corresponding dimension. Announcement titles do not prove delivery;
+predicate checks cannot close economic challenges. Unresolved dimensions keep
+the assessment partial. No research accuracy improvement has been measured.
+
+Checkpointed stage inputs and validated outputs replay without work. Dispatched
+model calls with no saved result stay consumed and are not automatically
+redispatched. The exact facts-only V0 is saved before model dispatch;
+`load_native_seed` reads it on recovery. Raw provider context must not be used
+to rebuild source-family digests after persistence, because RFC 8785 can
+normalize `2.0` to `2` while provider JSON used the original representation.
+Source-content strings and typed metrics in the saved V0 preserve its identity.
+The optional assessment is omitted when absent, preserving old
+record bytes/digests. `execution/native_model.py` supplies a bounded SDK adapter;
+the kernel itself has no model/provider SDK dependency.
 
 Source content distinguishes excerpts, saved summaries and selected original
 fields. The adapter admits only narrow source-specific field allowlists: CNINFO
@@ -88,11 +123,14 @@ local price metrics; the existing valuation artifact is separate. See
 The execution layer publishes the record after the existing source-case commit
 or catalyst publication authorization. Replay reuses committed output.
 Compatibility-record failure preserves the source case and emits a safe
-`artifact.projection_unavailable` event. A future native workflow must enforce
-its own mandatory publication gate rather than reuse this additive fallback.
+`artifact.projection_unavailable` event. Native callers use
+`execution/native_publication.py::publish_native_record`: a frozen candidate,
+lifecycle authorization and committed checkpoint must precede public promotion.
+Publication failure raises rather than using the additive fallback. Native
+Markdown is rendered from that same record without another model call.
 
 `GET /api/runs/{run_id}/reader/record` validates committed artifact bytes,
-identity and the paired source-case hash. It returns `ready` or a stable
+identity and, for adapted records, the paired source-case hash. It returns `ready` or a stable
 unavailable reason; missing runs use the existing 404. Missing historical
 records remain missing. Reading, expanding and refreshing never backfill,
 dispatch models or query providers.

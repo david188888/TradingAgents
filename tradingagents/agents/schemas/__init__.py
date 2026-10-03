@@ -70,6 +70,11 @@ from ._research import (  # noqa: F401  - facade re-export
     ResearchStrategySignal,
     render_research_plan,
 )
+from ._research_assessment import (  # noqa: F401 - facade re-export
+    ChallengeAssessmentV1,
+    DimensionAssessmentV1,
+    ResearchAssessmentV1,
+)
 from ._research_case import (  # noqa: F401 - facade re-export
     AnalystCard,
     CapabilityStatus,
