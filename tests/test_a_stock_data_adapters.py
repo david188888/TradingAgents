@@ -196,6 +196,47 @@ def test_cninfo_invalid_date_is_excluded_and_prevents_false_complete(monkeypatch
     assert report.coverage.degradations == ("invalid_or_missing_published_at",)
 
 
+def test_cninfo_has_more_overrides_stale_totalpages(monkeypatch):
+    pages = [
+        {"totalpages": 1, "hasMore": True, "announcements": [{
+            "secCode": "002130", "announcementTime": 1785772800000,
+            "announcementTitle": "first", "announcementId": "first"}]},
+        {"totalpages": 1, "hasMore": False, "announcements": [{
+            "secCode": "002130", "announcementTime": 1785513600000,
+            "announcementTitle": "second", "announcementId": "second"}]},
+    ]
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return pages.pop(0)
+
+    monkeypatch.setattr(china_specialty.requests, "post", lambda *a, **k: Response())
+    monkeypatch.setattr(china_specialty, "_CNINFO_ORGID_MAP", {"002130": "org"})
+    monkeypatch.setattr(china_specialty, "_capture_cninfo_raw", lambda *a, **k: None)
+    report = china_specialty.get_a_share_cninfo_announcements(
+        "002130.SZ", "2026-08-01", "2026-08-04", max_pages=2)
+    assert not pages
+    assert report.coverage.page_count == 2
+    assert report.coverage.pagination_exhausted is True
+    assert "second" in report
+
+
+def test_cninfo_rejects_explicitly_wrong_security(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"announcements": [{"secCode": "600519", "announcementTitle": "other"}]}
+
+    monkeypatch.setattr(china_specialty.requests, "post", lambda *a, **k: Response())
+    monkeypatch.setattr(china_specialty, "_CNINFO_ORGID_MAP", {"002130": "org"})
+    monkeypatch.setattr(china_specialty, "_capture_cninfo_raw", lambda *a, **k: None)
+    with pytest.raises(china_specialty.ChinaDataUnavailableError, match="different security"):
+        china_specialty.get_a_share_cninfo_announcements("002130.SZ")
+
+
 def test_board_fund_flow_preserves_period_specific_units(monkeypatch):
     monkeypatch.setattr(
         china_specialty_em,

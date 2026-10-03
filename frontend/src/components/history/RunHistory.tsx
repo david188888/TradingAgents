@@ -106,30 +106,36 @@ export function RunHistory({
         key={run.run_id}
         data-run-id={run.run_id}
         className={itemClassName}
-        onClick={() => selectRun(run.run_id)}
       >
-        <div className="history-top">
-          <strong>{run.ticker}</strong>
-          <div className="history-actions">
+        <button
+          type="button"
+          className="history-open"
+          aria-label={`打开 ${run.ticker} 的研究记录`}
+          aria-current={isActive ? "true" : undefined}
+          onClick={() => selectRun(run.run_id)}
+        >
+          <span className="history-top">
+            <strong>{run.ticker}</strong>
             <span className={badgeClassName} style={badgeStyle}>
               {badge.dot ? `● ${badge.label}` : badge.label}
             </span>
-            <button
-              className="history-delete"
-              aria-label={`删除 ${run.ticker} 的运行记录`}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(run);
-              }}
-            >
-              ×
-            </button>
-          </div>
-        </div>
-        <div className="history-sub">
-          <span>{new Date(run.created_at).toLocaleString()}</span>
-          {sub ? <span> · {sub}</span> : null}
-        </div>
+          </span>
+          <span className="history-sub">
+            <span>{new Date(run.created_at).toLocaleString()}</span>
+            {sub ? <span> · {sub}</span> : null}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="history-delete"
+          aria-label={`删除 ${run.ticker} 的运行记录`}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDelete(run);
+          }}
+        >
+          ×
+        </button>
       </li>
     );
   };

@@ -57,17 +57,32 @@ def dimension_policy(record):
 
 def gate_dimensions(record, proposed):
     """Propagate challenged dependencies, never permit narrative to raise a ceiling."""
-    if tuple(item.dimension for item in proposed) != DIMENSIONS_BY_MODE[record.mode]:
-        raise ValueError("synthesis dimensions must follow the mode's code-owned order")
+    order = DIMENSIONS_BY_MODE[record.mode]
+    supplied = {item.dimension: item for item in proposed}
+    if len(supplied) != len(proposed) or set(supplied) != set(order):
+        raise ValueError("synthesis must contain each mode dimension exactly once")
     claims = {item.claim_id: item for item in record.claims}
     views = fact_views(record)
     role_for = {"operating_quality": "operating_quality", "holding_thesis": "operating_quality",
                 "catalyst_delivery": "event_context", "market_context": "market_context"}
     output = []
-    for item in proposed:
+    for name in order:
+        item = supplied[name]
         if len(set(item.claim_ids)) != len(item.claim_ids) or not set(item.claim_ids) <= claims.keys():
             raise ValueError("synthesis contains an invalid claim reference")
         ceiling, missing = dimension_policy(record)[item.dimension]
+        # An unavailable dimension cannot acquire support from another role.
+        # Preserve the raw proposal in the journal, but publish only the
+        # code-owned missing-data judgement and explicitly record discarded refs.
+        if ceiling == "unresolved":
+            limits = (missing, *item.limitations)
+            if item.claim_ids:
+                limits += ("unqualified_dimension_claims_discarded",)
+            output.append(DimensionAssessmentV1(
+                dimension=item.dimension, status="unresolved",
+                judgement="合格资料或对应支撑依据不足，暂不能形成此项判断。",
+                limitations=tuple(dict.fromkeys(limits))))
+            continue
         allowed_facts = {fact.claim_id for fact in views.get(role_for.get(item.dimension), ())}
         dependencies = set(item.claim_ids)
         for claim_id in item.claim_ids:

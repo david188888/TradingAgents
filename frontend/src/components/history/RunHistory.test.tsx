@@ -114,6 +114,18 @@ describe("RunHistory", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
   });
 
+  it("exposes separate accessible open and delete buttons", () => {
+    const store = makeStore();
+    mockStore.useWorkbenchSelection.mockReturnValue(store);
+    render(<RunHistory runs={FIXTURES} loading={false} error={null} onDeleteRun={vi.fn()} onClearHistory={vi.fn()} />);
+    const open = screen.getByRole("button", { name: "打开 AAPL 的研究记录" });
+    const remove = screen.getByRole("button", { name: "删除 AAPL 的运行记录" });
+    expect(open.tagName).toBe("BUTTON");
+    expect(open.contains(remove)).toBe(false);
+    fireEvent.click(open);
+    expect(store.selectRun).toHaveBeenCalledWith("run-3");
+  });
+
   it("renders only the 3 most recent failed runs", () => {
     const manyFailed: RunSummaryDTO[] = Array.from({ length: 5 }, (_, index) => ({
       run_id: `fail-${index}`,
@@ -147,7 +159,7 @@ describe("RunHistory", () => {
 
     // Click the completed-run item (identified by ticker), since active runs
     // are grouped first and list order is no longer the fixture order.
-    fireEvent.click(screen.getByText("600519.SS").closest("li")!);
+    fireEvent.click(screen.getByRole("button", { name: "打开 600519.SS 的研究记录" }));
     expect(selectRun).toHaveBeenCalledWith("run-1");
   });
 

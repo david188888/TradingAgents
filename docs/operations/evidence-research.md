@@ -124,6 +124,15 @@ adapters do not supply qualified valuation inputs to this native workflow, so
 company and holding research retain an unresolved valuation dimension and a
 partial assessment. Risk/ATR statistics do not fill that gap.
 
+Model proposals must include each mode dimension exactly once. Their array
+order is normalized to the code-owned output order: JSON prompt serialization
+may reorder mapping keys. Unknown claim references still fail validation. For
+a dimension with an unavailable evidence ceiling, code removes proposed claim
+references and replaces the judgement with the missing-data explanation;
+discarded references are labeled `unqualified_dimension_claims_discarded`.
+The raw proposal remains in the checkpoint for audit. Qualified dimensions
+retain their source-partition checks.
+
 ## Budget, cancellation and recovery
 
 The native flow reuses the existing durable ledger and its hard limits: five
@@ -172,5 +181,8 @@ Reader, audit, SSE replay/reconnect and report reads make no model or provider
 calls. Markdown is stored in the run's `reports/complete_report.md` in the local
 durable store. This engineering integration has no paid quality comparison or
 real-world predictive-accuracy acceptance; default migration remains separate.
+The [002130 live smoke record](../superpowers/plans/2026-10-03-002130-live-smoke.md)
+documents a real source/model trial, a cached replay and a provider-limited
+second run; it does not establish complete research or predictive accuracy.
 See [the shared record contract](../contracts/research-record.md) and
 [architecture](../../ARCHITECTURE.md) for canonical ownership.

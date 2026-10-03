@@ -92,6 +92,8 @@ Analyst bundle 中新增的业绩预告、回购、质押、IPO 日历、上证e
   映射成 `exchange.announcements`，也不能满足官方 required source group。
 - CNINFO 完整性按“请求窗口已完整分页扫描”判断，不要求窗口第一天和最后
   一天刚好各有公告。分页预算耗尽为 partial。
+  显式 `hasMore=true` 优先于矛盾的 `totalpages`，继续在预算内分页；
+  返回项若显式声明了其他证券代码，则拒绝整次结果。
 - 权威端点完整查询后的空集是 `not_covered`；网络、限流或协议故障是
   `provider_unavailable`；非官方备份冒充官方载荷是 `invalid`。
 - CNINFO 毫秒时间戳固定按 `Asia/Shanghai` 解释，再与冻结的 UTC cutoff

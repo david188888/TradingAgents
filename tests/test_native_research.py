@@ -159,6 +159,83 @@ def test_missing_valuation_replaces_unsupported_value_narrative(tmp_path):
     assert output.assessment.dimensions[1].status == "unresolved"
 
 
+@pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])
+def test_serialized_policy_order_is_normalized_without_another_model_call(tmp_path, mode):
+    from tradingagents.agents.schemas._research_assessment import DIMENSIONS_BY_MODE
+    journal = journal_for(tmp_path)
+    caller = Caller(challenge=False)
+
+    def serialized(stage, context):
+        value = caller(stage, context)
+        if stage == "synthesis":
+            value["dimensions"].sort(key=lambda item: item["dimension"])
+        return value
+
+    output = run_native_research(seed_for(journal, mode), caller=serialized, ledger=journal.ledger)
+    assert tuple(item.dimension for item in output.assessment.dimensions) == DIMENSIONS_BY_MODE[mode]
+    assert journal.ledger.consumed(BudgetBucket.MAIN_ANALYSIS) == 3
+
+
+@pytest.mark.parametrize("damage", ["missing", "duplicate", "unknown_ref"])
+def test_dimension_normalization_retains_reference_and_membership_gates(tmp_path, damage):
+    journal = journal_for(tmp_path)
+    caller = Caller(challenge=False)
+
+    def invalid(stage, context):
+        value = caller(stage, context)
+        if stage == "synthesis":
+            if damage == "missing":
+                value["dimensions"].pop()
+            elif damage == "duplicate":
+                value["dimensions"][-1] = value["dimensions"][0]
+            else:
+                value["dimensions"][1]["claim_ids"] = ["fabricated"]
+        return value
+
+    with pytest.raises(ValueError):
+        run_native_research(seed_for(journal), caller=invalid, ledger=journal.ledger)
+
+
+def test_qualified_dimension_still_rejects_unknown_support(tmp_path):
+    from tradingagents.agents.schemas._native_stage import SynthesisProposalV1
+    from tradingagents.research.native_policy import gate_dimensions
+    journal = journal_for(tmp_path)
+    captured = {}
+    caller = Caller(challenge=False)
+
+    def capture(stage, context):
+        value = caller(stage, context)
+        if stage == "synthesis":
+            captured.update(record=ResearchRecordV1.model_validate(context["record"]), proposal=value)
+        return value
+
+    run_native_research(seed_for(journal), caller=capture, ledger=journal.ledger)
+    record = captured["record"]
+    record = record.model_copy(update={"claims": tuple(
+        c.model_copy(update={"kind": "unknown"}) if c.kind == "inference" else c
+        for c in record.claims)})
+    with pytest.raises(ValueError, match="wrong dimension"):
+        gate_dimensions(record, SynthesisProposalV1.model_validate(captured["proposal"]).dimensions)
+
+
+def test_unavailable_dimension_discards_cross_role_support_and_value_narrative(tmp_path):
+    journal = journal_for(tmp_path)
+    caller = Caller(challenge=False)
+
+    def unavailable(stage, context):
+        value = caller(stage, context)
+        if stage == "synthesis":
+            value["dimensions"][1].update(status="supported", judgement="价值20元",
+                claim_ids=value["dimensions"][0]["claim_ids"])
+        return value
+
+    output = run_native_research(seed_for(journal), caller=unavailable, ledger=journal.ledger)
+    valuation = output.assessment.dimensions[1]
+    assert valuation.status == "unresolved" and not valuation.claim_ids
+    assert "20元" not in valuation.judgement
+    assert "unqualified_dimension_claims_discarded" in valuation.limitations
+
+
 def test_adapter_cached_response_survives_lost_kernel_cache(tmp_path):
     journal = journal_for(tmp_path)
     token = journal.ledger.reserve(BudgetBucket.MAIN_ANALYSIS, stage="native.operating_quality", logical_call_id="native.operating_quality")
