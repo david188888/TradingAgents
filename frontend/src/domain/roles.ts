@@ -126,6 +126,12 @@ export const ROLE_LABELS_ZH: Record<string, string> = {
   "risk.neutral": "中性风险分析师",
   "risk.conservative": "保守风险分析师",
   "manager.portfolio": "组合经理",
+  "native.evidence": "证据冻结",
+  "native.operating_quality": "经营质量",
+  "native.event_context": "事件背景",
+  "native.market_context": "市场背景",
+  "native.challenge": "独立挑战",
+  "native.synthesis": "研究综合",
 };
 
 // ---------------------------------------------------------------------------

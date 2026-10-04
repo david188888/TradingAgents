@@ -19,13 +19,15 @@
  *    evidence.
  */
 import { useMemo } from "react";
-import type { CatalystEvidenceDTO, CatalystEventDTO } from "../../api/contracts";
+import type { CatalystEvidenceDTO, CatalystEventDTO, SourceEvidenceV1DTO, ResearchRecordV1DTO } from "../../api/contracts";
+import { SourceContent } from "./ResearchRecordSection";
 import { useDrawerFocus, useNarrowOverlay, useReturnFocus } from "../shared/drawerFocus";
 
 export interface EvidenceDrawerProps {
   runId: string;
   evidence: CatalystEvidenceDTO[];
   events?: CatalystEventDTO[];
+  sourceRecord?: { run_id: string; evidence: SourceEvidenceV1DTO[]; claims?: ResearchRecordV1DTO["claims"]; challenges?: ResearchRecordV1DTO["challenges"] };
   /** The object the reader clicked: an evidence id, event id, or challenge id. */
   openId: string | null;
   /** Short label for the clicked reference, shown as the drawer's title. */
@@ -76,6 +78,7 @@ export function EvidenceDrawer({
   runId,
   evidence,
   events = [],
+  sourceRecord,
   openId,
   title,
   background,
@@ -90,16 +93,19 @@ export function EvidenceDrawer({
     // Filter by run first. Evidence from a different run must never appear
     // in this drawer, even if the caller handed it over by mistake.
     const own = evidence.filter((item) => item.run_id === runId);
-    const match = own.find((item) => item.evidence_id === openId) ?? null;
     const event = events.find((item) => item.run_id === runId && item.event_id === openId) ?? null;
-    return { own, match, event };
-  }, [evidence, events, openId, runId]);
+    const saved = sourceRecord?.run_id === runId ? sourceRecord : undefined;
+    const claim = saved?.claims?.find((item) => item.claim_id === openId);
+    const challenge = saved?.challenges?.find((item) => item.challenge_id === openId);
+    const refs = new Set([openId, ...(claim?.evidence_ids ?? []), ...(challenge?.evidence_ids ?? []), ...(event?.date_evidence_ids ?? [])]);
+    const matches = own.filter((item) => refs.has(item.evidence_id));
+    return { own, matches, event, challenge };
+  }, [evidence, events, openId, runId, sourceRecord]);
 
   if (openId === null) return null;
 
-  const { own, match, event } = record ?? { own: [], match: null, event: null };
-  const href = match === null ? null : safePublicHref(match.public_url);
-  const heading = title ?? match?.source_name ?? event?.title ?? "证据详情";
+  const { own, matches, event, challenge } = record ?? { own: [], matches: [], event: null, challenge: undefined };
+  const heading = title ?? matches[0]?.source_name ?? event?.title ?? "证据详情";
 
   return (
     <div className={`catalyst-drawer-layer${narrow ? " is-narrow" : ""}`}>
@@ -140,8 +146,15 @@ export function EvidenceDrawer({
         </header>
 
         <div className="catalyst-drawer-body" aria-live="polite">
-          {match !== null ? (
-            <>
+          {challenge ? <section><h4>待核查的挑战</h4><p>{challenge.statement}</p><p>拟核查：{challenge.proposed_test}</p></section> : null}
+          {matches.length > 0 ? matches.map((match) => {
+            const href = safePublicHref(match.public_url);
+            const source = sourceRecord?.run_id === runId ? sourceRecord.evidence.find((item) => item.evidence_id === match.evidence_id) : undefined;
+            return <section key={match.evidence_id}>
+              {source ? <SourceContent evidence={source} /> : <section>
+                <span className="catalyst-drawer-kicker">来源内容未保存</span>
+                <p>该记录只有来源信息，无法展示原文或摘要。</p>
+              </section>}
               <section>
                 <span className="catalyst-drawer-kicker">来源身份</span>
                 <dl className="catalyst-drawer-facts">
@@ -206,12 +219,11 @@ export function EvidenceDrawer({
               <section>
                 <span className="catalyst-drawer-kicker">适用范围</span>
                 <p>
-                  本条证据支持本次运行已提交的研究结论；它不支持超出该 capability、
-                  该时点和该数值口径的任何判断。
+                  本次运行引用了该来源。是否支持具体主张，需要核对来源内容、时间与数值口径。
                 </p>
               </section>
-            </>
-          ) : event !== null ? (
+            </section>;
+          }) : challenge ? <p>该挑战没有直接引用已保存的反证来源；拟核查事项尚不等于验证结果。</p> : event !== null ? (
             <>
               <section>
                 <span className="catalyst-drawer-kicker">事件</span>

@@ -463,6 +463,9 @@ class SingleRunManager:
                     if request.research_profile == "catalyst_v1"
                     else {}
                 ),
+                **({**request.profile_identity(),
+                    "evidence_policy": request.evidence_policy.model_dump(mode="json")}
+                    if request.research_profile == "evidence_v1" else {}),
                 **(
                     {
                         "batch_id": batch_id,
@@ -554,7 +557,7 @@ class SingleRunManager:
                     "quick_think_llm": snapshot.quick_think_llm,
                     "deep_think_llm": snapshot.deep_think_llm,
                     "checkpoint_enabled": bool(request.effective_config.get("checkpoint_enabled")),
-                    **({"research_profile": request.research_profile} if request.research_profile == "catalyst_v1" else {}),
+                    **({"research_profile": request.research_profile} if request.research_profile in {"catalyst_v1", "evidence_v1"} else {}),
                 },
                 status="running",
             )
@@ -618,7 +621,7 @@ class SingleRunManager:
                         request.effective_config,
                     )
                 catalyst_kwargs = {}
-                if request.research_profile == "catalyst_v1":
+                if request.research_profile in {"catalyst_v1", "evidence_v1"}:
                     catalyst_kwargs["publication_authorizer"] = lambda journal: self._authorize_catalyst(run_id, token, journal)
                 result = runner.run(
                     request,
@@ -720,10 +723,18 @@ class SingleRunManager:
                 )
             )
         current = self.store.read_snapshot(run_id)
+        completion_summary = "Analysis completed successfully."
+        if request.research_profile == "evidence_v1":
+            assessment = result.final_state["native_research_record"]["assessment"]
+            completion_summary = (
+                "研究流程已完成；判断受证据限制。"
+                if assessment["completeness"] != "complete" or assessment["quality"] == "LOW_CONFIDENCE"
+                else "研究流程已完成。"
+            )
         self.store.write_snapshot_atomic(
             current.evolve(
                 final_signal=result.final_signal,
-                summary="Analysis completed successfully.",
+                summary=completion_summary,
                 error_category=None,
                 artifacts=tuple(dict.fromkeys((*current.artifacts, *artifact_ids))),
             )
@@ -734,7 +745,7 @@ class SingleRunManager:
                 "run.completed",
                 {
                     "run_status": "completed",
-                    "summary": "Analysis completed successfully.",
+                    "summary": completion_summary,
                     "final_signal": result.final_signal,
                     "report_artifact_ids": artifact_ids,
                     "final_report_artifact_id": complete_artifacts[0].artifact_id,
@@ -753,7 +764,7 @@ class SingleRunManager:
             # read only committed artifacts and must never change the run's
             # completed terminal state.
             self._publish_thesis_diff(run_id, completed_at)
-        if request.research_profile == "catalyst_v1":
+        if request.research_profile in {"catalyst_v1", "evidence_v1"}:
             return
         try:
             from .debate_summary import schedule_debate_summary
@@ -1271,8 +1282,11 @@ def _request_from_snapshot(snapshot: RunSnapshot) -> AnalysisRequest:
             "company research snapshot unexpectedly includes holding context"
         )
     from tradingagents.research.catalyst_evidence_policy import CatalystEvidencePolicyV1
+    from tradingagents.research.native_evidence_policy import NativeEvidencePolicyV1
 
     profile = snapshot.metadata.get("research_profile", "classic")
+    if profile == "evidence_v1" and "evidence_policy" not in snapshot.metadata:
+        raise LegacyResumeNormalizationFailed("native snapshot has no evidence policy identity")
     policy_payload = snapshot.metadata.get("catalyst_policy")
     return AnalysisRequest(
         ticker=snapshot.ticker,
@@ -1292,6 +1306,8 @@ def _request_from_snapshot(snapshot: RunSnapshot) -> AnalysisRequest:
             if profile == "catalyst_v1" and policy_payload is not None
             else None
         ),
+        evidence_policy=(NativeEvidencePolicyV1.model_validate(snapshot.metadata["evidence_policy"])
+            if profile == "evidence_v1" and "evidence_policy" in snapshot.metadata else None),
     )
 
 
@@ -1397,6 +1413,9 @@ def _default_runner_factory(
     request: AnalysisRequest,
     observer: DurableRunObserver,
 ) -> ManagedRunner:
+    if request.research_profile == "evidence_v1":
+        from tradingagents.execution.native_runner import NativeRunner
+        return NativeRunner(observer)
     if request.research_profile == "catalyst_v1":
         from tradingagents.execution.catalyst_runner import CatalystRunner
         return CatalystRunner(observer)
@@ -1418,7 +1437,7 @@ def _default_checkpoint_guard_factory(
     request: AnalysisRequest,
     effective_config: Mapping[str, Any],
 ) -> Any:
-    if request.research_profile == "catalyst_v1":
+    if request.research_profile in {"catalyst_v1", "evidence_v1"}:
         return None
     from .fingerprint import FingerprintCheckpointGuard
 
@@ -1437,6 +1456,13 @@ def _default_resume_preflight(
     runner_factory: RunnerFactory,
     guard_factory: CheckpointGuardFactory,
 ) -> Any:
+    if request.research_profile == "evidence_v1":
+        from tradingagents.execution.native_runner import NativeResumeGuard, validate_native_resume
+        try:
+            validate_native_resume(store, snapshot.run_id, request)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            raise RunNotResumable("native checkpoint missing, corrupt or incompatible") from exc
+        return NativeResumeGuard()
     if request.research_profile == "catalyst_v1":
         from tradingagents.execution.catalyst_runner import (
             CatalystResumeGuard,
@@ -1526,6 +1552,10 @@ def _default_startup_reconciler(
     request: AnalysisRequest,
     observer: DurableRunObserver,
 ) -> None:
+    if request.research_profile == "evidence_v1":
+        from tradingagents.execution.native_runner import validate_native_resume
+        validate_native_resume(observer.store, snapshot.run_id, request)
+        return
     if request.research_profile == "catalyst_v1":
         from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
         load_checkpoint(observer.store, snapshot.run_id)

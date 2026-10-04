@@ -24,7 +24,12 @@ import pandas as pd
 import requests
 
 from .errors import VendorError
-from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare_symbol
+from .ticker_utils import (
+    infer_a_share_exchange,
+    is_a_share_ticker,
+    normalize_ticker_symbol,
+    to_akshare_symbol,
+)
 
 
 class AshareCapabilityUnavailableError(VendorError):
@@ -76,7 +81,24 @@ class AKShareSpecialtyProvider:
         self._api = api
 
     def interactive_questions(self, ticker: str) -> CapabilityReport:
+        """CNINFO 互动易 questions -- Shenzhen coverage only.
+
+        a-stock-data v3.9.0 §10.1 measured the CNINFO interactive-Q&A endpoint
+        returning 0 rows for every Shanghai name tested (600519 / 600000 /
+        688981, 2026-09-20), because the platform is a Shenzhen-company
+        service.  Rather than issue a request that is guaranteed to come back
+        empty and let the caller read that as "this company has no investor
+        questions", Shanghai codes fail fast and name the source that does
+        cover them (上证e互动, ``get_a_share_sse_e_interaction``).
+        """
         code = _require_a_share_code(ticker, "interactive_questions")
+        if infer_a_share_exchange(code) == "SH":
+            raise AshareCapabilityUnavailableError(
+                "interactive_questions",
+                self.name,
+                f"{code} 是沪市证券，不在巨潮互动易（深市）覆盖范围内；沪市问答请改用上证e互动"
+                "（get_a_share_sse_e_interaction）。",
+            )
         data = self._call("stock_irm_cninfo", "interactive_questions", symbol=code)
         return _report_for_ticker(
             data,

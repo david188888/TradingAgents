@@ -1,4 +1,4 @@
-"""Tencent daily bars (fqkline) -- raw and forward-adjusted, as two separate paths.
+"""Tencent bars (fqkline) -- daily/weekly/monthly, raw and forward-adjusted.
 
 Endpoints (no credentials, not IP-banned, not rate-limited):
   raw  -> https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=<code>,day,,,<n>
@@ -50,6 +50,23 @@ from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare
 logger = logging.getLogger(__name__)
 
 TENCENT_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+
+# Bar periods the fqkline endpoint serves.  The response key is the period name
+# itself, or ``qfq<period>`` on the adjusted series, so both the request and the
+# key are derived from this tuple rather than written out per call site.
+TENCENT_KLINE_PERIODS = ("day", "week", "month")
+KlinePeriod = Literal["day", "week", "month"]
+
+# How far back to step the window cursor when a full page did not reach the
+# requested start.  Stepping one *day* back from a weekly bar's date re-requests
+# the same week, the cursor stops advancing, and the walk reports a false
+# truncation -- so the step has to match the bar width.
+
+# Coverage granularity per bar period (PriceSeriesCoverageV1 vocabulary).
+_PERIOD_GRANULARITY = {"day": "daily", "week": "weekly", "month": "monthly"}
+
+# Human label used in the rendered title.
+_PERIOD_LABEL = {"day": "daily", "week": "weekly", "month": "monthly"}
 
 # Probe 2026-09-29 §2.4: count=1000/1500/2000 all return exactly 640 rows, and
 # >=2100 returns {"code":0,"msg":"param error","data":[]} -- i.e. the endpoint
@@ -151,12 +168,19 @@ def _request_page(
     end: str,
     count: int,
     adjust: Literal["none", "qfq"],
+    period: KlinePeriod = "day",
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
     """Fetch one raw Tencent kline page and return the decoded JSON body."""
-    param = f"{code},day,{start},{end},{count}"
+    if period not in TENCENT_KLINE_PERIODS:
+        raise ValueError(f"period must be one of {TENCENT_KLINE_PERIODS!r}")
+    param = f"{code},{period},{start},{end},{count}"
     if adjust == "qfq":
         param += ",qfq"
+    else:
+        # The sixth field is required even for raw prices. Omitting it yields
+        # a successful JSON response with no day series (live probe 2026-10-03).
+        param += ","
     http = session or requests
     try:
         resp = http.get(
@@ -210,6 +234,7 @@ def _fetch_window(
     start_date: str,
     end_date: str,
     adjust: Literal["none", "qfq"],
+    period: KlinePeriod = "day",
     session: requests.Session | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Walk backwards from ``end_date`` until the window start is covered.
@@ -219,7 +244,9 @@ def _fetch_window(
     complete is to keep stepping the end date back until a segment comes back
     short (or the older edge is reached).
     """
-    expected_key = "qfqday" if adjust == "qfq" else "day"
+    if period not in TENCENT_KLINE_PERIODS:
+        raise ValueError(f"period must be one of {TENCENT_KLINE_PERIODS!r}")
+    expected_key = f"qfq{period}" if adjust == "qfq" else period
     collected: dict[str, dict[str, Any]] = {}
     segments = 0
     segment_reports: list[dict[str, Any]] = []
@@ -234,20 +261,26 @@ def _fetch_window(
     while segments < TENCENT_MAX_SEGMENTS:
         count = min(TENCENT_MAX_ROWS_PER_REQUEST, TENCENT_REQUEST_ROW_CAP)
         body = _request_page(
-            code, start=start_date, end=cursor, count=count, adjust=adjust, session=session
+            code,
+            start=start_date,
+            end=cursor,
+            count=count,
+            adjust=adjust,
+            period=period,
+            session=session,
         )
         segments += 1
         raw_rows = _node_rows(body, code, expected_key)
         if adjust == "qfq" and not raw_rows:
-            # A qfq request answered with the unadjusted `day` key (or nothing).
+            # A qfq request answered with the unadjusted period key (or nothing).
             # Serving those bars as "adjusted" is the exact masquerade design
             # §8.2 forbids, so this is an unavailable capability, not raw data.
-            if _node_rows(body, code, "day"):
+            if _node_rows(body, code, period):
                 raise ChinaDataUnavailableError(
                     f"Tencent answered the qfq request for {code} with unadjusted "
-                    "`day` bars and no `qfqday` key (HTTP 200, empty msg). This "
-                    "symbol is not served on the forward-adjusted series; treating "
-                    "raw bars as qfq is forbidden."
+                    f"`{period}` bars and no `{expected_key}` key (HTTP 200, empty "
+                    "msg). This symbol is not served on the forward-adjusted "
+                    "series; treating raw bars as qfq is forbidden."
                 )
             raise ChinaDataUnavailableError(
                 f"Tencent returned no `{expected_key}` rows for {code} "
@@ -284,10 +317,17 @@ def _fetch_window(
             # A short page means the provider has nothing older in this window.
             window_covered = True
             break
-        # Full page: assume truncation and step back past the oldest row.
-        previous = (
-            datetime.strptime(oldest, "%Y-%m-%d") - timedelta(days=1)
-        ).strftime("%Y-%m-%d")
+        # End at the previous calendar period, rather than subtracting a fixed
+        # number of days from the last trading day. A holiday-shortened week or
+        # a short month would otherwise skip an entire older bar.
+        oldest_day = datetime.strptime(oldest, "%Y-%m-%d")
+        if period == "week":
+            previous_day = oldest_day - timedelta(days=oldest_day.weekday() + 1)
+        elif period == "month":
+            previous_day = oldest_day.replace(day=1) - timedelta(days=1)
+        else:
+            previous_day = oldest_day - timedelta(days=1)
+        previous = previous_day.strftime("%Y-%m-%d")
         if previous >= cursor:
             # The cursor failed to advance, so another identical request would
             # repeat forever.  Coverage is unproven -- report it, do not guess.
@@ -333,20 +373,43 @@ def _fetch_window(
     }
 
 
-def _settled_through(end_date: str, *, now: datetime | None = None) -> str:
+def _settled_through(
+    end_date: str,
+    *,
+    period: KlinePeriod = "day",
+    now: datetime | None = None,
+) -> str:
     """Last session whose bar is complete at fetch time.
 
     ``day`` responses carry today's unfinished bar during trading hours while
     ``qfq`` responses do not; aligning both on the last settled session is what
     makes the two series comparable (probe §2.6).
 
+    A ``week``/``month`` bar is unfinished for the whole of its own period, so
+    the boundary is the last *closed* week or month rather than "yesterday":
+    clamping a weekly request to yesterday would keep a partial current-week bar
+    in a series the caller is told is settled.
+
     ``now`` is injectable so the boundary is testable without waiting for 15:00.
     """
     moment = now or datetime.now()
     today = moment.date()
-    if end_date >= today.isoformat() and moment.hour < TENCENT_SETTLED_BAR_CUTOFF_HOUR:
-        return (today - timedelta(days=1)).isoformat()
-    return end_date
+    last_settled_day = (
+        today - timedelta(days=1)
+        if moment.hour < TENCENT_SETTLED_BAR_CUTOFF_HOUR
+        else today
+    )
+    if period == "week":
+        # The week ending on this Friday is settled only after Friday's close.
+        days_since_friday = (last_settled_day.weekday() - 4) % 7
+        boundary = last_settled_day - timedelta(days=days_since_friday)
+    elif period == "month":
+        # The current month is never settled; take the previous month's end.
+        boundary = last_settled_day.replace(day=1) - timedelta(days=1)
+    else:
+        boundary = last_settled_day
+    settled = boundary.isoformat()
+    return end_date if end_date < settled else settled
 
 
 def _tencent_kline_df(
@@ -355,33 +418,44 @@ def _tencent_kline_df(
     end_date: str,
     *,
     adjust: Literal["none", "qfq"],
+    period: KlinePeriod = "day",
     session: requests.Session | None = None,
     now: datetime | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if period not in TENCENT_KLINE_PERIODS:
+        raise ValueError(f"period must be one of {TENCENT_KLINE_PERIODS!r}")
     code = _tencent_code(ticker)
-    effective_end = _settled_through(end_date, now=now)
+    effective_end = _settled_through(end_date, period=period, now=now)
     if effective_end < start_date:
         raise ChinaDataUnavailableError(
             f"Tencent kline window {start_date}..{end_date} contains no settled "
-            "session for the current time of day."
+            f"{period} bar for the current time of day."
         )
     frame, walk = _fetch_window(
-        code, start_date=start_date, end_date=effective_end, adjust=adjust, session=session
+        code,
+        start_date=start_date,
+        end_date=effective_end,
+        adjust=adjust,
+        period=period,
+        session=session,
     )
     frame = frame[
         (frame["Date"] >= start_date) & (frame["Date"] <= effective_end)
     ].reset_index(drop=True)
     if frame.empty:
         raise ChinaDataUnavailableError(
-            f"Tencent returned no bars for {code} inside {start_date}..{effective_end}."
+            f"Tencent returned no {period} bars for {code} inside "
+            f"{start_date}..{effective_end}."
         )
     # Drop an in-progress trailing bar if one slipped through (suspended or
     # delayed sessions can leave today's bar present after 15:00 elsewhere).
-    assert_ohlc_invariant(frame, context=f"{code} {adjust}")
+    assert_ohlc_invariant(frame, context=f"{code} {adjust} {period}")
     provenance = {
         "provider": "tencent",
         "endpoint": "appstock/app/fqkline/get",
         "code": code,
+        "period": period,
+        "granularity": _PERIOD_GRANULARITY[period],
         "price_basis": "raw" if adjust == "none" else "qfq",
         "adjust_requested": adjust,
         "requested_start": start_date,
@@ -402,17 +476,21 @@ def get_a_share_kline_df(
     start_date: str,
     end_date: str,
     *,
+    period: KlinePeriod = "day",
     session: requests.Session | None = None,
     now: datetime | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Unadjusted Tencent daily bars plus provenance.
+    """Unadjusted Tencent bars (daily/weekly/monthly) plus provenance.
 
     Raw and adjusted are separate entry points on purpose: an adjusted
     capability must never be satisfied by raw bars, and a raw request must not
     silently pick up a different adjustment convention from a vendor switch.
+    The same argument applies to ``period``, which is why each (period, adjust)
+    pair is registered as its own capability rather than a flag on one method:
+    answering a weekly request with daily bars is silently wrong.
     """
     return _tencent_kline_df(
-        ticker, start_date, end_date, adjust="none", session=session, now=now
+        ticker, start_date, end_date, adjust="none", period=period, session=session, now=now
     )
 
 
@@ -421,17 +499,18 @@ def get_a_share_kline_qfq_df(
     start_date: str,
     end_date: str,
     *,
+    period: KlinePeriod = "day",
     session: requests.Session | None = None,
     now: datetime | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Forward-adjusted Tencent daily bars, or an error -- never raw bars.
+    """Forward-adjusted Tencent bars, or an error -- never raw bars.
 
     Raises :class:`ChinaDataUnavailableError` when the endpoint serves the
-    unadjusted ``day`` key instead of ``qfqday``, which the live probe observed
-    for ``688981.SH`` and for BSE codes with HTTP 200 and no warning.
+    unadjusted period key instead of ``qfq<period>``, which the live probe
+    observed for ``688981.SH`` and for BSE codes with HTTP 200 and no warning.
     """
     return _tencent_kline_df(
-        ticker, start_date, end_date, adjust="qfq", session=session, now=now
+        ticker, start_date, end_date, adjust="qfq", period=period, session=session, now=now
     )
 
 
@@ -440,6 +519,7 @@ def _render(frame: pd.DataFrame, provenance: dict[str, Any], *, title: str) -> s
     header = [
         f"# {title}",
         f"# Source: tencent ({provenance['endpoint']})",
+        f"# Bar period: {provenance.get('period', 'day')}",
         f"# Price basis: {basis}",
         f"# Settled through: {provenance['settled_through']}",
         "# Volume unit: lots (100 shares).",
@@ -452,23 +532,42 @@ def _render(frame: pd.DataFrame, provenance: dict[str, Any], *, title: str) -> s
     return "\n".join(["\n".join(header), "", frame.to_csv(index=False)])
 
 
+def _kline_report(
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    *,
+    adjust: Literal["none", "qfq"],
+    period: KlinePeriod,
+    session: requests.Session | None = None,
+) -> str:
+    """Shared renderer for the router-facing (period, adjust) entry points."""
+    getter = get_a_share_kline_qfq_df if adjust == "qfq" else get_a_share_kline_df
+    frame, provenance = getter(
+        ticker, start_date, end_date, period=period, session=session
+    )
+    _capture_vendor_raw(frame, metadata=provenance)
+    label = _PERIOD_LABEL[period]
+    basis = "qfq" if adjust == "qfq" else "raw"
+    return _render(
+        frame,
+        provenance,
+        title=f"China A-share {label} bars ({basis}) for "
+        f"{normalize_ticker_symbol(ticker)} from {start_date} to {end_date}",
+    )
+
+
 def get_a_share_kline(
     ticker: str,
     start_date: str,
     end_date: str,
     *,
+    period: KlinePeriod = "day",
     session: requests.Session | None = None,
 ) -> str:
-    """Router-facing raw Tencent daily bars."""
-    frame, provenance = get_a_share_kline_df(
-        ticker, start_date, end_date, session=session
-    )
-    _capture_vendor_raw(frame, metadata=provenance)
-    return _render(
-        frame,
-        provenance,
-        title=f"China A-share daily bars (raw) for {normalize_ticker_symbol(ticker)} "
-        f"from {start_date} to {end_date}",
+    """Router-facing raw Tencent bars for ``period`` (day/week/month)."""
+    return _kline_report(
+        ticker, start_date, end_date, adjust="none", period=period, session=session
     )
 
 
@@ -477,19 +576,38 @@ def get_a_share_kline_qfq(
     start_date: str,
     end_date: str,
     *,
+    period: KlinePeriod = "day",
     session: requests.Session | None = None,
 ) -> str:
-    """Router-facing forward-adjusted Tencent daily bars."""
-    frame, provenance = get_a_share_kline_qfq_df(
-        ticker, start_date, end_date, session=session
+    """Router-facing forward-adjusted Tencent bars for ``period``."""
+    return _kline_report(
+        ticker, start_date, end_date, adjust="qfq", period=period, session=session
     )
-    _capture_vendor_raw(frame, metadata=provenance)
-    return _render(
-        frame,
-        provenance,
-        title=f"China A-share daily bars (qfq) for {normalize_ticker_symbol(ticker)} "
-        f"from {start_date} to {end_date}",
-    )
+
+
+# Each (period, adjust) pair is its own registered capability.  A router that
+# could satisfy a weekly request from a daily vendor would silently change the
+# bar width, so the period is part of the method identity, not an argument the
+# fallback chain may drop.
+
+def get_a_share_kline_weekly(ticker: str, start_date: str, end_date: str) -> str:
+    """Router-facing raw Tencent weekly bars."""
+    return get_a_share_kline(ticker, start_date, end_date, period="week")
+
+
+def get_a_share_kline_weekly_qfq(ticker: str, start_date: str, end_date: str) -> str:
+    """Router-facing forward-adjusted Tencent weekly bars."""
+    return get_a_share_kline_qfq(ticker, start_date, end_date, period="week")
+
+
+def get_a_share_kline_monthly(ticker: str, start_date: str, end_date: str) -> str:
+    """Router-facing raw Tencent monthly bars."""
+    return get_a_share_kline(ticker, start_date, end_date, period="month")
+
+
+def get_a_share_kline_monthly_qfq(ticker: str, start_date: str, end_date: str) -> str:
+    """Router-facing forward-adjusted Tencent monthly bars."""
+    return get_a_share_kline_qfq(ticker, start_date, end_date, period="month")
 
 
 def trading_day_count(start_date: str, end_date: str) -> int:

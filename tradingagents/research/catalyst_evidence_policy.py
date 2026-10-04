@@ -29,8 +29,8 @@ CATALYST_EVIDENCE_POLICY_VERSION = "catalyst-evidence-policy-v1"
 
 CatalystEvidencePolicyVersion = Literal["catalyst-evidence-policy-v1"]
 
-ResearchProfile = Literal["classic", "catalyst_v1"]
-RESEARCH_PROFILES: tuple[str, ...] = ("classic", "catalyst_v1")
+ResearchProfile = Literal["classic", "catalyst_v1", "evidence_v1"]
+RESEARCH_PROFILES: tuple[str, ...] = ("classic", "catalyst_v1", "evidence_v1")
 CLASSIC_PROFILE = "classic"
 CATALYST_V1_PROFILE = "catalyst_v1"
 
@@ -39,6 +39,7 @@ CATALYST_V1_PROFILE = "catalyst_v1"
 PROFILE_POLICY_VERSIONS: dict[str, str] = {
     CLASSIC_PROFILE: "horizon-policy-v2",
     CATALYST_V1_PROFILE: CATALYST_EVIDENCE_POLICY_VERSION,
+    "evidence_v1": "evidence-policy-v1",
 }
 
 

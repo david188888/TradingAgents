@@ -6,9 +6,17 @@ import re
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from tradingagents.execution.models import ANALYST_WIRE_KEYS, ResearchProfile
+from tradingagents.research.native_evidence_policy import NativeEvidencePolicyV1
 
 SUPPORTED_OUTPUT_LANGUAGES = (
     "English",
@@ -87,7 +95,7 @@ class RunCreateRequest(BaseModel):
     analysis_date: str
     selected_analysts: tuple[str, ...] = ANALYST_WIRE_KEYS
     research_depth: Literal[1, 3, 5] = 1
-    mode: Literal["company_research", "holding_review"] | None = None
+    mode: Literal["company_research", "catalyst_research", "holding_review"] | None = None
     horizon: Literal["short", "medium", "long"] = "medium"
     llm_provider: str = Field(min_length=1, max_length=64)
     quick_think_llm: str = Field(min_length=1, max_length=256)
@@ -103,14 +111,30 @@ class RunCreateRequest(BaseModel):
     # never silently downgraded.
     research_profile: ResearchProfile = "classic"
     research_question: str | None = Field(default=None, max_length=400)
+    evidence_policy: NativeEvidencePolicyV1 | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_request_fields(self, handler):
+        # Existing batch items persist this projection. Adding an unused null
+        # field must not change the stored shape of compatibility requests.
+        value = handler(self)
+        if self.evidence_policy is None:
+            value.pop("evidence_policy", None)
+        return value
 
     @model_validator(mode="after")
     def validate_question_profile(self) -> RunCreateRequest:
         if self.research_question:
-            if self.research_profile != "catalyst_v1":
-                raise ValueError("research_question requires catalyst_v1")
+            if self.research_profile not in {"catalyst_v1", "evidence_v1"}:
+                raise ValueError("research_question requires catalyst_v1 or evidence_v1")
         elif self.research_question is not None:
             self.research_question = None
+        return self
+
+    @model_validator(mode="after")
+    def validate_evidence_policy_profile(self) -> RunCreateRequest:
+        if self.evidence_policy is not None and self.research_profile != "evidence_v1":
+            raise ValueError("evidence_policy requires evidence_v1")
         return self
 
     @field_validator("ticker")

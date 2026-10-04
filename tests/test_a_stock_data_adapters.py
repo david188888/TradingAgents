@@ -196,6 +196,47 @@ def test_cninfo_invalid_date_is_excluded_and_prevents_false_complete(monkeypatch
     assert report.coverage.degradations == ("invalid_or_missing_published_at",)
 
 
+def test_cninfo_has_more_overrides_stale_totalpages(monkeypatch):
+    pages = [
+        {"totalpages": 1, "hasMore": True, "announcements": [{
+            "secCode": "002130", "announcementTime": 1785772800000,
+            "announcementTitle": "first", "announcementId": "first"}]},
+        {"totalpages": 1, "hasMore": False, "announcements": [{
+            "secCode": "002130", "announcementTime": 1785513600000,
+            "announcementTitle": "second", "announcementId": "second"}]},
+    ]
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return pages.pop(0)
+
+    monkeypatch.setattr(china_specialty.requests, "post", lambda *a, **k: Response())
+    monkeypatch.setattr(china_specialty, "_CNINFO_ORGID_MAP", {"002130": "org"})
+    monkeypatch.setattr(china_specialty, "_capture_cninfo_raw", lambda *a, **k: None)
+    report = china_specialty.get_a_share_cninfo_announcements(
+        "002130.SZ", "2026-08-01", "2026-08-04", max_pages=2)
+    assert not pages
+    assert report.coverage.page_count == 2
+    assert report.coverage.pagination_exhausted is True
+    assert "second" in report
+
+
+def test_cninfo_rejects_explicitly_wrong_security(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"announcements": [{"secCode": "600519", "announcementTitle": "other"}]}
+
+    monkeypatch.setattr(china_specialty.requests, "post", lambda *a, **k: Response())
+    monkeypatch.setattr(china_specialty, "_CNINFO_ORGID_MAP", {"002130": "org"})
+    monkeypatch.setattr(china_specialty, "_capture_cninfo_raw", lambda *a, **k: None)
+    with pytest.raises(china_specialty.ChinaDataUnavailableError, match="different security"):
+        china_specialty.get_a_share_cninfo_announcements("002130.SZ")
+
+
 def test_board_fund_flow_preserves_period_specific_units(monkeypatch):
     monkeypatch.setattr(
         china_specialty_em,
@@ -220,7 +261,7 @@ def test_mootdx_finance_snapshot_keeps_source_type_and_cutoff(monkeypatch):
         def finance(self, symbol):
             return pd.DataFrame([{"symbol": symbol, "eps": 1.2, "profit": 100000000}])
 
-    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda: Client())
+    monkeypatch.setattr(mootdx_provider, "tdx_client", lambda **kwargs: Client())
     monkeypatch.setattr(mootdx_provider, "_capture_vendor_raw", lambda *args, **kwargs: None)
     report = mootdx_provider.get_fundamentals_mootdx("000338.SZ", "2026-08-05")
     assert "quarterly snapshot" in report
@@ -228,6 +269,34 @@ def test_mootdx_finance_snapshot_keeps_source_type_and_cutoff(monkeypatch):
     assert "profit" in report
 
 
+
+
+def test_bulk_trades_capability_returns_covered_text_through_the_router(monkeypatch):
+    """The datacenter-backed capability keeps str compatibility and coverage.
+
+    ``em_datacenter_strict`` resolves ``eastmoney.em_get``, so the fake envelope
+    is installed there; a completed empty screen must come back as
+    ``CoveredText`` with ``complete``/0 rather than raising through the router.
+    """
+    from tradingagents.dataflows import eastmoney, interface
+
+    monkeypatch.setattr(
+        eastmoney,
+        "em_get",
+        lambda *_args, **_kwargs: {
+            "code": 0,
+            "result": {"pages": 1, "count": 0, "data": []},
+        },
+    )
+    monkeypatch.setattr(interface, "get_vendor", lambda _category, method=None: "eastmoney")
+
+    result = interface.route_to_vendor(
+        "get_a_share_bulk_trades", "000001.SZ", "2026-07-01", "2026-07-31"
+    )
+
+    assert isinstance(result, str)
+    assert result.coverage.completeness == "complete"
+    assert result.coverage.item_count == 0
 
 
 def test_dragon_tiger_capability_passes_analysis_date(monkeypatch):

@@ -14,7 +14,7 @@ TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源�
 
 ## 研究流程
 
-默认的 `classic` profile 会将命令行和 Web 请求交给同一套 LangGraph 流程。当前公开模式为 `company_research` 和 `holding_review`；命令行默认执行公司研究，持仓复盘需要通过 Web/API 提供持仓背景。经典图执行确定性数据预取，然后按顺序运行所选分析师，并在辩论前检查证据。
+默认的 `classic` profile 会将命令行和 Web 请求交给同一套 LangGraph 流程。其模式为 `company_research` 和 `holding_review`；命令行默认执行公司研究，持仓复盘需要通过 Web/API 提供持仓背景。经典图执行确定性数据预取，然后按顺序运行所选分析师，并在辩论前检查证据。
 
 ```mermaid
 flowchart TD
@@ -36,7 +36,7 @@ Evidence Steward 会区分 `PASS`、`LOW_CONFIDENCE` 和 `FAIL_STOP`；意外的
 
 Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究。为服务端进程设置 `TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1` 后，可选择催化流程：冻结合格证据 → 三个专项 → 独立反证 → 单次综合 → 校验发布。结果为结构化 case 及其同源 Markdown 报告，固定展望未来 84 个日历日，可选研究问题随运行保存。classic 仍为默认。
 
-催化流程始终保存尝试预算与可恢复阶段记录，不受旧 checkpoint 开关控制。首批有界适配器覆盖 Tushare 身份/财务报表与巨潮公告覆盖；默认供应商链目前没有可证明资格的行情适配器，腾讯 qfq 未证明历史复权因子时也记为不可用。必需能力缺失会将优先级限制为“信息不足”。支持范围和操作见[催化研究说明](docs/operations/catalyst-research.md)。下方供应商与角色表描述 classic 流程。
+催化流程始终保存尝试预算与可恢复阶段记录，不受旧 checkpoint 开关控制。有界适配器覆盖 Tushare 身份/财务报表、巨潮公告和 Tushare 日行情＋逐日复权因子。行情要求完整已结算交易日覆盖和截止合格的因子来源；历史检索缺少当时快照，以及未验证的腾讯 qfq，仍记为不可用。合格 Tushare 证据会附带输入条件允许的代码计算风险/ATR 指标。必需能力缺失会将优先级限制为“信息不足”。支持范围和操作见[催化研究说明](docs/operations/catalyst-research.md)。下方供应商与角色表描述 classic 流程。
 
 数据供应商路由由 `tradingagents/dataflows/` 管理。下表列出代表性接口，不表示每个供应商都能覆盖任意标的或日期。供应商故障和数据覆盖不足会被明确记录。
 
@@ -47,7 +47,7 @@ Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究�
 | 新闻与披露 | `get_news`、`get_a_share_cninfo_announcements`、`get_a_share_exchange_announcements` | 使用已配置的搜索/新闻服务以及巨潮或交易所披露；部分查询会使用明确标注为公开备份的东方财富来源。 |
 | A 股研究补充数据 | `get_a_share_dragon_tiger`、`get_a_share_lockup_releases`、`get_a_share_adjust_factors`、`get_a_share_valuation_history`、`get_china_pmi` | 根据接口分别来自东方财富、新浪、baostock 和国家统计局。 |
 
-部分 A 股数据补充适配器参考了 [Simon Lin 的 a-stock-data](https://github.com/simonlin1212/a-stock-data)，包括复权因子、历史估值、上市信息、筹码分布和宏观数据。这些适配器由本项目自行实现并路由；运行本项目不需要安装完整的 a-stock-data 工具包。数据来源和降级行为见 [A 股数据能力说明](docs/operations/a-share-data-capabilities.md)。
+部分 A 股数据补充适配器参考了 [Simon Lin 的 a-stock-data](https://github.com/simonlin1212/a-stock-data)（对齐上游 v3.10.0，手写移植而非 vendor），包括复权因子与 `apply_adjust` 换算、历史估值、上市信息、筹码分布、宏观数据，以及东财事件驱动层（业绩预告/机构调研/回购/股权质押/新股日历）、ST 名单、深交所交易日历、沪深官方两融、上证e互动和新浪研报列表。这些适配器由本项目自行实现并路由；运行本项目不需要安装完整的 a-stock-data 工具包。上游基准、数据来源和降级行为见 [A 股数据能力说明](docs/operations/a-share-data-capabilities.md)。
 
 | Agent 或阶段 | 主要职责 |
 | --- | --- |
@@ -62,6 +62,10 @@ Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究�
 | Portfolio Manager（组合经理） | 以研究复核结束运行；持仓复盘时附上持仓摘要，不生成交易订单。 |
 
 四位分析师可以由用户选择和排序；其后的收敛流程固定。Web 工作台通过 FastAPI/SSE 推送运行进度，并由内置的 React/TypeScript 前端展示已保存的报告、Reader 和审计记录。
+
+新提交的公司研究、持仓复盘和催化案例还会发布[统一研究记录](docs/contracts/research-record.md)。Reader 展示已保存的来源内容与合格催化行情的代码计算指标；转换来的推断明确保留未验证状态。旧报告不补算，默认流程仍为 classic。
+
+显式 Web API profile `evidence_v1` 通过原生内核覆盖 A 股公司研究、催化研究和持仓复盘：合格事实 → 隔离的经营／事件／市场专项 → 一次挑战 → 有界条件核查 → 单次分维度综合。设置 `TRADINGAGENTS_EVIDENCE_ENABLED=true` 可启用新建试用；此独立开关不改变 classic 默认，也不新增工作台选择器。Reader 与 Markdown 读取强制发布的同一 `research-record-v1`，优先展示判断、关键依据、主要风险、下一核查和量化背景。缺少估值资料或原持仓假设时保留对应限制；条件核查不能关闭经济挑战。运行完成与研究完整性／质量分开，本阶段未进行付费准确率对照。操作与恢复见[API 试用说明](docs/operations/evidence-research.md)和[统一研究记录](docs/contracts/research-record.md)。
 
 ## 快速开始
 

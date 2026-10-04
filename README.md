@@ -14,7 +14,7 @@ Watch a 20-second walkthrough of a completed A-share research-only sample. Engli
 
 ## Research pipeline
 
-The default `classic` profile turns CLI and web requests into the same LangGraph run. The public modes are `company_research` and `holding_review`; the CLI starts company research, while holding review requires context supplied through the Web/API. The classic graph runs selected analysts in order after deterministic data prefetch, then checks the evidence before debate.
+The default `classic` profile turns CLI and web requests into the same LangGraph run. Its modes are `company_research` and `holding_review`; the CLI starts company research, while holding review requires context supplied through the Web/API. The classic graph runs selected analysts in order after deterministic data prefetch, then checks the evidence before debate.
 
 ```mermaid
 flowchart TD
@@ -36,7 +36,7 @@ The Evidence Steward distinguishes `PASS`, `LOW_CONFIDENCE`, and `FAIL_STOP`; an
 
 The web workbench also supports explicit trials of `catalyst_v1` for A-share company research. Enable it for the server process with `TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1`, then select the catalyst workflow. It freezes cutoff-qualified evidence, runs three specialists, independent refutation, and one synthesis, and publishes a validated case and its Markdown report. Its fixed outlook is the next 84 calendar days; the optional research question is saved with the run. Classic remains the default.
 
-Catalyst uses durable attempt budgets and resumable stage records independently of the classic checkpoint toggle. Its initial bounded adapters cover Tushare identity/financial statements and CNINFO announcement coverage. It currently has no qualified price-history adapter for the default vendor chain; Tencent qfq without verified historical adjustment factors is also unavailable. Missing capabilities cap priority at insufficient information. See [catalyst operation and limits](docs/operations/catalyst-research.md). The following provider and agent tables describe the classic profile.
+Catalyst uses durable attempt budgets and resumable stage records independently of the classic checkpoint toggle. Its bounded adapters cover Tushare identity/financial statements, CNINFO announcements and Tushare dated-factor price history. Price history requires complete settled-session coverage and cutoff-qualified factor provenance; retrospective retrieval without an archive vintage and unverified Tencent qfq remain unavailable. Qualified Tushare evidence includes code-computed risk/ATR statistics where inputs permit. Missing capabilities cap priority at insufficient information. See [catalyst operation and limits](docs/operations/catalyst-research.md). The following provider and agent tables describe the classic profile.
 
 Provider routing is local to `tradingagents/dataflows/`. The table names representative interfaces, not a promise that every provider is available for every ticker or date. Provider failures and incomplete coverage are reported explicitly.
 
@@ -47,7 +47,7 @@ Provider routing is local to `tradingagents/dataflows/`. The table names represe
 | News and disclosures | `get_news`, `get_a_share_cninfo_announcements`, `get_a_share_exchange_announcements` | Configured search/news providers and official CNINFO or exchange disclosures; EastMoney is a labeled public fallback for some queries. |
 | A-share research supplements | `get_a_share_dragon_tiger`, `get_a_share_lockup_releases`, `get_a_share_adjust_factors`, `get_a_share_valuation_history`, `get_china_pmi` | EastMoney, Sina, baostock, and the National Bureau of Statistics, depending on the interface. |
 
-Some supplemental A-share adapters were informed by [Simon Lin's a-stock-data](https://github.com/simonlin1212/a-stock-data), including adjustment factors, historical valuation, listing history, chip distribution, and macro series. They are implemented and routed in this repository; installing the entire a-stock-data toolkit is not a runtime requirement. See [A-share data capabilities](docs/operations/a-share-data-capabilities.md) for source and fallback details.
+Some supplemental A-share adapters were informed by [Simon Lin's a-stock-data](https://github.com/simonlin1212/a-stock-data) (pinned to upstream v3.10.0 and hand-ported, not vendored), including adjustment factors and the `apply_adjust` helper, historical valuation, listing history, chip distribution, macro series, the EastMoney event-driven layer (earnings forecasts, institution surveys, buybacks, equity pledges, IPO calendar), the ST roster, the SZSE trading calendar, official SSE/SZSE margin-trading data, SSE e-interaction, and a Sina research-report list. They are implemented and routed in this repository; installing the entire a-stock-data toolkit is not a runtime requirement. See [A-share data capabilities](docs/operations/a-share-data-capabilities.md) for the pinned baseline, source, and fallback details.
 
 | Agent or stage | Main responsibility |
 | --- | --- |
@@ -62,6 +62,21 @@ Some supplemental A-share adapters were informed by [Simon Lin's a-stock-data](h
 | Portfolio Manager | Closes the run with a research-only review and, for holding review, a holding summary; it does not generate an order. |
 
 The four analysts can be selected and ordered; the subsequent convergence path is fixed. The web workbench streams progress via FastAPI/SSE and presents the persisted report, Reader, and audit history through a bundled React/TypeScript frontend.
+
+New committed company, holding and catalyst cases also publish a [shared research record](docs/contracts/research-record.md). The Reader exposes saved source content and qualified catalyst price statistics. Converted inferences remain explicitly unverified; historical reports are not backfilled, and the default workflow remains classic.
+
+The explicit `evidence_v1` Web API profile covers A-share company, catalyst and holding research through the native kernel: qualified facts → isolated operating/event/market specialists → one challenge stage → bounded condition verification → one dimension-gated synthesis. Enable native creation with `TRADINGAGENTS_EVIDENCE_ENABLED=true`; this independent flag does not change the classic default or add a workbench selector. Reader and Markdown consume its mandatory `research-record-v1`, showing the judgement, key evidence, risk, next check and quantitative context. Missing valuation inputs or original holding thesis remain explicit limits; predicate checks do not close economic challenges. Run completion is separate from research completeness/quality, and no paid accuracy comparison has been performed. See [API trials and recovery](docs/operations/evidence-research.md) and the [shared record contract](docs/contracts/research-record.md).
+
+New native runs prioritize bounded public sources for identity, financial tables,
+calendar and adjusted daily prices, with Tushare as backup. Financial tables
+degrade independently and retain their provider provenance; cutoff, units,
+settled-session coverage and factor vintage remain admission requirements.
+Original native checkpoints retain their original source topology on recovery.
+New native runs also admit bounded official PDF excerpts and disclosed operating
+breakdowns, with document hashes, page locators, units and report periods.
+Selected excerpts do not imply all announcement bodies were covered. The Reader
+and report label specialist unknowns by their isolated view, separately from
+global source coverage. See [document admission](docs/operations/evidence-research.md#official-document-admission).
 
 ## Quick start
 

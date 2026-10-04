@@ -6,7 +6,7 @@
  * on top via 'event' actions. Field names match the backend wire format
  * (snake_case) and are never renamed.
  */
-import { ROLE_REGISTRY } from "./model";
+import { rolesForProfile } from "./model";
 import type {
   ArtifactRecord,
   GraphTaskRecord,
@@ -28,6 +28,7 @@ import type {
   ObservationCommitV1DTO,
   PersistedEventDTO,
   ResearchDepth,
+  ResearchProfile,
   RunSnapshotDTO,
 } from "../api/contracts";
 
@@ -113,7 +114,7 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   // Gaps: RunSnapshotDTO has no checkpoint_enabled (default false) and no
   // research_depth (default 1).
   const meta: RunMeta = {
-    research_profile: s.metadata?.research_profile === "catalyst_v1" ? "catalyst_v1" : "classic",
+    research_profile: s.metadata?.research_profile === "evidence_v1" ? "evidence_v1" : s.metadata?.research_profile === "catalyst_v1" ? "catalyst_v1" : "classic",
     run_id: s.run_id,
     status: s.status,
     ticker: s.ticker,
@@ -149,7 +150,7 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   };
   return {
     meta,
-    roles: seedRoles(s.run_id, s.selected_analysts),
+    roles: seedRoles(s.run_id, s.selected_analysts, meta.research_profile),
     turns: {},
     model_calls: {},
     tool_calls: {},
@@ -161,10 +162,10 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   };
 }
 
-function seedRoles(run_id: string, selected_analysts: string[]): Record<string, RoleCard> {
+function seedRoles(run_id: string, selected_analysts: string[], profile?: ResearchProfile): Record<string, RoleCard> {
   const selected = new Set(selected_analysts);
   const roles: Record<string, RoleCard> = {};
-  for (const def of ROLE_REGISTRY) {
+  for (const def of rolesForProfile(profile)) {
     const key = def.analyst_key;
     let status: RoleStatus;
     let reason: string | undefined;
@@ -326,7 +327,7 @@ function applyRunStarted(
     ...state.meta,
     run_id,
     status: "running",
-    research_profile: p.research_profile === "catalyst_v1" ? "catalyst_v1" : state.meta.research_profile,
+    research_profile: p.research_profile === "evidence_v1" ? "evidence_v1" : p.research_profile === "catalyst_v1" ? "catalyst_v1" : state.meta.research_profile,
     ticker: str(p.ticker, state.meta.ticker),
     asset_type: (str(p.asset_type, state.meta.asset_type) || "stock") as AssetTypeLiteral,
     analysis_date: str(p.analysis_date, state.meta.analysis_date),
@@ -341,7 +342,7 @@ function applyRunStarted(
     checkpoint_enabled: bool(p.checkpoint_enabled, state.meta.checkpoint_enabled),
     created_at: event.timestamp,
   };
-  return { ...state, meta, roles: seedRoles(run_id, selected_analysts) };
+  return { ...state, meta, roles: seedRoles(run_id, selected_analysts, meta.research_profile) };
 }
 
 function applyRunTerminal(
@@ -417,7 +418,7 @@ function convertStatus(
 function applyRoleStatusChanged(state: ReducerState, p: Record<string, unknown>): ReducerState {
   const role_instance_id = str(p.role_instance_id);
   const actor_id = actorIdFromRoleInstance(role_instance_id);
-  const def = ROLE_REGISTRY.find((r) => r.actor_id === actor_id);
+  const def = rolesForProfile(state.meta.research_profile).find((r) => r.actor_id === actor_id);
   if (!def) return state;
   const existing = state.roles[actor_id];
   const new_status =

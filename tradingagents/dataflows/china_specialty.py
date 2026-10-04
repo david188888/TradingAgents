@@ -251,6 +251,8 @@ def get_a_share_cninfo_announcements(
         for item in announcements:
             if not isinstance(item, dict):
                 continue
+            if item.get("secCode") is not None and str(item["secCode"]) != code:
+                raise ChinaDataUnavailableError("CNINFO returned a different security.")
             published = _cninfo_ts_to_date(item.get("announcementTime"))
             if not published:
                 invalid_published_count += 1
@@ -286,7 +288,7 @@ def get_a_share_cninfo_announcements(
         has_more = payload.get("hasMore")
         if (
             not announcements
-            or (total_pages is not None and page >= total_pages)
+            or (has_more is not True and total_pages is not None and page >= total_pages)
             or has_more is False
             or (total_pages is None and has_more is None and len(announcements) < bounded_page_size)
         ):

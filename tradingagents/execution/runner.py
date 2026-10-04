@@ -1117,6 +1117,17 @@ class AnalysisRunner:
                     committed_sequence=marker.sequence,
                     promoted=promoted_derived,
                 )
+                from tradingagents.execution.record_publisher import promote_research_record
+                from tradingagents.research.record_assembly import record_from_classic
+
+                promote_research_record(
+                    observer, build=lambda research_case=research_case, snapshot=snapshot: record_from_classic(
+                        research_case, mode=snapshot.mode, analysis_date=snapshot.analysis_date,
+                        fundamentals_bundle=_latest_fundamentals_bundle(observer),
+                    ), graph_task_id=commit.graph_task_id,
+                    checkpoint_event_id=marker.event_id, committed_sequence=marker.sequence,
+                    promoted=promoted_derived,
+                )
                 _promote_valuation_assessment(
                     observer,
                     snapshot=snapshot,

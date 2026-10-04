@@ -33,6 +33,7 @@ export const API = {
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
   reader: (run_id: string) => `/api/runs/${run_id}/reader`,
   readerPackage: (run_id: string) => `/api/runs/${run_id}/reader/package`,
+  readerRecord: (run_id: string) => `/api/runs/${run_id}/reader/record`,
   readerCompanion: (run_id: string) => `/api/runs/${run_id}/reader/companion`,
   audit: (run_id: string) => `/api/runs/${run_id}/audit`,
   auditDetail: (run_id: string) => `/api/runs/${run_id}/audit/detail`,
@@ -53,6 +54,97 @@ export const API = {
 } as const;
 
 export const EVENT_SCHEMA_VERSION = 1 as const;
+
+// Canonical: agents/schemas/_research_record.py and web/research_record_projection.py.
+export interface SourceContentV1DTO {
+  kind: "excerpt" | "source_fields" | "saved_summary";
+  text: string;
+  locator_label: string;
+  content_sha256: string;
+  truncated: boolean;
+}
+
+export interface SourceEvidenceV1DTO {
+  evidence_id: string;
+  source_name: string;
+  source_kind: "official" | "vendor" | "media" | "derived" | "analysis_report" | "unknown";
+  source_family_id: string | null;
+  availability: "available" | "unavailable" | "unverified";
+  public_url: string | null;
+  published_at: string | null;
+  usable_as_of: string | null;
+  captured_at: string | null;
+  content: SourceContentV1DTO | null;
+  limitations: string[];
+}
+
+export interface QuantitativeMetricV1DTO {
+  metric_id: string;
+  label: string;
+  availability: "available" | "unavailable";
+  value: number | null;
+  unit: string;
+  method: string;
+  calculation_version: string;
+  input_evidence_ids: string[];
+  input_sha256: string;
+  window_start: string | null;
+  window_end: string | null;
+  sample_size: number | null;
+  tail_sample_size: number | null;
+  unavailable_reason: string | null;
+  limitations: string[];
+}
+
+// Canonical: agents/schemas/_research_assessment.py.
+export interface DimensionAssessmentV1DTO {
+  dimension: "operating_quality" | "valuation" | "market_context" | "catalyst_delivery" | "holding_thesis";
+  status: "supported" | "conditional" | "unresolved";
+  judgement: string;
+  claim_ids: string[];
+  challenge_ids: string[];
+  limitations: string[];
+}
+
+export interface ResearchAssessmentV1DTO {
+  schema_version: "research-assessment-v1";
+  input_snapshot_id: string;
+  research_question: string;
+  judgement: string;
+  dimensions: DimensionAssessmentV1DTO[];
+  key_claim_ids: string[];
+  primary_challenge_id: string | null;
+  next_check: string;
+  challenge_assessments: Array<{ challenge_id: string; outcome: "unresolved"; rationale: string }>;
+  completeness: "complete" | "partial";
+  quality: "PASS" | "LOW_CONFIDENCE";
+  forward_window_calendar_days: 84 | null;
+  limitations: string[];
+}
+
+export interface ResearchRecordV1DTO {
+  schema_version: "research-record-v1";
+  run_id: string;
+  ticker: string;
+  mode: "company_research" | "catalyst_research" | "holding_review";
+  analysis_date: string;
+  construction: "adapted_case" | "native";
+  source_case_contract: "research-case-v2" | "catalyst-research-case-v1" | null;
+  source_case_sha256: string | null;
+  snapshots: Array<{ version: 0 | 1; snapshot_id: string; parent_snapshot_id: string | null; evidence_ids: string[]; content_sha256: string }>;
+  evidence: SourceEvidenceV1DTO[];
+  claims: Array<{ claim_id: string; kind: "fact" | "inference" | "unknown"; statement: string; evidence_ids: string[]; supporting_fact_ids: string[]; limitations: string[] }>;
+  hypotheses: Array<{ hypothesis_id: string; claim_id: string; input_snapshot_id: string; origin: "hypothesis_stage" | "adapted_inference"; assumptions: string[]; invalidation_conditions: string[]; limitations: string[] }>;
+  challenges: Array<{ challenge_id: string; target_claim_ids: string[]; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; evidence_ids: string[]; proposed_test: string; reported_disposition: string | null }>;
+  verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string; scope?: "unspecified" | "predicate_only"; hypothesis_id?: string | null; plan_sha256?: string | null; condition_role?: "necessary" | "invalidation" | null; condition_text?: string | null }>;
+  metrics: QuantitativeMetricV1DTO[];
+  assessment?: ResearchAssessmentV1DTO | null;
+  limitations: string[];
+}
+
+export type ResearchRecordResponseDTO =
+  | { state: "ready"; schema_version: 1; run_id: string; record: ResearchRecordV1DTO }
+  | { state: "unavailable"; schema_version: 1; run_id: string; reason_code: "not_published" | "publication_failed" | "corrupt" | "source_case_mismatch" };
 
 /** SSE terminal events — the stream is closed by the server after these. */
 export const TERMINAL_STREAM_EVENTS = [
@@ -122,7 +214,7 @@ export interface ConfigResponseDTO {
   checkpoint_available: boolean;
   wind: WindStatusDTO;
   defaults: ConfigDefaultsDTO;
-  research_profiles?: Partial<Record<ResearchProfile, { supported: boolean; reason: string | null }>>;
+  research_profiles?: Partial<Record<ResearchProfile, { supported: boolean; reason: string | null; checkpoint_available?: boolean }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +223,8 @@ export interface ConfigResponseDTO {
 
 export type ResearchDepth = 1 | 3 | 5;
 export type AssetTypeLiteral = "stock" | "crypto";
-export type ResearchMode = "company_research" | "holding_review";
+/** catalyst_research is admitted only by the explicit evidence_v1 profile. */
+export type ResearchMode = "company_research" | "catalyst_research" | "holding_review";
 export type ResearchHorizon = "short" | "medium" | "long";
 // `research_profile` is omitted by every pre-catalyst client; the server
 // treats an omitted value as "classic". The narrowed alias below is the
@@ -195,6 +288,8 @@ export interface RunCreateRequestDTO {
    */
   research_profile?: ResearchProfile;
   research_question?: string | null;
+  /** Frozen server policy; clients may omit it to use the profile default. */
+  evidence_policy?: NativeEvidencePolicyV1DTO;
   holding?: HoldingInputDTO;
   /** Legacy-only input. New clients must use holding instead. */
   portfolio?: PortfolioDTO | null;
@@ -486,6 +581,8 @@ export interface RunViewEnvelopeDTO {
   view: {
     run: {
       run_id: string;
+      /** Explicit producer identity for new projections; absent on old servers. */
+      research_profile?: ResearchProfile;
       ticker: string;
       status: RunStatusLiteral;
       mode: ResearchMode;
@@ -556,6 +653,11 @@ export type ApiErrorCode =
   | "companion_not_found"
   | "company_not_found"
   | "duplicate_ticker"
+  | "evidence_horizon_not_supported"
+  | "evidence_legacy_scheduling_params_not_applicable"
+  | "evidence_market_unsupported"
+  | "evidence_mode_unsupported"
+  | "evidence_profile_unavailable"
   | "event_cursor_mismatch"
   | "frontend_unavailable"
   | "history_corrupted"
@@ -567,6 +669,7 @@ export type ApiErrorCode =
   | "holding_legacy_conflict"
   | "holding_nav_invalid"
   | "holding_not_allowed"
+  | "holding_original_thesis_invalid"
   | "holding_quantity_invalid"
   | "holding_required"
   | "holding_ticker_mismatch"
@@ -966,6 +1069,13 @@ export interface ArtifactWrittenPayload {
   locator: string;
 }
 
+/** Mirror of artifact.projection_unavailable required payload fields. */
+export interface ArtifactProjectionUnavailablePayload {
+  public_contract: string;
+  graph_task_id: string;
+  reason_code: string;
+}
+
 // ---------------------------------------------------------------------------
 // Discriminated payload union.
 //
@@ -1026,7 +1136,8 @@ export type EventPayloadByType =
   | { type: "data.failed"; payload: DataFailedPayload }
   | { type: "data.interrupted"; payload: DataInterruptedPayload }
   | { type: "data.cache_hit"; payload: DataCacheHitPayload }
-  | { type: "artifact.written"; payload: ArtifactWrittenPayload };
+  | { type: "artifact.written"; payload: ArtifactWrittenPayload }
+  | { type: "artifact.projection_unavailable"; payload: ArtifactProjectionUnavailablePayload };
 
 /** Any payload shape, without the wrapping `type`. */
 export type AnyEventPayload = EventPayloadByType["payload"];
@@ -1536,7 +1647,7 @@ export interface AuditRunSummaryDTO {
   item_id: "run";
   status: "completed" | "failed" | "cancelled" | "interrupted";
   ticker: string;
-  mode: "company_research" | "holding_review" | null;
+  mode: ResearchMode | null;
   horizon: "short" | "medium" | "long" | null;
   created_at: string;
   completed_at: string | null;
@@ -1667,7 +1778,7 @@ export interface AuditDetailDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Catalyst research profile (research_profile: classic | catalyst_v1)
+// Research profiles (classic | catalyst_v1 | evidence_v1)
 // ---------------------------------------------------------------------------
 // Mirrors, in this order of authority:
 //   tradingagents/research/catalyst_evidence_policy.py  (profile + policy version)
@@ -1679,11 +1790,21 @@ export interface AuditDetailDTO {
 // an already-active test gate. `catalyst-evidence-policy-v1` is a data-requirement
 // version; the two must never share a field, a module, or a literal.
 
-export type ResearchProfile = "classic" | "catalyst_v1";
-export const RESEARCH_PROFILES: readonly ResearchProfile[] = ["classic", "catalyst_v1"];
+export type ResearchProfile = "classic" | "catalyst_v1" | "evidence_v1";
+export const RESEARCH_PROFILES: readonly ResearchProfile[] = ["classic", "catalyst_v1", "evidence_v1"];
 
 export const CATALYST_EVIDENCE_POLICY_VERSION = "catalyst-evidence-policy-v1" as const;
 export type CatalystEvidencePolicyVersion = typeof CATALYST_EVIDENCE_POLICY_VERSION;
+export const NATIVE_EVIDENCE_POLICY_VERSION = "evidence-policy-v1" as const;
+
+/** Canonical: research/native_evidence_policy.py; these are source windows, not an outlook. */
+export interface NativeEvidencePolicyV1DTO {
+  policy_version: typeof NATIVE_EVIDENCE_POLICY_VERSION;
+  profile: "evidence_v1";
+  event_lookback_calendar_days: [7, 30, 90];
+  price_history_trading_days: 250;
+  fundamentals_quarters: 8;
+}
 
 export const CATALYST_CASE_SCHEMA_VERSION = "catalyst-research-case-v1" as const;
 export const CATALYST_CASE_SCHEMA_NUMBER = 1 as const;
@@ -1695,6 +1816,7 @@ export const CATALYST_ENDPOINT_VERSION = 1 as const;
 export const PROFILE_POLICY_VERSIONS: Readonly<Record<ResearchProfile, string>> = {
   classic: "horizon-policy-v2",
   catalyst_v1: CATALYST_EVIDENCE_POLICY_VERSION,
+  evidence_v1: NATIVE_EVIDENCE_POLICY_VERSION,
 };
 
 /**

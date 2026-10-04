@@ -18,8 +18,9 @@ import re
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
@@ -30,6 +31,7 @@ from tradingagents.dataflows.date_window import as_of, trade_date_from_state
 from tradingagents.dataflows.errors import (
     DataSourceUnavailableError,
     VendorError,
+    VendorRequestError,
 )
 from tradingagents.dataflows.interface import route_to_vendor
 from tradingagents.dataflows.market_data_validator import build_verified_market_snapshot
@@ -144,6 +146,73 @@ def _research_reports(symbol: str, curr_date: str, _request: str) -> str:
 
 def _eps_forecast(symbol: str, curr_date: str, _request: str) -> str:
     return route_to_vendor("get_a_share_eps_forecast", symbol, as_of=curr_date)
+
+
+# --- a-stock-data v3.9.0 event-driven sources ---------------------------------
+#
+# These are structured vendor event tables, not announcement text.  The adapters
+# return a typed unavailable rather than an empty table, so a failed or throttled
+# source can never be read downstream as "this company had no such event".
+
+
+def _current_a_share_date() -> date:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date()
+
+
+def _require_current_a_share_snapshot(curr_date: str, source: str) -> None:
+    """Keep live/latest-only sources out of historical research contexts.
+
+    These source interfaces do not accept a publication cutoff or expose an
+    archived vintage. A reporting period is not a publication date. Reject
+    before dispatch rather than labelling today's snapshot with a past date.
+    """
+    try:
+        cutoff = date.fromisoformat(curr_date)
+        if cutoff.isoformat() != curr_date:
+            raise ValueError("noncanonical date")
+    except (TypeError, ValueError) as exc:
+        raise VendorRequestError(source, "live_snapshot_cutoff_invalid") from exc
+    if cutoff != _current_a_share_date():
+        raise VendorRequestError(source, "live_snapshot_vintage_unavailable")
+
+
+def _earnings_forecast(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
+    return route_to_vendor("get_a_share_earnings_forecast", symbol)
+
+
+def _institution_survey(symbol: str, curr_date: str, _request: str) -> str:
+    return route_to_vendor(
+        "get_a_share_institution_survey",
+        symbol,
+        start=_start_date(curr_date, 180),
+        end=curr_date,
+    )
+
+
+def _share_buyback(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
+    return route_to_vendor("get_a_share_share_buyback", symbol)
+
+
+def _equity_pledge(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
+    return route_to_vendor("get_a_share_equity_pledge", symbol)
+
+
+def _ipo_calendar(_symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "eastmoney")
+    return route_to_vendor("get_a_share_ipo_calendar", 30)
+
+
+def _sse_e_interaction(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "sse_e")
+    return route_to_vendor("get_a_share_sse_e_interaction", symbol, "questions")
+
+
+def _sina_research_reports(symbol: str, curr_date: str, _request: str) -> str:
+    _require_current_a_share_snapshot(curr_date, "sina")
+    return route_to_vendor("get_a_share_research_reports_sina", symbol)
 
 
 def _mootdx_finance(symbol: str, curr_date: str, _request: str) -> str:
@@ -294,6 +363,13 @@ _CAPABILITIES: tuple[Capability, ...] = (
     Capability("industry_ranking", "get_a_share_industry_ranking", "news", lambda _symbol, _date, _request: route_to_vendor("get_a_share_industry_ranking"), ("行业排名", "行业涨跌", "industry ranking"), True),
     Capability("stock_monitor", "get_a_share_stock_monitor", "market", lambda _symbol, _date, _request: route_to_vendor("get_a_share_stock_monitor"), ("重点监控", "风险警示", "监控池", "重点监控池", "monitor"), True),
     Capability("price_anomaly", "get_a_share_price_anomaly", "market", lambda _symbol, _date, _request: route_to_vendor("get_a_share_price_anomaly"), ("异动", "异常波动", "严重异常", "anomaly", "price anomaly"), True),
+    Capability("equity_pledge", "get_a_share_equity_pledge", "market", _equity_pledge, ("质押", "股权质押", "pledge"), True),
+    Capability("earnings_forecast", "get_a_share_earnings_forecast", "news", _earnings_forecast, ("业绩预告", "预增", "预减", "预亏", "扭亏", "earnings forecast", "guidance"), True),
+    Capability("institution_survey", "get_a_share_institution_survey", "news", _institution_survey, ("机构调研", "调研", "投资者关系", "institution survey"), True),
+    Capability("share_buyback", "get_a_share_share_buyback", "news", _share_buyback, ("回购", "buyback", "repurchase"), True),
+    Capability("ipo_calendar", "get_a_share_ipo_calendar", "news", _ipo_calendar, ("新股", "申购", "打新", "ipo"), True),
+    Capability("sse_e_interaction", "get_a_share_sse_e_interaction", "news", _sse_e_interaction, ("上证e互动", "e互动", "沪市互动"), True),
+    Capability("sina_research_reports", "get_a_share_research_reports_sina", "fundamentals", _sina_research_reports, ("新浪研报", "研报列表"), True),
     Capability("company_news", "get_news", "news", _company_news, default=True),
     Capability("global_news", "get_global_news", "news", _global_news, ("宏观", "global", "market-wide", "行业", "sector")),
     Capability("macro_cpi", "get_macro_indicators", "news", _macro_cpi, ("cpi", "inflation", "通胀")),

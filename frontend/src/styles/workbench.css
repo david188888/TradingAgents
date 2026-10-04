@@ -921,11 +921,29 @@ aside.inspector {
 }
 
 .history-item {
-  padding: 9px 11px;
+  position: relative;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.history-open {
+  display: block;
+  width: 100%;
+  padding: 9px 35px 9px 11px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-open:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: -2px;
 }
 
 .history-item:hover {
@@ -963,6 +981,9 @@ aside.inspector {
 }
 
 .history-delete {
+  position: absolute;
+  top: 9px;
+  right: 7px;
   border: none;
   background: transparent;
   padding: 2px 4px;

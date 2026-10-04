@@ -52,15 +52,28 @@ def test_raw_and_qfq_are_two_separate_router_methods():
 
     Registering them separately is what makes the substitution impossible to
     express in the first place, so the shape of the registry *is* the assertion.
+    Bar width gets the same treatment: a router able to satisfy a weekly request
+    from the daily vendor would silently change the bar width.
     """
-    assert set(VENDOR_METHODS["get_a_share_kline"]) == {"tencent"}
-    assert set(VENDOR_METHODS["get_a_share_kline_qfq"]) == {"tencent"}
+    for method in ("get_a_share_kline", "get_a_share_kline_qfq"):
+        assert set(VENDOR_METHODS[method]) == {"tencent"}
     assert (
         VENDOR_METHODS["get_a_share_kline"]["tencent"]
         is not VENDOR_METHODS["get_a_share_kline_qfq"]["tencent"]
     )
     listed = set(TOOLS_CATEGORIES["a_share_kline"]["tools"])
-    assert listed == {"get_a_share_kline", "get_a_share_kline_qfq"}
+    assert listed == {
+        "get_a_share_kline",
+        "get_a_share_kline_qfq",
+        "get_a_share_kline_weekly",
+        "get_a_share_kline_weekly_qfq",
+        "get_a_share_kline_monthly",
+        "get_a_share_kline_monthly_qfq",
+    }
+    # Six distinct entry points: no two (period, adjust) pairs may share an
+    # implementation, or one could stand in for another.
+    implementations = [VENDOR_METHODS[method]["tencent"] for method in sorted(listed)]
+    assert len(set(implementations)) == len(implementations)
     assert VENDOR_MARKETS["tencent"] == frozenset({"a_share"})
 
 

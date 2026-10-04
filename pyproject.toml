@@ -35,10 +35,17 @@ dev = [
     "pytest-subtests>=0.13",
 ]
 china = [
+    "pypdf>=5,<7",
     "akshare>=1.16.0",
     "baostock>=0.8.8",
     "mootdx>=0.11.0",
     "tushare>=1.4.0",
+    # Official-source readers are spreadsheets, not JSON: the Shenzhen exchange
+    # margin-trading file and the Shenwan industry-classification history are
+    # .xls/.xlsx.  pandas needs an engine for each and raises at read time,
+    # which is too late to look like a dependency problem.
+    "openpyxl>=3.1",
+    "xlrd>=2.0",
 ]
 web = [
     "fastapi>=0.115,<1",

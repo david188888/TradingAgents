@@ -70,6 +70,11 @@ from ._research import (  # noqa: F401  - facade re-export
     ResearchStrategySignal,
     render_research_plan,
 )
+from ._research_assessment import (  # noqa: F401 - facade re-export
+    ChallengeAssessmentV1,
+    DimensionAssessmentV1,
+    ResearchAssessmentV1,
+)
 from ._research_case import (  # noqa: F401 - facade re-export
     AnalystCard,
     CapabilityStatus,
@@ -92,8 +97,28 @@ from ._research_case_draft import (
     ScenarioDraft,
     render_learning_case_draft,
 )
+from ._research_record import (  # noqa: F401 - facade re-export
+    RESEARCH_RECORD_CONTRACT,
+    EvidenceSnapshotV1,
+    QuantitativeMetricV1,
+    RecordClaimV1,
+    ResearchChallengeV1,
+    ResearchHypothesisV1,
+    ResearchRecordV1,
+    SourceContentV1,
+    SourceEvidenceV1,
+    VerificationRecordV1,
+)
 from ._sentiment import (  # noqa: F401  - facade re-export
     SentimentBand,
     SentimentReport,
     render_sentiment_report,
+)
+from ._verification_plan import (  # noqa: F401 - facade re-export
+    FinancialConditionV1,
+    FinancialOperandV1,
+    MetricConditionV1,
+    NumericPredicateV1,
+    VerificationPlanV1,
+    VerificationTaskV1,
 )

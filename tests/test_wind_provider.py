@@ -199,6 +199,7 @@ class TestAdjustedStockHistory:
                 "end_date": "2026-08-12",
                 "period": "1d",
                 "aftype": "0",
+                "afdate": "2026-08-12",
                 "issusp": "0",
             },
         )
@@ -206,7 +207,7 @@ class TestAdjustedStockHistory:
         assert result.coverage.price_basis == "qfq"
         assert result.coverage.adjustment_verified is True
         assert result.coverage.completeness == "complete"
-        assert "# Adjustment source: wind.stock_data.get_stock_kline(aftype=0)" in result
+        assert "# Adjustment source: wind.stock_data.get_stock_kline(aftype=0,afdate=2026-08-12)" in result
 
     def test_rejects_reversed_window(self, wind_enabled, mock_transport):
         with pytest.raises(ValueError, match="cannot be after"):
@@ -854,7 +855,9 @@ class TestConfigFlag:
 
     def test_explicitly_disabled_returns_data_unavailable(self):
         """Turning Wind off must still degrade gracefully without a crash."""
-        with config_scope({"wind_enabled": False}):
+        # Pin the subject provider: the default EastMoney fallback is live and
+        # may succeed, which is valid routing rather than a Wind-disable bug.
+        with config_scope({"wind_enabled": False, "tool_vendors": {"get_index_snapshot": "wind"}}):
             result = route_to_vendor("get_index_snapshot", "000300.SH")
         assert "DATA_UNAVAILABLE" in str(result)
         assert "disabled" in str(result).lower() or "wind" in str(result).lower()
@@ -898,8 +901,8 @@ class TestContractHashes:
     SKILL_DIR = Path.home() / ".claude" / "skills" / "wind-mcp-skill" / "scripts"
 
     EXPECTED_HASHES = {
-        "tool-manifest.json": "2088ec4998300a6aeb05a8592e8944abb95e2f4258b890c1fed3831eb589325b",
-        "call-rules.json": "437a8d60e929d62dd3cdc5a8757b0c7479b249291ec7295e64d658ec9cabd584",
+        "tool-manifest.json": "b19f6c3ebb812ea3e48396dcc2ec266c6bb955bbff7fc8925f33e263eeaad06c",
+        "call-rules.json": "afdd9899d9e4afecba6383910d830c55d987a0b9447aa46f81562e842507ef64",
     }
 
     @pytest.mark.skipif(

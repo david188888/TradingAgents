@@ -23,6 +23,7 @@ from tradingagents.web.manager import (
     _default_runner_factory,
     _request_from_snapshot,
 )
+from tradingagents.web.research_record_projection import project_research_record
 from tradingagents.web.store import RunStore
 
 
@@ -83,6 +84,10 @@ def test_profile_routes_to_production_and_persists_readable_case(tmp_path):
         assert read["completeness"] != "complete"
         assert read["research_question"] == "核验订单兑现"
     assert (MissingSources.calls, ModelStub.calls) == before
+    record = project_research_record(manager.store, snapshot.run_id)
+    assert record["state"] == "ready", record
+    assert record["record"]["verifications"] == []
+    assert record["record"]["mode"] == "catalyst_research"
     assert before == (1, 2)
     assert (manager.store._run_dir(snapshot.run_id) / "reports/complete_report.md").is_file()
     assert not any(e.type == "model.started" and e.payload.get("purpose") == "debate_summary" for e in manager.store.read_events(snapshot.run_id))
@@ -103,6 +108,8 @@ def test_resume_after_publication_authorization_reuses_candidate(tmp_path):
     from tradingagents.runtime.reports import ReportArtifactWriter
     ReportArtifactWriter(manager.store).publish_final(snapshot.run_id, dict(result.final_state), restored.ticker)
     assert sum(e.payload.get("public_contract") == "catalyst-research-case-v1" for e in manager.store.read_events(snapshot.run_id)) == 1
+    assert sum(e.payload.get("public_contract") == "research-record-v1" for e in manager.store.read_events(snapshot.run_id)) == 1
+    assert project_research_record(manager.store, snapshot.run_id)["state"] == "ready"
     with pytest.raises(ValueError):
         validate_catalyst_resume(manager.store, snapshot.run_id, replace(restored, research_question="changed"))
     assert (MissingSources.calls, ModelStub.calls) == before

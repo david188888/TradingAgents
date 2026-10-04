@@ -11,8 +11,9 @@ Three consumer shapes share the same execution core:
 - `cli/main.py` is the Typer CLI adapter.
 - `tradingagents/web/` is the loopback-only FastAPI workbench. It creates and
   reads runs, streams durable events through SSE, and serves the bundled SPA.
-- Programmatic callers construct `TradingAgentsGraph` and use its
-  consumer-neutral execution path.
+- Programmatic callers use the consumer-neutral execution boundary: classic
+  constructs `TradingAgentsGraph`, while explicit native research uses
+  `NativeRunner` with its durable observer and publication authorizer.
 
 The default classic flow is:
 
@@ -36,6 +37,25 @@ The Web manager routes explicit `catalyst_v1` requests to
 instead of silently running classic. The explicit Web entry is gated by
 `catalyst_profile_enabled`; classic remains the default.
 
+Explicit `evidence_v1` requests route to `execution/native_runner.py:NativeRunner`
+for A-share company, catalyst and holding research. The creation-only Web flag
+`TRADINGAGENTS_EVIDENCE_ENABLED=true` is independent of the catalyst flag;
+omitted profiles and existing forms retain classic defaults. The native trial
+is exposed through the Web API and neutral runner, without a new workbench
+selector or CLI profile option. Its `evidence-policy-v1` fixes historical source
+windows and is distinct from both catalyst lookahead and runtime horizon policy.
+New native runs use `dataflows/native_sources.py` for capability-specific public
+source chains and Tushare backup; `research/source_families.py` owns the finite
+identity/financial/price admission registry shared by facts, specialist views
+and verification. Financial fallback preserves separate provider bundles.
+Workflow v3 extends the collector with `dataflows/native_disclosures.py` and
+the pure `disclosure_documents.py` PDF/table qualifier. Separate official
+excerpt and operating-row families feed role-specific facts; they are not C1
+financial statement operands. Global capability coverage and scoped specialist
+unknowns remain distinct in saved limitations, synthesis context and readers.
+V1/v2 recovery retains its original collector and kernel/prompt input semantics
+or replays saved V0/output. See [native source policy](docs/operations/evidence-research.md#evidence-and-workflow).
+
 ## Workflow And Research Routing
 
 `tradingagents/graph/setup.py` builds a deterministic prefix before analysis:
@@ -45,8 +65,8 @@ social, news, and fundamentals analysts then execute in their requested order.
 The Evidence Steward gates the Bull/Bear research debate; a gate error ends the
 workflow instead of manufacturing a decision.
 
-Bull and Bear debate through the Research Manager. `AnalysisRequest` accepts
-only the typed public modes `company_research` and `holding_review`; both route
+Bull and Bear debate through the Research Manager. The classic profile accepts
+the typed modes `company_research` and `holding_review`; both route
 from Research Manager directly to Portfolio Manager, and the runner reports the
 `research_only` signal. The former Trader and three-role risk debate have been
 retired from the execution graph; older state and report fields may remain for
@@ -73,6 +93,14 @@ ceiling. Its model adapter reuses configured quick/deep clients, disables SDK
 retries and charges every dispatch. Process-wide model and data concurrency
 ceilings are two each. Active execution defaults to 300 seconds, excluding
 scheduler queue time.
+
+The bounded price path admits directly observed Tushare REST attempts. It
+validates daily bars, dated factors and complete settled-session calendars,
+anchors OHLC to the last price session, and rejects unverified retrospective
+factor vintage. Code-computed risk and ATR statistics are included in the
+frozen price evidence payload, with independent sample/input degradation;
+saved results are projected into the additive `research-record-v1` contract
+and the Reader's quantitative context, independently of valuation.
 
 `runtime/catalyst_checkpoint.py` persists attempt transitions, source results,
 frozen inputs, prompt digests, role results, stage status and the final candidate
@@ -105,6 +133,37 @@ publication.
 The FastAPI adapter exposes raw run/artifact access plus read-only projections:
 the Reader (`/api/runs/{id}/reader`), the structured package
 (`/api/runs/{id}/reader/package`), run view, audit views, and market views.
+The shared record (`/api/runs/{id}/reader/record`) adapts committed company,
+holding and catalyst cases into source content, claims, hypotheses, challenges,
+verification records and metrics. It checks artifact and source-case integrity;
+historical absence remains explicit, without backfill. Current adapters label
+inferences as converted and never treat model dispositions as executed tool
+verification. `execution/verification_executor.py` provides a
+bounded round for native V0 records in all three modes. It uses
+the existing durable ledger, saves predicate-scoped results and V1 lineage,
+and replays saved output without work. The native kernel in
+`graph/native_research.py` connects facts-only V0, isolated specialists,
+one challenge, C1 and dimension-gated synthesis. Its SDK adapter and mandatory
+record publisher live in `execution/native_model.py` and
+`execution/native_publication.py`. `NativeRunner` supplies the bounded collector,
+saved V0, role lifecycle events, deadline and shared cancellation/publication
+authorization. The Web manager creates, retries and resumes native runs with
+profile-specific identity guards; native checkpoints do not depend on the
+classic checkpoint toggle. Unknown dispatched calls remain spent and are not
+automatically repeated. Persisted adapter responses can recover the gap before
+the kernel's MAIN result without another model call.
+
+Native publication requires an assessed `research-record-v1` and its durable
+authorization barrier; failure cannot complete the run or fall back to a case.
+Markdown and the single native Reader consume that same record. The native
+first screen prioritizes judgement, key claims, primary challenge, next check
+and quantitative context; source content and per-dimension limits are expandable.
+Completion, readability, completeness and quality remain separate. Missing
+valuation or original-thesis inputs constrain their own dimensions, and a
+successful condition check cannot close an economic challenge. Default migration
+and paid accuracy evaluation remain separate from this engineering path. See
+[native trial operations](docs/operations/evidence-research.md) and
+[the contract](docs/contracts/research-record.md).
 `frontend/src/api/contracts.ts` is the TypeScript facade for those wire
 contracts. The client consumes server-projected data; it does not define the
 domain schema or recover unavailable evidence by making provider calls.

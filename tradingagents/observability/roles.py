@@ -108,12 +108,22 @@ CATALYST_ROLE_REGISTRY = tuple(
 )
 
 
+NATIVE_ROLE_REGISTRY = tuple(
+    RoleDefinition(f"native.{key}", key, "native", label, "verified-magnifier")
+    for key, label in (("evidence", "Evidence freeze"), ("operating_quality", "Operating quality"),
+        ("event_context", "Event context"), ("market_context", "Market context"),
+        ("challenge", "Evidence challenge"), ("synthesis", "Research synthesis"))
+)
+
+
 def roles_for_profile(profile: str = "classic") -> tuple[RoleDefinition, ...]:
+    if profile == "evidence_v1":
+        return NATIVE_ROLE_REGISTRY
     return CATALYST_ROLE_REGISTRY if profile == "catalyst_v1" else ROLE_REGISTRY
 
 
 def role_instance_id(run_id: str, actor_id: str) -> str:
-    if actor_id not in ROLES_BY_ACTOR_ID and actor_id not in {role.actor_id for role in CATALYST_ROLE_REGISTRY}:
+    if actor_id not in ROLES_BY_ACTOR_ID and actor_id not in {role.actor_id for role in (*CATALYST_ROLE_REGISTRY, *NATIVE_ROLE_REGISTRY)}:
         raise KeyError(f"unknown TradingAgents actor_id: {actor_id}")
     if not run_id:
         raise ValueError("run_id is required")

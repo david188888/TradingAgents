@@ -30,6 +30,8 @@ For any question about current behavior:
 
 - [Contract index](contracts/README.md): canonical Python, runtime, web, and frontend sources, plus change propagation rules.
 - [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
+- [Local price statistics](contracts/local-price-statistics.md): deterministic return-risk/ATR methods and frozen price evidence, separate from valuation.
+- [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, native three-mode workflow and bounded verification, mandatory publication, read-only Reader and compatibility limits.
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.
 
@@ -43,6 +45,7 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
 - [Web batch analysis](operations/web-batch-analysis.md): 1-8 company batch research, global FIFO scheduler, concurrency, lifecycle, and notification limits.
 - [Catalyst trial operations](operations/catalyst-research.md): explicit entry, qualification limits, budgets, recovery and read semantics.
+- [Evidence research API trials](operations/evidence-research.md): explicit `evidence_v1` for company/catalyst/holding research, independent creation flag, native facts/conditions/synthesis, durable recovery and the single Reader; classic stays default.
 
 ## Integrations
 
@@ -60,12 +63,18 @@ These are execution proposals, not descriptions of current runtime behavior.
 
 - [Catalyst research redesign](superpowers/specs/2026-09-28-catalyst-research-redesign.md): original product direction and evaluation criteria. The explicit Web path is wired; default switching and batch quality evaluation remain separate decisions.
 - [Wiring design](superpowers/specs/2026-09-30-catalyst-production-wiring-design.md) and [acceptance record](superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md): approved scope and verification evidence.
+- [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): user-reviewed direction and mockup for company/catalyst/holding research; engineering migration is in progress.
+- [Native research wiring design](superpowers/specs/2026-10-02-native-research-wiring-design.md) and [implementation checklist](superpowers/plans/2026-10-02-native-research-wiring-implementation.md): shared-kernel and explicit profile design. Current behavior is documented in [API trial operations](operations/evidence-research.md).
 
 ## Historical / Archive
 
 `Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
 
 - [Legacy learning-research composite](archive/legacy/learning-research-reader-2026-08-13.md): frozen historical reference for the learning research / Reader path and its implementation records.
+- [a-stock-data v3.10.0 branch handoff](superpowers/plans/2026-09-30-a-stock-data-v310-sync.md) and [research/data integration acceptance](superpowers/plans/2026-10-02-research-data-integration-acceptance.md): retained branch history, local merge, compatibility fixes, validation and remaining research migration work.
+- [Bounded verification design](superpowers/specs/2026-10-02-bounded-verification-design.md), [implementation](superpowers/plans/2026-10-02-bounded-verification-implementation.md) and [acceptance](superpowers/plans/2026-10-02-bounded-verification-acceptance.md): C1 programmatic execution, predicate semantics, durable recovery and validation; production C2 migration remains separate.
+- [Native shared-kernel acceptance](superpowers/plans/2026-10-02-native-research-kernel-acceptance.md): C2 programmatic three-mode workflow, mandatory publication, Reader/Markdown, validation and pending public routing.
+- [Official body and operating-detail design](superpowers/specs/2026-10-03-disclosure-body-operating-detail-design.md), [implementation](superpowers/plans/2026-10-03-disclosure-body-operating-detail-implementation.md) and [acceptance](superpowers/plans/2026-10-03-disclosure-body-operating-detail-acceptance.md): bounded PDF admission, deterministic operating tables and scoped coverage labels; current behavior is in the native API operations page.
 - [Research data integrity design](archive/designs/2026-08-13-research-data-integrity-design.md): frozen design, implemented.
 - [Research data integrity plan](archive/plans/2026-08-13-research-data-integrity-plan.md): archived implementation plan, completed.
 - [Wind A-share integration plan](archive/plans/2026-08-12-wind-a-share-integration-plan.md): archived research and implementation plan for the Wind integration.

@@ -17,12 +17,22 @@ single A-share request before falling back to tushare.  Two mitigations:
 
 tushare/akshare remain as fallbacks for when every TDX server is unreachable.
 
+**Quote commands and finance commands must be validated separately** (a-stock-data
+#52, upstream v3.9.0).  The 2026-09 TDX outage killed only the quote commands
+(``bars`` / ``quotes`` / ``transaction``); ``finance`` and the F10 「最新提示」
+category still answered.  Validating a finance/F10 client with a *bar* fetch
+therefore reports "every server is dead" for capabilities that are in fact
+healthy, so :func:`tdx_client` takes ``check='bars'|'finance'`` and the breaker
+and client cache are keyed by it -- otherwise a dead-quote sweep would suppress
+finance/F10 for the whole cooldown.  See a-stock-data SKILL.md §1.7 + v3.9.0
+CHANGELOG (issue #52).
+
 The mootdx 0.11.x library carries a BESTIP bug where a fresh install leaves
 ``BESTIP.HQ`` misconfigured and ``Quotes.factory`` cannot unpack it.
-``tdx_client()`` below probes a server list with a *real one-bar fetch*
+``tdx_client()`` below probes a server list with a *real fetch*
 (not just a TCP handshake, which is a false positive -- broken servers
 handshake then return an empty body) and reuses the first server that
-actually returns data.  See a-stock-data SKILL.md §1.1 + V3.7.1.
+actually returns data.
 """
 
 from __future__ import annotations
@@ -60,8 +70,18 @@ _TDX_SERVERS: list[tuple[str, int]] = [
 _BAR_PAGE_SIZE = 800
 _BAR_MAX_PAGES = 4  # 4 * 800 = 3200 daily bars ≈ 12.8 years
 
-# Module-level cache: reusing a validated client avoids re-probing on every call.
-_tdx_client_cache: Any = None
+# Validation classes for :func:`tdx_client`.  ``bars`` covers the quote
+# commands (K-line / order book / ticks); ``finance`` covers the quarterly
+# snapshot and F10.  a-stock-data #52: after the 2026-09 TDX change the two
+# classes answer independently, so one probe cannot stand in for the other.
+_TDX_CHECK_BARS = "bars"
+_TDX_CHECK_FINANCE = "finance"
+_TDX_CHECKS = (_TDX_CHECK_BARS, _TDX_CHECK_FINANCE)
+
+# Module-level cache, keyed by validation class: reusing a validated client
+# avoids re-probing on every call, and keeps a bar-validated client from being
+# handed to a finance caller (or the reverse).
+_tdx_client_cache: dict[str, Any] = {}
 
 # --- T-D1 fast circuit breaker -------------------------------------------------
 #
@@ -69,60 +89,102 @@ _tdx_client_cache: Any = None
 # binary protocol *silently* dead on this network: 3 of 8 servers complete the
 # TCP handshake and `Quotes.factory()` returns a real `StdQuotes`, but every
 # data call yields an empty DataFrame with no columns.  Because
-# ``_validate_bar_fetch`` rejects those servers one by one, a single request
+# ``_validate_tdx_client`` rejects those servers one by one, a single request
 # paid 25-28s before the router ever reached tushare -- and it paid it again
 # on the *next* request, because nothing remembered the outcome.
 #
-# The breaker below records "no server served bars" and refuses to re-probe
-# until the cooldown expires, turning a ~26s per-request tax into ~0s.  It is
-# deliberately local to this module: the shared VendorHealthRegistry keys on
-# (vendor, market, capability), and mootdx's finance/F10 capabilities go
-# through the same `tdx_client()`.  Suppressing only the daily-bar probe keeps
-# those capabilities independently re-probeable if the server list recovers.
+# The breaker below records "no server served this validation class" and
+# refuses to re-probe until the cooldown expires, turning a ~26s per-request
+# tax into ~0s.  It is keyed by ``check`` because the classes fail
+# independently: with quote commands dead but finance/F10 alive (#52), a shared
+# breaker would report finance as unavailable for the whole cooldown and never
+# let it recover.
 _TDX_BREAKER_COOLDOWN_SECONDS = 300.0
-_tdx_probe_failure_until: float = 0.0
+_tdx_probe_failure_until: dict[str, float] = {}
 _tdx_probe_failure_count: int = 0
 
 
-def _validate_bar_fetch(client: Any, symbol: str = "000001") -> bool:
-    """Return True only if the client actually returns bar rows.
+def _validate_tdx_client(client: Any, market: str = "std", check: str = _TDX_CHECK_BARS) -> bool:
+    """Return True only if the client actually serves the requested class.
 
     A TCP handshake alone is a false positive: some servers accept the
-    connection then return an empty body.  We require one real daily bar.
+    connection then return an empty body, so every candidate must answer a real
+    request.
+
+    ``check='bars'`` requires one real daily bar.  ``check='finance'`` requires
+    the F10 category list to contain 「最新提示」, that category's body to be
+    non-empty, *and* a finance frame -- checking only the category list would
+    accept a server that returns other categories or a malformed object, and
+    checking only the finance frame would accept a server whose F10 is empty.
+
+    The probe sample ``000001`` is an A-share code, so it is meaningful only for
+    ``market='std'``; for any other market (e.g. the extended-quote market) the
+    sample is guaranteed to miss and every healthy server would be rejected.
     """
+    if market != "std":
+        return True
     try:
-        klines = client.bars(symbol=symbol, frequency=9, offset=1)
-        return klines is not None and not klines.empty
+        if check == _TDX_CHECK_FINANCE:
+            categories = client.F10C(symbol="000001")
+            if not any(
+                isinstance(item, dict) and item.get("name") == "最新提示"
+                for item in (categories or [])
+            ):
+                return False
+            text = client.F10(symbol="000001", name="最新提示")
+            if not isinstance(text, str) or not text.strip():
+                return False
+            frame = client.finance(symbol="000001")
+        else:
+            frame = client.bars(symbol="000001", frequency=9, offset=1)
+        return frame is not None and not frame.empty
     except Exception:
         return False
 
 
-def tdx_client(market: str = "std") -> Any:
+def tdx_client(market: str = "std", check: str = _TDX_CHECK_BARS) -> Any:
     """Create a validated mootdx client, bypassing the 0.11.x BESTIP bug.
 
-    Probes each candidate server with a real one-bar fetch; the first that
-    returns data wins and is cached for reuse.  Raises
-    :class:`ChinaDataUnavailableError` when no server serves bars (common
-    overseas -- TCP 7709 is typically blocked), so the router falls back to
-    tushare/akshare.
+    ``check`` selects the validation class: ``'bars'`` for the quote commands
+    (K-line / order book / ticks) and ``'finance'`` for the quarterly snapshot
+    and F10.  The two are probed separately on purpose -- see the module
+    docstring (a-stock-data #52).
+
+    Probes each candidate server with a real fetch; the first that returns data
+    wins and is cached for reuse *per validation class*.  Falls back to mootdx's
+    own ``bestip`` speed test and then a bare factory, because the hardcoded
+    server list goes stale.  Raises :class:`ChinaDataUnavailableError` when no
+    server serves the requested class (common overseas -- TCP 7709 is typically
+    blocked), so the router falls back to tushare/akshare.
 
     When every candidate has failed, an in-process circuit breaker short-circuits
-    subsequent calls for :data:`_TDX_BREAKER_COOLDOWN_SECONDS` instead of paying
-    the full server sweep again.  Without it a dead TDX network costs ~26s on
-    *every* A-share request, not just the first one.
+    subsequent calls of the *same* class for
+    :data:`_TDX_BREAKER_COOLDOWN_SECONDS` instead of paying the full server sweep
+    again.  Without it a dead TDX network costs ~26s on *every* A-share request,
+    not just the first one.
     """
-    global _tdx_client_cache
-    if _tdx_client_cache is not None:
-        return _tdx_client_cache
+    if check not in _TDX_CHECKS:
+        raise ValueError(f"check must be one of {_TDX_CHECKS!r}, got {check!r}")
 
-    if _tdx_breaker_open():
+    cached = _tdx_client_cache.get(check)
+    if cached is not None:
+        return cached
+
+    if _tdx_breaker_open(check):
         raise ChinaDataUnavailableError(
-            f"mootdx/TDX server probe failed {_tdx_probe_failure_count} time(s); "
+            f"mootdx/TDX {check} probe failed {_tdx_probe_failure_count} time(s); "
             f"circuit breaker open for another "
-            f"{_tdx_breaker_remaining():.0f}s. tushare/akshare fallback applies."
+            f"{_tdx_breaker_remaining(check):.0f}s. tushare/akshare fallback applies."
         )
 
     from mootdx.quotes import Quotes  # optional dependency, lazy import
+
+    def _adopt(client: Any) -> bool:
+        if not _validate_tdx_client(client, market, check):
+            return False
+        _tdx_client_cache[check] = client
+        _close_tdx_breaker(check)
+        return True
 
     for ip, port in _TDX_SERVERS:
         try:
@@ -135,50 +197,73 @@ def tdx_client(market: str = "std") -> Any:
         except Exception as exc:
             logger.debug("mootdx factory failed for %s: %s", ip, exc)
             continue
-        if _validate_bar_fetch(client):
-            _tdx_client_cache = client
-            _close_tdx_breaker()
-            logger.debug("mootdx validated server: %s:%s", ip, port)
+        if _adopt(client):
+            logger.debug("mootdx %s validated server: %s:%s", check, ip, port)
             return client
-    _open_tdx_breaker()
-    raise ChinaDataUnavailableError(
-        "No mootdx/TDX server returned bar data. The TCP 7709 protocol may be "
+
+    # The hardcoded list goes stale (servers are retired without notice), so
+    # fall back to mootdx's own speed test and then to whatever BESTIP the local
+    # config already holds.  Both stages are still validated with a real fetch.
+    for kwargs in ({"bestip": True}, {}):
+        try:
+            client = Quotes.factory(market=market, **kwargs)
+        except Exception as exc:
+            logger.debug("mootdx fallback factory %s failed: %s", kwargs, exc)
+            continue
+        if _adopt(client):
+            logger.debug("mootdx %s validated via fallback %s", check, kwargs or "bare factory")
+            return client
+
+    _open_tdx_breaker(check)
+    message = (
+        f"No mootdx/TDX server returned {check} data. The TCP 7709 protocol may be "
         "unreachable from this network (common overseas); tushare/akshare fallback applies."
     )
+    if check == _TDX_CHECK_BARS:
+        message += (
+            " If this network is domestic, note that TDX public servers stopped"
+            " answering the quote commands (bars/quotes/transaction) in 2026-09"
+            " (a-stock-data #52); finance and F10 still work through"
+            " tdx_client(check='finance'), so quote callers should prefer the"
+            " tushare or Tencent K-line sources."
+        )
+    raise ChinaDataUnavailableError(message)
 
 
-def _tdx_breaker_open() -> bool:
+def _tdx_breaker_open(check: str = _TDX_CHECK_BARS) -> bool:
     """True while a prior full-server sweep failed and its cooldown is live."""
-    return time.monotonic() < _tdx_probe_failure_until
+    return time.monotonic() < _tdx_probe_failure_until.get(check, 0.0)
 
 
-def _tdx_breaker_remaining() -> float:
-    return max(0.0, _tdx_probe_failure_until - time.monotonic())
+def _tdx_breaker_remaining(check: str = _TDX_CHECK_BARS) -> float:
+    return max(0.0, _tdx_probe_failure_until.get(check, 0.0) - time.monotonic())
 
 
-def _open_tdx_breaker() -> None:
-    global _tdx_probe_failure_until, _tdx_probe_failure_count
+def _open_tdx_breaker(check: str = _TDX_CHECK_BARS) -> None:
+    global _tdx_probe_failure_count
     _tdx_probe_failure_count += 1
-    _tdx_probe_failure_until = time.monotonic() + _TDX_BREAKER_COOLDOWN_SECONDS
+    _tdx_probe_failure_until[check] = time.monotonic() + _TDX_BREAKER_COOLDOWN_SECONDS
     logger.warning(
-        "mootdx/TDX: no server returned bar data (attempt %d); circuit breaker "
+        "mootdx/TDX: no server returned %s data (attempt %d); circuit breaker "
         "open for %.0fs so later requests skip the ~26s server sweep.",
+        check,
         _tdx_probe_failure_count,
         _TDX_BREAKER_COOLDOWN_SECONDS,
     )
 
 
-def _close_tdx_breaker() -> None:
-    global _tdx_probe_failure_until, _tdx_probe_failure_count
-    _tdx_probe_failure_until = 0.0
-    _tdx_probe_failure_count = 0
+def _close_tdx_breaker(check: str = _TDX_CHECK_BARS) -> None:
+    global _tdx_probe_failure_count
+    _tdx_probe_failure_until.pop(check, None)
+    if not _tdx_probe_failure_until:
+        _tdx_probe_failure_count = 0
 
 
 def _reset_tdx_client_cache() -> None:
-    """Clear the cached client (test hook for swapping servers between cases)."""
-    global _tdx_client_cache
-    _tdx_client_cache = None
-    _close_tdx_breaker()
+    """Clear the cached clients and breakers (test hook for swapping servers)."""
+    _tdx_client_cache.clear()
+    _tdx_probe_failure_until.clear()
+    _close_tdx_breaker(_TDX_CHECK_BARS)
 
 
 def _a_share_code(ticker: str) -> str:
@@ -189,9 +274,14 @@ def _a_share_code(ticker: str) -> str:
 
 
 def get_fundamentals_mootdx(ticker: str, curr_date: str | None = None) -> str:
-    """Return mootdx's 37-field quarterly A-share financial snapshot."""
+    """Return mootdx's 37-field quarterly A-share financial snapshot.
+
+    Validated with ``check='finance'``: since 2026-09 the TDX quote commands are
+    dead while ``finance`` still answers, so a bar-based probe would report this
+    capability unavailable (a-stock-data #52).
+    """
     code = _a_share_code(ticker)
-    client = tdx_client()
+    client = tdx_client(check=_TDX_CHECK_FINANCE)
     try:
         raw = client.finance(symbol=code)
     except Exception as exc:
@@ -214,17 +304,60 @@ def get_fundamentals_mootdx(ticker: str, curr_date: str | None = None) -> str:
     ])
 
 
+def _available_f10_categories(client: Any) -> list[str] | None:
+    """The categories this server actually serves, or None if it will not say.
+
+    a-stock-data v3.9.0 §6.2: the F10 category set shrank server-side (2026-09
+    leaves only 「最新提示」), so requesting a category that no longer exists
+    cannot be told apart from "this company has nothing to report" by the reply
+    alone.  The category list is advisory: a server that refuses to answer the
+    ``F10C`` probe must not turn a working F10 call into a failure.
+    """
+    try:
+        listing = client.F10C(symbol="000001")
+    except Exception:
+        return None
+    if not isinstance(listing, (list, tuple)):
+        return None
+    names = [item.get("name") for item in listing if isinstance(item, dict)]
+    return [name for name in names if isinstance(name, str) and name]
+
+
 def get_a_share_f10(ticker: str, category: str = "最新提示") -> str:
-    """Return a bounded mootdx F10 company-information section."""
+    """Return a bounded mootdx F10 company-information section.
+
+    Validated with ``check='finance'`` for the same reason as
+    :func:`get_fundamentals_mootdx` (a-stock-data #52).  Since 2026-09 TDX only
+    serves the 「最新提示」 category, so an unavailable category is reported as
+    such instead of returning an empty section that reads like "nothing to
+    report".  A non-string reply is a schema change, never text to render.
+    """
     allowed = {"最新提示", "公司概况", "财务分析", "股东研究", "股本结构", "资本运作", "业内点评", "行业分析", "公司大事"}
     if category not in allowed:
         raise ValueError(f"unsupported F10 category: {category}")
     code = _a_share_code(ticker)
-    client = tdx_client()
+    client = tdx_client(check=_TDX_CHECK_FINANCE)
+
+    served = _available_f10_categories(client)
+    if served is not None and category not in served:
+        raise ChinaDataUnavailableError(
+            f"mootdx F10 no longer serves {category!r} for {code}; the server "
+            f"currently offers {served}. Since 2026-09 the public TDX servers "
+            "answer only 「最新提示」."
+        )
+
     try:
-        text = str(client.F10(symbol=code, name=category) or "").strip()
+        raw = client.F10(symbol=code, name=category)
     except Exception as exc:
         raise ChinaDataUnavailableError(f"mootdx F10 failed for {code}: {type(exc).__name__}") from exc
+    if raw is not None and not isinstance(raw, str):
+        # mootdx returns a dict when the category does not exist; stringifying it
+        # would render a Python repr as if it were company disclosure.
+        raise ChinaDataUnavailableError(
+            f"mootdx F10 returned {type(raw).__name__} instead of text for {code}/{category}; "
+            "the category is probably gone."
+        )
+    text = (raw or "").strip()
     if not text:
         raise ChinaDataUnavailableError(f"mootdx returned no F10 text for {code}/{category}.")
     from tradingagents.observability.provenance import capture_vendor_raw

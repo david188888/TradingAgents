@@ -6,7 +6,7 @@
 
 ## 概览
 
-Wind AIFin Market 通过官方 `wind-mcp-skill` CLI（固定版本 `2.0.1`）接入。生产数据只来自固定的 7 个 MCP server 中的 `stock_data`、`index_data`、`economic_data` 三个族，并遵守以下设计规则：
+Wind AIFin Market 通过官方 `wind-mcp-skill` CLI（固定版本 `2.0.4`）接入。生产数据只来自固定的 7 个 MCP server 中的 `stock_data`、`index_data`、`economic_data` 三个族，并遵守以下设计规则：
 
 - 一次只有一个 Wind 请求在途（Wind 默认串行；bundle 级并行不得传导到 Wind）。
 - `null` / `INVALID` 表示缺失，永远不当作 0。
@@ -17,13 +17,13 @@ Wind AIFin Market 通过官方 `wind-mcp-skill` CLI（固定版本 `2.0.1`）接
 
 | 规范化能力 | Wind 工具 | 说明 |
 |---|---|---|
-| 复权行情 | `stock_data.get_stock_kline` | A 股日线、前复权（`period=1d`、`aftype=0`、`issusp=0`），显式记录 `price_basis=qfq`、实际日期窗口与 provenance |
-| 指数快照 | `index_data.get_index_quote` | 注册表内指数的最新快照 |
+| 复权行情 | `stock_data.get_stock_kline` | A 股日线、前复权（`period=1d`、`aftype=0`、`afdate=研究截止日期`、`issusp=0`），记录复权锚点、`price_basis=qfq`、实际窗口与 provenance；锚点不证明历史因子 vintage |
+| 指数快照 | `index_data.get_index_price_indicators` | 注册表内指数的最新快照 |
 | 指数历史 | `index_data.get_index_kline` | 注册表内指数日线历史 |
 | 指数档案 | `index_data.get_index_basicinfo` | 指数基本信息 |
 | 指数基本面/估值 | `index_data.get_index_fundamentals` | PE/PB/股息率等估值字段 |
-| 宏观/行业 EDB 搜索 | `economic_data.natural_language_get_edb_data`（search） | 自然语言搜索返回候选指标（code/name/freq/unit） |
-| EDB 时序取数 | `economic_data.natural_language_get_edb_data`（fetch） | 用审核后的 EDB code 拉取时序 |
+| 宏观/行业 EDB 搜索 | `economic_data.search_economic_indicator` | `question` 自然语言搜索返回候选指标（code/name/freq/unit） |
+| EDB 时序取数 | `economic_data.query_economic_indicator_data` | `question` 为 EDB code，`beginDate/endDate` 限定窗口；不传旧 `executionMode` |
 | 股票风险指标 | `stock_data.get_risk_metrics` | Beta、年化波动率、最大回撤、夏普比率等 |
 
 ### 指数注册表
@@ -44,7 +44,7 @@ Wind AIFin Market 通过官方 `wind-mcp-skill` CLI（固定版本 `2.0.1`）接
 | `wind_max_concurrency` | `1` | Wind 并发上限（保持串行） |
 | `wind_request_timeout_seconds` | `120` | 请求硬超时 |
 | `wind_strict_edb_allowlist` | `false` | 是否强制 EDB allowlist |
-| `wind_pinned_skill_version` | `2.0.1` | 固定 skill 版本 |
+| `wind_pinned_skill_version` | `2.0.4` | 固定 skill 版本 |
 | `WIND_API_KEY` | — | 认证密钥（通过环境变量注入） |
 | `WIND_CLI_PATH` | `~/.claude/skills/wind-mcp-skill/scripts/cli.mjs` | CLI 路径（解析符号链接） |
 
@@ -73,6 +73,7 @@ A 股补充能力（资金流、两融、公告、大宗、龙虎榜、涨停梯
 - `NO_RESULTS`：只允许受控缩窄/改写，不解释为“事件不存在”。
 - `MARKET_TARGET_NOT_FOUND`：要求准确名称或 Wind code，不猜后缀。
 - 带数据的 warning 保留数据并标记 `partial`。
+- 支持当前 CLI 的平铺 `{ok:false,code,message}` 错误及旧嵌套 error；EDB 支持当前 `metrics` 载荷和旧保存响应。
 - CLI 未安装、未配置 key、`wind_enabled=false` 时，Wind 相关能力返回类型化不可用（`VendorNotConfiguredError` / 对应降级），不影响其他 A 股主路径。
 
 ## 代码入口
