@@ -81,6 +81,7 @@ These are execution proposals, not descriptions of current runtime behavior.
 - [Upstream v0.5 correctness batch plan](archive/plans/2026-09-18-upstream-v0.5-correctness-batch.md): archived implementation plan, completed and released in v2.10.0.
 - [Upstream v0.5 prompt/evidence batch plan](archive/plans/2026-09-19-upstream-v0.5-prompt-evidence-batch.md): archived implementation plan, completed and released in v2.10.0.
 - [First-principles review](archive/reviews/2026-08-13-tradingagents-first-principles-review.md): historical audit snapshot, not a current-state contract.
+- [Upstream v0.6.0 review](archive/reviews/2026-10-04-upstream-v060-review.md): historical A-share selective-adoption review; later DeepSeek implementation points to the current reasoning guide.
 
 Every archived document carries a `Status:` field and a pointer back to this index.
 
