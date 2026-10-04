@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import math
 import time
-from dataclasses import asdict, dataclass
+from copy import deepcopy
+from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
 
 import requests
@@ -28,6 +29,7 @@ from tradingagents.execution.models import (
 from tradingagents.execution.native_model import NativeModelCaller
 from tradingagents.execution.native_publication import publish_native_record
 from tradingagents.graph.native_research import load_native_seed, run_native_research
+from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.observability.events import RunEventDraft
 from tradingagents.observability.roles import NATIVE_ROLE_REGISTRY, role_instance_id
 from tradingagents.research.native_record import build_native_record
@@ -140,6 +142,8 @@ class NativeRunner:
     ):
         if request.research_profile != "evidence_v1" or request.evidence_policy is None:
             raise ValueError("unsupported native request")
+        request = replace(request, effective_config=deepcopy(dict(request.effective_config)))
+        task_effort_overrides(request.effective_config)
         timeout = float(request.effective_config.get("evidence_timeout_seconds", 300))
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("native timeout must be positive")

@@ -11,6 +11,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from .task_effort import resolve_task_effort, task_effort_overrides
+
 
 def _coerce_max_retries(value):
     """Validate an ``llm_max_retries`` value to a non-negative int.
@@ -30,9 +32,10 @@ def _coerce_max_retries(value):
     return n
 
 
-def provider_llm_kwargs(config: Mapping[str, Any]) -> dict[str, Any]:
+def provider_llm_kwargs(config: Mapping[str, Any], *, task: str | None = None) -> dict[str, Any]:
     """Get provider-specific kwargs for LLM client creation."""
     kwargs = {}
+    task_effort_overrides(config)
     provider = config.get("llm_provider", "").lower()
 
     if provider == "google":
@@ -51,14 +54,15 @@ def provider_llm_kwargs(config: Mapping[str, Any]) -> dict[str, Any]:
             kwargs["effort"] = effort
 
     elif provider == "deepseek":
-        # DeepSeek V4 thinking mode toggle ("enabled"/"disabled").
+        # Send both modes explicitly: omission enables thinking at the API.
         thinking = config.get("deepseek_thinking")
-        if thinking and str(thinking).strip().lower() == "enabled":
-            kwargs["thinking"] = {"type": "enabled"}
-        # reasoning_effort is honored by the API in thinking mode;
-        # it is ignored (harmlessly) in non-thinking mode.
-        effort = config.get("deepseek_reasoning_effort")
-        if effort:
+        thinking_mode = str(thinking).strip().lower() if thinking else None
+        if thinking_mode in {"enabled", "disabled"}:
+            kwargs["thinking"] = {"type": thinking_mode}
+        # A non-none effort enables thinking at the API. Do not override an
+        # explicit disabled mode with the retained default effort.
+        effort = resolve_task_effort(config, task)
+        if effort and thinking_mode != "disabled":
             kwargs["reasoning_effort"] = str(effort).strip().lower()
 
     # Sampling temperature is cross-provider: forward it whenever set.

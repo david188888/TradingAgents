@@ -1,14 +1,14 @@
 """H1 - Localhost server for Playwright e2e with a deterministic fake runner.
 
-Started by ``frontend/playwright.config.ts`` webServer. Composes the real
+Used by ``scripts/catalyst_e2e_server.py`` for classic fixtures. Composes the real
 FastAPI app + SingleRunManager + RunStore with a fake runner that emits a
-deterministic 13-role event sequence, so the browser exercises the real
+historical 13-role event sequence, so the browser exercises the real
 SPA + SSE + artifact pipeline without a live LLM or data vendor.
 
-The fake runner also writes the typed public outputs (research / trader /
-risk / portfolio) the reader-first DecisionBrief consumes, and the debate
-summary LLM is replaced with a deterministic stub so L2 round cards and L3
-full-text lanes are exercised against fixed fixtures.
+The historical typed outputs support persisted-record compatibility checks;
+this fixture does not assert the current production role topology. The debate
+summary LLM is replaced with a deterministic stub. Browser checks cover the
+current Reader, history, cancellation and secret exclusion.
 """
 
 from __future__ import annotations

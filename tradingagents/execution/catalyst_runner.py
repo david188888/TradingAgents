@@ -7,7 +7,8 @@ import json
 import math
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time as calendar_time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -31,6 +32,7 @@ from tradingagents.graph.catalyst_workflow import (
 )
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
+from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.research.evidence_freeze import (
     ROLE_ORDER,
     FrozenEvidenceDraft,
@@ -82,6 +84,8 @@ def validate_catalyst_resume(store: Any, run_id: str, request: AnalysisRequest) 
 class ProductionModelCaller:
     def __init__(self, request, draft, context, journal, ensure_active, remaining):
         self.request, self.draft, self.context = request, draft, context
+        self.config = deepcopy(dict(request.effective_config))
+        task_effort_overrides(self.config)
         self.journal, self.ensure_active, self.remaining = journal, ensure_active, remaining
 
     def __call__(self, *, role: str, prompt: str) -> dict[str, Any]:
@@ -143,8 +147,8 @@ class ProductionModelCaller:
                 self.ensure_active()
         try:
             self.ensure_active()
-            config = self.request.effective_config
-            kwargs = provider_llm_kwargs(config)
+            config = self.config
+            kwargs = provider_llm_kwargs(config, task="catalyst." + role)
             kwargs.update(max_retries=0, timeout=max(0.01, self.remaining()))
             client = create_llm_client(
                 provider=config["llm_provider"],
@@ -203,6 +207,8 @@ class CatalystRunner:
             checkpoint_guard=None, publication_authorizer: Callable | None = None, **_kwargs) -> AnalysisResult:
         if request.research_profile != "catalyst_v1" or request.mode != "company_research" or request.asset_type != "stock":
             raise ValueError("unsupported catalyst request")
+        request = replace(request, effective_config=deepcopy(dict(request.effective_config)))
+        task_effort_overrides(request.effective_config)
         timeout = float(request.effective_config.get("catalyst_timeout_seconds", 300))
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("catalyst timeout must be positive")

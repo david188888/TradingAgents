@@ -49,7 +49,7 @@ def build_configured_selections(
     analysts = run.get("analysts") or ["market", "social", "news", "fundamentals"]
     canonical_ticker = normalize_ticker_symbol(ticker)
 
-    return {
+    selections = {
         "ticker": canonical_ticker,
         "asset_type": detect_asset_type(canonical_ticker).value,
         "analysis_date": analysis_date,
@@ -70,6 +70,9 @@ def build_configured_selections(
         "display_report": bool(run.get("display_report", False)),
         "data_vendors": config.get("data_vendors") or {},
     }
+    if "deepseek_task_efforts" in run:
+        selections["deepseek_task_efforts"] = run["deepseek_task_efforts"]
+    return selections
 
 
 def _analyst_from_value(value: str) -> AnalystType:

@@ -29,6 +29,13 @@ run context, creates state, invokes or streams LangGraph, handles cancellation
 and checkpoint coordination, then returns a result.
 Each analysis binds its effective dataflow configuration to the run's execution
 context, so concurrent Web runs route through their own configured providers.
+Optional DeepSeek effort overrides are keyed by actual call task in
+`llm_clients/task_effort.py`. Native/catalyst executors freeze configuration
+before source collection; classic roles with explicit overrides use separate
+clients, while news helpers bind immutable invocation settings. Task policies
+participate in saved effective configuration and resume identity. No additional
+model phases or default effort changes are introduced; see
+[reasoning configuration](docs/operations/llm-reasoning.md).
 
 The Web manager routes explicit `catalyst_v1` requests to
 `execution/catalyst_runner.py:CatalystRunner`. This neutral executor coordinates

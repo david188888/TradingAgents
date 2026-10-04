@@ -240,11 +240,10 @@ _OPENAI_REASONING_MODEL = re.compile(r"^(gpt-5|o[1-9])")
 def _supports_reasoning_effort(model: str, provider: str | None = None) -> bool:
     """Whether ``model`` accepts the ``reasoning_effort`` parameter.
 
-    Native OpenAI reasoning models accept it. DeepSeek V4 accepts
+    Native OpenAI reasoning models accept it. DeepSeek accepts
     ``reasoning_effort`` ([low, high, max], default high) as a top-level
-    parameter when thinking mode is enabled — it is ignored outside that
-    mode, but sending it is harmless (DeepSeek ignores unsupported
-    params rather than 400; probe 2026-08-15).
+    parameter. Non-none efforts enable thinking; the caller must omit it
+    when an explicit thinking-disabled setting is intended.
     """
     normalized = model.lower().strip()
     if bool(_OPENAI_REASONING_MODEL.match(normalized)):
@@ -348,8 +347,8 @@ class OpenAIClient(BaseLLMClient):
 
         # DeepSeek thinking mode is configurable via ``thinking`` kwarg
         # (dict like {"type": "enabled"} / {"type": "disabled"}); absent
-        # config falls back to this fork's default (thinking enabled with
-        # max effort, see DEFAULT_CONFIG). The non-thinking path is available
+        # config falls back to the API default (thinking enabled with
+        # high effort). The non-thinking path is available
         # via TRADINGAGENTS_DEEPSEEK_THINKING=disabled / CLI choice.
         deepseek_thinking = self.kwargs.get("thinking")
 
@@ -394,12 +393,11 @@ class OpenAIClient(BaseLLMClient):
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
 
-        # DeepSeek thinking mode ignores temperature/top_p (per the official
-        # Thinking Mode guide; they are accepted but have no effect). Drop them
-        # when thinking is enabled so users are not misled by silent no-ops.
-        thinking_enabled = bool(
-            deepseek_thinking and deepseek_thinking.get("type") != "disabled"
-        )
+        # DeepSeek ignores temperature in thinking mode, including when the
+        # toggle is omitted and the API's enabled default applies.
+        thinking_enabled = self.provider == "deepseek" and (
+            deepseek_thinking or {"type": "enabled"}
+        ).get("type") != "disabled"
 
         # Forward user-provided kwargs
         for key in _PASSTHROUGH_KWARGS:
@@ -409,12 +407,14 @@ class OpenAIClient(BaseLLMClient):
                 self.model, self.provider
             ):
                 continue
-            if key in ("temperature", "top_p") and thinking_enabled:
+            if key == "reasoning_effort" and self.provider == "deepseek" and not thinking_enabled:
+                continue
+            if key == "temperature" and thinking_enabled:
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
-        # DeepSeek: enable thinking by default (this fork's default is max-effort
-        # thinking; DeepSeekChatOpenAI handles the reasoning_content round-trip).
+        # DeepSeek: enable thinking by default with high effort.
+        # DeepSeekChatOpenAI handles the reasoning_content round-trip.
         # Opt out with thinking={"type": "disabled"} for the non-thinking path
         # (tool_choice + temperature supported).
         if self.provider == "deepseek":

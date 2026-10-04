@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
+from tradingagents.dataflows.config import config_scope
+from tradingagents.execution.config_identity import prepare_effective_config
 from tradingagents.observability.events import RunEventDraft
 from tradingagents.web.debate_summary import (
     DEBATE_SUMMARY_LOCATOR,
@@ -98,6 +102,60 @@ def test_reconstruct_pairs_rounds_from_committed_artifacts(tmp_path):
     assert research_sources[0]["bull"].startswith("data:")
     assert research_sources[1]["bear"].startswith("data:")
     assert set(risk_sources[0].keys()) == {"round_index", "aggressive", "neutral", "conservative"}
+
+
+@pytest.mark.parametrize("thinking", ["enabled", "disabled"])
+def test_summary_uses_frozen_effort_endpoint_and_same_client_for_correction(tmp_path, monkeypatch, thinking):
+    store = RunStore(tmp_path / "runs")
+    frozen = {"llm_provider": "deepseek", "backend_url": "https://api.mock.invalid:8443/v1",
+              "deepseek_thinking": thinking, "deepseek_reasoning_effort": "high", "llm_max_tokens": 128}
+    if thinking == "enabled":
+        frozen["deepseek_task_efforts"] = {"aux.debate_summary": "low"}
+    snapshot = _snapshot(run_id="run_20260805T090909000000Z_abcdef01").evolve(
+        metadata={"effective_config": prepare_effective_config(frozen)})
+    _seed_run(store, snapshot)
+    payloads, prompts = [], []
+
+    def invoke(prompt):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            raise ValueError("invalid structure")
+        return DebateSummaryArtifact(run_id="ignored", generated_at="ignored", model="ignored",
+                                     global_summary="经营分歧需核验")
+
+    def factory(**kwargs):
+        payloads.append(kwargs)
+        structured = SimpleNamespace(invoke=invoke)
+        return SimpleNamespace(get_llm=lambda: SimpleNamespace(with_structured_output=lambda schema: structured))
+
+    monkeypatch.setattr("tradingagents.llm_clients.create_llm_client", factory)
+    with config_scope({"llm_provider": "deepseek", "deepseek_reasoning_effort": "max",
+                       "deepseek_task_efforts": {"aux.debate_summary": "max"}}):
+        assert ensure_debate_summary(store, snapshot.run_id) is not None
+    assert len(payloads) == 1 and len(prompts) == 2
+    assert payloads[0]["base_url"] == "https://api.mock.invalid:8443/v1"
+    assert payloads[0]["max_tokens"] == 128
+    assert payloads[0]["thinking"] == {"type": thinking}
+    if thinking == "enabled":
+        assert payloads[0]["reasoning_effort"] == "low"
+    else:
+        assert "reasoning_effort" not in payloads[0]
+    assert payloads[0]["model"] == snapshot.quick_think_llm
+    assert ensure_debate_summary(store, snapshot.run_id) is not None
+    assert len(prompts) == 2
+
+
+@pytest.mark.parametrize("frozen", [None, {"deepseek_task_efforts": None},
+                                   {"deepseek_task_efforts": {"typo": "low"}},
+                                   {"backend_url": {"host": "api.mock.invalid"}}])
+def test_malformed_frozen_summary_settings_never_dispatch(tmp_path, monkeypatch, frozen):
+    store = RunStore(tmp_path / "runs")
+    snapshot = _snapshot(run_id="run_20260805T090909000000Z_abcdef02").evolve(
+        metadata={"effective_config": frozen})
+    _seed_run(store, snapshot)
+    monkeypatch.setattr("tradingagents.llm_clients.create_llm_client",
+                        lambda **kwargs: pytest.fail("malformed frozen config must not dispatch"))
+    assert ensure_debate_summary(store, snapshot.run_id) is None
 
 
 def test_ensure_summary_returns_none_for_non_completed_run(tmp_path):

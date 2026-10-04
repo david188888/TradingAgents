@@ -19,7 +19,7 @@ workbench. Repository-wide setup and generated-output rules live in
 
 When an API shape changes, update the backend's canonical model/adapter first,
 then `src/api/contracts.ts`, transport code, reducers/hooks, consuming
-components, and focused tests when the local-only test scaffolding is present.
+components, and focused tests when the tracked test scaffolding is present.
 Do not hide an incompatible API change with untyped casts or client-side key
 translation.
 
@@ -33,8 +33,8 @@ npm --prefix frontend run typecheck
 npm --prefix frontend run build
 ```
 
-The public fork does not track frontend test files/configuration or `e2e/`
-scaffolding. When those local paths are present, their optional checks are:
+Frontend test files/configuration and `e2e/` scaffolding are tracked. When
+those paths are present, run the applicable checks:
 
 ```bash
 npm --prefix frontend run test -- --run
@@ -47,5 +47,6 @@ the FastAPI package. Every `frontend/src/` change therefore requires that build
 and inclusion of the resulting static-asset changes in the same change.
 
 Use `npm --prefix frontend run dev` for local Vite development. The end-to-end
-configuration starts its own Vite server on `127.0.0.1:4173` unless it can
-reuse an existing local server.
+configuration starts the Python fixture server on `127.0.0.1:4173`, serving
+the built SPA and synthetic classic/catalyst runs. Build before running it;
+it can reuse an existing local server.

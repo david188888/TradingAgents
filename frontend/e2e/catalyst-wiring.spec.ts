@@ -40,7 +40,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800
     await page.reload();
     // Selection is intentionally in-memory in the existing workbench. Reopen
     // this exact persisted run from history rather than changing that contract.
-    await page.locator(`.history-item[data-run-id="${snapshot.run_id}"]`).click();
+    await page.locator(`.history-item[data-run-id="${snapshot.run_id}"]`).getByRole("button", { name: `打开 ${snapshot.ticker} 的研究记录`, exact: true }).click();
     await expect(brief).toBeVisible({ timeout: 20000 });
     await expect(page.getByRole("button", { name: "分析进行中", exact: true })).toHaveCount(0);
     const read = await page.request.get(`/api/runs/${snapshot.run_id}/catalyst`);

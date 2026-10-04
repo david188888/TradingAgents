@@ -21,10 +21,13 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from tradingagents.execution.config_identity import restore_endpoint_identity
+from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 from tradingagents.observability.events import PersistedEvent
 from tradingagents.web.run_models import RunSnapshot
 from tradingagents.web.store import RunStore
@@ -274,16 +277,33 @@ def _generate_llm_summary(
         return None
 
     prompt = _build_prompt(snapshot, research_rounds, risk_rounds, verdicts)
+    structured_llm = None
     try:
+        # Frozen run settings, never current process config. Older snapshots
+        # lack this mapping and retain their provider/model-only behavior.
+        kwargs = {}
+        if "effective_config" in snapshot.metadata:
+            stored = snapshot.metadata["effective_config"]
+            if not isinstance(stored, Mapping):
+                raise ValueError("debate summary has invalid frozen config")
+            config = {**stored, "llm_provider": snapshot.llm_provider}
+            kwargs = provider_llm_kwargs(config, task="aux.debate_summary")
+            endpoint = config.get("backend_url")
+            kwargs["base_url"] = restore_endpoint_identity(endpoint) if isinstance(endpoint, Mapping) else endpoint
+            if isinstance(endpoint, Mapping) and kwargs["base_url"] is None:
+                raise ValueError("debate summary has invalid frozen endpoint")
         client = create_llm_client(
             provider=snapshot.llm_provider,
             model=snapshot.quick_think_llm,
+            **kwargs,
         )
         llm = client.get_llm()
         structured_llm = llm.with_structured_output(DebateSummaryArtifact)
         result = structured_llm.invoke(prompt)
     except Exception as exc:  # noqa: BLE001 - summary must never change run outcome
         LOGGER.warning("debate summary generation failed for %s: %s", snapshot.run_id, exc)
+        if structured_llm is None:
+            return None
         try:
             correction = (
                 prompt

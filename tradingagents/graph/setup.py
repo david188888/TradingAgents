@@ -208,12 +208,19 @@ class GraphSetup:
         deep_thinking_llm: Any,
         tool_nodes: dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
+        *,
+        task_llms: Mapping[str, Any] | None = None,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
+        self.task_llms = dict(task_llms or {})
+
+    def _llm_for(self, role: str) -> Any:
+        fallback = self.deep_thinking_llm if role == "research_manager" else self.quick_thinking_llm
+        return self.task_llms.get(role, fallback)
 
     def setup_graph(
         self,
@@ -241,24 +248,24 @@ class GraphSetup:
         valuation_prefetch_node_id = "Valuation Evidence Prefetch"
 
         analyst_factories = {
-            "market": lambda: create_market_analyst(self.quick_thinking_llm),
-            "social": lambda: create_sentiment_analyst(self.quick_thinking_llm),
-            "news": lambda: create_news_analyst(self.quick_thinking_llm),
-            "fundamentals": lambda: create_fundamentals_analyst(self.quick_thinking_llm),
+            "market": lambda: create_market_analyst(self._llm_for("market")),
+            "social": lambda: create_sentiment_analyst(self._llm_for("social")),
+            "news": lambda: create_news_analyst(self._llm_for("news")),
+            "fundamentals": lambda: create_fundamentals_analyst(self._llm_for("fundamentals")),
         }
 
         # Create Evidence Steward gate node (fork-specific: evidence quality check)
         evidence_steward_node = create_evidence_steward()
 
         # Create researcher and manager nodes
-        bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
-        bear_researcher_node = create_bear_researcher(self.quick_thinking_llm)
+        bull_researcher_node = create_bull_researcher(self._llm_for("bull"))
+        bear_researcher_node = create_bear_researcher(self._llm_for("bear"))
         # The manager retains the Bull/Bear debate as its primary decision
         # surface, while deterministic report lenses carry each available
         # analyst's published evidence into the same hand-off.  This is not a
         # second model swarm or a model-selected tool path.
         research_manager_node = create_research_manager(
-            self.deep_thinking_llm,
+            self._llm_for("research_manager"),
             use_default_report_lenses=True,
         )
         portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
@@ -280,7 +287,7 @@ class GraphSetup:
         workflow = StateGraph(AgentState, context_schema=context_schema)
 
         def role_node(node_name: str, node: Any):
-            node = _compact_debate_node(node_name, node, self.quick_thinking_llm)
+            node = _compact_debate_node(node_name, node, self._llm_for("context_compaction"))
             node = _limit_tool_calls_node(
                 node,
                 int(get_config().get("max_tool_calls_per_turn", 8)),

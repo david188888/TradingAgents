@@ -91,6 +91,13 @@ tradingagents web --port 8765 --open  # 本地 Web 工作台
 
 Web 服务仅绑定到 `127.0.0.1`；运行时无需安装 Node.js。配置可来自 `TRADINGAGENTS_*` 环境变量、本地 JSON 文件或交互式提示。结果、缓存、记忆日志和新闻缓存路径留空时会使用内置默认值。完整选项见 [.env.example](.env.example) 和 [default_config.py](tradingagents/default_config.py)。本地运行记录和报告保存在 `~/.tradingagents/`；路径说明见[架构文档](ARCHITECTURE.md)。修改 `frontend/src/` 后，开发者应运行 `npm --prefix frontend run build`，并更新 `tradingagents/web/static/` 中的生成文件。
 
+官方 DeepSeek V4.1 Flash 的模型 ID `deepseek-flash` 可用于快速与深度两个
+模型入口；原有 `deepseek-v4-flash` 配置仍可使用。思考模式默认启用，effort
+保持 `high`。显式关闭思考时不会发送 effort，以免重新启用思考。
+可选 `deepseek_task_efforts` 支持按实际 Agent、阶段和辅助任务覆盖档位；
+未配置的任务继承全局设置。操作与恢复边界见
+[模型推理配置](docs/operations/llm-reasoning.md)。
+
 ## 更多文档
 
 - [文档索引](docs/README.md)与[当前架构](ARCHITECTURE.md)

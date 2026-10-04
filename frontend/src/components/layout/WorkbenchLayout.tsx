@@ -261,6 +261,14 @@ export function WorkbenchLayout(): JSX.Element {
     setAuditOpen(true);
   };
 
+  const openAuditFromActiveControl = (): void => {
+    const active = document.activeElement;
+    openAudit(
+      { section: "overview" },
+      active instanceof HTMLElement ? active : document.body,
+    );
+  };
+
   const handleRoleSelected = (actorId: string): void => {
     if (view.view?.terminal) {
       const active = document.activeElement;
@@ -367,7 +375,7 @@ export function WorkbenchLayout(): JSX.Element {
               status={selectedViewRun?.status ?? selectedState?.meta.status ?? "created"}
               state={selectedState}
               {...researchRecord}
-              onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+              onOpenAudit={openAuditFromActiveControl}
               onCancel={() => void handleCancelRun()}
               onRetry={() => void handleRetryRun()}
               onResume={() => void handleResumeRun()}
@@ -400,7 +408,7 @@ export function WorkbenchLayout(): JSX.Element {
                 onResume={handleResumeRun}
                 onViewProcess={() => setLegacyLayer("process")}
                 onNewRun={() => selectRun(null)}
-                onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+                onOpenAudit={openAuditFromActiveControl}
               />}
               {state.meta.research_profile !== "catalyst_v1" && <>
                 <WorkflowMap onRoleSelected={handleRoleSelected} />
@@ -426,9 +434,7 @@ export function WorkbenchLayout(): JSX.Element {
                 state={screenState}
                 asOf={catalyst.kase?.as_of ?? null}
                 onOpenEvidence={openEvidence}
-                onOpenAudit={() =>
-                  openAudit({ section: "overview" }, document.body)
-                }
+                onOpenAudit={openAuditFromActiveControl}
                 onNewResearch={() => selectRun(null)}
                 recordPanel={<ResearchRecordSection runId={run_id} {...researchRecord} />}
                 detailPane={
@@ -475,7 +481,7 @@ export function WorkbenchLayout(): JSX.Element {
                 rating={view.view.view.brief?.value?.research_rating ?? null}
                 layer={legacyLayer}
                 onLayerChange={setLegacyLayer}
-                onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+                onOpenAudit={openAuditFromActiveControl}
               /><ResearchRecordSection runId={run_id} {...researchRecord} /></>
             ) : (
               /* Terminal but neither completed nor failed (cancelled /
@@ -498,7 +504,7 @@ export function WorkbenchLayout(): JSX.Element {
                   onCancel={() => void handleCancelRun()}
                   onViewProcess={() => setLegacyLayer("process")}
                   onNewRun={() => selectRun(null)}
-                  onOpenAudit={() => openAudit({ section: "overview" }, document.body)}
+                  onOpenAudit={openAuditFromActiveControl}
                 />
               </>
             )

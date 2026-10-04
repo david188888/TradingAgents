@@ -10,6 +10,7 @@ from unittest import mock
 import pytest
 
 import cli.main as m
+from cli.config import build_configured_selections
 
 # Minimal selections dict shaped like get_user_selections()'s return value.
 SELECTIONS = {
@@ -23,6 +24,31 @@ SELECTIONS = {
     "anthropic_effort": None,
     "output_language": "English",
 }
+
+
+def test_local_json_efforts_reach_runtime_and_keep_copy(monkeypatch):
+    monkeypatch.setattr(m, "validate_provider_api_key", lambda provider: None)
+    local = {"llm": {"provider": "deepseek", "quick_think_llm": "deepseek-flash",
+                      "deep_think_llm": "deepseek-flash"},
+             "run": {"deepseek_thinking": "enabled", "deepseek_reasoning_effort": "max",
+                     "deepseek_task_efforts": {"aux.news_cluster": "low"}}}
+    selections = build_configured_selections(local, ticker="600519", analysis_date="2026-10-04")
+    config = m._build_run_config(selections, checkpoint=None)
+    assert config["deepseek_reasoning_effort"] == "max"
+    assert config["deepseek_thinking"] == "enabled"
+    assert config["deepseek_task_efforts"] == {"aux.news_cluster": "low"}
+    local["run"]["deepseek_task_efforts"]["aux.news_cluster"] = "max"
+    assert config["deepseek_task_efforts"] == {"aux.news_cluster": "low"}
+
+
+def test_cli_absent_settings_keep_defaults_but_null_task_policy_is_not_hidden(monkeypatch):
+    monkeypatch.setattr(m, "validate_provider_api_key", lambda provider: None)
+    config = m._build_run_config({**SELECTIONS, "deepseek_thinking": None,
+                                  "deepseek_reasoning_effort": None}, checkpoint=None)
+    assert config["deepseek_reasoning_effort"] == m.DEFAULT_CONFIG["deepseek_reasoning_effort"]
+    assert "deepseek_task_efforts" not in config
+    config = m._build_run_config({**SELECTIONS, "deepseek_task_efforts": None}, checkpoint=None)
+    assert config["deepseek_task_efforts"] is None
 
 
 def test_research_depth_sets_both_rounds_without_env(monkeypatch):
