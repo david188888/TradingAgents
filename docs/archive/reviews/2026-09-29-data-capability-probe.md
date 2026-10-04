@@ -1,5 +1,11 @@
 # 数据源能力实测记录（T04 / T16）
 
+Status: Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
 - **状态**：实测记录，非设计文档。全部结论来自本轮真实端点调用；未调用的一律标 `未验证`。
 - 执行 Agent：H（数据源探测）。代码基线：`ca90f27`（主 checkout `main`）。
 - 探测窗口：2026-09-29 10:40–11:35 CST（Asia/Shanghai）。探测当日为交易日，盘中 10:40–11:35。

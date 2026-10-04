@@ -9,7 +9,7 @@ See the [documentation index](../../README.md).
 本文保留离线验证阶段与后续真实链路验收的结果；发布状态以 GitHub PR 为准。
 当前配置行为见
 [运行说明](../../operations/llm-reasoning.md)，设计见
-[实施规格](../../superpowers/specs/2026-10-04-deepseek-task-effort-design.md)。
+[实施规格](../designs/2026-10-04-deepseek-task-effort-design.md)。
 
 ## 实现范围
 

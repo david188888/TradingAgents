@@ -4,7 +4,13 @@ Status: Archived Plan
 
 Do not use this document as evidence of current implementation behavior.
 
-已批准设计：[正文与经营披露](../specs/2026-10-03-disclosure-body-operating-detail-design.md)。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Archived Plan
+
+Do not use this document as evidence of current implementation behavior.
+
+已批准设计：[正文与经营披露](../designs/2026-10-03-disclosure-body-operating-detail-design.md)。
 
 1. 新增确定性 PDF 提取器，PDF/发行人/期间校验；最多 20 MiB、500 页。
    经营表支持披露的收入构成五列与收入/成本/毛利六列表，跨页继承表头，

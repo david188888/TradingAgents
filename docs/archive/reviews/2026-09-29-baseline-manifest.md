@@ -1,5 +1,11 @@
 # T01 基线 manifest
 
+Status: Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
 - **状态：基线快照，2026-09-29 采集。** 本文件只记录**实测到的**环境事实。凡未实测的一律标注 `unknown` 或「未验证」，不写「应该可用」。
 - 采集环境：agent A 的独立 worktree `.claude/worktrees/agent-a2d495cc50565c25e`。
 - 复现命令见每节「复现」。本文不含任何密钥值、token 或带凭据的 URL。
@@ -18,7 +24,7 @@
 | 提交 | 内容 |
 | --- | --- |
 | `a832ac3` / `bc70a35` | `.claude/settings.json`、`.codex/config.toml`、`.gitignore`、`CLAUDE.md`、`docs/README.md` |
-| `ca90f27` | 新增 `docs/superpowers/specs/*`（设计 + 布局草图）、`docs/superpowers/plans/2026-09-29-catalyst-research-task-plan.md` |
+| `ca90f27` | 新增 `docs/superpowers/specs/*`（设计 + 布局草图）、`docs/archive/plans/2026-09-29-catalyst-research-task-plan.md` |
 
 **结论：落后的 2 个提交不含任何 `tradingagents/`、`cli/`、`frontend/` 产品代码。** 产品代码基线与 `bc70a35` 一致，因此 T01–T06 的代码结论对 `main` 同样成立。**但本 worktree 不含 `docs/superpowers/`**，所以本 agent 的交付目录需自建（已建）。合回时不会产生 spec 目录冲突。
 

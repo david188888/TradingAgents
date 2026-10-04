@@ -1,10 +1,16 @@
 # 证据驱动研究：首批基础层验收记录
 
-Status: Historical — 2026-09-30 本地实施记录，未发布。
+Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 
-对应[实施计划 A 批](2026-09-30-evidence-driven-research-implementation.md)。用户已认可阅读样稿并确认 Wind、Tushare、a-stock-data 为现有来源。本记录只覆盖数据和确定性计算，不代表统一研究内核、正式 Reader 或判断质量已经验收。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical — 2026-09-30 本地实施记录，未发布。
+
+Do not use this document as evidence of current implementation behavior.
+
+对应[实施计划 A 批](../../superpowers/plans/2026-09-30-evidence-driven-research-implementation.md)。用户已认可阅读样稿并确认 Wind、Tushare、a-stock-data 为现有来源。本记录只覆盖数据和确定性计算，不代表统一研究内核、正式 Reader 或判断质量已经验收。
 
 ## 本地改动
 

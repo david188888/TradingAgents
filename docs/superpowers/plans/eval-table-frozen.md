@@ -1,5 +1,11 @@
 # T06 评估表（冻结）
 
+Status: Frozen Design
+
+Do not use this document as evidence of current implementation behavior.
+
+保留 classic/catalyst 对照的原规则、阈值与案例；这是评估协议，不是已完成结果，也不授权新增付费调用。当前进度与后续验收边界见[总实施计划](2026-09-30-evidence-driven-research-implementation.md)及[文档索引](../../README.md)。
+
 - **冻结日期：2026-09-29。冻结人：agent A（T01–T06）。**
 - **状态：已冻结。本文件在看到任何 classic/catalyst 对照结果之前写定。**
 - 消费方：G agent（T33–T39）、T34 真人阅读验收。

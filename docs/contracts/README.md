@@ -12,6 +12,7 @@ This page is a map, not a second schema. Python and TypeScript definitions remai
 | Agent-produced public research artifacts | [`tradingagents/agents/schemas/`](../../tradingagents/agents/schemas/) | Research Manager, [`research/case_assembly.py`](../../tradingagents/research/case_assembly.py), eligibility |
 | Research evidence and cross-run artifacts | [`research/case_assembly.py`](../../tradingagents/research/case_assembly.py), [`research/thesis_diff.py`](../../tradingagents/research/thesis_diff.py), [`research/research_package.py`](../../tradingagents/research/research_package.py) | Execution publisher, web Reader/package projection |
 | Research package and public hashing | [`research/research_package.py`](../../tradingagents/research/research_package.py), [`research/public_hash.py`](../../tradingagents/research/public_hash.py) | External Agent skill consumers, web Reader/package projection |
+| Shared research record and native assessment | [`agents/schemas/_research_record.py`](../../tradingagents/agents/schemas/_research_record.py), [`agents/schemas/_research_assessment.py`](../../tradingagents/agents/schemas/_research_assessment.py), [`research/native_record.py`](../../tradingagents/research/native_record.py), [`execution/native_publication.py`](../../tradingagents/execution/native_publication.py) | Native mandatory publication, classic/catalyst compatibility producers, `/reader/record`, same-record Reader/Markdown |
 | Runtime compatibility and replay contracts | [`tradingagents/runtime/`](../../tradingagents/runtime/) | Runner, observer, checkpoint and resume paths |
 | Web request and response models | [`tradingagents/web/schemas.py`](../../tradingagents/web/schemas.py), [`reader_models.py`](../../tradingagents/web/reader_models.py), [`audit_models.py`](../../tradingagents/web/audit_models.py), [`batch_models.py`](../../tradingagents/web/batch_models.py) | FastAPI routes (including `/api/batches`), projections, API clients |
 | Reader and Companion projection | [`tradingagents/web/reader_models.py`](../../tradingagents/web/reader_models.py), [`reader_projection.py`](../../tradingagents/web/reader_projection.py) | `/api/runs/{run_id}/reader` and `/reader/companion` |
@@ -22,11 +23,11 @@ The frontend facade mirrors the backend wire shape and documents intentional opa
 
 ## Compatibility Rules
 
-- Treat `AnalysisRequest` and web request normalization as the boundary between callers and shared execution. Preserve explicit `company_research` versus `holding_review` validation and legacy portfolio mapping rules.
+- Treat `AnalysisRequest` and web request normalization as the boundary between callers and shared execution. Preserve profile-specific modes, native-only `catalyst_research`, required holding context and legacy portfolio mapping rules.
 - Treat `ResearchCaseV2` and `ThesisDiffV1` as versioned public artifacts. Assembly must bind claims to current-run evidence and coverage; readers must not infer a new contract from Markdown reports.
 - Keep Reader responses discriminated by `kind`: `typed`, `legacy`, or `unavailable`. Legacy runs remain readable without being upgraded by inference.
 - Keep Companion and Audit Center bounded projections. They may expose safe summaries and metadata, but not prompts, raw provider payloads, locators, secrets, or internal debugging state.
-- Runtime policy and resume/fingerprint semantics are selected as a coherent versioned family. Production currently selects `horizon-policy-v2`; test-gated variants must not be described as production behavior.
+- Runtime policy and resume/fingerprint semantics are selected as a coherent versioned family. Classic uses `horizon-policy-v2`; explicit catalyst/native profiles use their separate evidence policies. Test-gated horizon variants must not be described as production behavior.
 
 ## Change Propagation
 

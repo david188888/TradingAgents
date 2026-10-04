@@ -5,7 +5,7 @@ unlike the EastMoney HTTP endpoints behind tushare/akshare, so it stays
 registered for A-share quotes, finance snapshots, and F10.
 
 **It is no longer the rank-1 daily-bar source.**  The 2026-09-29 live probe
-(docs/superpowers/operations/capability-probe-2026-09-29.md §4) recorded 13/13
+(docs/archive/reviews/2026-09-29-data-capability-probe.md §4) recorded 13/13
 failures: 3 of 8 servers complete the TCP handshake and ``Quotes.factory()``
 returns a real ``StdQuotes``, but every data call returns an empty DataFrame
 with no columns.  The old code therefore burned 25-28s probing servers on every

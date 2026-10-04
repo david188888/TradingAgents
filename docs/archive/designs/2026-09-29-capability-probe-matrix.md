@@ -1,6 +1,12 @@
 # T04 能力探测矩阵（标准定义）
 
-- **本文件只定义标准与判定规则，不含实测结果。** 实测由 H agent 执行，产出 `docs/superpowers/operations/capability-probe-2026-09-29.md`。
+Status: Frozen Design
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+- **本文件只定义标准与判定规则，不含实测结果。** 实测由 H agent 执行，产出 `docs/archive/reviews/2026-09-29-data-capability-probe.md`。
 - 依据：设计 §8.6「实施前端点探测清单」。
 - 候选能力清单来自 `tradingagents/dataflows/registry.py:334` 的 `VENDOR_METHODS`（实测 **61 个 method / 23 个 vendor**）。
 
@@ -122,7 +128,7 @@
 
 ## 6. H agent 交付判据
 
-`docs/superpowers/operations/capability-probe-2026-09-29.md` 通过条件：
+`docs/archive/reviews/2026-09-29-data-capability-probe.md` 通过条件：
 
 - [ ] 12 项能力 × 8 维度 = 96 格，每格有明确 `state`（含 `未验证`，不留空）
 - [ ] 每格含 §4 全部 12 个必填字段

@@ -4,6 +4,12 @@ Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
+
+Do not use this document as evidence of current implementation behavior.
+
 日期：2026-10-02。当前行为请从 [docs 索引](../../README.md)、[数据能力](../../operations/a-share-data-capabilities.md)、[共享记录契约](../../contracts/research-record.md)及代码查证。
 
 ## 合并与修改归属
@@ -48,4 +54,4 @@ PYTHON_DOTENV_DISABLED=1 python -m pytest -m 'not smoke' --deselect=tests/test_d
 
 ## 下一阶段
 
-research-only 与 classic 默认保持。当前已完成基础层与兼容共享记录、部分 Reader；**独立验证执行器、共用三模式研究内核、完整统一 Reader 和质量/成本对照仍未完成**。数据源合并不代表研究准确率提高。下一步继续 C 流程层，在冻结 V0 证据之后生成可反驳假设，针对关键挑战执行有界核查，并保存 V1/验证结果；随后完成 D/E。详见 [实施计划](2026-09-30-evidence-driven-research-implementation.md)。
+research-only 与 classic 默认保持。当前已完成基础层与兼容共享记录、部分 Reader；**独立验证执行器、共用三模式研究内核、完整统一 Reader 和质量/成本对照仍未完成**。数据源合并不代表研究准确率提高。下一步继续 C 流程层，在冻结 V0 证据之后生成可反驳假设，针对关键挑战执行有界核查，并保存 V1/验证结果；随后完成 D/E。详见 [实施计划](../../superpowers/plans/2026-09-30-evidence-driven-research-implementation.md)。

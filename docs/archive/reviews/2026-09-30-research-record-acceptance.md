@@ -1,10 +1,16 @@
 # 统一研究记录与 Reader 接入验收
 
-Status: Historical — 2026-09-30 本地实施记录，未发布。
+Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 
-对应[实施计划 B 与 D 的有限接入](2026-09-30-evidence-driven-research-implementation.md)。产品范围继续覆盖公司研究、催化研究和持仓复盘；research-only。当前行为见[机器契约说明](../../contracts/research-record.md)，本记录不代表完整流程迁移或判断准确率验收。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical — 2026-09-30 本地实施记录，未发布。
+
+Do not use this document as evidence of current implementation behavior.
+
+对应[实施计划 B 与 D 的有限接入](../../superpowers/plans/2026-09-30-evidence-driven-research-implementation.md)。产品范围继续覆盖公司研究、催化研究和持仓复盘；research-only。当前行为见[机器契约说明](../../contracts/research-record.md)，本记录不代表完整流程迁移或判断准确率验收。
 
 ## 已实施
 

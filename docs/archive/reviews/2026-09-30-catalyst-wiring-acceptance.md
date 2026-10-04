@@ -2,9 +2,15 @@
 
 Status: Historical
 
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
+
 日期：2026-09-30。这是实测记录，不是当前运行契约；当前行为见
 [操作说明](../../operations/catalyst-research.md)及 [ARCHITECTURE](../../../ARCHITECTURE.md)。
-范围以[批准设计](../specs/2026-09-30-catalyst-production-wiring-design.md)为准。
+范围以[批准设计](../designs/2026-09-30-catalyst-production-wiring-design.md)为准。
 
 ## 已落地路径
 

@@ -67,6 +67,13 @@ Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究�
 
 显式 Web API profile `evidence_v1` 通过原生内核覆盖 A 股公司研究、催化研究和持仓复盘：合格事实 → 隔离的经营／事件／市场专项 → 一次挑战 → 有界条件核查 → 单次分维度综合。设置 `TRADINGAGENTS_EVIDENCE_ENABLED=true` 可启用新建试用；此独立开关不改变 classic 默认，也不新增工作台选择器。Reader 与 Markdown 读取强制发布的同一 `research-record-v1`，优先展示判断、关键依据、主要风险、下一核查和量化背景。缺少估值资料或原持仓假设时保留对应限制；条件核查不能关闭经济挑战。运行完成与研究完整性／质量分开，本阶段未进行付费准确率对照。操作与恢复见[API 试用说明](docs/operations/evidence-research.md)和[统一研究记录](docs/contracts/research-record.md)。
 
+新建原生研究优先使用有界公开来源获取身份、财务表、交易日历和复权日行情，
+Tushare 作为备源。财务表分别降级并保留来源；截止时间、单位、已结算交易日
+覆盖和复权因子时点资格仍需通过校验。旧检查点恢复时保留原有来源链路。
+新建研究还可接纳有界官方 PDF 摘录与已披露经营明细，保存文档哈希、页码、
+单位和报告期；选中摘录不代表覆盖了全部公告正文。Reader 与报告区分专项
+视角下的未知项和全局来源覆盖。详见[正文接纳说明](docs/operations/evidence-research.md#official-document-admission)。
+
 ## 快速开始
 
 需要 Python 3.10 或更新版本。为所选 LLM 供应商配置 API Key，并按需配置数据或新闻服务；默认 LLM 供应商为 DeepSeek。请将凭据保存在被 Git 忽略的本地文件中。

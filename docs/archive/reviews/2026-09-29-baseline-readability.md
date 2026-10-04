@@ -1,5 +1,11 @@
 # T03 篇幅与重复测量（基线）
 
+Status: Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
 - **范围**：只读测量 `~/.tradingagents/web/runs/` 中**已存在**的 25 个 run（15 completed / 7 failed / 3 cancelled）。**本轮没有发起任何 LLM 调用或新研究运行。**
 - 字符计数遵循设计 §4.3 的规则：Unicode 字符；**排除**导航、字段标签、公司名与时间元数据。计数脚本见 §6。
 - **缺失的 token usage 一律记 `unknown`，绝不记 0**（见 §3）。

@@ -4,7 +4,13 @@ Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 
-日期：2026-10-02。本批承接[数据整合验收](2026-10-02-research-data-integration-acceptance.md)与已认可的[总体实施计划](2026-09-30-evidence-driven-research-implementation.md)。当前契约以[共享研究记录](../../contracts/research-record.md)和代码为准。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+日期：2026-10-02。本批承接[数据整合验收](2026-10-02-research-data-integration-acceptance.md)与已认可的[总体实施计划](../../superpowers/plans/2026-09-30-evidence-driven-research-implementation.md)。当前契约以[共享研究记录](../../contracts/research-record.md)和代码为准。
 
 ## 交付范围
 

@@ -1,11 +1,13 @@
 # 证据驱动研究与统一阅读体验：审查方案
 
-Status: Proposed — 用户已认可方案方向和修订后的阅读样稿，进入分批实施。
+Status: Proposed — 保留已认可的总目标与尚待质量、可读性及默认迁移验收的条件。
 
 Do not use this document as evidence of current implementation behavior.
 
 日期：2026-09-30。核对基线：main `b68fee8`。本文件是拟议方案，不是当前运行契约。
 配套[交互阅读样稿](../prototypes/2026-09-30-unified-research-reader.html)仅使用模拟材料，不能作为真实研究、接口或研究质量证明。
+
+本文正文保留 2026-09-30 的问题诊断与方案；其中的缺口描述不代表今天仍未实现。工程进度与待验收项见[总实施计划](../plans/2026-09-30-evidence-driven-research-implementation.md)，当前运行行为见[原生运行说明](../../operations/evidence-research.md)和[文档索引](../../README.md)。
 
 ## 1. 目标与已确认范围
 

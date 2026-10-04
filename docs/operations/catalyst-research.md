@@ -96,7 +96,7 @@ remain in the run's `reports/` directory in the local durable store.
 
 See [architecture](../../ARCHITECTURE.md) for ownership and default paths.
 Verification history and research-quality decisions belong in the
-[wiring acceptance record](../superpowers/plans/2026-09-30-catalyst-wiring-acceptance.md).
+[wiring acceptance record](../archive/reviews/2026-09-30-catalyst-wiring-acceptance.md).
 
 New case publication also emits an additive
 [shared research record](../contracts/research-record.md). The Reader presents

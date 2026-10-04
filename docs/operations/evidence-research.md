@@ -226,7 +226,7 @@ Reader, audit, SSE replay/reconnect and report reads make no model or provider
 calls. Markdown is stored in the run's `reports/complete_report.md` in the local
 durable store. This engineering integration has no paid quality comparison or
 real-world predictive-accuracy acceptance; default migration remains separate.
-The [002130 live smoke record](../superpowers/plans/2026-10-03-002130-live-smoke.md)
+The [002130 live smoke record](../archive/reviews/2026-10-03-002130-live-smoke.md)
 documents a real source/model trial, a cached replay and a provider-limited
 second run; it does not establish complete research or predictive accuracy.
 See [the shared record contract](../contracts/research-record.md) and

@@ -4,6 +4,12 @@ Status: Frozen Design
 
 Do not use this document as evidence of current implementation behavior.
 
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Frozen Design
+
+Do not use this document as evidence of current implementation behavior.
+
 日期：2026-10-03。用户已确认经营明细范围为「披露明细与原文证据」；
 用户已确认接入设计，独立设计审查通过。代码基点为 `8662cb8`，本文件不代表实现完成。
 
@@ -25,7 +31,7 @@ Do not use this document as evidence of current implementation behavior.
 
 依据：`native_sources.py`、`native_record.py`、`native_policy.py`、
 `native_research.py`、`ResearchRecordSection.tsx`，以及
-[最新整合验收](../plans/2026-10-03-native-multisource-acceptance.md)。
+[最新整合验收](../reviews/2026-10-03-native-multisource-acceptance.md)。
 
 1. CNINFO 查询保存 `PDF URL`，但原生来源只接入列表字段，正文没有被取得。
 2. 八期三表是独立合格来源，不等于产品/业务分部经营表。

@@ -4,7 +4,13 @@ Status: Frozen Design
 
 Do not use this document as evidence of current implementation behavior.
 
-这是已认可的[统一研究方案](2026-09-30-evidence-driven-research-and-reader-proposal.md) C 阶段的接口细化，不改变 research-only、classic 默认或额度。本批交付可直接调用并通过真实 durable journal 恢复的验证模块；不宣称完成整个 C 阶段或三模式生产图迁移。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Frozen Design
+
+Do not use this document as evidence of current implementation behavior.
+
+这是已认可的[统一研究方案](../../superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) C 阶段的接口细化，不改变 research-only、classic 默认或额度。本批交付可直接调用并通过真实 durable journal 恢复的验证模块；不宣称完成整个 C 阶段或三模式生产图迁移。
 
 ## 目标与接口
 
