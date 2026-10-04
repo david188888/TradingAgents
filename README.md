@@ -102,6 +102,14 @@ tradingagents web --port 8765 --open  # local workbench
 
 The web server binds to `127.0.0.1`; the bundled frontend needs no Node.js at runtime. Configuration comes from `TRADINGAGENTS_*` environment variables, the local JSON file, or interactive prompts. Blank results, cache, memory-log, and news-cache path settings use their built-in defaults. See [.env.example](.env.example) and [default_config.py](tradingagents/default_config.py). Local runs and reports live under `~/.tradingagents/`; see [the architecture map](ARCHITECTURE.md) for paths. Developers changing `frontend/src/` should rebuild `tradingagents/web/static/` with `npm --prefix frontend run build`.
 
+For official DeepSeek V4.1 Flash, `deepseek-flash` is supported in both model
+tiers; existing `deepseek-v4-flash` configurations remain accepted. Thinking
+defaults to enabled with effort `high`. An explicit disabled setting omits the
+effort so it cannot re-enable thinking. Optional `deepseek_task_efforts` can
+override individual agents, native/legacy stages and auxiliary tasks; unlisted
+tasks retain the global setting. Defaults remain `high`; see
+[model reasoning configuration](docs/operations/llm-reasoning.md).
+
 ## More documentation
 
 - [Documentation index](docs/README.md) and [current architecture](ARCHITECTURE.md)

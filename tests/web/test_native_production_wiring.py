@@ -134,6 +134,25 @@ def request(mode="company_research"):
     )
 
 
+def test_native_saved_effort_policy_roundtrips_and_changed_policy_refuses_resume(runtime):
+    manager, caller = runtime
+    config = {**request().effective_config, "llm_provider": "deepseek",
+              "deepseek_reasoning_effort": "high",
+              "deepseek_task_efforts": {"native.market_context": "low", "native.synthesis": "high"}}
+    req = replace(request(), effective_config=config)
+    started = manager.start(req)
+    snapshot = manager.wait(started.run_id, timeout=10)
+    assert snapshot.status == "completed", snapshot.error_message
+    saved = _request_from_snapshot(snapshot)
+    assert saved.effective_config["deepseek_task_efforts"] == config["deepseek_task_efforts"]
+    validate_native_resume(manager.store, snapshot.run_id, saved)
+    changed_config = copy.deepcopy(saved.effective_config)
+    changed_config["deepseek_task_efforts"]["native.market_context"] = "high"
+    with pytest.raises(CatalystCheckpointConflict, match="incompatible"):
+        validate_native_resume(manager.store, snapshot.run_id, replace(saved, effective_config=changed_config))
+    assert _request_from_snapshot(manager.store.read_snapshot(snapshot.run_id)).effective_config["deepseek_task_efforts"] == config["deepseek_task_efforts"]
+
+
 @pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])
 def test_actual_http_manager_record_report_and_retry(runtime, mode):
     manager, caller = runtime

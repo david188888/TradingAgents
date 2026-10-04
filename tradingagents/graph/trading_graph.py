@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,7 @@ from tradingagents.execution.models import (
 from tradingagents.execution.runner import AnalysisRunner
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
+from tradingagents.llm_clients.task_effort import CLASSIC_ROLE_TASKS, task_effort_overrides
 from tradingagents.reporting import write_report_tree
 
 from .conditional_logic import ConditionalLogic
@@ -73,7 +75,7 @@ class TradingAgentsGraph:
             observation_enabled: Build graph nodes with durable observation wrappers.
         """
         self.debug = debug
-        self.config = config or DEFAULT_CONFIG
+        self.config = deepcopy(config or DEFAULT_CONFIG)
         self.callbacks = callbacks or []
         self.observation_enabled = observation_enabled
 
@@ -109,6 +111,24 @@ class TradingAgentsGraph:
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
 
+        # Separate clients preserve tool/structured bindings and never mutate
+        # the global quick/deep clients. Construction adds no model requests.
+        task_llms = {}
+        policy = task_effort_overrides(self.config)
+        if self.config["llm_provider"].lower() == "deepseek":
+            tasks = {**CLASSIC_ROLE_TASKS, "context_compaction": "aux.context_compaction"}
+            for role, task in tasks.items():
+                if task not in policy:
+                    continue
+                kwargs = provider_llm_kwargs(self.config, task=task)
+                if self.callbacks:
+                    kwargs["callbacks"] = self.callbacks
+                task_llms[role] = create_llm_client(
+                    provider=self.config["llm_provider"],
+                    model=self.config["deep_think_llm"] if role == "research_manager" else self.config["quick_think_llm"],
+                    base_url=self.config.get("backend_url"), **kwargs,
+                ).get_llm()
+
         self.memory_log = TradingMemoryLog(self.config)
 
         # Create tool nodes
@@ -123,6 +143,7 @@ class TradingAgentsGraph:
             self.deep_thinking_llm,
             self.tool_nodes,
             self.conditional_logic,
+            task_llms=task_llms,
         )
 
         self.propagator = Propagator(

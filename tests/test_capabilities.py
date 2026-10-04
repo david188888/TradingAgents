@@ -25,6 +25,13 @@ class TestExactIdMatches:
         assert caps.supports_tool_choice is False
         assert caps.requires_reasoning_content_roundtrip is True
 
+    def test_official_flash_uses_deepseek_thinking_capabilities(self):
+        caps = get_capabilities("deepseek-flash")
+        assert caps.supports_tool_choice is False
+        assert caps.supports_json_schema is False
+        assert caps.supports_json_mode is True
+        assert caps.requires_reasoning_content_roundtrip is True
+
     def test_deepseek_v4_pro_rejects_tool_choice(self):
         caps = get_capabilities("deepseek-v4-pro")
         assert caps.supports_tool_choice is False

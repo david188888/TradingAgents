@@ -122,13 +122,13 @@ export async function mountScenario(
 
   await page.goto("/");
   await expect(page.locator("#ctrl-date")).toHaveValue(FIXED_DATE);
-  await page.locator(".history-item", { hasText: fixture.ticker }).click();
+  await page.getByRole("button", { name: `打开 ${fixture.ticker} 的研究记录`, exact: true }).click();
 
   if (kind === "failed") {
     await expect(page.locator(".failed-run[data-ready='true']")).toBeVisible();
   } else {
-    await expect(page.locator(".decision-brief[data-ready='true']")).toBeVisible();
-    await expect(page.locator(".reader-surface h2", { hasText: fixture.ticker })).toBeVisible();
+    await expect(page.locator(".legacy-reader")).toHaveAttribute("data-run", fixture.runId);
+    await expect(page.locator(".legacy-reader h2", { hasText: fixture.ticker })).toBeVisible();
   }
   await page.evaluate(async () => { await document.fonts.ready; });
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -141,37 +141,10 @@ export async function openAudit(page: Page): Promise<void> {
   if (await readerEntry.count()) {
     await readerEntry.click();
   } else {
-    await page.getByRole("button", { name: "进入审计中心" }).first().click();
+    const process = page.getByRole("tab", { name: "研究过程", exact: true });
+    if (await process.count()) await process.click();
+    await page.getByRole("button", { name: /^(打开|进入)审计中心$/ }).first().click();
   }
   await expect(page.getByRole("dialog", { name: "审计中心" })).toBeVisible();
   await expect(page.locator(".audit-summary-skeleton")).toHaveCount(0);
-}
-
-export async function openCompanion(
-  page: Page,
-  label: RegExp,
-  expectedMode: "temporary" | "pinned" | "drawer",
-): Promise<void> {
-  await page.getByRole("button", { name: label }).first().click();
-  const panel = page.locator(".companion-panel");
-  await expect(panel).toHaveAttribute("data-mode", expectedMode === "pinned" ? "temporary" : expectedMode);
-  await expect(panel.locator(".companion-loading")).toHaveCount(0);
-  if (expectedMode === "pinned") {
-    await page.getByRole("button", { name: "固定伴读栏" }).click();
-    await expect(panel).toHaveAttribute("data-mode", "pinned");
-  }
-}
-
-export async function settleVisual(page: Page): Promise<void> {
-  await page.evaluate(async () => { await document.fonts.ready; });
-  await page.locator("body").evaluate((body) => {
-    (body as HTMLElement).setAttribute("data-golden-ready", "true");
-  });
-}
-
-export async function alignReaderToViewport(page: Page): Promise<void> {
-  await page.locator(".reader-surface").first().evaluate((node) => {
-    node.scrollIntoView({ block: "start" });
-    window.scrollBy(0, -72);
-  });
 }

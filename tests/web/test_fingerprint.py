@@ -199,6 +199,18 @@ def test_effective_config_excludes_only_four_root_location_keys():
     assert first["routing"]["project_dir"] == "semantic nested value"
 
 
+def test_task_effort_changes_are_incompatible_with_resume_and_absence_stays_absent():
+    request = _request()
+    before = _build(request)
+    config = {**request.effective_config, "deepseek_task_efforts": {"native.market_context": "low"}}
+    changed = _build(_request(effective_config=config))
+    assert not compare_resume_fingerprints(before, changed).compatible
+    config["deepseek_task_efforts"]["native.market_context"] = "high"
+    changed_again = _build(_request(effective_config=config))
+    assert not compare_resume_fingerprints(changed, changed_again).compatible
+    assert "deepseek_task_efforts" not in before.document["effective_config"]
+
+
 def test_future_nested_semantic_config_is_included_automatically():
     before = prepare_effective_config(
         {"provider": "openai", "future": {"retry": {"jitter": 0.2}}}

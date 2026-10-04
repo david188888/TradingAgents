@@ -147,7 +147,8 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # handles the reasoning_content round-trip).
     "deepseek": {
         "quick": [
-            ("DeepSeek V4 Flash - Latest fast model, thinking + non-thinking", "deepseek-v4-flash"),
+            ("DeepSeek V4 Flash - Compatibility alias for V4.1 Flash", "deepseek-v4-flash"),
+            ("DeepSeek V4.1 Flash - Official model ID", "deepseek-flash"),
             (
                 "DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option",
                 "deepseek-v4.1-flash-expires-on-0910",
@@ -156,7 +157,8 @@ MODEL_OPTIONS: ProviderModeOptions = {
         ],
         "deep": [
             ("DeepSeek V4 Pro - Latest flagship", "deepseek-v4-pro"),
-            ("DeepSeek V4 Flash - Fast, supports thinking", "deepseek-v4-flash"),
+            ("DeepSeek V4 Flash - Compatibility alias for V4.1 Flash", "deepseek-v4-flash"),
+            ("DeepSeek V4.1 Flash - Official model ID", "deepseek-flash"),
             (
                 "DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option",
                 "deepseek-v4.1-flash-expires-on-0910",

@@ -27,9 +27,10 @@ class TestDeepSeekProviderKwargs:
         kwargs = self._kwargs_for(deepseek_thinking="enabled")
         assert kwargs["thinking"] == {"type": "enabled"}
 
-    def test_thinking_disabled_passes_nothing(self):
+    def test_thinking_disabled_is_explicit_and_suppresses_effort(self):
         kwargs = self._kwargs_for(deepseek_thinking="disabled")
-        assert "thinking" not in kwargs
+        assert kwargs["thinking"] == {"type": "disabled"}
+        assert "reasoning_effort" not in kwargs
 
     def test_effort_forwarded(self):
         kwargs = self._kwargs_for(deepseek_reasoning_effort="max")

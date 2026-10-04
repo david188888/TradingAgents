@@ -39,8 +39,7 @@ npm --prefix frontend run typecheck
 npm --prefix frontend run build
 ```
 
-Run the following only when the corresponding local scaffolding exists; these
-paths are not tracked by the public fork:
+Run the following when the corresponding tracked test scaffolding exists:
 
 ```bash
 python -m pytest

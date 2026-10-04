@@ -645,6 +645,9 @@ def _build_run_config(selections: dict, checkpoint: bool | None) -> dict:
     config["google_thinking_level"] = selections.get("google_thinking_level")
     config["openai_reasoning_effort"] = selections.get("openai_reasoning_effort")
     config["anthropic_effort"] = selections.get("anthropic_effort")
+    for key in ("deepseek_thinking", "deepseek_reasoning_effort", "deepseek_task_efforts"):
+        if key in selections and (key == "deepseek_task_efforts" or selections[key] is not None):
+            config[key] = copy.deepcopy(selections[key])
     config["output_language"] = selections.get("output_language", "English")
     if selections.get("data_vendors"):
         config["data_vendors"].update(selections["data_vendors"])

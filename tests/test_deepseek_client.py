@@ -1,4 +1,6 @@
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
+from pydantic import BaseModel
 
 from tradingagents.llm_clients.factory import create_llm_client
 from tradingagents.llm_clients.model_catalog import get_model_options
@@ -8,6 +10,8 @@ from tradingagents.llm_clients.openai_client import (
     reject_retired_deepseek_model,
     strip_deepseek_reasoning_content,
 )
+from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
+from tradingagents.llm_clients.validators import validate_model
 
 
 def test_deepseek_catalog_defaults_to_v4_models():
@@ -15,6 +19,52 @@ def test_deepseek_catalog_defaults_to_v4_models():
     assert get_model_options("deepseek", "deep")[0][1] == "deepseek-v4-pro"
     assert ("DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option", "deepseek-v4.1-flash-expires-on-0910") in get_model_options("deepseek", "quick")
     assert ("DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option", "deepseek-v4.1-flash-expires-on-0910") in get_model_options("deepseek", "deep")
+
+
+def test_official_flash_is_available_without_removing_legacy_alias():
+    for tier in ("quick", "deep"):
+        models = {model for _, model in get_model_options("deepseek", tier)}
+        assert {"deepseek-flash", "deepseek-v4-flash"} <= models
+    assert validate_model("deepseek", "deepseek-flash")
+
+
+@pytest.mark.parametrize("thinking", ("enabled", "disabled"))
+@pytest.mark.parametrize("effort", ("low", "high", "max"))
+def test_official_flash_config_reaches_payload_and_supported_tool_binding(thinking, effort):
+    class Result(BaseModel):
+        summary: str
+
+    kwargs = provider_llm_kwargs({
+        "llm_provider": "deepseek", "deepseek_thinking": thinking,
+        "deepseek_reasoning_effort": effort,
+    })
+    llm = OpenAIClient(
+        "deepseek-flash", provider="deepseek", api_key="test-key", **kwargs,
+    ).get_llm()
+    payload = llm._get_request_payload([HumanMessage(content="Summarize the supplied facts.")])
+    assert payload["model"] == "deepseek-flash"
+    assert payload["extra_body"]["thinking"] == {"type": thinking}
+    if thinking == "enabled":
+        assert payload["reasoning_effort"] == effort
+    else:
+        assert "reasoning_effort" not in payload
+    binding = llm.with_structured_output(Result).steps[0]
+    assert binding.kwargs["tools"][0]["function"]["name"] == "Result"
+    if thinking == "enabled":
+        assert binding.kwargs.get("tool_choice") is None
+    else:
+        assert binding.kwargs["tool_choice"]["function"]["name"] == "Result"
+
+
+def test_explicit_disabled_client_does_not_send_an_effort_that_reenables_thinking():
+    llm = OpenAIClient(
+        "deepseek-flash", provider="deepseek", api_key="test-key",
+        thinking={"type": "disabled"}, reasoning_effort="high", temperature=0.3,
+    ).get_llm()
+    payload = llm._get_request_payload([HumanMessage(content="Summarize the supplied facts.")])
+    assert payload["extra_body"]["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in payload
+    assert payload["temperature"] == 0.3
 
 
 def test_deepseek_old_model_names_are_rejected():

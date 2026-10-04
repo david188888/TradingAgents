@@ -12,6 +12,7 @@ import json
 import math
 import time
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from typing import Any
 
 from pydantic import BaseModel
@@ -31,6 +32,7 @@ from tradingagents.graph.catalyst_workflow import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
+from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
     DurableBudgetLedger,
@@ -81,7 +83,8 @@ class NativeModelCaller:
             raise ValueError("native model caller requires the run's durable ledger")
         if not callable(cancelled) or not callable(deadline):
             raise ValueError("native model caller requires cancellation and deadline callables")
-        self.config = dict(effective_config)
+        self.config = deepcopy(dict(effective_config))
+        task_effort_overrides(self.config)
         self.run_id, self.ledger = run_id, ledger
         self.cancelled, self.deadline = cancelled, deadline
 
@@ -174,7 +177,7 @@ class NativeModelCaller:
         try:
             remaining = self._ensure_active()
             try:
-                kwargs = provider_llm_kwargs(self.config)
+                kwargs = provider_llm_kwargs(self.config, task="native." + stage)
                 kwargs.update(max_retries=0, timeout=remaining)
                 client = create_llm_client(
                     provider=self.config["llm_provider"],

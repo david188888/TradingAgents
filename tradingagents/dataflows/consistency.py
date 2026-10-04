@@ -12,6 +12,7 @@ import re
 from collections import defaultdict
 from typing import Any
 
+from tradingagents.llm_clients.task_effort import bind_task_effort, task_effort_overrides
 from tradingagents.observability.provenance import (
     current_provenance_observer,
     direct_data_scope,
@@ -34,6 +35,7 @@ def create_llm_from_config() -> Any | None:
     (e.g. missing API key).  Callers should fall back to non-LLM heuristics.
     """
     cfg = get_config()
+    task_effort_overrides(cfg)
     provider = cfg.get("llm_provider")
     model = cfg.get("quick_think_llm")
     if not provider or not model:
@@ -73,6 +75,7 @@ def cluster_news_by_event(
     When *llm* is provided, uses a single batch LLM call for semantic
     clustering; otherwise falls back to n-gram Jaccard similarity.
     """
+    task_effort_overrides(get_config())
     if len(items) <= 1:
         return [[i] for i in range(len(items))]
 
@@ -108,7 +111,7 @@ def _cluster_via_llm(
     )
 
     with direct_data_scope("consistency.clustering"):
-        response = llm.invoke(prompt)
+        response = bind_task_effort(llm, get_config(), "aux.news_cluster").invoke(prompt)
     content = response.content if hasattr(response, "content") else str(response)
     clusters = _parse_cluster_json(content, len(items))
 

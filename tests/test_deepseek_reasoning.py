@@ -157,6 +157,11 @@ class TestStructuredOutputCapabilityDispatch:
         assert _bound_kwargs(bound).get("tool_choice") is None or \
             "tool_choice" not in _bound_kwargs(bound)
 
+    def test_official_flash_suppresses_tool_choice(self):
+        bound = self._client("deepseek-flash").with_structured_output(self._Sample)
+        assert _bound_kwargs(bound).get("tool_choice") is None
+        assert _bound_kwargs(bound)["tools"][0]["function"]["name"] == "_Sample"
+
     def test_v4_pro_suppresses_tool_choice(self):
         bound = self._client("deepseek-v4-pro").with_structured_output(self._Sample)
         assert _bound_kwargs(bound).get("tool_choice") is None or \

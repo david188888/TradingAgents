@@ -41,8 +41,8 @@ and Web/API models where they are exposed. A contract change requires:
    facade that consumes it.
 3. Preserve explicit compatibility/degradation behavior for older persisted
    runs where the reader or audit endpoint supports it.
-4. Add or adjust focused tests when the relevant local-only test scaffolding
-   is available; it is not tracked by the public fork.
+4. Add or adjust focused tests when the relevant tracked test scaffolding
+   is available.
 
 `runtime/contracts.py` selects `horizon-policy-v2` for production. The v3
 selection is an internal test gate and must not be enabled or documented as
@@ -57,7 +57,7 @@ ruff check tradingagents
 python scripts/check_agent_docs.py
 ```
 
-`pytest` suites are optional local scaffolding, not public tracked files. Run
-`python -m pytest` or `python -m pytest -m unit` only when that scaffolding is
-present. Use narrower local test paths for a localized change, then run the
+`pytest` suites are tracked test scaffolding. Run `python -m pytest` or
+`python -m pytest -m unit` when that scaffolding is present. Use narrower
+test paths for a localized change, then run the
 applicable repository-level checks from the root guide.

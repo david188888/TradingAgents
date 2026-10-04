@@ -2,6 +2,8 @@
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -129,6 +131,42 @@ def test_single_repair_is_durable_measured_and_does_not_echo_invalid_response(jo
     repair = next(item for item in journal.ledger.records() if item.bucket == BudgetBucket.STRUCTURED_REPAIR)
     assert repair.input_tokens == 10 and repair.output_tokens == 20 and repair.usage_available
     assert journal.ledger.cached_result("native.operating_quality.repair")["proposal"] == result
+
+
+@pytest.mark.parametrize("stage", tuple(adapter.STAGE_SCHEMAS))
+def test_stage_effort_and_repair_keep_one_frozen_policy(journal, monkeypatch, stage):
+    main(journal, stage)
+    stub, _ = sdk(monkeypatch, ["invalid JSON", valid(stage)])
+    config = {**CONFIG, "deepseek_reasoning_effort": "high",
+              "deepseek_task_efforts": {"native." + stage: "low"}}
+    model = caller(journal, effective_config=config)
+    config["deepseek_task_efforts"]["native." + stage] = "max"
+    result = model(stage, {"facts": []})
+    assert [item["reasoning_effort"] for item in stub.factories] == ["low", "low"]
+    assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 1
+    assert journal.ledger.consumed(BudgetBucket.NETWORK_RETRY) == 0
+    count = len(stub.factories)
+    assert model.recover_cached(stage, {"facts": []}) == result
+    assert len(stub.factories) == count
+
+
+def test_parallel_native_stages_do_not_share_effort_kwargs(journal, monkeypatch):
+    for stage in ("operating_quality", "market_context"):
+        main(journal, stage)
+    stub, _ = sdk(monkeypatch, [valid("operating_quality"), valid("market_context")])
+    config = {**CONFIG, "deepseek_reasoning_effort": "high",
+              "deepseek_task_efforts": {"native.market_context": "low"}}
+    before = deepcopy(config)
+    model = caller(journal, effective_config=config)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(model, stage, {"facts": []})
+                   for stage in ("operating_quality", "market_context")]
+        for future in futures:
+            future.result()
+    assert sorted(item["reasoning_effort"] for item in stub.factories) == ["high", "low"]
+    assert all(item["max_retries"] == 0 for item in stub.factories)
+    assert config == before
+    assert journal.ledger.consumed(BudgetBucket.MODEL_ATTEMPTS) == 2
 
 
 def test_second_invalid_output_stops_without_another_repair_or_network_retry(journal, monkeypatch):

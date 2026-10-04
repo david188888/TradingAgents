@@ -119,12 +119,11 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
-    # DeepSeek V4 thinking mode: "enabled" or "disabled". This fork now
-    # defaults to ENABLED with max reasoning effort (the API default is
-    # enabled with effort=high; we go one step further and set effort=max).
-    # While thinking is enabled, temperature/top_p are ignored by the API
-    # and reasoning_content must be echoed back (handled by the client);
-    # tool_choice is only supported in the non-thinking path.
+    # DeepSeek thinking mode: "enabled" or "disabled", default enabled/high.
+    # Thinking ignores temperature. Requests with tools must echo prior
+    # reasoning_content (handled by the client); forced tool choices require
+    # non-thinking mode. A disabled toggle suppresses reasoning_effort so the
+    # effort does not re-enable thinking at the API.
     "deepseek_thinking": "enabled",
     # DeepSeek reasoning effort: "low", "high", or "max" (medium/xhigh are
     # mapped to high by the API). Defaults to "high" (the API default) for
@@ -476,6 +475,12 @@ def validate_config(config: dict) -> list[str]:
     the LLM client layer.
     """
     problems: list[str] = []
+    from tradingagents.llm_clients.task_effort import task_effort_overrides
+
+    try:
+        task_effort_overrides(config)
+    except ValueError as exc:
+        problems.append(str(exc))
     provider = str(config.get("llm_provider", "")).strip().lower()
     if not provider:
         problems.append("llm_provider is required")

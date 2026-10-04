@@ -10,12 +10,18 @@ When no LLM is available, falls back to rule-based gap analysis.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
+from tradingagents.llm_clients.task_effort import (
+    bind_task_effort,
+    resolve_task_effort,
+    task_effort_overrides,
+)
 from tradingagents.observability.provenance import direct_data_scope
 
 from .config import get_config
@@ -78,6 +84,7 @@ def analyze_news_coverage(
         ``reasoning``, and ``gaps``.
     """
     cfg = get_config()
+    task_effort_overrides(cfg)
     if not cfg.get("news_advisor_enabled", True):
         return NewsAdvisorResult(should_enrich=False, reasoning="Advisor disabled by config.")
 
@@ -156,7 +163,9 @@ def _run_layer1_sentiment(
         if not batch.item_ids:
             return []
         with direct_data_scope("evidence.news_layer1_sentiment"):
-            response = llm.invoke(_LAYER1_PROMPT.format(payload=batch.payload))
+            response = bind_task_effort(llm, cfg, "aux.news_sentiment").invoke(
+                _LAYER1_PROMPT.format(payload=batch.payload)
+            )
         content = response.content if hasattr(response, "content") else str(response)
         return parse_layer1_sentiment(content, batch)
     except Exception as exc:
@@ -181,6 +190,13 @@ def _attach_layer2_conclusion(
         subject=str(profile.get("ticker") or profile.get("name") or ""),
         data_as_of=str(profile.get("data_as_of") or ""),
     )
+    # An explicit task policy must not reuse a conclusion generated under a
+    # different effort. Preserve legacy cache identities without a policy.
+    if (trigger.cache_key and cfg.get("llm_provider", "").lower() == "deepseek"
+            and task_effort_overrides(cfg)):
+        identity = json.dumps({"source": trigger.cache_key,
+                               "effort": resolve_task_effort(cfg, "aux.news_deep_review")}, sort_keys=True)
+        trigger = replace(trigger, cache_key=hashlib.sha256(identity.encode()).hexdigest())
     result.layer2_trigger = trigger
     if not trigger.should_run or not trigger.cache_key:
         return
@@ -206,7 +222,7 @@ def _attach_layer2_conclusion(
             payload=batch.payload,
         )
         with direct_data_scope("evidence.news_layer2_review"):
-            response = llm.invoke(prompt)
+            response = bind_task_effort(llm, cfg, "aux.news_deep_review").invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
         conclusion = _parse_layer2_conclusion(content, set(batch.item_ids))
         cache.put(trigger.cache_key, conclusion)
@@ -308,7 +324,7 @@ def _analyze_via_llm(
     )
 
     with direct_data_scope("evidence.news_advisor"):
-        response = llm.invoke(prompt)
+        response = bind_task_effort(llm, get_config(), "aux.news_coverage").invoke(prompt)
     content = response.content if hasattr(response, "content") else str(response)
     return _parse_advisor_response(content)
 

@@ -77,9 +77,9 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
   if (analysisMode === "batch") {
     return (
       <>
-        <div className="analysis-mode-tabs" role="tablist" aria-label="分析模式">
-          <button type="button" className="mode-tab" onClick={() => setAnalysisMode("single")}>单公司</button>
-          <button type="button" className="mode-tab active" aria-selected="true">批量分析</button>
+        <div className="analysis-mode-tabs" role="group" aria-label="分析模式">
+          <button type="button" className="mode-tab" aria-pressed="false" onClick={() => setAnalysisMode("single")}>单公司</button>
+          <button type="button" className="mode-tab active" aria-pressed="true">批量分析</button>
         </div>
         <BatchControls cfg={cfg} refreshHistory={refreshHistory} onSelectRun={selectRun} />
       </>
@@ -119,9 +119,9 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
 
   return (
     <>
-      <div className="analysis-mode-tabs" role="tablist" aria-label="分析模式">
-        <button type="button" className="mode-tab active" aria-selected="true">单公司</button>
-        <button type="button" className="mode-tab" onClick={() => setAnalysisMode("batch")}>批量分析</button>
+      <div className="analysis-mode-tabs" role="group" aria-label="分析模式">
+        <button type="button" className="mode-tab active" aria-pressed="true">单公司</button>
+        <button type="button" className="mode-tab" aria-pressed="false" onClick={() => setAnalysisMode("batch")}>批量分析</button>
       </div>
       <div className="controls">
         <div className="input-group">

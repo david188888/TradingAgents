@@ -54,6 +54,21 @@ def normalize_endpoint_identity(value: Any) -> dict[str, Any] | None:
     }
 
 
+def restore_endpoint_identity(value: Mapping[str, Any]) -> str | None:
+    """Rebuild a frozen secret-free endpoint for resumed/auxiliary clients."""
+    scheme, host = value.get("scheme"), value.get("host")
+    if not isinstance(scheme, str) or not isinstance(host, str) or not scheme or not host:
+        return None
+    port = value.get("port")
+    if port is not None and (type(port) is not int or not 1 <= port <= 65535):
+        return None
+    path = value.get("path") if isinstance(value.get("path"), str) else "/"
+    default_port = 443 if scheme == "https" else 80 if scheme == "http" else None
+    host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    authority = host if port in {None, default_port} else f"{host}:{port}"
+    return f"{scheme}://{authority}{path or '/'}"
+
+
 def project_effective_config(
     effective_config: Mapping[str, Any],
 ) -> SemanticConfigProjection:
