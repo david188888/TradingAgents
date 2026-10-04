@@ -1,10 +1,16 @@
 # C2：原生三模式研究与生产接线
 
-Status: Historical
+Status: Frozen Design
 
 Do not use this document as evidence of current implementation behavior.
 
-承接已认可的[统一方案](2026-09-30-evidence-driven-research-and-reader-proposal.md)和[C1](../plans/2026-10-02-bounded-verification-acceptance.md)。research-only、已有总预算和旧 run 只读／恢复语义为不变量。用户已授权继续 C2；用户随后确认推荐的独立 evidence_v1 接线方案，旧 profiles 保留。实施与验收查[公开接线验收](../plans/2026-10-03-native-research-public-wiring-acceptance.md)。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+承接已认可的[统一方案](../../superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md)和[C1](../reviews/2026-10-02-bounded-verification-acceptance.md)。research-only、已有总预算和旧 run 只读／恢复语义为不变量。用户已授权继续 C2；用户随后确认推荐的独立 evidence_v1 接线方案，旧 profiles 保留。实施与验收查[公开接线验收](../reviews/2026-10-03-native-research-public-wiring-acceptance.md)。
 
 ## 共享内核
 

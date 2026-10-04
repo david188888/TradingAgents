@@ -1,13 +1,19 @@
 # C2：原生研究接线实施
 
-Status: Historical
-
-Implementation note: shared kernel and independent evidence_v1 public routing implemented.
-See [public wiring acceptance](2026-10-03-native-research-public-wiring-acceptance.md).
+Status: Archived Plan
 
 Do not use this document as evidence of current implementation behavior.
 
-依据[设计](../specs/2026-10-02-native-research-wiring-design.md)与既有 A–E 计划。用户已确认独立 evidence_v1；classic 默认及 catalyst_v1 旧执行/恢复保留。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
+
+Implementation note: shared kernel and independent evidence_v1 public routing implemented.
+See [public wiring acceptance](../reviews/2026-10-03-native-research-public-wiring-acceptance.md).
+
+Do not use this document as evidence of current implementation behavior.
+
+依据[设计](../designs/2026-10-02-native-research-wiring-design.md)与既有 A–E 计划。用户已确认独立 evidence_v1；classic 默认及 catalyst_v1 旧执行/恢复保留。
 
 1. canonical 原生综合与阶段输出模型；校验模式维度、声明类型、snapshot／引用／条件来源。原 Record 缺省兼容。
 2. 纯 source→native V0/fact/metric、模式政策和窄事实/字段视图；financial 同期字段保留、声明与事实区别、缺持仓原假设／估值降级。

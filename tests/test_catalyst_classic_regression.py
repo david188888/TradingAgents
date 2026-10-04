@@ -1,7 +1,7 @@
 """T25: classic routes must not be replaced by the catalyst_v1 workflow.
 
 The full pytest suite's failure set staying at its 14-item baseline
-(``docs/superpowers/plans/baseline-pytest-failures.md``) is necessary but not
+(``docs/archive/reviews/2026-09-29-baseline-pytest-failures.md``) is necessary but not
 sufficient for T25: it would stay green even if ``catalyst_v1`` quietly
 replaced the classic bull/bear debate, the holding-review route, or the
 long-horizon route, as long as nothing *broke* and no existing test happened

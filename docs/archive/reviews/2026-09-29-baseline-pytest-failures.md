@@ -1,5 +1,11 @@
 # pytest 基线失败清单（2026-09-29，ca90f27，改动前）
 
+Status: Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
 - 命令：`python -m pytest -q -p no:randomly`（conda env `tradingagents`，Python 3.13.13，pytest 9.0.3）
 - 结果：**15 failed / 1983 passed / 73 subtests passed / 19 warnings，80.27s**
 - **修正（2026-09-29，agent B 实测）**：真实稳定基线是 **14 failed**，不是 15。`test_wind_provider.py::TestConfigFlag::test_explicitly_disabled_returns_data_unavailable` 属偶发失败——单独运行通过（33.57s），在 pristine tree 上跑全量也不复现。B 通过 `git stash push -u` 清空工作树后重跑确认：**14 failed / 1984 passed**，与上述同一组。判定门槛按 14 计。

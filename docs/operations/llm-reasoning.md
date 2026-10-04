@@ -122,7 +122,7 @@ the summary helper, which returns without a model call when no debate rounds exi
 
 For the original call-site rationale and future quality comparisons, see the
 [effort audit](../archive/reviews/2026-10-04-deepseek-effort-audit.md) and
-[implementation design](../superpowers/specs/2026-10-04-deepseek-task-effort-design.md).
+[implementation design](../archive/designs/2026-10-04-deepseek-task-effort-design.md).
 Offline parameter/schema/budget tests do not establish investment-analysis
 accuracy, actual savings, or the benefit of `max`. Keep those claims unverified
 until bounded comparisons are authorized and measured.

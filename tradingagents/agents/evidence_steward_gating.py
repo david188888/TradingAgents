@@ -15,7 +15,7 @@ This module separates them:
   additional retrieval round it causes is charged to the run's budget *before*
   it happens, so a stage the budget cannot afford is not started at all.
 
-The hidden-call audit (``docs/superpowers/plans/hidden-llm-audit.md``)
+The hidden-call audit (``docs/archive/reviews/2026-09-29-hidden-llm-audit.md``)
 identified four model call points inside the old steward that sat outside the
 budget entirely:
 

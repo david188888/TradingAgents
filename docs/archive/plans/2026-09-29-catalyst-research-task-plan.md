@@ -1,7 +1,13 @@
 # 催化研究重构：任务拆分与验收计划
 
-- **Status: Proposed — 执行计划，尚未实施。所有 TODO 均为待办，不代表已完成。不要把本文件作为当前实现行为的证据。**
-- 创建日期：2026-09-29。上游设计：[催化研究重构设计](../specs/2026-09-28-catalyst-research-redesign.md)（以下简称「设计」）。交互草图：[布局 A](../specs/2026-09-28-catalyst-research-layout.html)。
+Status: Archived Plan
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Proposed — 执行计划，尚未实施。所有 TODO 均为待办，不代表已完成。不要把本文件作为当前实现行为的证据。
+- 创建日期：2026-09-29。上游设计：[催化研究重构设计](../designs/2026-09-28-catalyst-research-redesign.md)（以下简称「设计」）。交互草图：[布局 A](../../superpowers/specs/2026-09-28-catalyst-research-layout.html)。
 - 代码基线：`bc70a35`。执行前由 P0 的 T01 重新确认。
 - 本文件只做一件事：把设计的 T01–T39 拆成可分派、可验收、可独立完成的工作单元，绑定到 8 个交付 agent。
 - 设计的决策、语义与门槛以设计文档为准。本文件不重复定义语义，只定义「谁做什么、怎么算做完」。
@@ -119,20 +125,20 @@ G 评估与切换 (T33-T39)  ◄── 全部
 
 - [ ] **T01 基线 manifest**
   - 记录：HEAD sha、Python/Node 版本、依赖树、模型 ID、有效配置摘要（**不得含密钥**）、环境变量键名（不含值）、已有失败测试清单、平台。
-  - 验收：`docs/superpowers/plans/baseline-manifest.md` 存在；`git rev-parse HEAD` 与文中一致；对该文件跑 `git diff --check` 无空白问题，且人工确认无 `sk-` 前缀、无 16 位以上疑似 token 字面量、无带 token 的 URL；失败测试清单可由 `python -m pytest --collect-only -q` 复现。
+  - 验收：`docs/archive/reviews/2026-09-29-baseline-manifest.md` 存在；`git rev-parse HEAD` 与文中一致；对该文件跑 `git diff --check` 无空白问题，且人工确认无 `sk-` 前缀、无 16 位以上疑似 token 字面量、无带 token 的 URL；失败测试清单可由 `python -m pytest --collect-only -q` 复现。
 - [ ] **T02 案例集**
   - 选设计的 §13.2 的 12 案例（C01–C12），每例记录：ticker、cutoff date、场景标签、必须检查项、**可重放输入的保存位置**。
   - 验收：`docs/superpowers/plans/eval-cases.json` 存在且 12 条齐全；每条 `cutoff <= 2026-09-29`；每条有 `replay_input_ref` 指向仓库内可重放数据（无凭据）；无一条使用 cutoff 之后才发布的信息作为「历史事实」。
 - [ ] **T03 篇幅与重复测量**
   - 测：首屏可见字符数、重复字段、首次找到关键问题耗时、每 run 的 LLM 调用/耗时/token，token 缺失记 `unknown` 不记 0。
-  - 验收：`docs/superpowers/plans/baseline-readability.md` 含 ≥3 个真实 run 的测量表，每行有 run_id、字符数、重复字段清单、token 字段含 `unknown` 标记；至少 1 个 run 有 `unknown` usage 记录（证明没有把缺失当 0）。
+  - 验收：`docs/archive/reviews/2026-09-29-baseline-readability.md` 含 ≥3 个真实 run 的测量表，每行有 run_id、字符数、重复字段清单、token 字段含 `unknown` 标记；至少 1 个 run 有 `unknown` usage 记录（证明没有把缺失当 0）。
   - **已交付的实测结论（2026-09-29）**：首屏正文 p50 **8,399 字符**（min 196 / max 14,599），对 420 硬上限超出 **20x**，15 个 run 中 14 个超限；`view.brief` 与 `learning_summary` p50 重叠 **96%**；LLM 调用 **20.6/run**（14–26）。token **可测**，但**不在 `run.json`**，而在 `events.jsonl → payload.usage`（嵌两层）——按 `run.json` 平面检索会误判为「不可测」。存在真实 `unknown`：5 个 failed run 各有 1 次 `model.started` 无 `model.completed`（成本已发生但未记录），其中 1 个 failed run 消耗 419,932 tokens。**另注**：15 个 run 中 8 个宏观数据源不可用，跨 run 比较内容质量时必须把它作为受控变量（T06 已据此设计）。
 - [ ] **T04 探测清单定义**（标准由 A 定义，实测由 H 出）
   - 定义：每项能力需覆盖的维度（沪/深市、正常、无匹配、停牌/新上市、历史 cutoff、限流/超时、字段缺失、分页截断）与记录字段。
   - 验收：清单文件含 ≥10 项候选能力 × ≥8 个维度矩阵；每项有成功/降级/失败三态定义；明确写出「北交所未声明支持则精确标不支持」。
 - [ ] **T05 隐含调用审计**
   - 审：现有 Evidence Steward 的模型调用点、SDK 自带 retry、source fallback 链、rate limit 语义。
-  - 验收：`docs/superpowers/plans/hidden-llm-audit.md` 列出每个隐含 LLM 调用点（文件:行号）、retry 行为、fallback 顺序；每项标注是否会绕过设计的 §5.5 预算；给出预算计数器方案建议。
+  - 验收：`docs/archive/reviews/2026-09-29-hidden-llm-audit.md` 列出每个隐含 LLM 调用点（文件:行号）、retry 行为、fallback 顺序；每项标注是否会绕过设计的 §5.5 预算；给出预算计数器方案建议。
 - [ ] **T06 评估表冻结**
   - 固定：严重错误定义、评分表（设计的 §13.4 四项 0–2）、性能目标、案例通过判据。
   - 验收：文件含变更记录区且当前为空；评分规则在看到新结果前冻结——若后续调整，验收记录里必须同时存在「调整前规则」与「调整理由」两版。
@@ -180,7 +186,7 @@ G 评估与切换 (T33-T39)  ◄── 全部
 - [ ] **T13 腾讯 raw/qfq adapter**
   - 验收：raw 与 qfq **各自独立** adapter 与测试文件；断言两者结果不混拼（qfq 不可用时 raw 不顶替）；覆盖沪/深、正常、无匹配、停牌、新上市、历史 cutoff、限流、字段缺失、分页截断 8 维；**每个测试带 provenance 记录**；单位、复权口径、截止时间、最后完整交易日均有断言。
   - **额外断言（T01 实测发现）**：`dataflows/interface.py:271-276` 在命中 vendor cooldown 时会把整条 fallback 链追加进来，其源码注释明写「even when the user explicitly selected one primary」。这与设计 §8.5「不因一个源失败强制更换用户显式选定的供应商策略」相反，且会让 raw 结果顶替 qfq。T13 必须为此写一条**显式反例测试**：显式选定 qfq 且 qfq 处于 cooldown 时，raw 不得静默顶替。
-  - **实测结论（2026-09-29 探测，完整记录见 `docs/superpowers/operations/capability-probe-2026-09-29.md`）**：
+  - **实测结论（2026-09-29 探测，完整记录见 `docs/archive/reviews/2026-09-29-data-capability-probe.md`）**：
     - **腾讯 kline 列序不是 OHLC**（最高优先级）。实际为 `[date, OPEN, CLOSE, HIGH, LOW, VOL]`：索引 2 是收盘、3 是最高、4 是最低。已由 4 只股票 × 28 天的 max/min 不变式 + 与实时行情快照 4/4 字段精确比对双重证明。按 OHLC 读取会**静默得到错误的高/低价且不报错**。T13 必须按真实列序解析并写断言。
     - **腾讯 qfq 会静默降级为不复权**：部分标的（688981、两个北交所代码）HTTP 200 但返回未复权 `day` 数据，无任何警告。必须判为 `unavailable`，**绝不可当 qfq 使用**。
     - **腾讯分页有静默截断**：640 行上限，无 total/count/more 标记；`count>=2100` 返回 `param error` 且 `code:0`。截断必须显式识别，不得当作「无更多数据」。
@@ -215,7 +221,7 @@ G 评估与切换 (T33-T39)  ◄── 全部
   - 验收：产物写入在 commit barrier 之后；SSE 重连**不重复模型调用、不重复产物**（测试：重连后 LLM 调用计数不变）；恢复继承已消耗额度（**不从 0 重置**）；取消/超时后不发布迟到结果为最终结论；重复提交幂等、同 ID 不同内容报冲突。
 - [ ] **T25 classic 回归**
   - 验收：测试断言旧多空辩论、持仓复盘、长期研究路由未被替换；旧角色 key 与 lens 枚举仍服务旧 profile。
-  - **判定标准（2026-09-29 实测基线修正）**：`python -m pytest -q -p no:randomly` 在 `ca90f27` 上稳定为 **14 failed**（首测 15，含 1 项偶发）/ 1983 passed / 73 subtests，明细见 `docs/superpowers/plans/baseline-pytest-failures.md`。基线本身**不是全绿**，因此通过条件是「失败集合不扩大、且这 15 项状态不变」，而非「全绿」。
+  - **判定标准（2026-09-29 实测基线修正）**：`python -m pytest -q -p no:randomly` 在 `ca90f27` 上稳定为 **14 failed**（首测 15，含 1 项偶发）/ 1983 passed / 73 subtests，明细见 `docs/archive/reviews/2026-09-29-baseline-pytest-failures.md`。基线本身**不是全绿**，因此通过条件是「失败集合不扩大、且这 15 项状态不变」，而非「全绿」。
   - **高风险区**：`test_runtime_scaffold.py` 的 3 项（`test_production_v2_descriptor_and_delta_are_frozen`、`test_production_v2_fingerprint_bytes_are_frozen`、`test_checkpoint_authorization_is_bound_to_prepared_context`）**已经是红的**，且正是 B/E 改 profile、policy、指纹时会碰的地方（B 已复核：3 failed / 21 passed，冻结摘要仍是既有的 `fc2fcd10…` vs `cc5d8b11…` 不匹配）。B 动 `runtime/fingerprint.py` 前后必须分别记录这 3 项的状态，否则无法区分既有问题与自己引入的。
 
 ### F — 工作台页面
@@ -259,7 +265,7 @@ G 评估与切换 (T33-T39)  ◄── 全部
 ### H — 数据源探测执行
 
 - [ ] **T04 实测**（能力探测）
-  - 验收：按 A 的矩阵执行，产出 `docs/superpowers/operations/capability-probe-2026-09-29.md`；每项含能力、adapter 版本、样本范围、探测时间、来源、成功/降级/失败、响应字段摘要、日期/单位验证、限制；**报告不含凭据、不含带 token 的 URL、不含完整私有响应**；无权限的端点标「未验证」而非「可用」。
+  - 验收：按 A 的矩阵执行，产出 `docs/archive/reviews/2026-09-29-data-capability-probe.md`；每项含能力、adapter 版本、样本范围、探测时间、来源、成功/降级/失败、响应字段摘要、日期/单位验证、限制；**报告不含凭据、不含带 token 的 URL、不含完整私有响应**；无权限的端点标「未验证」而非「可用」。
 - [ ] **T16 端点探测**（机构调研）
   - 验收：判定该能力是否合格；不合格则显式延后并写明阻塞原因，不影响 T13–T15 上线。
 
@@ -347,7 +353,7 @@ git status --short
 
 ## 8.1 探测已确认的缺陷（D 实施时必须处理或显式规避）
 
-以下四项在 2026-09-29 的 live 探测中**已确认**，完整证据见 `docs/superpowers/operations/capability-probe-2026-09-29.md`：
+以下四项在 2026-09-29 的 live 探测中**已确认**，完整证据见 `docs/archive/reviews/2026-09-29-data-capability-probe.md`：
 
 1. **腾讯 kline 列序不是 OHLC** —— 实际 `[date, OPEN, CLOSE, HIGH, LOW, VOL]`。按 OHLC 读会静默得到错误高/低价且不报错。（已并入 T13）
 2. **Wind 指数行情代码位错误** —— `get_index_snapshot` 行情侧落到 `000300.OF`（场外基金位）而非 `000300.SH`，返回 0.862–0.966 点（真实沪深300 约 4000）；历史序列四价全等、成交量恒 0.0，**调用成功但数据是错的，比不可用更危险**。`profile`/`fundamentals` 路径用 `000300.SH` 正确，属行情接口代码位问题。修复前**指数行情不得作为市场反应专项的证据来源**。

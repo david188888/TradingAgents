@@ -1,6 +1,12 @@
 # a-stock-data v3.10.0 同步与合并参考
 
-- **Status: Historical**
+Status: Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
 - **Do not use this document as evidence of current implementation behavior.** 当前行为的事实源是代码、passing tests，以及 [A 股补充数据能力](../../operations/a-share-data-capabilities.md)（`Status: Current`）。本文是**分支合并与交接记录**：说明这条分支改了什么、怎么合、合完怎么验、以及哪些地方是刻意的决定而不是遗漏。
 
 2026-10-02 已将分支 tip `4b2fcb8` 合入本地 `codex/research-data-integration-20261002`，合并提交 `78038c6`。原有研究/Reader 改动保存在 `90d0199`。本文以下内容保留分支合并前的交接背景；实际整合、追加修复和同环境验收见[整合验收记录](2026-10-02-research-data-integration-acceptance.md)。原推荐命令含 stash，仅为旧交接文本，本次没有手动 stash 或重置工作区。
@@ -176,7 +182,7 @@ comm -13 /tmp/base.txt /tmp/merged.txt    # 必须为空 = 无回归
 
 本分支的实测：基线 `b68fee8` 为 **52 failed / 2310 passed**，本分支为 **52 failed / 2469 passed**，`comm` 两侧为空——**失败集合逐条相同，零回归，新增 159 个测试全绿**。
 
-> 注意：仓库里 `docs/superpowers/plans/baseline-pytest-failures.md` 记录的「12 failed」是在 conda 环境（Python 3.13.13 + pytest 9.0.3）测的，与 `.venv` 下的 52 不一致。**请用同一环境现测现比**，不要拿那份旧数字当门槛。
+> 注意：仓库里 `docs/archive/reviews/2026-09-29-baseline-pytest-failures.md` 记录的「12 failed」是在 conda 环境（Python 3.13.13 + pytest 9.0.3）测的，与 `.venv` 下的 52 不一致。**请用同一环境现测现比**，不要拿那份旧数字当门槛。
 
 ## 8. 刻意不做的事（是决定，不是遗漏）
 

@@ -1,5 +1,11 @@
 # T05 隐含 LLM 调用审计
 
+Status: Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
 - **范围**：静态代码审计 + 对 25 个既有 run 事件日志的只读统计。**未发起任何 LLM 调用或新研究运行。**
 - 目的：为设计 §5.5 的预算计数器提供真实调用点清单，回答「哪些调用会绕过预算」。
 - 行号对应代码基线 `a6a3f4c60f678c230a6290ed25c13a8da7a1431c`（合回后需重跑 `grep -n` 校准）。

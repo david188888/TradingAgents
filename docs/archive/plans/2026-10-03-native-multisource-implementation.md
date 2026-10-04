@@ -1,6 +1,12 @@
 # Unified native source routing implementation
 
-Approved scope: [source admission design](../specs/2026-10-03-native-multisource-design.md).
+Status: Archived Plan
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+Approved scope: [source admission design](../designs/2026-10-03-native-multisource-design.md).
 
 1. Probe public identity, statement metadata, dated factors and official calendar
    with 002130; keep responses outside the checkout. Establish exact normalized

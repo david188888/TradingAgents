@@ -4,6 +4,12 @@ Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
+
+Do not use this document as evidence of current implementation behavior.
+
 2026-10-03；批准设计基点 `8662cb8`，本地整合分支
 `codex/research-data-integration-20261002`。当前运行语义见
 [原生 API 运行说明](../../operations/evidence-research.md#official-document-admission)。

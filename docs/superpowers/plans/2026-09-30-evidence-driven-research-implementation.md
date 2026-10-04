@@ -1,10 +1,17 @@
 # 证据驱动研究：分批实施与验收
 
-Status: Proposed — 方案与阅读样稿已认可；A/B 与有限 D 已实施，其余工程分批进行。
+Status: Proposed — 保留总目标、完整阅读验收与质量对照及默认迁移条件；已实施批次另存历史验收记录。
 
 Do not use this document as evidence of current implementation behavior.
 
 日期：2026-09-30。设计依据：[审查方案](../specs/2026-09-30-evidence-driven-research-and-reader-proposal.md)。基线 main `b68fee8`。覆盖公司研究、催化研究和持仓复盘；research-only。
+
+## 进度与剩余验收（2026-10-04）
+
+- A/B/C 的基础、共享记录、有界核查、原生三模式内核及 CLI/Web 公开入口已整合。当前行为见[原生运行说明](../../operations/evidence-research.md)与[共享记录契约](../../contracts/research-record.md)；历史批次见[文档索引](../../README.md)。工程接线完成不代表所有研究目标已验收。
+- D 已接入原生 Reader 与同源报告，并有浏览器 fixture 检查和单例真实链路检查。完整三模式人工阅读、严重限制下的理解效果及完整缩放验收仍需单独记录，不能由单例或工程测试代替。
+- E 的同证据质量、成本与稳定性对照及默认流程迁移尚未完成。新增真实模型对照须先确认案例、预算与评估规则；`classic` 继续作为默认。
+- 冻结的 [classic/catalyst 评估表](eval-table-frozen.md)与[案例输入](eval-cases.json)保留其原比较对象和阈值。后续原生流程或同一模型不同 effort 的对照需明确自己的受控变量；本计划不授权执行旧表的付费调用规模。
 
 ## 实施顺序
 
@@ -43,12 +50,14 @@ Do not use this document as evidence of current implementation behavior.
 - 人工核查事实、引用支持、重大反证、判断恰当性及阅读效率；记录成本/延迟/重复运行稳定性。完成代码不宣称准确率提高。
 - 确认真实模型对照预算及语料后执行；通过验收才迁移默认流程。保留历史只读与回滚，不删除用户数据。上游 v0.5.2 逐项适配，避免整体 merge。
 
-## 首批实施记录
+## 历史实施记录（按编写日期保留）
 
-A 批已完成本地数据/计算实施和限定检查，见[基础层验收记录](2026-09-30-research-foundation-acceptance.md)。数据权限的小窗口检查不代表全接口权限；历史复权 vintage、完整正式案例质量仍未获验证。
+以下是当时的范围与缺口；后续状态以本页进度说明及当前文档为准。
 
-B 批已实现 `research-record-v1`、三模式兼容生产者、提交后持久化、幂等恢复、读取校验及 TypeScript 消费者。D 批已有限接入保存的来源内容、量化卡片与引用解析。见[统一记录验收](2026-09-30-research-record-acceptance.md)。该批当时没有独立验证执行器，也没有替换 classic 的研究图；分维度判断、模式专项政策和完整统一阅读层次仍需 C/D 批继续完成。E 批尚未执行。当前状态以代码和验收记录为准，不以本计划的勾选代替。
+A 批已完成本地数据/计算实施和限定检查，见[基础层验收记录](../../archive/reviews/2026-09-30-research-foundation-acceptance.md)。数据权限的小窗口检查不代表全接口权限；历史复权 vintage、完整正式案例质量仍未获验证。
 
-2026-10-02 按用户要求先整合数据源分支，保留 A/B 与有限 D 的提交，再合入 `feat/a-stock-data-v3.10-sync`。事件能力增加不自动扩展 catalyst 资格或 prefetch；追加保护处理实时工具历史日期、Sina 空页歧义及腾讯跨周期分页。见[本地整合验收](2026-10-02-research-data-integration-acceptance.md)。C、完整 D 和 E 的状态不因数据分支合并而变化。
+B 批已实现 `research-record-v1`、三模式兼容生产者、提交后持久化、幂等恢复、读取校验及 TypeScript 消费者。D 批已有限接入保存的来源内容、量化卡片与引用解析。见[统一记录验收](../../archive/reviews/2026-09-30-research-record-acceptance.md)。该批当时没有独立验证执行器，也没有替换 classic 的研究图；分维度判断、模式专项政策和完整统一阅读层次仍需 C/D 批继续完成。E 批尚未执行。当前状态以代码和验收记录为准，不以本计划的勾选代替。
 
-2026-10-02 C1 已实现程序接口的有界条件核查：三模式共享计划／工具／durable ledger 执行器，保存 V0→V1、predicate_only 与派生血缘，恢复不自动重做不明调用。见[C1 验收](2026-10-02-bounded-verification-acceptance.md)。C2 原生专项／挑战／综合及生产发布接线仍未实施，不代表整个 C 阶段或默认流程迁移完成。
+2026-10-02 按用户要求先整合数据源分支，保留 A/B 与有限 D 的提交，再合入 `feat/a-stock-data-v3.10-sync`。事件能力增加不自动扩展 catalyst 资格或 prefetch；追加保护处理实时工具历史日期、Sina 空页歧义及腾讯跨周期分页。见[本地整合验收](../../archive/reviews/2026-10-02-research-data-integration-acceptance.md)。C、完整 D 和 E 的状态不因数据分支合并而变化。
+
+2026-10-02 C1 已实现程序接口的有界条件核查：三模式共享计划／工具／durable ledger 执行器，保存 V0→V1、predicate_only 与派生血缘，恢复不自动重做不明调用。见[C1 验收](../../archive/reviews/2026-10-02-bounded-verification-acceptance.md)。C2 原生专项／挑战／综合及生产发布接线仍未实施，不代表整个 C 阶段或默认流程迁移完成。

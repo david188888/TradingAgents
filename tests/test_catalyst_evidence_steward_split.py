@@ -9,7 +9,7 @@ cost. The old steward was one function that did both, so "it is gated" and
 "it is budgeted" were the same claim and neither was checkable.
 
 **Accountability for hidden calls.** The audit
-(``docs/superpowers/plans/hidden-llm-audit.md``) found four model call points
+(``docs/archive/reviews/2026-09-29-hidden-llm-audit.md``) found four model call points
 inside the steward that no budget could see, one of which could append an
 unbounded round of vendor HTTP. A stage that is not charged before it runs is
 exactly the finding, reproduced.

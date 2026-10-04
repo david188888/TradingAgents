@@ -1,7 +1,13 @@
 # 催化研究真实接线实施计划
 
+Status: Archived Plan
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
 - 基线：main `168326c`，2026-09-30。
-- 设计：[已批准设计](../specs/2026-09-30-catalyst-production-wiring-design.md)。显式接线已实施，验证边界见[验收记录](2026-09-30-catalyst-wiring-acceptance.md)。
+- 设计：[已批准设计](../designs/2026-09-30-catalyst-production-wiring-design.md)。显式接线已实施，验证边界见[验收记录](../reviews/2026-09-30-catalyst-wiring-acceptance.md)。
 - 范围：显式试用完整路径，classic 默认不变，不执行批量评估/默认切换/推送。
 - 估量是任务复杂度点数，不是耗时或费用承诺；各项均为 Must。
 

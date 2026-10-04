@@ -1,13 +1,19 @@
 # TradingAgents 中短期催化研究重构：设计、实施计划与验收
 
-- **Status: Proposed — 工程交付设计，尚未实施。不得作为当前运行行为的说明。Do not use this document as evidence of current implementation behavior.**
+Status: Frozen Design
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Proposed — 工程交付设计，尚未实施。不得作为当前运行行为的说明。Do not use this document as evidence of current implementation behavior.
 - 创建日期：2026-09-28；交付修订：2026-09-29。保留原文件名便于链接稳定。
 - 代码核查基线：`bc70a35580988de234b90520fbdf4b71373f012b`。工程开始时重新确认分支、差异和依赖，不假定本文基线仍是 HEAD。
 - 交付对象：产品、前端、后端、数据工程与验收负责人。
 - 产品方向、页面 A 和下述有界研究流程已由用户确认；字段命名、预算与分阶段门槛属于本文提出的工程方案，须通过代码评审与实测，不能被描述为已实现效果。
 - 本轮范围：设计文档与交互草图；没有修改产品代码、调用真实研究模型或验证数据端点。
 - 当前系统入口：[文档索引](../../README.md)、[架构](../../../ARCHITECTURE.md)、[契约索引](../../contracts/README.md)。
-- 已选布局：[交互草图](2026-09-28-catalyst-research-layout.html)，选择 A。草图中的公司、事件与数据全部虚构；HTML 是设计参考，不是生产组件。
+- 已选布局：[交互草图](../../superpowers/specs/2026-09-28-catalyst-research-layout.html)，选择 A。草图中的公司、事件与数据全部虚构；HTML 是设计参考，不是生产组件。
 
 ### 阅读导航
 

@@ -4,7 +4,13 @@ Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 
-日期：2026-10-03（接续 10 月 2 日实施）。承接[整合验收](2026-10-02-research-data-integration-acceptance.md)、[C1](2026-10-02-bounded-verification-acceptance.md)及[接线清单](2026-10-02-native-research-wiring-implementation.md)。当前契约请查[共享记录](../../contracts/research-record.md)。
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Historical
+
+Do not use this document as evidence of current implementation behavior.
+
+日期：2026-10-03（接续 10 月 2 日实施）。承接[整合验收](2026-10-02-research-data-integration-acceptance.md)、[C1](2026-10-02-bounded-verification-acceptance.md)及[接线清单](../plans/2026-10-02-native-research-wiring-implementation.md)。当前契约请查[共享记录](../../contracts/research-record.md)。
 
 ## 已实施的范围
 

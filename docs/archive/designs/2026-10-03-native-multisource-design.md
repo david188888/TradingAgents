@@ -1,6 +1,12 @@
 # Native research multi-source admission
 
-Status: Approved scope — user selected unified multi-source capability routing
+Status: Frozen Design
+
+Do not use this document as evidence of current implementation behavior.
+
+归档日期：2026-10-04。正文保留编写时的设计、结果和未完成事项；归档不表示全部目标已验收。当前行为与仍待推进的计划见[文档索引](../../README.md)。
+
+> 编写时状态：Approved scope — user selected unified multi-source capability routing
 on 2026-10-03. Endpoint qualifications are established by probes and tests,
 not by this design document.
 
