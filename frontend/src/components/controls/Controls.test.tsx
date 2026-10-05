@@ -57,6 +57,7 @@ vi.mock("../../api/client", () => ({
 
 function makeConfig(): ConfigResponseDTO {
   return {
+    research_profiles: { classic: { supported: false, reason: "历史" }, catalyst_v1: { supported: false, reason: "历史" }, evidence_v1: { supported: true, reason: null } },
     providers: [
       {
         id: "deepseek",
@@ -124,7 +125,7 @@ function makeSnapshot(): RunSnapshotDTO {
   return {
     run_id: "run_x",
     status: "created",
-    ticker: "600519",
+    ticker: "600803",
     asset_type: "stock",
     analysis_date: "2026-07-19",
     selected_analysts: ["market", "social", "news", "fundamentals"],
@@ -176,19 +177,14 @@ describe("Controls", () => {
 
     expect(screen.getByLabelText("股票代码")).toBeInTheDocument();
     expect(screen.getByLabelText("分析日期")).toBeInTheDocument();
-    expect(screen.getByLabelText("研究深度")).toBeInTheDocument();
+    expect(screen.queryByLabelText("研究深度")).toBeNull();
+    expect(screen.getByLabelText("研究模式")).toBeInTheDocument();
     expect(screen.getByLabelText("LLM Provider")).toBeInTheDocument();
-    expect(screen.getByLabelText("快速思考模型")).toBeInTheDocument();
-    expect(screen.getByLabelText("深度思考模型")).toBeInTheDocument();
+    expect(screen.getByLabelText("专项与挑战模型")).toBeInTheDocument();
+    expect(screen.getByLabelText("综合模型")).toBeInTheDocument();
 
-    // Analyst checkboxes for all four wire keys.
-    expect(screen.getByLabelText("market")).toBeInTheDocument();
-    expect(screen.getByLabelText("social")).toBeInTheDocument();
-    expect(screen.getByLabelText("news")).toBeInTheDocument();
-    expect(screen.getByLabelText("fundamentals")).toBeInTheDocument();
+    expect(screen.queryByLabelText("market")).toBeNull();
 
-    expect(screen.getByLabelText("Wind 数据状态")).toHaveTextContent("已启用");
-    expect(screen.getByLabelText("Wind 数据状态")).toHaveTextContent("宏观 EDB");
 
     // Provider select offers both providers; default is the configured one.
     const providerSelect = screen.getByLabelText(
@@ -198,8 +194,8 @@ describe("Controls", () => {
     expect(providerSelect).toHaveValue("deepseek");
 
     // Default quick/deep models seeded from config.defaults.
-    expect(screen.getByLabelText("快速思考模型")).toHaveValue("deepseek-chat");
-    expect(screen.getByLabelText("深度思考模型")).toHaveValue(
+    expect(screen.getByLabelText("专项与挑战模型")).toHaveValue("deepseek-chat");
+    expect(screen.getByLabelText("综合模型")).toHaveValue(
       "deepseek-reasoner",
     );
   });
@@ -211,8 +207,8 @@ describe("Controls", () => {
     await waitForConfig();
 
     // Initial: deepseek -> deepseek-chat / deepseek-reasoner.
-    expect(screen.getByLabelText("快速思考模型")).toHaveValue("deepseek-chat");
-    expect(screen.getByLabelText("深度思考模型")).toHaveValue(
+    expect(screen.getByLabelText("专项与挑战模型")).toHaveValue("deepseek-chat");
+    expect(screen.getByLabelText("综合模型")).toHaveValue(
       "deepseek-reasoner",
     );
 
@@ -223,36 +219,28 @@ describe("Controls", () => {
 
     // openai quick/deep both only offer gpt-4o; selection resets to it.
     await waitFor(() => {
-      expect(screen.getByLabelText("快速思考模型")).toHaveValue("gpt-4o");
-      expect(screen.getByLabelText("深度思考模型")).toHaveValue("gpt-4o");
+      expect(screen.getByLabelText("专项与挑战模型")).toHaveValue("gpt-4o");
+      expect(screen.getByLabelText("综合模型")).toHaveValue("gpt-4o");
     });
 
     const quickSelect = screen.getByLabelText(
-      "快速思考模型",
+      "专项与挑战模型",
     ) as HTMLSelectElement;
     expect(quickSelect.options.length).toBe(1);
     expect(quickSelect.options[0].value).toBe("gpt-4o");
   });
 
-  it("applies a YAML preset's analyst enablement and order to the request", async () => {
+  it("uses fixed native roles and allows a scoped question", async () => {
     mockClient.getConfig.mockResolvedValue(makeConfig());
     mockClient.createRun.mockResolvedValue(makeSnapshot());
     render(<Controls />);
-
     await waitForConfig();
-    fireEvent.change(screen.getByLabelText("股票代码"), {
-      target: { value: "600519" },
-    });
-    fireEvent.change(screen.getByLabelText("研究预设"), {
-      target: { value: "news-first" },
-    });
+    fireEvent.change(screen.getByLabelText("股票代码"), { target: { value: "600803" } });
+    fireEvent.change(screen.getByLabelText("研究问题（可选）"), { target: { value: "核查现金流" } });
     fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
-
     await waitFor(() => expect(mockClient.createRun).toHaveBeenCalledTimes(1));
-    expect(mockClient.createRun.mock.calls[0][0].selected_analysts).toEqual([
-      "news",
-      "market",
-    ]);
+    expect(mockClient.createRun.mock.calls[0][0]).toMatchObject({ research_profile: "evidence_v1", research_question: "核查现金流", research_depth: 1 });
+    expect(mockClient.createRun.mock.calls[0][0].selected_analysts).toEqual(["market", "social", "news", "fundamentals"]);
   });
 
   it("disables start when the selected provider is not configured", async () => {
@@ -267,7 +255,7 @@ describe("Controls", () => {
 
     // Type a ticker so the only blocking error is provider-not-configured.
     fireEvent.change(screen.getByLabelText("股票代码"), {
-      target: { value: "600519" },
+      target: { value: "600803" },
     });
 
     expect(
@@ -278,27 +266,15 @@ describe("Controls", () => {
     ).toBeInTheDocument();
   });
 
-  it("disables start when no analysts are selected", async () => {
-    mockClient.getConfig.mockResolvedValue(makeConfig());
+  it("disables start when native creation is disabled", async () => {
+    const cfg = makeConfig();
+    cfg.research_profiles!.evidence_v1!.supported = false;
+    mockClient.getConfig.mockResolvedValue(cfg);
     render(<Controls />);
-
     await waitForConfig();
-
-    fireEvent.change(screen.getByLabelText("股票代码"), {
-      target: { value: "600519" },
-    });
-
-    // Uncheck every analyst (all start checked by default).
-    for (const id of ["market", "social", "news", "fundamentals"]) {
-      fireEvent.click(screen.getByLabelText(id));
-    }
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: /开始分析/ }),
-      ).toBeDisabled();
-    });
-    expect(screen.getByText(/至少选择一个分析师/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("股票代码"), { target: { value: "600803" } });
+    expect(screen.getByRole("button", { name: /开始分析/ })).toBeDisabled();
+    expect(screen.getByText(/此服务不支持新建证据研究/)).toBeInTheDocument();
   });
 
   it("calls createRun with the built DTO and selectRun with the returned run_id", async () => {
@@ -309,7 +285,7 @@ describe("Controls", () => {
     await waitForConfig();
 
     fireEvent.change(screen.getByLabelText("股票代码"), {
-      target: { value: "600519" },
+      target: { value: "600803" },
     });
 
     await waitFor(() => {
@@ -326,11 +302,13 @@ describe("Controls", () => {
 
     const body: RunCreateRequestDTO = mockClient.createRun.mock.calls[0][0];
     expect(body).toMatchObject({
-      ticker: "600519",
+      ticker: "600803",
       llm_provider: "deepseek",
       quick_think_llm: "deepseek-chat",
       deep_think_llm: "deepseek-reasoner",
-      research_depth: 3,
+      research_profile: "evidence_v1",
+      mode: "company_research",
+      research_depth: 1,
       output_language: "Chinese",
       checkpoint_enabled: false,
       asset_type: null,
@@ -349,6 +327,27 @@ describe("Controls", () => {
 
   // The per-ticker portfolio constraint UI was intentionally removed with the
   // learning-mode pivot (dual-mode controls); no portfolio fields are sent.
+
+  it("submits actual custom model IDs after requiring both inputs", async () => {
+    const config = makeConfig();
+    config.providers[0].custom_model_allowed = true;
+    config.providers[0].models.quick.push({id:"custom",label:"Custom model ID"});
+    config.providers[0].models.deep.push({id:"custom",label:"Custom model ID"});
+    mockClient.getConfig.mockResolvedValue(config);
+    mockClient.createRun.mockResolvedValue(makeSnapshot());
+    render(<Controls />);
+    await waitForConfig();
+    fireEvent.change(screen.getByLabelText("股票代码"),{target:{value:"600803"}});
+    fireEvent.change(screen.getByLabelText("专项与挑战模型"),{target:{value:"custom"}});
+    fireEvent.change(screen.getByLabelText("综合模型"),{target:{value:"custom"}});
+    expect(screen.getByRole("button",{name:"开始分析"})).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("专项与挑战模型 ID"),{target:{value:"native-research-model"}});
+    fireEvent.change(screen.getByLabelText("综合模型 ID"),{target:{value:"native-synthesis-model"}});
+    fireEvent.click(screen.getByRole("button",{name:"开始分析"}));
+    await waitFor(()=>expect(mockClient.createRun).toHaveBeenCalledWith(expect.objectContaining({
+      ticker:"600803",quick_think_llm:"native-research-model",deep_think_llm:"native-synthesis-model"
+    })));
+  });
 
   it("shows a VPN modal when a global ticker is blocked by the yfinance preflight", async () => {
     const { ApiError } = await import("../../api/client");

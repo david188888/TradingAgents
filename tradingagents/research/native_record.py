@@ -28,6 +28,11 @@ from tradingagents.research.evidence_freeze import (
     CapabilityStatus,
     FrozenEvidenceDraft,
 )
+from tradingagents.research.native_valuation import (
+    VALUATION_SOURCES,
+    assemble_valuation,
+    valuation_content,
+)
 from tradingagents.research.record_assembly import _catalyst_content, _price_metrics, _safe_url
 from tradingagents.research.source_families import (
     BODY_SOURCES,
@@ -52,6 +57,7 @@ _SOURCE_CAPABILITIES = {
     **dict.fromkeys(BODY_SOURCES, "announcement_bodies"),
     **dict.fromkeys(OPERATING_SOURCES, "operating_detail"),
     **dict.fromkeys(PRICE_SOURCES, CAP_PRICE),
+    **dict.fromkeys(VALUATION_SOURCES, "valuation"),
 }
 
 
@@ -101,6 +107,12 @@ def _financial_content(payload, ticker: str) -> SourceContentV1 | None:
 
 
 def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceContentV1 | None:
+    if item.source_name in VALUATION_SOURCES:
+        try:
+            selected = valuation_content(payload, item.source_name, ticker, item.usable_as_of.astimezone(SHANGHAI).date())
+            return _content(selected, "已保存估值字段；历史序列为本次取数的回溯数据，非历史档案时点证明")
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return None
     if item.source_name in BODY_SOURCES | OPERATING_SOURCES:
         if not isinstance(payload, dict) or payload.get("ts_code") != ticker:
             return None
@@ -151,6 +163,11 @@ def _source_record(item: CatalystEvidence, draft: FrozenEvidenceDraft, payload) 
     if item.published_at is not None and (item.published_at.tzinfo is None or item.published_at.astimezone(SHANGHAI).date() > date.fromisoformat(draft.cutoff)):
         availability = "unavailable"
         limitation.append("source_publication_after_cutoff_or_unqualified")
+    if item.source_name in VALUATION_SOURCES and (
+            item.captured_at is None or item.captured_at.tzinfo is None
+            or item.captured_at.astimezone(SHANGHAI).date().isoformat() != draft.cutoff):
+        availability = "unavailable"
+        limitation.append("valuation_historical_vintage_unverified")
     content = _source_content(item, payload, to_tushare_symbol(draft.ticker))
     if content is None:
         availability = "unavailable"
@@ -214,7 +231,7 @@ def _fact(source: SourceEvidenceV1, dimension: str, locator: str, statement: str
 def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode,
                         original_thesis: str | None = None,
                         holding_facts_as_of: str | None = None,
-                        include_coverage: bool = False) -> ResearchRecordV1:
+                        include_coverage: bool = False, include_valuation: bool = False) -> ResearchRecordV1:
     """Retain proven fields only; source coverage gaps never prove absence.
 
     Context bytes are bound to the collector's source-family digest before any
@@ -317,6 +334,14 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
             title = payload.get("Title")
             if isinstance(title, str) and title and len(title) <= 1000 and source.published_at is not None:
                 facts.append(_fact(source, "event_context", "Title;Published", f"{source.published_at.astimezone(SHANGHAI).date()} 的公告列表披露标题“{title}”；仅为标题，尚未核对正文或实施情况。"))
+        elif include_valuation and source.source_name in VALUATION_SOURCES:
+            payload = payloads[source.evidence_id]
+            if source.source_name == "tencent.valuation_snapshot":
+                facts.append(_fact(source, "valuation", "snapshot",
+                    f"估值观察 {payload['as_of']}：收盘价 {payload['price']} 元/股，PE-TTM {payload['pe_ttm']} 倍，PB {payload['pb']} 倍，总市值 {payload['total_market_cap_yi']} 亿元；倍数不等于内在价值。"))
+            else:
+                facts.append(_fact(source, "valuation", "history",
+                    f"已保存 {len(payload['rows'])} 个交易日的 PE-TTM/PB 回溯序列；仅用于本次当前时点的历史定位，不证明历史时点可用性。"))
         elif source.source_name in PRICE_SOURCES:
             payload = payloads[source.evidence_id]
             last_bar = max(payload["bars"], key=lambda item: item["Date"])
@@ -340,4 +365,10 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                         f"脚本计算 {metric.label} = {metric.value} {metric.unit}；样本 {metric.sample_size}，窗口 {metric.window_start} 至 {metric.window_end}；这是历史风险统计，不是价值区间。"))
         elif source.source_name == "user.original_thesis":
             facts.append(_fact(source, "holding_thesis", "original_thesis", "用户保存了原持仓论点；正文见证据摘录。这仅证明用户的原声明，不证明该论点为真。"))
-    return ResearchRecordV1.model_validate({**seed.model_dump(mode="python"), "claims": tuple(facts), "metrics": tuple(metrics)})
+    record = ResearchRecordV1.model_validate({**seed.model_dump(mode="python"), "claims": tuple(facts), "metrics": tuple(metrics)})
+    if include_valuation:
+        record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "limitations": (*record.limitations, "native_valuation_policy_v1")})
+        valuation = assemble_valuation(record, payloads)
+        if valuation is not None:
+            record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "valuation": valuation})
+    return record

@@ -5,8 +5,8 @@ The localhost Web workbench supports single-company and batch company research. 
 ## Limits and scheduling
 
 - A batch accepts 1-8 company inputs.
-- Runs inherit the shared workbench configuration: analysis date, LLM provider, quick/deep models, research depth, horizon, analysts, and output language. The batch panel exposes date, provider, quick/deep models, depth, and horizon batch-wide, and each company row may individually override depth and horizon before the batch starts.
-- Inputs are validated together before any child run is created. Codes and company names are accepted; names must resolve to exactly one instrument. A-share resolution is the default, while explicit exchange-qualified symbols can target other markets.
+- New batches use `evidence_v1` company research. Runs inherit the shared analysis date, optional research question, LLM provider, specialist/challenge and synthesis models, and output language. Custom model selections require an actual model ID. Scheduling compatibility fields are fixed by the Web builder; the form has no depth, analyst, preset or horizon overrides. Catalyst and holding scopes are single-company inputs.
+- Inputs are validated together before any child run is created. Codes and company names are accepted; names must resolve to exactly one instrument. Native research currently admits supported China A-shares; unsupported markets are rejected before network preflight or enqueue.
 - Every company remains an independent durable run with its own SSE stream, Reader, report, audit history, and cancellation state.
 - Single runs and batch children share one FIFO scheduler. The default global concurrency is 3 and can be set to 1, 2, or 3. Lowering concurrency never interrupts already-running work; it affects future scheduling.
 - A batch record stores ordered child run references and aggregate counts. Deleting a terminal batch removes only the batch record and preserves child runs and reports.

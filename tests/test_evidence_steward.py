@@ -434,7 +434,7 @@ def test_graph_routes_last_analyst_to_evidence_steward_before_debate():
     assert "Bull Researcher" in graph.nodes
     # Prefetch chain: Supplement -> Adjusted -> News Window -> Fundamentals.
     assert ("A-share Supplement Prefetch", "Adjusted Price Prefetch") in edges
-    assert ("Fundamentals Prefetch", "News Analyst") in edges
+    assert ("Valuation Evidence Prefetch", "News Analyst") in edges
     assert ("__start__", "News Analyst") not in edges
 
 

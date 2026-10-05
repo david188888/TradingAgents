@@ -7,9 +7,13 @@ calls a model or data provider and does not represent research-quality evidence.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tradingagents.agents.schemas import CatalystEvidence
 from tradingagents.execution.catalyst_runner import CatalystRunner
@@ -72,17 +76,52 @@ class FixtureCaller:
         return {"findings": [{"kind": "fact", "text": "固定浏览器证据示例（fixture）。", "confidence": 0.5, "evidence_ids": [eid]}]}
 
 
+class NativeFixtureSources:
+    def __init__(self, request, run_id, session, fetch):
+        self.request, self.run_id = request, run_id
+
+    def collect(self):
+        from tests.test_native_valuation import valuation_fixture
+        draft, context = valuation_fixture()
+        return draft.model_copy(update={"run_id": self.run_id, "ticker": self.request.ticker,
+            "cutoff": self.request.analysis_date,
+            "evidence": tuple({**e, "run_id":self.run_id, "ticker":self.request.ticker} for e in draft.evidence)}), context
+
+
+class NativeFixtureCaller:
+    def __init__(self, **kwargs):
+        pass
+
+    def __call__(self, stage, context):
+        time.sleep(.25)
+        if stage == "synthesis":
+            dimensions = []
+            for dimension, (ceiling, reason) in context["dimension_policy"].items():
+                refs = context["dimension_claim_ids"].get(dimension, [])[:1]
+                dimensions.append({"dimension": dimension, "status": ceiling if refs else "unresolved",
+                    "judgement": "固定测试输入，非真实研究结论。", "claim_ids": refs,
+                    "limitations": [] if refs else [reason]})
+            return {"judgement": "固定测试证据用于验证网页、引用和确定性估值接线。", "dimensions":dimensions,
+                "key_claim_ids": context["dimension_claim_ids"]["operating_quality"][:1],
+                "next_check": "本页全部为 synthetic fixture；需独立验证真实来源。"}
+        return {"challenges":[]} if stage == "challenge" else {"hypotheses":[]}
+
+
 def build_app():
     from scripts.e2e_server import _fake_runner_factory, _stub_summary_llm
     root = os.environ.get("TRADINGAGENTS_E2E_RUN_ROOT") or tempfile.mkdtemp(prefix="catalyst-e2e-")
     store = RunStore(root)
     broker = EventBroker(store)
     def factory(request, observer):
+        if request.research_profile == "evidence_v1":
+            from tradingagents.execution.native_runner import NativeRunner
+            return NativeRunner(observer, sources_factory=NativeFixtureSources, caller_factory=NativeFixtureCaller)
         if request.research_profile == "catalyst_v1":
             return CatalystRunner(observer, sources_factory=FixtureSources, caller_factory=FixtureCaller)
         return _fake_runner_factory(request, observer)
     manager = SingleRunManager(store, broker, runner_factory=factory)
     os.environ["TRADINGAGENTS_CATALYST_PROFILE_ENABLED"] = "1"
+    os.environ["TRADINGAGENTS_EVIDENCE_ENABLED"] = "true"
     _stub_summary_llm()
     return create_app(manager=manager, checkpoint_available=False,
         environment={"DEEPSEEK_API_KEY": "synthetic-fixture-key"}, connectivity_check=lambda _ticker: None)

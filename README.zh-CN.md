@@ -2,7 +2,10 @@
 
 # TradingAgents
 
-TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源自 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)。本 fork 主要面向中国 A 股：收集市场、情绪、新闻和公司基本面证据，检查证据质量，通过多空观点检验研究假设，并生成可复核的研究案例。命令行和本地 Web 工作台共用同一套执行核心。系统用于公司研究和持仓复盘，不生成订单或目标仓位，也不构成投资建议。
+TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源自 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)。本 fork 主要面向中国 A 股：收集合格证据，通过经营、事件、市场专项与独立挑战检验研究假设，并生成可复核的研究记录。Web 工作台是持续维护的产品入口，支持公司研究、催化研究与持仓复盘；CLI 分析保留为不再维护的旧代码。系统不生成订单或目标仓位，也不构成投资建议。
+
+3.0.0 统一 Web 新建流程并退休旧研究模式的新建入口。升级边界与主要变化见
+[大版本发布说明](docs/reviews/2026-10-05-v3-release-notes.md)。
 
 ## Demo
 
@@ -14,65 +17,31 @@ TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源�
 
 ## 研究流程
 
-默认的 `classic` profile 会将命令行和 Web 请求交给同一套 LangGraph 流程。其模式为 `company_research` 和 `holding_review`；命令行默认执行公司研究，持仓复盘需要通过 Web/API 提供持仓背景。经典图执行确定性数据预取，然后按顺序运行所选分析师，并在辩论前检查证据。
+Web 是持续维护的产品入口，单公司和批量新建统一使用 `evidence_v1`：
+合格证据冻结 → 经营／事件／市场专项假设 → 独立挑战 → 有界条件核查 → 分维度综合 → 保存记录与报告。
+CLI 分析代码保留为旧入口，此后不再维护；启动网页的 `tradingagents web` 命令继续使用。
 
-```mermaid
-flowchart TD
-    A[命令行或本地 Web/API 请求] --> B[共享执行核心]
-    B --> C[数据预取与来源检查]
-    C --> D[所选分析师：市场、情绪、新闻、基本面]
-    D --> E[Evidence Steward 证据检查]
-    E -->|证据可用，必要时保留限制说明| F[看多与看空研究辩论]
-    E -->|检查故障或硬性终止| X[明确标记为部分结果或终止结果]
-    F --> G[Research Manager 综合研究案例]
-    G --> H[Portfolio Manager 完成本次研究复核]
-    H --> I[提交研究案例和证据产物]
-    I --> J[报告、Reader、可选的论点比较与审计视图]
-```
+公司研究覆盖经营质量、估值和市场背景；催化研究展望未来 84 个日历日；
+持仓复盘使用用户提供的真实或模拟持仓和原假设。批量采用相同的公司研究流程。
+角色、数据窗口与调用预算由代码固定，不再使用旧的多空辩论深度或分析师选择。
 
-Evidence Steward 会区分 `PASS`、`LOW_CONFIDENCE` 和 `FAIL_STOP`；意外的检查故障也会终止流程。运行完成并不代表数据完整，结果仍可能包含未知项或覆盖不足。研究产物从已提交的运行状态发布；Reader 和 Audit 视图展示运行时保存的结果，不会现场重新请求数据。旧版 Trader 和三方风险辩论已从当前执行图中移除。执行与持久化边界请参阅[架构说明](ARCHITECTURE.md)。
+结果页先展示判断、未解决风险和关键依据，再展示估值定位、历史风险统计及下一步核查。
+点击引用读取保存内容、时点和校验摘要，不重新取数或调用模型。
+运行完成仍可能是 `partial / LOW_CONFIDENCE`，不能视为证据充分。
 
-## 数据与 Agent 职责
+新版优先使用有界公开公司资料、新浪财务表、巨潮披露与合格腾讯／新浪复权行情，
+并保留 Tushare 备用来源。V4 增加带报价日期的腾讯估值快照和 Tushare PE/PB 历史。
+估值由代码计算；只有合格年度合并归母净利润和足够历史倍数同时存在时才生成参考区间。
+缺失输入保持不可用。当前抓取的历史倍数不证明历史档案时点可用性；区间依赖盈利和倍数假设。
 
-Web 工作台还支持显式试用 `catalyst_v1`，范围为 A 股公司研究。为服务端进程设置 `TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1` 后，可选择催化流程：冻结合格证据 → 三个专项 → 独立反证 → 单次综合 → 校验发布。结果为结构化 case 及其同源 Markdown 报告，固定展望未来 84 个日历日，可选研究问题随运行保存。classic 仍为默认。
+旧 `classic` / `catalyst_v1` 记录仍可阅读；合格中断任务按原版本与已消耗预算恢复。
+旧流程新建和新运行重试返回 `410 research_profile_retired`。
+新版默认启用，`TRADINGAGENTS_EVIDENCE_ENABLED=false` 可停用新建、批量及重试，历史读取和恢复仍可使用。
+现有记录不自动改写或删除。
 
-催化流程始终保存尝试预算与可恢复阶段记录，不受旧 checkpoint 开关控制。有界适配器覆盖 Tushare 身份/财务报表、巨潮公告和 Tushare 日行情＋逐日复权因子。行情要求完整已结算交易日覆盖和截止合格的因子来源；历史检索缺少当时快照，以及未验证的腾讯 qfq，仍记为不可用。合格 Tushare 证据会附带输入条件允许的代码计算风险/ATR 指标。必需能力缺失会将优先级限制为“信息不足”。支持范围和操作见[催化研究说明](docs/operations/catalyst-research.md)。下方供应商与角色表描述 classic 流程。
-
-数据供应商路由由 `tradingagents/dataflows/` 管理。下表列出代表性接口，不表示每个供应商都能覆盖任意标的或日期。供应商故障和数据覆盖不足会被明确记录。
-
-| 证据类别 | 代表性接口 | 当前数据来源 |
-| --- | --- | --- |
-| 行情与指标 | `get_stock_data`、`get_adjusted_price_history`、`get_indicators` | A 股数据会按接口能力和配置路由至 mootdx、Tushare 或 AKShare；技术指标也可在本地计算。 |
-| 公司财务与估值 | `get_fundamentals`、`get_balance_sheet`、`get_cashflow`、`get_income_statement`、`get_a_share_valuation` | 财务数据来自 Tushare、Sina；腾讯提供 A 股当前估值快照。 |
-| 新闻与披露 | `get_news`、`get_a_share_cninfo_announcements`、`get_a_share_exchange_announcements` | 使用已配置的搜索/新闻服务以及巨潮或交易所披露；部分查询会使用明确标注为公开备份的东方财富来源。 |
-| A 股研究补充数据 | `get_a_share_dragon_tiger`、`get_a_share_lockup_releases`、`get_a_share_adjust_factors`、`get_a_share_valuation_history`、`get_china_pmi` | 根据接口分别来自东方财富、新浪、baostock 和国家统计局。 |
-
-部分 A 股数据补充适配器参考了 [Simon Lin 的 a-stock-data](https://github.com/simonlin1212/a-stock-data)（对齐上游 v3.10.0，手写移植而非 vendor），包括复权因子与 `apply_adjust` 换算、历史估值、上市信息、筹码分布、宏观数据，以及东财事件驱动层（业绩预告/机构调研/回购/股权质押/新股日历）、ST 名单、深交所交易日历、沪深官方两融、上证e互动和新浪研报列表。这些适配器由本项目自行实现并路由；运行本项目不需要安装完整的 a-stock-data 工具包。上游基准、数据来源和降级行为见 [A 股数据能力说明](docs/operations/a-share-data-capabilities.md)。
-
-| Agent 或阶段 | 主要职责 |
-| --- | --- |
-| Market Analyst（市场分析师） | 分析价格走势、技术指标和市场结构。 |
-| Sentiment Analyst（情绪分析师） | 评估可用新闻和社交来源中的关注度与情绪。 |
-| News Analyst（新闻分析师） | 解读公司新闻、公告和潜在催化因素。 |
-| Fundamentals Analyst（基本面分析师） | 检查财务报表、估值和业务质量。 |
-| Evidence Steward（证据管家） | 在辩论前检查覆盖度、矛盾和来源，并记录证据限制。 |
-| Bull Researcher（看多研究员） | 构建有证据支撑的正向论点。 |
-| Bear Researcher（看空研究员） | 用反面证据和失效条件检验看多论点。 |
-| Research Manager（研究经理） | 综合辩论和分析师报告，形成研究案例。 |
-| Portfolio Manager（组合经理） | 以研究复核结束运行；持仓复盘时附上持仓摘要，不生成交易订单。 |
-
-四位分析师可以由用户选择和排序；其后的收敛流程固定。Web 工作台通过 FastAPI/SSE 推送运行进度，并由内置的 React/TypeScript 前端展示已保存的报告、Reader 和审计记录。
-
-新提交的公司研究、持仓复盘和催化案例还会发布[统一研究记录](docs/contracts/research-record.md)。Reader 展示已保存的来源内容与合格催化行情的代码计算指标；转换来的推断明确保留未验证状态。旧报告不补算，默认流程仍为 classic。
-
-显式 Web API profile `evidence_v1` 通过原生内核覆盖 A 股公司研究、催化研究和持仓复盘：合格事实 → 隔离的经营／事件／市场专项 → 一次挑战 → 有界条件核查 → 单次分维度综合。设置 `TRADINGAGENTS_EVIDENCE_ENABLED=true` 可启用新建试用；此独立开关不改变 classic 默认，也不新增工作台选择器。Reader 与 Markdown 读取强制发布的同一 `research-record-v1`，优先展示判断、关键依据、主要风险、下一核查和量化背景。缺少估值资料或原持仓假设时保留对应限制；条件核查不能关闭经济挑战。运行完成与研究完整性／质量分开，本阶段未进行付费准确率对照。操作与恢复见[API 试用说明](docs/operations/evidence-research.md)和[统一研究记录](docs/contracts/research-record.md)。
-
-新建原生研究优先使用有界公开来源获取身份、财务表、交易日历和复权日行情，
-Tushare 作为备源。财务表分别降级并保留来源；截止时间、单位、已结算交易日
-覆盖和复权因子时点资格仍需通过校验。旧检查点恢复时保留原有来源链路。
-新建研究还可接纳有界官方 PDF 摘录与已披露经营明细，保存文档哈希、页码、
-单位和报告期；选中摘录不代表覆盖了全部公告正文。Reader 与报告区分专项
-视角下的未知项和全局来源覆盖。详见[正文接纳说明](docs/operations/evidence-research.md#official-document-admission)。
+详见 [Web 操作说明](docs/operations/evidence-research.md)、
+[统一研究记录](docs/contracts/research-record.md)、[估值规则](docs/contracts/valuation-assessment.md)
+及[系统架构](ARCHITECTURE.md)。单标的真实运行用于验证可用性，不证明预测准确率或已完成同证据质量对照。
 
 ## 快速开始
 
@@ -91,8 +60,6 @@ cp tradingagents.config.example.json tradingagents.local.json
 # （例如 A 股财务数据可设置 TUSHARE_TOKEN）。
 # 如需修改默认路由，可编辑 tradingagents.local.json。
 
-# 选择一个入口：
-tradingagents analyze                 # 交互式公司研究
 tradingagents web --port 8765 --open  # 本地 Web 工作台
 ```
 

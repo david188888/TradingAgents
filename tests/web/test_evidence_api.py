@@ -13,11 +13,11 @@ from tradingagents.web.schemas import RunCreateRequest
 from tradingagents.web.store import RunStore
 
 BODY = {
-    "ticker": "600519.SS", "analysis_date": "2026-07-18", "asset_type": "stock",
+    "ticker": "600803.SS", "analysis_date": "2026-07-18", "asset_type": "stock",
     "research_profile": "evidence_v1", "llm_provider": "openai",
     "quick_think_llm": "gpt-5.4-mini", "deep_think_llm": "gpt-5.5", "output_language": "Chinese",
 }
-HOLDING = {"ticker": "600519.SS", "quantity": 100, "average_cost": 1500,
+HOLDING = {"ticker": "600803.SS", "quantity": 100, "average_cost": 20,
     "facts_as_of": "2026-07-18", "original_thesis": "等待经营兑现。"}
 
 
@@ -31,6 +31,11 @@ class RecordingManager:
         self.requests.append(request)
         return SimpleNamespace(as_dict=lambda: {"run_id": "mock-accepted", "mode": request.mode,
             "research_profile": request.research_profile})
+
+    def start_batch(self, prepared, *, configured_keys, concurrency):
+        self.requests.extend(request for request, _ in prepared)
+        self.batch_items = [item for _, item in prepared]
+        return SimpleNamespace(as_dict=lambda: {"batch_id": "mock-batch", "concurrency": concurrency})
 
 
 @pytest.fixture
@@ -98,12 +103,12 @@ def test_rejected_native_requests_never_enqueue(factory, changes, code):
 
 
 @pytest.mark.parametrize("profile", ["classic", "catalyst_v1"])
-def test_catalyst_mode_cannot_leak_to_old_profiles(factory, profile, monkeypatch):
+def test_old_profiles_are_retired_for_creation(factory, profile, monkeypatch):
     monkeypatch.setenv("TRADINGAGENTS_CATALYST_PROFILE_ENABLED", "true")
     client, manager = factory()
     response = client.post("/api/runs", json={**BODY, "research_profile": profile, "mode": "catalyst_research"})
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "evidence_mode_unsupported"
+    assert response.status_code == 410
+    assert response.json()["detail"]["code"] == "research_profile_retired"
     assert manager.requests == []
 
 
@@ -117,7 +122,7 @@ def test_native_policy_cannot_be_used_by_old_profiles(factory, profile):
     assert manager.requests == []
 
 
-def test_native_flag_defaults_off_and_explicit_false_overrides_config(factory, monkeypatch):
+def test_explicit_false_overrides_config(factory, monkeypatch):
     monkeypatch.delenv("TRADINGAGENTS_EVIDENCE_ENABLED")
     monkeypatch.setitem(DEFAULT_CONFIG, "evidence_profile_enabled", False)
     client, manager = factory()
@@ -150,8 +155,8 @@ def test_native_checkpoint_is_independent_of_classic_checkpointer(factory):
     assert config["checkpoint_available"] is False
     assert config["research_profiles"]["evidence_v1"]["checkpoint_available"] is True
     response = client.post("/api/runs", json={**BODY, "research_profile": "classic", "checkpoint_enabled": True})
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "checkpoint_unavailable"
+    assert response.status_code == 410
+    assert response.json()["detail"]["code"] == "research_profile_retired"
 
 
 def test_default_native_params_and_inferred_holding_mode(factory):
@@ -163,17 +168,15 @@ def test_default_native_params_and_inferred_holding_mode(factory):
     assert manager.requests[0].mode == "holding_review"
 
 
-def test_omitted_profile_still_has_empty_classic_fingerprint(factory):
+def test_omitted_profile_uses_native_web_default(factory):
     client, manager = factory()
     body = {key: value for key, value in BODY.items() if key != "research_profile"}
-    body.update(selected_analysts=["market", "fundamentals"], research_depth=3, horizon="long")
     response = client.post("/api/runs", json=body)
     assert response.status_code == 201, response.text
     request = manager.requests[0]
-    assert request.research_profile == "classic" and request.profile_identity() == {}
-    assert request.catalyst_policy is None and request.evidence_policy is None
-    assert request.max_debate_rounds == request.max_risk_discuss_rounds == 3
-    assert "evidence_policy" not in RunCreateRequest.model_validate(body).model_dump(mode="json")
+    assert request.research_profile == "evidence_v1" and request.evidence_policy is not None
+    assert request.catalyst_policy is None
+    assert RunCreateRequest.model_validate(body).research_profile == "evidence_v1"
 
 
 def test_native_admission_precedes_connectivity_probe(factory, monkeypatch):
@@ -187,7 +190,44 @@ def test_native_admission_precedes_connectivity_probe(factory, monkeypatch):
     assert probes == [] and manager.requests == []
     monkeypatch.setenv("TRADINGAGENTS_EVIDENCE_ENABLED", "true")
     assert client.post("/api/runs", json=BODY).status_code == 201
-    assert probes == [manager.requests[0].ticker] == ["600519.SS"]
+    assert probes == [manager.requests[0].ticker] == ["600803.SS"]
+
+
+def test_batch_forwards_native_default_question_and_policy(factory, monkeypatch):
+    import tradingagents.web.api as api
+
+    resolved = []
+    def resolve(raw, index):
+        resolved.append(raw)
+        return {"ticker": "600803.SS", "company_name": "新奥股份", "market": "china"}
+    monkeypatch.setattr(api, "_resolve_batch_input", resolve)
+    probes = []
+    client, manager = factory(connectivity_check=probes.append)
+    config = {key: value for key, value in BODY.items() if key not in {"ticker", "research_profile"}}
+    config.update(research_question="  核验经营兑现😀  ", evidence_policy=NativeEvidencePolicyV1().as_identity())
+    response = client.post("/api/batches", json={"entries": [{"input": "600803", "config": config}], "concurrency": 1})
+    assert response.status_code == 201, response.text
+    request = manager.requests[0]
+    assert request.research_profile == "evidence_v1" and request.mode == "company_research"
+    assert request.research_question == "核验经营兑现😀"
+    assert request.evidence_policy == NativeEvidencePolicyV1()
+    assert manager.batch_items[0].config["research_profile"] == "evidence_v1"
+    assert resolved == ["600803"] and probes == ["600803.SS"]
+
+
+@pytest.mark.parametrize("profile,disabled,status", [("classic", False, 410), ("catalyst_v1", False, 410), ("evidence_v1", True, 403)])
+def test_batch_admission_precedes_resolution_probe_and_enqueue(factory, monkeypatch, profile, disabled, status):
+    import tradingagents.web.api as api
+
+    monkeypatch.setattr(api, "_resolve_batch_input", lambda *args: pytest.fail("rejected batch resolved a company"))
+    probes = []
+    client, manager = factory(connectivity_check=probes.append)
+    monkeypatch.setenv("TRADINGAGENTS_EVIDENCE_ENABLED", "false" if disabled else "true")
+    config = {key: value for key, value in BODY.items() if key != "ticker"}
+    config["research_profile"] = profile
+    response = client.post("/api/batches", json={"entries": [{"input": "600803", "config": config}]})
+    assert response.status_code == status, response.text
+    assert probes == [] and manager.requests == [] and manager.store.list_runs() == []
 
 
 @pytest.mark.parametrize("thesis", ["x" * 4001, 12, True, [], {}])
@@ -213,9 +253,10 @@ def test_native_thesis_missing_or_at_size_boundary_remains_accepted(factory, the
 
 
 @pytest.mark.parametrize("thesis", ["x" * 4001, 12])
-def test_classic_thesis_compatibility_normalization_is_preserved(factory, thesis):
+def test_retired_creation_is_rejected_before_thesis_normalization(factory, thesis):
     client, manager = factory()
     response = client.post("/api/runs", json={**BODY, "research_profile": "classic", "mode": "holding_review",
         "holding": {**HOLDING, "original_thesis": thesis}})
-    assert response.status_code == 201, response.text
-    assert manager.requests[0].holding_context.original_thesis == (thesis if isinstance(thesis, str) else None)
+    assert response.status_code == 410, response.text
+    assert response.json()["detail"]["code"] == "research_profile_retired"
+    assert manager.requests == []

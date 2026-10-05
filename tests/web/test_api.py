@@ -30,10 +30,10 @@ pytestmark = pytest.mark.unit
 
 
 VALID_RUN_BODY = {
-    "ticker": "AAPL",
+    "ticker": "600803",
     "analysis_date": "2026-07-18",
     "asset_type": "stock",
-    "selected_analysts": ["market", "fundamentals"],
+    "selected_analysts": ["market", "social", "news", "fundamentals"],
     "research_depth": 1,
     "output_language": "Chinese",
     "llm_provider": "openai",
@@ -304,10 +304,11 @@ def test_create_validates_and_translates_only_safe_input_before_start(api):
     operation, (request, configured_keys) = manager.calls[0]
     assert operation == "start"
     assert request == AnalysisRequest(
-        ticker="AAPL",
+        ticker="600803.SS",
         analysis_date="2026-07-18",
         asset_type="stock",
-        selected_analysts=("market", "fundamentals"),
+        selected_analysts=("market", "social", "news", "fundamentals"),
+        research_profile="evidence_v1",
         max_debate_rounds=1,
         max_risk_discuss_rounds=1,
         horizon="medium",
@@ -324,45 +325,25 @@ def test_create_validates_and_translates_only_safe_input_before_start(api):
     assert response.json() == jsonable_encoder(created)
 
 
-def test_create_preserves_explicit_investment_horizon(api):
-    client, _store, manager = api
-
-    response = client.post(
-        "/api/runs",
-        json={**VALID_RUN_BODY, "horizon": "long"},
-    )
-
-    assert response.status_code == 201
-    request, _configured_keys = manager.calls[0][1]
-    assert request.horizon == "long"
-
-
-def test_create_blocks_global_ticker_when_yfinance_unreachable(tmp_path: Path):
-    from tradingagents.web.connectivity import YahooUnavailableError
-
-    store = RunStore(tmp_path / "runs")
-    manager = RecordingManager(store)
-
-    def fail_check(ticker: str) -> None:
-        raise YahooUnavailableError("connection refused")
-
-    app = _create_app(
-        store=store,
-        manager=manager,
-        broker=EventBroker(store),
-        connectivity_check=fail_check,
-    )
-    client = TestClient(app)
-
-    response = client.post("/api/runs", json=VALID_RUN_BODY)
-
-    assert response.status_code == 503
-    body = response.json()["detail"]
-    assert body["code"] == "yfinance_unreachable"
-    assert "VPN" in body["message"]
-    # No run must be created and the manager is never called.
+def test_native_creation_rejects_legacy_horizon(api):
+    client, _, manager = api
+    response = client.post("/api/runs", json={**VALID_RUN_BODY,"horizon":"long"})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "evidence_horizon_not_supported"
     assert manager.calls == []
-    assert store.list_runs() == []
+
+
+
+def test_native_creation_refuses_global_market_before_connectivity(tmp_path):
+    store = RunStore(tmp_path/"runs")
+    manager = RecordingManager(store)
+    probes = []
+    client = TestClient(_create_app(store=store, manager=manager, environment={"OPENAI_API_KEY":"offline"}, connectivity_check=lambda t:probes.append(t)))
+    response = client.post("/api/runs", json={**VALID_RUN_BODY,"ticker":"AAPL"})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "evidence_market_unsupported"
+    assert probes == manager.calls == []
+
 
 
 def test_create_skips_preflight_for_a_share_ticker(tmp_path: Path):
@@ -393,43 +374,27 @@ def test_create_skips_preflight_for_a_share_ticker(tmp_path: Path):
     assert response.status_code == 201
 
 
-def test_retry_blocks_global_ticker_when_yfinance_unreachable(tmp_path: Path):
-    from tradingagents.web.connectivity import YahooUnavailableError
-
-    store = RunStore(tmp_path / "runs")
+def test_retired_retry_refuses_before_connectivity(tmp_path):
+    store = RunStore(tmp_path/"runs")
     manager = RecordingManager(store)
-    source = _snapshot(ticker="AAPL", status="failed")
+    source = _snapshot(ticker="AAPL",status="failed")
     store.create_run(source)
-
-    def fail_check(_ticker: str) -> None:
-        raise YahooUnavailableError("timeout")
-
-    app = _create_app(
-        store=store,
-        manager=manager,
-        broker=EventBroker(store),
-        connectivity_check=fail_check,
-    )
-    client = TestClient(app)
-
+    probes=[]
+    client = TestClient(_create_app(store=store, manager=manager, connectivity_check=lambda t:probes.append(t)))
     response = client.post(f"/api/runs/{source.run_id}/retry")
+    assert response.status_code == 410
+    assert response.json()["detail"]["code"] == "research_profile_retired"
+    assert probes == manager.calls == []
 
-    assert response.status_code == 503
-    assert response.json()["detail"]["code"] == "yfinance_unreachable"
-    assert ("retry", source.run_id) not in manager.calls
 
 
-def test_create_preserves_requested_analyst_order(api):
-    client, _store, manager = api
+def test_native_creation_rejects_legacy_analyst_order(api):
+    client, _, manager = api
+    response = client.post("/api/runs", json={**VALID_RUN_BODY,"selected_analysts":["fundamentals","market"]})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "evidence_legacy_scheduling_params_not_applicable"
+    assert manager.calls == []
 
-    response = client.post(
-        "/api/runs",
-        json={**VALID_RUN_BODY, "selected_analysts": ["fundamentals", "market"]},
-    )
-
-    assert response.status_code == 201
-    request, _configured_keys = manager.calls[0][1]
-    assert request.selected_analysts == ("fundamentals", "market")
 
 
 def test_create_normalizes_portfolio_symbols_before_manager(api):
@@ -516,62 +481,25 @@ def test_create_rejects_missing_provider_key_before_manager(tmp_path: Path):
     assert manager.calls == []
 
 
-def test_create_rejects_future_date_and_unavailable_checkpoint_before_manager(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-):
-    monkeypatch.setenv("OPENAI_API_KEY", "configured-but-never-returned")
-    store = RunStore(tmp_path / "runs")
-    manager = RecordingManager(store)
-    client = TestClient(
-        _create_app(
-            store=store,
-            manager=manager,
-            broker=EventBroker(store),
-            checkpoint_available=False,
-        )
-    )
-    future = dict(VALID_RUN_BODY)
-    future["analysis_date"] = (date.today() + timedelta(days=1)).isoformat()
-    checkpoint = dict(VALID_RUN_BODY)
-    checkpoint["checkpoint_enabled"] = True
+def test_native_future_date_rejected_and_checkpoint_independent(tmp_path):
+    store=RunStore(tmp_path/"runs")
+    manager=RecordingManager(store)
+    client=TestClient(_create_app(store=store,manager=manager,environment={"OPENAI_API_KEY":"offline"},checkpoint_available=False))
+    future=client.post("/api/runs",json={**VALID_RUN_BODY,"analysis_date":(date.today()+timedelta(days=1)).isoformat()})
+    assert future.status_code == 422 and manager.calls == []
+    response=client.post("/api/runs",json={**VALID_RUN_BODY,"checkpoint_enabled":True})
+    assert response.status_code == 201
+    assert manager.calls[0][1][0].research_profile == "evidence_v1"
 
-    future_response = client.post("/api/runs", json=future)
-    checkpoint_response = client.post("/api/runs", json=checkpoint)
 
-    assert future_response.status_code == 422
-    assert checkpoint_response.status_code == 422
-    assert checkpoint_response.json()["detail"]["code"] == "checkpoint_unavailable"
+
+def test_native_creation_rejects_crypto_before_manager(api):
+    client, _, manager = api
+    response = client.post("/api/runs", json={**VALID_RUN_BODY,"ticker":"BTCUSD", "asset_type":"crypto","selected_analysts":["market"]})
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "evidence_market_unsupported"
     assert manager.calls == []
 
-
-def test_create_normalizes_crypto_identity_before_manager(tmp_path: Path):
-    store = RunStore(tmp_path / "runs")
-    manager = RecordingManager(store)
-    client = TestClient(
-        _create_app(
-            store=store,
-            manager=manager,
-            broker=EventBroker(store),
-            environment={},
-        )
-    )
-    body = {
-        **VALID_RUN_BODY,
-        "ticker": "BTCUSD",
-        "asset_type": "crypto",
-        "selected_analysts": ["market", "news"],
-        "llm_provider": "ollama",
-        "quick_think_llm": "local-fast",
-        "deep_think_llm": "local-deep",
-    }
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 201
-    request = manager.calls[0][1][0]
-    assert request.ticker == "BTC-USD"
-    assert request.asset_type == "crypto"
 
 
 @pytest.mark.parametrize(
@@ -772,7 +700,7 @@ def test_delete_all_runs_preserves_the_active_batch_and_its_members(api):
 def test_cancel_retry_and_resume_delegate_to_manager_with_expected_http_semantics(api):
     client, store, manager = api
     active = _snapshot(status="running")
-    failed = _snapshot(status="failed")
+    failed = _snapshot(status="failed", metadata={"research_profile":"evidence_v1"})
     interrupted = _snapshot(status="interrupted")
     for snapshot in (active, failed, interrupted):
         store.create_run(snapshot)
@@ -806,7 +734,7 @@ def test_lifecycle_conflicts_have_stable_safe_409_errors(
     code: str,
 ):
     client, store, manager = api
-    source = _snapshot(status="interrupted")
+    source = _snapshot(status="interrupted", metadata={"research_profile":"evidence_v1"} if operation == "retry" else {})
     store.create_run(source)
     manager.errors[operation] = error
     response = client.post(f"/api/runs/{source.run_id}/{operation}")

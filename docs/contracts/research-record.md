@@ -65,8 +65,8 @@ retains its source family and never becomes an independent source. An executed
 unavailable check may add V1 without new evidence; zero execution creates no
 V1. The validated output and operation outcomes are stored in the checkpoint.
 The native kernel publishes this output through the mandatory publication
-gate below. The opt-in evidence_v1 request/profile and RunManager integration
-cover all three modes; classic remains the default. The Reader accepts committed native records without a paired case;
+gate below. The default Web evidence_v1 request/profile and RunManager integration
+cover all three modes and batch company research. The Reader accepts committed native records without a paired case;
 the paired-case check applies only to compatibility records.
 
 ## Native shared kernel
@@ -139,14 +139,15 @@ records remain missing. Reading, expanding and refreshing never backfill,
 dispatch models or query providers.
 
 The evidence_v1 workbench uses the native record as its single main Reader: judgement,
-key grounds, principal challenge, next check and quantitative context appear before
+principal challenge, key grounds, valuation/risk context and next check appear before
 collapsed evidence/hypothesis/verification details. It does not fetch or mount the
-classic/catalyst case Reader. Running native roles are shown without a new selector.
+classic/catalyst case Reader. Creation offers the three native scopes and fixed roles.
 Existing profiles retain saved quantitative context below the catalyst brief and
 alongside the classic Reader. The catalyst citation drawer shows saved source content
 before locator metadata. Records and source content are bound to the selected
-run; missing content or unavailable values are not estimated. This is the minimal native Reader integration; complete D browser/layout acceptance
-and E same-evidence quality/cost comparison remain outstanding. See
+run; missing content or unavailable values are not estimated. V4 adds a saved-content modal and deterministic valuation context. Same-evidence
+quality/cost comparison and broader human acceptance remain separate from browser
+checks and single-symbol operational smoke. See
 [evidence research operations](../operations/evidence-research.md).
 
 ## Official document content and coverage scope
@@ -165,3 +166,15 @@ collector coverage in addition to these scoped unknowns. Read projections
 label each scope explicitly, and do not upgrade old unscoped unknowns into a
 global missing-source finding. These strings are additive annotations, not
 new model permissions or a change to the frozen evidence qualification rules.
+
+## Native v4 valuation
+
+The optional `valuation` field carries `NativeValuationV1`: saved typed inputs,
+input SHA256, source evidence IDs, deterministic `ValuationAssessmentV1` and
+limitations. Validators bind run/ticker/cutoff, require qualified source refs
+and recompute the input digest and assessment. Producers admit source payloads
+against frozen family hashes and qualified dates. Absence omits this additive
+field from serialized records, preserving old record and checkpoint digests.
+The code-owned schema, rather than this prose, defines the complete fields.
+V1–V3 recovery does not gain V4 facts, source views, valuation policy or prompt
+inputs. Reader displays missing valuation explicitly without deriving new data.

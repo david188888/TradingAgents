@@ -3,13 +3,12 @@
 - **Status: Current**（current-state 文档；行为变化时对照代码与测试校验）
 
 TradingAgents is a local-first, LangGraph-based multi-agent financial research
-framework. This fork prioritizes China A-share research while retaining support
-for other instruments through its configured providers. It is a research tool,
+framework. This fork prioritizes China A-share research with a maintained A-share Web product and retained compatibility code for older instruments. It is a research tool,
 not an execution or account-management product.
 
 ## Users
 
-- Individual researchers and engineers running local CLI or workbench analysis.
+- Individual researchers and engineers running the local Web workbench.
 - Developers extending data providers, graph roles, evidence contracts, and
   local observability.
 - Readers reviewing a company-research or holding-review artifact with its
@@ -21,18 +20,18 @@ not an execution or account-management product.
   research workflow.
 - Make evidence provenance, coverage limitations, and persisted artifacts
   available to local readers rather than hiding provider failures.
-- Support company research through the local CLI and workbench, and
-  learning-oriented holding review through an explicit Web/API holding context.
-- Keep shared execution independent of its CLI and Web consumers.
+- Support Web company, catalyst and holding research, plus batch company research.
+  Holding review requires explicit user-provided facts.
+- Keep domain execution independent of the Web adapter and retained compatibility consumers.
 
 ## Entry Surfaces
 
-`tradingagents` and `tradingagents analyze` currently construct a
-`company_research` request. A `holding_review` requires an explicit holding
-context and is created through the Web/API request boundary; the CLI does not
-collect that context. Batch creation of company-research runs is likewise
-Web-only; the CLI does not create batches. The local workbench is a FastAPI/SSE
-adapter that serves its bundled frontend on loopback only.
+`tradingagents web --port 8765 --open` starts the maintained local workbench.
+New single and batch runs use `evidence_v1`; old profiles are read/resume only.
+CLI analysis is outside continued maintenance. The FastAPI/SSE adapter serves
+its bundled frontend on loopback only. The native kernel freezes evidence,
+creates isolated hypotheses, challenges and bounded conditions, then synthesizes
+one saved research record consumed by both Reader and Markdown.
 
 ## Non-Goals
 

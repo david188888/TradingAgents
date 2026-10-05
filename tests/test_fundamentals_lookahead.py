@@ -120,7 +120,8 @@ def test_a_direct_call_without_a_date_keeps_its_legacy_behavior():
 
 
 @pytest.mark.unit
-def test_both_vendors_withhold_on_the_same_rule():
+def test_both_vendors_withhold_on_the_same_rule(monkeypatch):
+    monkeypatch.setattr(date_window, "get_current_date", lambda: _TODAY)
     """One shared rule, so the vendor switch cannot reintroduce the leak."""
     withheld_text = date_window.withhold_live_profile(_PAST, "AAPL")
 

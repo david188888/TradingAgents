@@ -392,3 +392,31 @@ def test_schema_valid_fabricated_fact_id_uses_bounded_repair_before_cache(journa
     assert len(stub.prompts) == 2
     assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 1
     assert "f.fabricated" not in json.dumps(journal.state["results"])
+
+
+def test_v4_synthesis_dimension_binding_uses_one_bounded_repair(journal, monkeypatch):
+    from tests.test_native_valuation import valuation_fixture
+    from tradingagents.research.native_policy import dimension_claim_ids, dimension_policy
+    from tradingagents.research.native_record import build_native_record
+    record = build_native_record(*valuation_fixture(), mode="company_research", include_valuation=True)
+    allowed = dimension_claim_ids(record)
+    financial = allowed["operating_quality"][0]
+    valuation = allowed["valuation"][0]
+    good = {"judgement": "仅对合格资料形成条件判断。", "dimensions": [
+        {"dimension":"operating_quality", "status":"conditional", "judgement":"年度利润已披露", "claim_ids":[financial]},
+        {"dimension":"valuation", "status":"conditional", "judgement":"历史定位依赖倍数假设", "claim_ids":[valuation]},
+        {"dimension":"market_context", "status":"unresolved", "judgement":"行情未取得", "limitations":["行情缺失"]}],
+        "next_check":"核对经营明细。"}
+    bad = deepcopy(good)
+    bad["dimensions"][1]["claim_ids"] = [financial]
+    main(journal, "synthesis")
+    stub, _ = sdk(monkeypatch, [bad, good])
+    context = {"record":record.model_dump(mode="json"), "dimension_claim_ids":allowed,
+        "dimension_policy":dimension_policy(record, scoped=True, valuation=True)}
+    c = caller(journal)
+    result = c("synthesis", context)
+    assert result["dimensions"][1]["claim_ids"] == [valuation]
+    assert len(stub.prompts) == 2
+    assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 1
+    assert c("synthesis", context) == result
+    assert len(stub.prompts) == 2

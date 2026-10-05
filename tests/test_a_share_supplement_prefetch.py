@@ -177,4 +177,4 @@ def test_graph_runs_supplement_prefetch_once_before_first_analyst():
     assert ("A-share Supplement Prefetch", "Adjusted Price Prefetch") in edges
     # The prefetch chain runs to completion before the first analyst node.
     assert ("Adjusted Price Prefetch", "News Window Prefetch") in edges
-    assert ("Fundamentals Prefetch", "Market Analyst") in edges
+    assert ("Valuation Evidence Prefetch", "Market Analyst") in edges

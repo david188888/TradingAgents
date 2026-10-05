@@ -18,16 +18,10 @@ body {
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.5;
-  min-width: 1180px;
+  min-width: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-}
-
-@media (max-width: 1099px) {
-  body {
-    min-width: 0;
-  }
 }
 
 button,
@@ -107,3 +101,17 @@ a {
 .record-evidence { margin-block: .8rem; }
 .record-source-content { min-width: 0; }
 .record-source-content pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; font-size: .9rem; line-height: 1.6; padding: .8rem; border-left: 3px solid var(--line); }
+
+.record-judgement { font-size: clamp(1.25rem, 2vw, 1.6rem); line-height: 1.55; font-weight: 600; max-width: 42em; }
+.record-valuation, .record-next { margin-block: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.record-valuation pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow-y: auto; }
+.record-reference { font-size: .85rem; margin-bottom: .6rem; padding: .35rem .65rem; border: 1px solid var(--accent-line); border-radius: var(--radius-sm); color: var(--accent-strong); background: var(--accent-soft); }
+.record-source-meta { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: .35rem .75rem; font-size: .8rem; color: var(--muted); }
+.record-source-meta dd { margin: 0; overflow-wrap: anywhere; }
+.record-dialog-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, .35); display: flex; justify-content: flex-end; }
+.record-source-dialog { width: min(680px, 100%); height: 100%; overflow-y: auto; box-sizing: border-box; background: var(--surface, var(--bg)); padding: clamp(1rem, 3vw, 2rem); overflow-wrap: anywhere; }
+.record-source-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.record-source-dialog section { border-top: 1px solid var(--line); padding-block: 1rem; }
+
+.record-limits { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; color: var(--muted); font-size: .85rem; }
+.record-limits span { border: 1px solid var(--line); border-radius: 5px; padding: .3rem .5rem; }

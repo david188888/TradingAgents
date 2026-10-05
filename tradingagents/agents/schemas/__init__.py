@@ -100,6 +100,7 @@ from ._research_case_draft import (
 from ._research_record import (  # noqa: F401 - facade re-export
     RESEARCH_RECORD_CONTRACT,
     EvidenceSnapshotV1,
+    NativeValuationV1,
     QuantitativeMetricV1,
     RecordClaimV1,
     ResearchChallengeV1,

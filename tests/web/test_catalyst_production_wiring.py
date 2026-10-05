@@ -164,8 +164,9 @@ def test_http_create_read_report_and_retry_preserve_question(tmp_path, monkeypat
     app = create_app(manager=manager, environment={"OPENAI_API_KEY": "test-key"}, recover_startup=False)
     with TestClient(app) as client:
         response = client.post("/api/runs", json={**CATALYST_BODY, "research_question": "  核验订单兑现  "})
-        assert response.status_code == 201, response.text
-        run_id = response.json()["run_id"]
+        assert response.status_code == 410, response.text
+        assert response.json()["detail"]["code"] == "research_profile_retired"
+        run_id = manager.start(replace(request(), research_question="核验订单兑现")).run_id
         assert manager.wait(run_id, 10).status == "completed"
         before = (MissingSources.calls, ModelStub.calls)
         assert client.get(f"/api/runs/{run_id}/catalyst").json()["research_question"] == "核验订单兑现"
@@ -176,14 +177,10 @@ def test_http_create_read_report_and_retry_preserve_question(tmp_path, monkeypat
         assert client.get(f"/api/runs/{run_id}/artifacts/{artifact}").status_code == 200
         assert (MissingSources.calls, ModelStub.calls) == before
         retried = client.post(f"/api/runs/{run_id}/retry")
-        assert retried.status_code == 201, retried.text
-        new_run_id = retried.json()["run_id"]
-        assert new_run_id != run_id
-        snapshot = manager.wait(new_run_id, 10)
-        assert snapshot.status == "completed"
-        assert snapshot.retry_of == run_id
-        assert _request_from_snapshot(snapshot).research_profile == "catalyst_v1"
-        assert client.get(f"/api/runs/{new_run_id}/catalyst").json()["research_question"] == "核验订单兑现"
+        assert retried.status_code == 410
+        assert retried.json()["detail"]["code"] == "research_profile_retired"
+        assert (MissingSources.calls, ModelStub.calls) == before
+
 
 
 @pytest.mark.parametrize("question", ["😀" * 400, "界" * 400, "   "])

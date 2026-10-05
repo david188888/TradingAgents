@@ -401,6 +401,10 @@ def create_app(
 
     @app.post("/api/batches", status_code=201)
     def create_batch(body: BatchCreateRequest) -> dict[str, Any]:
+        for entry in body.entries:
+            _require_native_creation(entry.config.research_profile)
+        if not evidence_profile_enabled():
+            raise ApiBoundaryError(403, "evidence_profile_unavailable", "此服务已停用新建证据研究。", fields=("research_profile",))
         configured_keys = _configured_keys(selected_environment)
         prepared: list[tuple[AnalysisRequest, Any]] = []
         seen_tickers: set[str] = set()
@@ -429,13 +433,16 @@ def create_app(
                 output_language=config.output_language,
                 checkpoint_enabled=config.checkpoint_enabled,
                 asset_type=config.asset_type,
+                research_profile=config.research_profile,
+                research_question=config.research_question,
+                evidence_policy=config.evidence_policy,
             )
-            connectivity_check(canonical)
             request_model, _ = _analysis_request(
                 request_body,
                 selected_environment,
                 checkpoint_available=checkpoint_available,
             )
+            connectivity_check(canonical)
             prepared.append(
                 (
                     request_model,
@@ -504,18 +511,14 @@ def create_app(
         # Global (non-A-share) tickers route through yfinance, which is
         # unreachable from a mainland network without a VPN. Fail fast with a
         # 503 before creating the run instead of wasting the whole analysis.
-        # Native trial admission is local and must reject unsupported markets
-        # or a disabled profile before a connectivity probe can run. Preserve
-        # the existing preflight order for the two compatibility profiles.
-        if body.research_profile != "evidence_v1":
-            connectivity_check(body.ticker)
+        # Reject retired/disabled workflows and unsupported markets before
+        # a connectivity probe or background work can run.
         request_model, configured_keys = _analysis_request(
             body,
             selected_environment,
             checkpoint_available=checkpoint_available,
         )
-        if body.research_profile == "evidence_v1":
-            connectivity_check(request_model.ticker)
+        connectivity_check(request_model.ticker)
         return selected_manager.start(
             request_model,
             configured_keys=configured_keys,
@@ -665,6 +668,9 @@ def create_app(
     @app.post("/api/runs/{run_id}/retry", status_code=201)
     def retry_run(run_id: str) -> dict[str, Any]:
         source = selected_store.read_snapshot(run_id)
+        _require_native_creation(source.metadata.get("research_profile", "classic"))
+        if not evidence_profile_enabled():
+            raise ApiBoundaryError(403, "evidence_profile_unavailable", "此服务已关闭新建研究。")
         connectivity_check(source.ticker)
         return selected_manager.retry(run_id).as_dict()
 
@@ -849,6 +855,7 @@ def _analysis_request(
     *,
     checkpoint_available: bool,
 ) -> tuple[AnalysisRequest, dict[str, bool]]:
+    _require_native_creation(body.research_profile)
     provider = body.llm_provider.lower()
     if provider not in PROVIDER_API_KEY_ENV:
         raise ApiBoundaryError(
@@ -967,11 +974,11 @@ def _normalize_research_profile(
     if profile == "evidence_v1":
         if not evidence_profile_enabled():
             raise ApiBoundaryError(403, "evidence_profile_unavailable",
-                "The evidence_v1 research profile is not enabled on this server. Use research_profile=classic.",
+                "此服务已关闭新建证据研究；历史记录仍可读取。",
                 fields=("research_profile",))
         if asset_type != "stock" or not is_native_stock_ticker(canonical_ticker):
             raise ApiBoundaryError(422, "evidence_market_unsupported",
-                "research_profile=evidence_v1 supports A-share common stocks only. Use research_profile=classic for other markets or asset types.",
+                "当前 Web 研究支持 A 股普通股票，请输入 A 股代码。",
                 fields=("research_profile", "ticker", "asset_type"))
         if body.horizon != "medium":
             raise ApiBoundaryError(422, "evidence_horizon_not_supported",
@@ -1045,12 +1052,19 @@ def catalyst_profile_enabled() -> bool:
     return bool(DEFAULT_CONFIG.get("catalyst_profile_enabled", False))
 
 
+def _require_native_creation(profile: str) -> None:
+    if profile != "evidence_v1":
+        raise ApiBoundaryError(410, "research_profile_retired",
+            "旧流程已退出新建研究。请使用新版证据研究；历史读取和已有运行恢复仍可用。",
+            fields=("research_profile",))
+
+
 def evidence_profile_enabled() -> bool:
-    """Creation-only native trial flag; existing durable runs remain readable."""
+    """Creation-only switch; existing durable runs remain readable/recoverable."""
     override = os.environ.get("TRADINGAGENTS_EVIDENCE_ENABLED")
     if override is not None and override.strip():
         return override.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(DEFAULT_CONFIG.get("evidence_profile_enabled", False))
+    return bool(DEFAULT_CONFIG.get("evidence_profile_enabled", True))
 
 
 def _catalyst_legacy_scheduling_is_default(body: RunCreateRequest) -> bool:
@@ -1396,11 +1410,10 @@ def _configuration_payload(
         "output_languages": list(SUPPORTED_OUTPUT_LANGUAGES),
         "checkpoint_available": checkpoint_available,
         "research_profiles": {
-            "classic": {"supported": True, "reason": None},
-            "catalyst_v1": {"supported": catalyst_profile_enabled(),
-                "reason": None if catalyst_profile_enabled() else "此服务尚未启用催化研究试用"},
+            "classic": {"supported": False, "reason": "仅保留历史读取和已有运行恢复"},
+            "catalyst_v1": {"supported": False, "reason": "仅保留历史读取和已有运行恢复"},
             "evidence_v1": {"supported": evidence_profile_enabled(),
-                "reason": None if evidence_profile_enabled() else "此服务尚未启用证据驱动研究试用",
+                "reason": None if evidence_profile_enabled() else "此服务已停用新建证据研究",
                 "checkpoint_available": True},
         },
         "wind": {
@@ -1409,6 +1422,7 @@ def _configuration_payload(
             "capabilities": list(WIND_CAPABILITIES),
         },
         "defaults": {
+            "research_profile": "evidence_v1",
             "llm_provider": DEFAULT_CONFIG.get("llm_provider"),
             "quick_think_llm": DEFAULT_CONFIG.get("quick_think_llm"),
             "deep_think_llm": DEFAULT_CONFIG.get("deep_think_llm"),

@@ -100,7 +100,7 @@ def test_market_graph_forces_price_prefetch_before_analyst():
 
     assert ("A-share Supplement Prefetch", "Adjusted Price Prefetch") in edges
     assert ("Adjusted Price Prefetch", "News Window Prefetch") in edges
-    assert ("Fundamentals Prefetch", "Market Analyst") in edges
+    assert ("Valuation Evidence Prefetch", "Market Analyst") in edges
     assert ("__start__", "Market Analyst") not in edges
 
 

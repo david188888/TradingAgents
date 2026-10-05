@@ -22,9 +22,6 @@ type CompanyRow = {
   id: number;
   input: string;
   resolved?: { company_name: string; ticker: string; market: string };
-  custom: boolean;
-  depth?: 1 | 3 | 5;
-  horizon?: "short" | "medium" | "long";
 };
 
 export interface BatchControlsProps {
@@ -39,7 +36,7 @@ function configFromRequest(request: RunCreateRequestDTO): Omit<RunCreateRequestD
 }
 
 export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControlsProps): JSX.Element {
-  const [rows, setRows] = useState<CompanyRow[]>([{ id: 1, input: "", custom: false }]);
+  const [rows, setRows] = useState<CompanyRow[]>([{ id: 1, input: "" }]);
   const [concurrency, setConcurrency] = useState<1 | 2 | 3>(3);
   const [batch, setBatch] = useState<BatchSnapshotDTO | null>(null);
   const [checking, setChecking] = useState(false);
@@ -48,7 +45,7 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
   const [checked, setChecked] = useState(false);
   const previousBatchStatus = useRef<string | null>(null);
 
-  const sharedRequest = cfg.buildRequestForTicker("AAPL");
+  const sharedRequest = cfg.buildRequestForTicker("600803");
   const activeRows = rows.filter((row) => row.input.trim() !== "");
   const canAdd = rows.length < MAX_ITEMS;
   const hasEmptyRow = rows.some((row) => row.input.trim() === "");
@@ -144,8 +141,6 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
         input: row.input.trim(),
         config: {
           ...baseConfig,
-          ...(row.custom && row.depth !== undefined ? { research_depth: row.depth } : {}),
-          ...(row.custom && row.horizon !== undefined ? { horizon: row.horizon } : {}),
         },
       })),
     })
@@ -214,14 +209,17 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
               <input value={row.input} placeholder="代码或公司名称" onChange={(event) => updateRow(row.id, { input: event.target.value })} />
               <button type="button" className="icon-button" aria-label={`移除第 ${row.id} 家公司`} onClick={() => { setRows((current) => current.filter((candidate) => candidate.id !== row.id)); setChecked(false); }}>×</button>
               {row.resolved ? <small className="batch-resolved">{row.resolved.company_name} · {row.resolved.ticker} · {row.resolved.market}</small> : null}
-              <label className="check batch-custom-check"><input type="checkbox" checked={row.custom} onChange={(event) => updateRow(row.id, { custom: event.target.checked, depth: cfg.research_depth, horizon: cfg.horizon })} /> 单独配置</label>
-              {row.custom ? <div className="batch-item-config"><select value={String(row.depth ?? cfg.research_depth)} onChange={(event) => updateRow(row.id, { depth: Number(event.target.value) as 1 | 3 | 5 })}><option value="1">深度 1</option><option value="3">深度 3</option><option value="5">深度 5</option></select><select value={row.horizon ?? cfg.horizon} onChange={(event) => updateRow(row.id, { horizon: event.target.value as "short" | "medium" | "long" })}><option value="short">短期</option><option value="medium">中期</option><option value="long">长期</option></select></div> : null}
             </div>
           ))}
         </div>
-        <button type="button" className="secondary" disabled={!canAdd} onClick={() => setRows((current) => [...current, { id: Math.max(...current.map((row) => row.id), 0) + 1, input: "", custom: false }])}>＋ 添加公司（{rows.length}/{MAX_ITEMS}）</button>
+        <button type="button" className="secondary" disabled={!canAdd} onClick={() => setRows((current) => [...current, { id: Math.max(...current.map((row) => row.id), 0) + 1, input: "" }])}>＋ 添加公司（{rows.length}/{MAX_ITEMS}）</button>
       </div>
       <div className="input-group"><label htmlFor="batch-date">分析日期</label><input id="batch-date" type="date" value={cfg.analysis_date} onChange={(event) => cfg.setAnalysisDate(event.target.value)} /></div>
+      <div className="input-group">
+        <label htmlFor="batch-question">研究问题（可选）</label>
+        <textarea id="batch-question" value={cfg.research_question} onChange={event => cfg.setResearchQuestion(event.target.value)} maxLength={800} rows={3} placeholder="留空使用公司研究默认问题" />
+        <small>本批次均为公司研究；该问题会应用于每家公司。</small>
+      </div>
       <div className="input-group">
         <label htmlFor="batch-provider">LLM Provider</label>
         <select
@@ -250,10 +248,10 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
         )}
       </div>
       <div className="input-group">
-        <label htmlFor="batch-quick">快速思考模型</label>
+        <label htmlFor="batch-quick">专项与挑战模型</label>
         <select
           id="batch-quick"
-          value={cfg.quick_think_llm}
+          value={cfg.quick_model_selection}
           onChange={(event) => cfg.setQuickThinkLlm(event.target.value)}
           disabled={cfg.loading || cfg.quickOptions.length === 0}
         >
@@ -263,12 +261,16 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
             </option>
           ))}
         </select>
+        {cfg.quick_model_selection === "custom" ? <>
+          <label htmlFor="batch-quick-custom">专项与挑战模型 ID</label>
+          <input id="batch-quick-custom" value={cfg.quick_custom_model_id} onChange={event => cfg.setQuickCustomModelId(event.target.value)} type="text" placeholder="填写 Provider 支持的实际模型 ID" />
+        </> : null}
       </div>
       <div className="input-group">
-        <label htmlFor="batch-deep">深度思考模型</label>
+        <label htmlFor="batch-deep">综合模型</label>
         <select
           id="batch-deep"
-          value={cfg.deep_think_llm}
+          value={cfg.deep_model_selection}
           onChange={(event) => cfg.setDeepThinkLlm(event.target.value)}
           disabled={cfg.loading || cfg.deepOptions.length === 0}
         >
@@ -278,10 +280,12 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
             </option>
           ))}
         </select>
+        {cfg.deep_model_selection === "custom" ? <>
+          <label htmlFor="batch-deep-custom">综合模型 ID</label>
+          <input id="batch-deep-custom" value={cfg.deep_custom_model_id} onChange={event => cfg.setDeepCustomModelId(event.target.value)} type="text" placeholder="填写 Provider 支持的实际模型 ID" />
+        </> : null}
       </div>
-      <div className="input-group"><label htmlFor="batch-depth">公共研究深度</label><select id="batch-depth" value={String(cfg.research_depth)} onChange={(event) => cfg.setResearchDepth(Number(event.target.value) as 1 | 3 | 5)}><option value="1">1 轮</option><option value="3">3 轮</option><option value="5">5 轮</option></select></div>
-      <div className="input-group"><label htmlFor="batch-horizon">公共研究周期</label><select id="batch-horizon" value={cfg.horizon} onChange={(event) => cfg.setHorizon(event.target.value as "short" | "medium" | "long")}><option value="short">短期</option><option value="medium">中期</option><option value="long">长期</option></select></div>
-      {cfg.validationError ? <div className="error-text">{cfg.validationError === "请输入股票代码" ? "请在上方填写公司列表" : cfg.validationError}</div> : null}
+      {cfg.batchValidationError ? <div className="error-text">{cfg.batchValidationError}</div> : null}
       {error ? <div className="error-text">{error}</div> : null}
       <div className="actions"><button type="button" className="secondary" onClick={handleValidate} disabled={checking || hasEmptyRow || activeRows.length === 0}>{checking ? "校验中…" : checked ? "重新校验" : "校验批次"}</button><button type="button" className="primary" onClick={handleStart} disabled={!canStart}>{starting ? "启动中…" : "开始批量分析"}</button></div>
       {checked ? <p className="batch-ready">已校验 {resolvedInputs.length} 家，公司配置将在启动后冻结。</p> : null}

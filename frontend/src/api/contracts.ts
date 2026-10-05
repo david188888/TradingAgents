@@ -122,6 +122,23 @@ export interface ResearchAssessmentV1DTO {
   limitations: string[];
 }
 
+export interface NativeValuationV1DTO {
+  inputs: {
+    run_id: string; ticker: string; as_of: string;
+    snapshot: { as_of: string; price: number | null; pe_ttm: number | null; pb: number | null; total_market_cap_yi: number | null } | null;
+    net_income_annual: { metric_id: "net_income" | "equity"; value_yi: number; period: string } | null;
+    equity_annual: { metric_id: "net_income" | "equity"; value_yi: number; period: string } | null;
+    closing_prices: Array<[string, number]>;
+    pe_history: Array<{ day: string; value: number }>;
+    pb_history: Array<{ day: string; value: number }>;
+    peers: { entity_ids: string[]; pe_ttm_values: number[] } | null;
+  };
+  assessment: ValuationAssessmentDTO;
+  input_evidence_ids: string[];
+  input_sha256: string;
+  limitations: string[];
+}
+
 export interface ResearchRecordV1DTO {
   schema_version: "research-record-v1";
   run_id: string;
@@ -139,6 +156,7 @@ export interface ResearchRecordV1DTO {
   verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string; scope?: "unspecified" | "predicate_only"; hypothesis_id?: string | null; plan_sha256?: string | null; condition_role?: "necessary" | "invalidation" | null; condition_text?: string | null }>;
   metrics: QuantitativeMetricV1DTO[];
   assessment?: ResearchAssessmentV1DTO | null;
+  valuation?: NativeValuationV1DTO | null;
   limitations: string[];
 }
 
@@ -190,6 +208,7 @@ export interface AnalystPresetDTO {
 }
 
 export interface ConfigDefaultsDTO {
+  research_profile?: "evidence_v1";
   llm_provider: string | null;
   quick_think_llm: string | null;
   deep_think_llm: string | null;
@@ -226,9 +245,8 @@ export type AssetTypeLiteral = "stock" | "crypto";
 /** catalyst_research is admitted only by the explicit evidence_v1 profile. */
 export type ResearchMode = "company_research" | "catalyst_research" | "holding_review";
 export type ResearchHorizon = "short" | "medium" | "long";
-// `research_profile` is omitted by every pre-catalyst client; the server
-// treats an omitted value as "classic". The narrowed alias below is the
-// authoritative mirror of AnalysisRequest.research_profile.
+// Legacy saved profiles remain supported for reading/recovery; Web creation
+// defaults to evidence_v1 independently of the neutral AnalysisRequest default.
 
 /** Minimal, user-provided facts for a learning-oriented holding review. */
 export interface HoldingInputDTO {
@@ -281,10 +299,8 @@ export interface RunCreateRequestDTO {
   /** Null means "let the server derive from normalized ticker". */
   asset_type: AssetTypeLiteral | null;
   /**
-   * Optional. Omission is the server-side default `classic`; it is NOT an
-   * error and produces the same request identity as sending "classic"
-   * explicitly. An explicit `catalyst_v1` that the deployment cannot honor is
-   * rejected with a `CatalystRequestErrorCode` — never silently downgraded.
+   * Web omission uses evidence_v1. Legacy profile values remain in saved
+   * records; new Web creation rejects them with research_profile_retired.
    */
   research_profile?: ResearchProfile;
   research_question?: string | null;
@@ -689,6 +705,7 @@ export type ApiErrorCode =
   | "ref_not_found"
   | "ref_target_missing"
   | "research_package_unavailable"
+  | "research_profile_retired"
   | "resume_conflict"
   | "run_active"
   | "run_not_active"

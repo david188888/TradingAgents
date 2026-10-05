@@ -15,7 +15,14 @@ from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
+from tradingagents.research.valuation import (
+    ValuationAssessmentV1,
+    ValuationInputsV1,
+    assess_valuation,
+)
+
 from ._research_assessment import DIMENSIONS_BY_MODE, ResearchAssessmentV1
+from ._verification_plan import canonical_sha256
 
 RESEARCH_RECORD_CONTRACT = "research-record-v1"
 
@@ -200,6 +207,22 @@ class QuantitativeMetricV1(_RecordModel):
         return self
 
 
+class NativeValuationV1(_RecordModel):
+    inputs: ValuationInputsV1
+    assessment: ValuationAssessmentV1
+    input_evidence_ids: tuple[str, ...] = Field(min_length=1)
+    input_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    limitations: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def deterministic_assessment(self):
+        if self.input_sha256 != canonical_sha256(self.inputs):
+            raise ValueError("native valuation input hash mismatch")
+        if self.assessment != assess_valuation(self.inputs):
+            raise ValueError("native valuation arithmetic or input identity changed")
+        return self
+
+
 class ResearchRecordV1(_RecordModel):
     schema_version: Literal["research-record-v1"] = RESEARCH_RECORD_CONTRACT
     run_id: str = Field(min_length=1, max_length=128)
@@ -217,6 +240,7 @@ class ResearchRecordV1(_RecordModel):
     verifications: tuple[VerificationRecordV1, ...] = ()
     metrics: tuple[QuantitativeMetricV1, ...] = ()
     assessment: ResearchAssessmentV1 | None = None
+    valuation: NativeValuationV1 | None = None
     limitations: tuple[str, ...] = ()
 
     @model_serializer(mode="wrap")
@@ -225,6 +249,8 @@ class ResearchRecordV1(_RecordModel):
         # Preserve existing checkpoint digests and old wire records exactly.
         if self.assessment is None:
             value.pop("assessment", None)
+        if self.valuation is None:
+            value.pop("valuation", None)
         return value
 
     @model_validator(mode="after")
@@ -265,6 +291,17 @@ class ResearchRecordV1(_RecordModel):
         for item in evidence.values():
             if item.usable_as_of and item.usable_as_of.date() > self.analysis_date:
                 raise ValueError("source evidence became usable after cutoff")
+        if self.valuation is not None:
+            inputs = self.valuation.inputs
+            if (inputs.run_id, inputs.ticker, inputs.as_of) != (self.run_id, self.ticker, self.analysis_date):
+                raise ValueError("native valuation record identity mismatch")
+            if inputs.snapshot is None or inputs.snapshot.as_of > self.analysis_date:
+                raise ValueError("native valuation snapshot missing or after cutoff")
+            refs(self.valuation.input_evidence_ids, evidence.keys())
+            if any(evidence[key].availability != "available" for key in self.valuation.input_evidence_ids):
+                raise ValueError("native valuation inputs require qualified evidence")
+            if any(item.day > self.analysis_date for item in (*inputs.pe_history, *inputs.pb_history)):
+                raise ValueError("native valuation history after cutoff")
         facts = {key for key, item in claims.items() if item.kind == "fact"}
         for claim in self.claims:
             refs(claim.evidence_ids, evidence.keys())

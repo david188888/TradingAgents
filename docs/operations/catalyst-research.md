@@ -1,12 +1,15 @@
 # Explicit catalyst research trials
 
-Status: Current
+Status: Legacy recovery reference
 
-The local Web workbench supports `catalyst_v1` for A-share ordinary stocks in
-`company_research` mode. Classic is the default for omitted profiles and for
-the CLI. The classic graph facade explicitly rejects catalyst requests.
+New Web research uses `evidence_v1`; see [Web research](evidence-research.md).
+`catalyst_v1` records remain readable and interrupted runs recover using their
+saved identities and budgets. Creation and fresh retry return
+`410 research_profile_retired`, regardless of the old enable flag. The sections
+below describe the retained workflow for recovery, rather than a current creation
+entry point. CLI analysis is outside continued maintenance.
 
-## Start a trial
+## Historical trial setup
 
 Keep existing LLM/data credentials in ignored local configuration. Enable the
 server process, then select the catalyst workflow:

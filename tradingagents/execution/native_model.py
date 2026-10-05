@@ -152,6 +152,22 @@ class NativeModelCaller:
                 for hypothesis in proposal.hypotheses:
                     if not set(hypothesis.supporting_fact_ids) <= allowed:
                         raise ValueError("specialist reference outside supplied facts")
+            if context is not None and stage == "synthesis" and "dimension_claim_ids" in context:
+                from tradingagents.agents.schemas._research_record import ResearchRecordV1
+                from tradingagents.research.native_policy import gate_dimensions
+                record = ResearchRecordV1.model_validate(context["record"])
+                for dimension in proposal.dimensions:
+                    if not set(dimension.claim_ids) <= set(context["dimension_claim_ids"].get(dimension.dimension, [])):
+                        raise ValueError("synthesis dimension references outside allowed claims")
+                gate_dimensions(record, proposal.dimensions, scoped=True, valuation=True)
+                claims = {c.claim_id for c in record.claims if c.kind != "unknown"}
+                challenges = {c.challenge_id for c in record.challenges}
+                if not set(proposal.key_claim_ids) <= claims:
+                    raise ValueError("synthesis key claim invalid")
+                if proposal.primary_challenge_id is not None and proposal.primary_challenge_id not in challenges:
+                    raise ValueError("synthesis primary challenge invalid")
+                if {c.challenge_id for c in proposal.challenge_assessments} != challenges:
+                    raise ValueError("synthesis challenge coverage invalid")
             return proposal.model_dump(mode="json")
         except Exception:
             raise NativeModelUnavailable("native model response invalid") from None

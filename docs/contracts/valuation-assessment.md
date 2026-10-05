@@ -9,7 +9,7 @@ deterministic, replayable arithmetic over already committed bundles:
 1. Where does the current price/multiple sit relative to the ticker's own
    history and to peers (低位还是高位)?
 2. What reference per-share / market-cap interval follows from the latest
-   disclosed annual earnings under multiple-bank anchors (合理预期参考区间)?
+   disclosed annual earnings under multiple-band anchors (合理预期参考区间)?
 
 The chain is code-owned (`tradingagents/research/valuation.py`). No LLM turn
 creates or mutates any number; the model may only narrate a rendered,
@@ -26,12 +26,12 @@ read-only brief (see `_render_valuation_context` in the research manager).
 
 The bundle is prefetched by the deterministic graph task
 `Valuation Evidence Prefetch` (`tradingagents/agents/utils/valuation_data_tools.py`)
-for every run; non-A-share tickers produce an explicit `not_applicable`
+for retained classic graph runs; non-A-share tickers produce an explicit `not_applicable`
 bundle. Parser: `tradingagents/research/valuation_inputs.py`.
 
 ## Decision chain rules
 
-- **Positioning**: current PE/PB percentile inside own 252d/756d windows
+- **Positioning**: current PE/PB percentile inside own 365/1095 calendar-day windows
   (midpoint rank), peer premium/discount vs median (±10% threshold), price
   percentile inside trailing 52-week closes.
 - **Anchors** (each fails closed with a reason code):
@@ -68,3 +68,20 @@ published.
   and is labelled advisory heuristics.
 - All figures share the same currency/cutoff discipline as the rest of the
   research layer (annual monetary values normalized to CNY 亿元).
+
+## Native Web v4
+
+New Web studies reuse this same pure chain inside the optional `research-record-v1.valuation`.
+Their input assembler is `research/native_valuation.py`, with dated Tencent
+snapshot, direct Tushare `daily_basic` PE/PB history and the latest qualified
+consolidated annual net income attributable to parent shareholders. Native
+annual equity, peer valuation and 52-week price positioning are currently absent;
+the chain labels their unavailable outputs. Source refs, complete saved inputs,
+input SHA256 and recomputation protect the native record boundary.
+History is current-capture retrospective data, admitted only at today's requested
+cutoff; it does not prove archived historical PIT availability. Market cap / price
+implies shares and inherits rounding. A single available historical PE anchor
+remains assumption-dependent; its interval does not establish intrinsic value.
+The native Reader and saved Markdown render this committed assessment without
+provider/model work during reading. V1–V3 records and old workflow recovery
+retain their prior semantics.
