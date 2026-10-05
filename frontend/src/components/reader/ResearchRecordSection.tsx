@@ -1,3 +1,7 @@
+import { useCallback, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
+import { ValuationPositionCard } from "./ValuationPositionCard";
 import type { QuantitativeMetricV1DTO, ResearchRecordResponseDTO, ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
 import { limitationLabel } from "../../domain/researchCoverage";
 
@@ -11,6 +15,12 @@ export function SourceContent({ evidence }: { evidence: SourceEvidenceV1DTO }): 
       <pre>{content.text}</pre>
       <p className="record-meta">{content.locator_label}{content.truncated ? " · 内容已截取，不能视为全文" : ""}</p>
     </>}
+    <dl className="record-source-meta">
+      <dt>可用时点</dt><dd>{evidence.usable_as_of ?? "未验证"}</dd>
+      <dt>抓取时间</dt><dd>{evidence.captured_at ?? "未保存"}</dd>
+      <dt>内容校验</dt><dd>{content?.content_sha256 ?? "未保存"}</dd>
+    </dl>
+    {evidence.public_url && /^https?:\/\//i.test(evidence.public_url) ? <a href={evidence.public_url} target="_blank" rel="noreferrer">打开公开来源</a> : null}
   </section>;
 }
 
@@ -24,14 +34,25 @@ const VERIFICATION_LABELS = { supports: "支持", contradicts: "反驳", inconcl
 const DIMENSION_LABELS = { operating_quality: "经营质量", valuation: "估值", market_context: "市场背景", catalyst_delivery: "催化兑现", holding_thesis: "原持仓假设" };
 const ASSESSMENT_STATUS_LABELS = { supported: "有事实支持", conditional: "有条件判断", unresolved: "待核查" };
 
-function ClaimEvidence({ record, claimId }: { record: ResearchRecordV1DTO; claimId: string }): JSX.Element | null {
+function claimText(statement: string): string {
+  const match = /^合并财务字段：报告期 (\d{4}-\d{2}-\d{2})，(?:income|balancesheet|cashflow)\.(\w+) = ([\d.-]+) CNY。$/.exec(statement);
+  const labels: Record<string, string> = { revenue: "营业收入", n_income: "净利润", n_income_attr_p: "归母净利润", total_assets: "总资产", total_liab: "总负债", n_cashflow_act: "经营现金流净额" };
+  if (!match || !labels[match[2]] || !Number.isFinite(Number(match[3]))) return statement;
+  const value = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(Number(match[3]) / 100000000);
+  return `${match[1]} 报告期 · ${labels[match[2]]} ${value} 亿元（合并口径）`;
+}
+
+type InspectSources = (sources: SourceEvidenceV1DTO[], title: string, trigger: HTMLElement) => void;
+
+function ClaimEvidence({ record, claimId, onInspect }: { record: ResearchRecordV1DTO; claimId: string; onInspect: InspectSources }): JSX.Element | null {
   const claim = record.claims.find((item) => item.claim_id === claimId);
   if (!claim) return null;
   const supportingFacts = record.claims.filter((item) => claim.supporting_fact_ids.includes(item.claim_id));
   const evidenceIds = new Set([...claim.evidence_ids, ...supportingFacts.flatMap((fact) => fact.evidence_ids)]);
   const sources = record.evidence.filter((item) => evidenceIds.has(item.evidence_id));
   return <article className="record-evidence" data-claim={claimId}>
-    <p>{claim.kind === "fact" ? "事实" : claim.kind === "inference" ? "推断" : "待查"} · {claim.statement}</p>
+    <p>{claim.kind === "fact" ? "事实" : claim.kind === "inference" ? "推断" : "待查"} · {claimText(claim.statement)}</p>
+    <button type="button" className="record-reference" onClick={(event) => onInspect(sources, claim.statement, event.currentTarget)}>查看引用（{sources.length}）</button>
     <details><summary>核对依据与保存原文</summary>
       {supportingFacts.map((fact) => <p key={fact.claim_id}>支撑事实：{fact.statement}</p>)}
       {sources.map((source) => <section key={source.evidence_id}>
@@ -44,7 +65,7 @@ function ClaimEvidence({ record, claimId }: { record: ResearchRecordV1DTO; claim
   </article>;
 }
 
-function NativeAssessment({ record }: { record: ResearchRecordV1DTO }): JSX.Element | null {
+function NativeAssessment({ record, onInspect }: { record: ResearchRecordV1DTO; onInspect: InspectSources }): JSX.Element | null {
   const assessment = record.assessment;
   if (!assessment) return null;
   const primaryChallenge = record.challenges.find((item) => item.challenge_id === assessment.primary_challenge_id);
@@ -54,21 +75,25 @@ function NativeAssessment({ record }: { record: ResearchRecordV1DTO }): JSX.Elem
     <h3>研究判断</h3>
     <p className="record-meta">截至 {record.analysis_date}{assessment.forward_window_calendar_days === 84 ? " · 展望 84 个日历日" : ""}</p>
     <p>{assessment.research_question}</p>
-    <strong>{assessment.judgement}</strong>
+    <p className="record-judgement">{assessment.judgement}</p>
     {assessment.quality === "LOW_CONFIDENCE" || assessment.completeness === "partial" ? <p role="status">证据受限：本次判断为部分研究，需继续核查。</p> : null}
-    <h4>关键依据</h4>
-    {assessment.key_claim_ids.slice(0, 3).map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} />)}
-    {assessment.key_claim_ids.length === 0 ? <p>当前没有可展示的重点依据。</p> : null}
+    <div className="record-limits" aria-label="本次研究缺口">
+      {assessment.dimensions.filter(d => d.status === "unresolved").map(d => <span key={d.dimension}>{DIMENSION_LABELS[d.dimension]}待核查</span>)}
+      {record.limitations.filter(l => l.startsWith("native_stage_unavailable:")).map(l => <span key={l}>部分专项未形成合格输出</span>)}
+    </div>
     <h4>主要风险与疑点</h4>
     <p>{primaryChallenge?.statement ?? (record.challenges.length > 0 ? "挑战条目尚未确定主次，请查看完整记录。" : "本次未形成挑战条目；不代表不存在风险。")}</p>
     {primaryChallenge ? <p className="record-meta">{primaryChallenge.severity === "critical" ? "关键挑战" : "挑战"} · 尚未解决{primaryAssessment ? `：${primaryAssessment.rationale}` : ""}</p> : null}
     {criticalChallenges.length > 0 ? <p className="record-meta">共 {criticalChallenges.length} 项关键挑战尚未解决，完整条目见下方验证记录。</p> : null}
-    <h4>下一步核查</h4><p>{assessment.next_check}</p>
+    <h4>关键依据</h4>
+    {assessment.key_claim_ids.slice(0, 3).map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} onInspect={onInspect} />)}
+    {assessment.key_claim_ids.length === 0 ? <p>当前没有可展示的重点依据。</p> : null}
+
     <details><summary>分项判断与覆盖限制</summary>
       {assessment.dimensions.map((dimension) => <section key={dimension.dimension}>
         <h4>{DIMENSION_LABELS[dimension.dimension]} · {ASSESSMENT_STATUS_LABELS[dimension.status]}</h4>
         <p>{dimension.judgement}</p>
-        {dimension.claim_ids.map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} />)}
+        {dimension.claim_ids.map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} onInspect={onInspect} />)}
         {dimension.challenge_ids.map((challengeId) => <p key={challengeId}>未解决挑战：{record.challenges.find((item) => item.challenge_id === challengeId)?.statement}</p>)}
         {dimension.limitations.map((limitation, index) => <p className="record-meta" key={index}>{limitationLabel(limitation)}</p>)}
       </section>)}
@@ -101,6 +126,13 @@ function MetricCard({ metric }: { metric: QuantitativeMetricV1DTO }): JSX.Elemen
 export function ResearchRecordSection({ runId, response, loading, error }: {
   runId: string; response: ResearchRecordResponseDTO | null; loading: boolean; error: boolean;
 }): JSX.Element | null {
+  const [inspection, setInspection] = useState<{ runId: string; sources: SourceEvidenceV1DTO[]; title: string } | null>(null);
+  const focus = useReturnFocus();
+  const closeInspection = useCallback(() => { setInspection(null); focus.release(); }, [focus.release]);
+  const inspect: InspectSources = (sources, title, trigger) => {
+    focus.remember(trigger);
+    setInspection({ runId, sources, title });
+  };
   if (loading) return <p className="record-meta" aria-busy="true">正在读取保存的证据与计算记录…</p>;
   if (error) return <p className="record-meta" role="status">证据与计算记录暂时无法读取。</p>;
   if (response === null || response.run_id !== runId) return null;
@@ -114,7 +146,17 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
   const primaryIds = new Set(primary.map((metric) => metric.metric_id));
   const additional = record.metrics.filter((metric) => !primaryIds.has(metric.metric_id));
   return <section className="research-record" data-run={runId} aria-label="证据与计算记录">
-    <NativeAssessment record={record} />
+    <NativeAssessment record={record} onInspect={inspect} />
+    <section aria-label="估值定位" className="record-valuation">
+      <h3>估值定位与参考区间</h3>
+      {record.valuation ? <>
+        <p className="record-meta">报价截至 {record.valuation.inputs.snapshot?.as_of ?? record.analysis_date}。历史倍数为本次取数的回溯序列；参考区间依赖盈利和倍数假设。</p>
+        {record.valuation.assessment.synthesis.contributing_anchor_ids.length === 1 ? <p className="record-meta">当前只有一个估值锚点，未做交叉验证；该区间不能视为充分估值。</p> : null}
+        <ValuationPositionCard assessment={record.valuation.assessment} />
+        <button type="button" className="record-reference" onClick={(event) => inspect(record.evidence.filter(source => record.valuation!.input_evidence_ids.includes(source.evidence_id)), "估值输入与来源", event.currentTarget)}>核对估值输入与来源</button>
+        <details><summary>计算输入与校验</summary><pre>{JSON.stringify(record.valuation.inputs, null, 2)}</pre><p className="record-meta">输入 SHA256：{record.valuation.input_sha256}</p></details>
+      </> : <p className="record-meta">本次没有可用的合格估值输入，无法计算参考区间；需补齐报价、历史倍数和年度归母净利润。</p>}
+    </section>
     {record.metrics.length > 0 ? <section aria-label="量化摘要">
       <h3>量化背景</h3>
       <p className="record-meta">代码计算的历史描述指标；不代表价值区间或未来损失上限。</p>
@@ -123,6 +165,7 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
         <div className="record-metric-grid">{additional.map((metric) => <MetricCard key={metric.metric_id} metric={metric} />)}</div>
       </details> : null}
     </section> : null}
+    {record.assessment ? <section className="record-next"><h3>下一步核查</h3><p>{record.assessment.next_check}</p></section> : null}
     <details className="record-detail"><summary>查看证据、假设与验证记录</summary>
       <p>{record.verifications.length === 0 ? "尚未执行独立工具验证。推断、反证处理意见和模型置信度都不等于验证结果。" : `保存了 ${record.verifications.length} 次验证执行；各项结果如下。`}</p>
       {record.hypotheses.map((hypothesis) => <article key={hypothesis.hypothesis_id}>
@@ -148,5 +191,20 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
       </details>)}
       {record.evidence.length === 0 ? <p>没有可展示的来源记录。</p> : null}
     </details>
+    {inspection?.runId === runId ? <SavedSourcesDialog sources={inspection.sources} title={inspection.title} onClose={closeInspection} /> : null}
+
   </section>;
+}
+
+function SavedSourcesDialog({ sources, title, onClose }: { sources: SourceEvidenceV1DTO[]; title: string; onClose(): void }): JSX.Element {
+  const background = useMemo(() => [document.getElementById("root")], []);
+  const { panelRef, onKeyDown } = useDrawerFocus({ open: true, trap: true, background, onClose });
+  return createPortal(<div className="record-dialog-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <aside ref={panelRef} role="dialog" aria-modal="true" aria-label="保存的引用" className="record-source-dialog" onKeyDown={onKeyDown}>
+      <header><h3>保存的引用</h3><button type="button" onClick={onClose} data-autofocus aria-label="关闭引用">关闭</button></header>
+      <p>{title}</p><p className="record-meta">显示本次保存的证据内容，打开此处不会重新取数或调用模型。</p>
+      {sources.map(source => <section key={source.evidence_id}><h4>{source.source_name}</h4><SourceContent evidence={source} /></section>)}
+      {sources.length === 0 ? <p>没有可展示的来源记录。</p> : null}
+    </aside>
+  </div>, document.body);
 }

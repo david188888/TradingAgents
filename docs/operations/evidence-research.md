@@ -1,28 +1,29 @@
-# Explicit evidence-driven research trials
+# Web evidence-driven research
 
 Status: Current
 
-`evidence_v1` is an explicit A-share research profile with a shared native
-evidence, hypothesis, challenge, verification and synthesis workflow. The Web
-API routes it to `execution/native_runner.py:NativeRunner`. It is separate from
-the existing `classic` and `catalyst_v1` execution and recovery paths. Omitted
-profiles still use classic; the CLI and existing workbench forms keep their
-defaults. No new profile or mode selector is added to the workbench.
+`evidence_v1` is the default and only new Web research workflow. The form
+supports A-share company, catalyst and holding research; batch uses the same
+company workflow. `NativeRunner` owns execution. CLI analysis is outside
+continued maintenance; `tradingagents web` remains the supported launcher.
 
-## Start an API trial
+## Start Web research
 
-Keep model/data credentials in ignored local configuration. Enable native
-creation for the server process:
+Keep model/data credentials in ignored local configuration and start:
 
 ```bash
-TRADINGAGENTS_EVIDENCE_ENABLED=true tradingagents web --port 8765 --open
+tradingagents web --port 8765 --open
 ```
 
-`GET /api/config` reports support under `research_profiles.evidence_v1`. The
-flag is independent of `TRADINGAGENTS_CATALYST_PROFILE_ENABLED`; it does not
-switch the default profile. A disabled native creation request returns
-`403 evidence_profile_unavailable`, without falling back to classic. Saved
-native runs remain readable when creation is disabled.
+`GET /api/config` reports native support and the native Web default. Creation
+is enabled unless explicitly disabled by `TRADINGAGENTS_EVIDENCE_ENABLED=false`
+or `evidence_profile_enabled=false`. This blocks single/batch creation and
+fresh retries with `403 evidence_profile_unavailable`; saved reading and
+compatible interrupted-run resume remain available. Old `classic` and
+`catalyst_v1` creation/retry return `410 research_profile_retired` even if the
+old catalyst flag is enabled. Legacy history is neither deleted nor rewritten.
+The neutral `AnalysisRequest` and retained CLI defaults remain compatibility
+contracts and must not be mistaken for the Web default.
 
 Submit one run through `POST /api/runs`. This example contains no credentials;
 replace the cutoff and model IDs with the values for the intended research and
@@ -34,7 +35,7 @@ curl --fail-with-body http://127.0.0.1:8765/api/runs \
   -H 'Content-Type: application/json' \
   --data-binary @- <<'JSON'
 {
-  "ticker": "600519.SS",
+  "ticker": "600803.SS",
   "analysis_date": "2026-10-02",
   "research_profile": "evidence_v1",
   "mode": "company_research",
@@ -68,7 +69,7 @@ is illustrative input, not an actual account or a suggested position:
 {
   "mode": "holding_review",
   "holding": {
-    "ticker": "600519.SS",
+    "ticker": "600803.SS",
     "quantity": 100,
     "average_cost": 10,
     "facts_as_of": "2026-10-02",
@@ -87,8 +88,8 @@ outlook from the collector's compatibility adapter.
 
 The code-owned source policy fixes 7/30/90-day event windows, 250 trading days
 of price history and eight financial-reporting quarters. Source windows are
-separate from research outlook. New native runs use the bounded
-`dataflows/native_sources.py` collector shared by all three modes:
+separate from research outlook. New native runs use the v4 `dataflows/native_valuation.py` collector, extending
+the bounded public sources and official disclosure collector in all three modes:
 
 | Capability | Native default candidates, in order |
 | --- | --- |
@@ -97,6 +98,7 @@ separate from research outlook. New native runs use the bounded
 | Official disclosures | Existing CNINFO official query, including its bounded official fallback |
 | Calendar | Complete SZSE monthly natural-day grid for Shenzhen securities, then Tushare |
 | Adjusted prices | Tencent raw daily bars plus dated Sina qfq divisors, then Tushare daily/factors |
+| Valuation | Tencent exact dated current snapshot; Tushare daily_basic PE-TTM/PB history |
 
 Sina financial admission requires consolidated scope, CNY yuan fields and real
 publication dates; an update timestamp after cutoff is excluded. Provider
@@ -110,7 +112,7 @@ unqualified; older cutoffs still need an archived factor vintage. SZSE calendar
 is not borrowed for Shanghai/Beijing securities; those currently use the backup.
 
 Programmatic `effective_config.evidence_source_vendors` can replace any of
-`identity`, `financial`, `calendar`, `price`, `events` with an ordered subset of
+`identity`, `financial`, `calendar`, `price`, `events`, `valuation` with an ordered subset of
 its candidates (empty disables it). `evidence_source_exclusions` removes named
 vendors afterwards. These native-only keys are bound to checkpoint identity;
 legacy `data_vendors`/`tool_vendors` keep their classic/catalyst meaning.
@@ -120,8 +122,8 @@ suppresses further Tushare attempts in that run; public sources remain eligible.
 All attempts share the existing capability/HTTP ceilings and active deadline.
 Cancellation, budget exhaustion and checkpoint conflicts stop execution.
 
-The `evidence-production-v3` workflow binds the document extension below and
-scoped coverage contexts. Original `evidence-production-v1` and v2 checkpoints
+The current `evidence-production-v4` also binds valuation inputs and dimension-reference
+validation; v3 binds documents and scoped coverage. Original v1, v2 and v3 checkpoints
 recover with their original collectors and kernel/prompt inputs when V0 is
 missing, or replay saved V0/output without new source calls. A new topology
 is never inserted into an old interrupted run.
@@ -224,8 +226,11 @@ research. Source/model failures and budget refusal do not become verified facts.
 
 Reader, audit, SSE replay/reconnect and report reads make no model or provider
 calls. Markdown is stored in the run's `reports/complete_report.md` in the local
-durable store. This engineering integration has no paid quality comparison or
-real-world predictive-accuracy acceptance; default migration remains separate.
+durable store. The Web default migration is implemented. This engineering
+integration has no paid quality comparison or real-world predictive-accuracy
+acceptance. The [600803 Web acceptance](../reviews/2026-10-04-web-final-acceptance.md)
+records two fresh-source trials and one explicitly approved frozen-evidence
+validation, with their separate execution and research-quality outcomes.
 The [002130 live smoke record](../archive/reviews/2026-10-03-002130-live-smoke.md)
 documents a real source/model trial, a cached replay and a provider-limited
 second run; it does not establish complete research or predictive accuracy.
@@ -269,3 +274,36 @@ These families are excluded from C1's financial-statement operand registry.
 The saved record represents source status independently for financials,
 announcement lists, selected bodies, operating rows and prices. Source
 availability never establishes that all economic questions are answered.
+
+## Native valuation qualification
+
+V4 adds optional capability `valuation`. A Tencent snapshot requires exact code,
+positive finite price/market cap, at least one positive multiple and a timestamp
+on the last settled exchange session. Shanghai/Beijing still require their own
+qualified calendar via Tushare; the SZSE calendar is not borrowed. Current quote
+and history are admitted only when captured on the requested Shanghai cutoff
+calendar date. Historical cutoff requests keep valuation unavailable without an
+archived vintage.
+
+Tushare `daily_basic` history requests at most 1095 calendar days and 1000 rows,
+checks code, dates, duplicates and the last settled session, and shares the
+existing HTTP/capability/deadline ledger. A failed optional history call retains
+a qualified snapshot as partial coverage. History is current-capture
+retrospective data, not proof of archived PIT availability.
+
+`research/native_valuation.py` reuses `research/valuation.py` to calculate
+historical positioning and a PE p25–p75 reference anchor from the latest
+qualified consolidated annual net income attributable to parent shareholders
+(`n_income_attr_p`). Monetary inputs are normalized to CNY 亿元. Share count is
+implied from current market cap/price and inherits quote rounding. No native
+peer anchor, intrinsic value or standalone annual equity input is invented.
+Missing history/profit keeps reference anchors unavailable. The record saves
+inputs, evidence IDs, input SHA256 and the deterministic assessment; the model
+only receives read-only results. Valuation dimension claims may cite only the
+valuation fact family; operating judgements still require financial facts.
+
+The Reader and Markdown use the same committed record. Citation drawers display
+saved content before locator metadata, with timestamps and hashes; Escape, Tab
+trapping, inert background and returned focus are part of the interaction.
+Single-symbol smoke validates wiring and readability; wider same-evidence quality,
+cost and accuracy comparisons remain separate work.

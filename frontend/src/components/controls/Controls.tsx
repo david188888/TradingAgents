@@ -9,14 +9,11 @@
  */
 import { useState } from "react";
 import { BatchControls } from "./BatchControls";
-import { CatalystForm } from "./CatalystForm";
 import { requestCompletionNotificationPermission } from "../../hooks/useCompletionNotifications";
 import { useConfig } from "../../hooks/useConfig";
 import { useWorkbenchSelection, useWorkbenchStream } from "../../state/WorkbenchStore";
 import { ApiError, createRun, cancelRun } from "../../api/client";
-import type { ResearchDepth } from "../../api/contracts";
 
-const DEPTH_OPTIONS: ResearchDepth[] = [1, 3, 5];
 /** Backend preflight code when a global ticker cannot reach Yahoo Finance. */
 const VPN_BLOCKED_CODE = "yfinance_unreachable";
 
@@ -40,7 +37,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
     stream.status === "loading";
 
   function handleStart(): void {
-    const req = cfg.research_profile === "catalyst_v1" ? cfg.buildCatalystRequest() : cfg.buildRequest();
+    const req = cfg.buildRequest();
     if (req === null) return;
     setApiError(null);
     setVpnMessage(null);
@@ -89,34 +86,6 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
   const startDisabled =
     cfg.validationError !== null || runActive || starting || cfg.loading;
 
-  if (cfg.research_profile === "catalyst_v1") {
-    return <div className="controls">
-      <CatalystForm profile={cfg.research_profile} onProfileChange={cfg.setResearchProfile}
-        ticker={cfg.ticker} onTickerChange={cfg.setTicker} windowStart="" windowEnd={cfg.analysis_date}
-        onWindowChange={(_start, end) => cfg.setAnalysisDate(end)}
-        researchQuestion={cfg.research_question} onResearchQuestionChange={cfg.setResearchQuestion}
-        effective={cfg.effectiveCatalystConfig} onStart={handleStart} starting={starting}
-        disabled={runActive || cfg.loading || cfg.catalystValidationError !== null}
-        error={apiError ?? cfg.catalystValidationError} />
-      <details className="input-group">
-        <summary>模型设置</summary>
-        <label htmlFor="catalyst-provider">LLM Provider</label>
-        <select id="catalyst-provider" value={cfg.llm_provider} onChange={e => cfg.setLlmProvider(e.target.value)}>
-          {cfg.config?.providers.map(p => <option key={p.id} value={p.id}>{p.id}{p.configured ? " · 已配置" : " · 未配置"}</option>)}
-        </select>
-        <label htmlFor="catalyst-quick">专项与反证模型</label>
-        <select id="catalyst-quick" value={cfg.quick_think_llm} onChange={e => cfg.setQuickThinkLlm(e.target.value)}>
-          {cfg.quickOptions.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-        </select>
-        <label htmlFor="catalyst-deep">综合模型</label>
-        <select id="catalyst-deep" value={cfg.deep_think_llm} onChange={e => cfg.setDeepThinkLlm(e.target.value)}>
-          {cfg.deepOptions.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-        </select>
-      </details>
-      {runActive && <button type="button" className="cancel" onClick={handleCancel}>取消</button>}
-    </div>;
-  }
-
   return (
     <>
       <div className="analysis-mode-tabs" role="group" aria-label="分析模式">
@@ -124,14 +93,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         <button type="button" className="mode-tab" aria-pressed="false" onClick={() => setAnalysisMode("batch")}>批量分析</button>
       </div>
       <div className="controls">
-        <div className="input-group">
-          <label htmlFor="ctrl-profile">研究流程</label>
-          <select id="ctrl-profile" value={cfg.research_profile} onChange={e => cfg.setResearchProfile(e.target.value === "catalyst_v1" ? "catalyst_v1" : "classic")}>
-            <option value="classic">旧版研究流程</option>
-            <option value="catalyst_v1">新版催化研究（试用）</option>
-          </select>
-        </div>
-        <div className="eyebrow">New analysis</div>
+        <div className="eyebrow">新建研究</div>
         <div className="section-title">
         <h2>分析输入</h2>
       </div>
@@ -143,7 +105,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
           type="text"
           value={cfg.ticker}
           onChange={(e) => cfg.setTicker(e.target.value)}
-          placeholder="如 600519 / AAPL"
+          placeholder="如 600803 / 002130"
         />
       </div>
 
@@ -164,105 +126,21 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
           value={cfg.mode}
           onChange={(e) =>
             cfg.setMode(
-              e.target.value === "holding_review" ? "holding_review" : "company_research",
+              e.target.value === "holding_review" ? "holding_review" : e.target.value === "catalyst_research" ? "catalyst_research" : "company_research",
             )
           }
         >
           <option value="company_research">公司研究</option>
+          <option value="catalyst_research">催化研究 · 未来 84 天</option>
           <option value="holding_review">持仓复盘</option>
         </select>
         <small>公司研究用于理解标的；持仓复盘只用于学习和复查已有或模拟持仓。</small>
       </div>
 
       <div className="input-group">
-        <label htmlFor="ctrl-horizon">研究周期</label>
-        <select
-          id="ctrl-horizon"
-          value={cfg.horizon}
-          onChange={(e) => {
-            const value = e.target.value;
-            if (value === "short" || value === "medium" || value === "long") {
-              cfg.setHorizon(value);
-            }
-          }}
-        >
-          <option value="short">短期</option>
-          <option value="medium">中期</option>
-          <option value="long">长期</option>
-        </select>
-      </div>
-
-      <div className="input-group">
-        <label htmlFor="ctrl-depth">研究深度</label>
-        <select
-          id="ctrl-depth"
-          value={String(cfg.research_depth)}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            if (v === 1 || v === 3 || v === 5) cfg.setResearchDepth(v);
-          }}
-        >
-          {DEPTH_OPTIONS.map((d) => (
-            <option key={d} value={String(d)}>
-              {d} 轮
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="input-group">
-        <label htmlFor="ctrl-preset">研究预设</label>
-        <select
-          id="ctrl-preset"
-          value={cfg.selected_preset ?? "custom"}
-          onChange={(e) => cfg.setAnalystPreset(e.target.value)}
-          disabled={cfg.loading}
-        >
-          {cfg.selected_preset === null && <option value="custom">自定义组合</option>}
-          {cfg.config?.presets.map((preset) => (
-            <option key={preset.id} value={preset.id}>
-              {preset.label}
-            </option>
-          ))}
-        </select>
-        <small>预设只调整分析师启停与顺序，后续研究和风控链路始终执行。</small>
-      </div>
-
-      <div className="input-group">
-        <label>分析师</label>
-        <div className="analysts grid-2">
-          {cfg.config?.analysts.map((a) => (
-            <label
-              key={a.id}
-              className="check"
-              htmlFor={`ctrl-analyst-${a.id}`}
-            >
-              <input
-                id={`ctrl-analyst-${a.id}`}
-                type="checkbox"
-                checked={cfg.selected_analysts.includes(a.id)}
-                onChange={() => cfg.toggleAnalyst(a.id)}
-              />
-              {a.id}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="input-group wind-status" aria-label="Wind 数据状态">
-        <label>Wind 数据</label>
-        <div className="key-status">
-          {cfg.config?.wind.enabled === true && cfg.config.wind.configured === true ? (
-            <span className="ok">已启用</span>
-          ) : cfg.config?.wind.enabled === true ? (
-            <span style={{ color: "var(--red)" }}>已启用，但未配置 Key</span>
-          ) : (
-            <span>未启用</span>
-          )}
-        </div>
-        {cfg.config?.wind.enabled === true && (
-          <small>{cfg.config.wind.capabilities.join(" · ")}</small>
-        )}
+        <label htmlFor="ctrl-question">研究问题（可选）</label>
+        <textarea id="ctrl-question" value={cfg.research_question} onChange={e => cfg.setResearchQuestion(e.target.value)} maxLength={800} placeholder="留空使用本研究范围的问题" rows={3} />
+        <small>证据 → 专项假设 → 独立挑战 → 条件核查 → 综合判断</small>
       </div>
 
       <div className="input-group">
@@ -294,10 +172,10 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
       </div>
 
       <div className="input-group">
-        <label htmlFor="ctrl-quick">快速思考模型</label>
+        <label htmlFor="ctrl-quick">专项与挑战模型</label>
         <select
           id="ctrl-quick"
-          value={cfg.quick_think_llm}
+          value={cfg.quick_model_selection}
           onChange={(e) => cfg.setQuickThinkLlm(e.target.value)}
           disabled={cfg.loading || cfg.quickOptions.length === 0}
         >
@@ -307,13 +185,17 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
             </option>
           ))}
         </select>
+        {cfg.quick_model_selection === "custom" ? <>
+          <label htmlFor="ctrl-quick-custom">专项与挑战模型 ID</label>
+          <input id="ctrl-quick-custom" value={cfg.quick_custom_model_id} onChange={e => cfg.setQuickCustomModelId(e.target.value)} type="text" placeholder="填写 Provider 支持的实际模型 ID" />
+        </> : null}
       </div>
 
       <div className="input-group">
-        <label htmlFor="ctrl-deep">深度思考模型</label>
+        <label htmlFor="ctrl-deep">综合模型</label>
         <select
           id="ctrl-deep"
-          value={cfg.deep_think_llm}
+          value={cfg.deep_model_selection}
           onChange={(e) => cfg.setDeepThinkLlm(e.target.value)}
           disabled={cfg.loading || cfg.deepOptions.length === 0}
         >
@@ -323,6 +205,10 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
             </option>
           ))}
         </select>
+        {cfg.deep_model_selection === "custom" ? <>
+          <label htmlFor="ctrl-deep-custom">综合模型 ID</label>
+          <input id="ctrl-deep-custom" value={cfg.deep_custom_model_id} onChange={e => cfg.setDeepCustomModelId(e.target.value)} type="text" placeholder="填写 Provider 支持的实际模型 ID" />
+        </> : null}
       </div>
 
       <div className="input-group">
@@ -339,19 +225,6 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
             </option>
           ))}
         </select>
-      </div>
-
-      <div className="input-group">
-        <label className="check" htmlFor="ctrl-checkpoint">
-          <input
-            id="ctrl-checkpoint"
-            type="checkbox"
-            checked={cfg.checkpoint_enabled}
-            onChange={(e) => cfg.setCheckpointEnabled(e.target.checked)}
-            disabled={!cfg.config?.checkpoint_available}
-          />
-          启用 Checkpoint 续跑
-        </label>
       </div>
 
       {cfg.mode === "holding_review" && (

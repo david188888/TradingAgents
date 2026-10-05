@@ -1,7 +1,7 @@
-/** Current lifecycle over the real HTTP/SSE/store boundary, synthetic legacy records. */
+/** Native lifecycle over the real HTTP/SSE/store boundary, synthetic 600803 inputs. */
 import { test, expect, type Page } from "@playwright/test";
 
-const TICKER = "600519.SS";
+const TICKER = "600803.SS";
 
 test("keyboard switches analysis modes with an explicit selected state", async ({ page }) => {
   await page.goto("/");
@@ -20,19 +20,21 @@ test("keyboard switches analysis modes with an explicit selected state", async (
 async function startRun(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByLabel("股票代码").fill(TICKER);
+  await page.getByLabel("分析日期").fill("2026-09-30");
   await page.getByRole("button", { name: "开始分析", exact: true }).click();
-  await expect(page.locator(".legacy-reader")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".native-research-page")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".research-record")).toBeVisible({ timeout: 20_000 });
 }
 
 test("history reopens the exact persisted completed record", async ({ page }) => {
   await startRun(page);
-  const runId = await page.locator(".legacy-reader").getAttribute("data-run");
+  const runId = await page.locator(".native-research-page").getAttribute("data-run");
   expect(runId).toBeTruthy();
   await expect(page.locator(`.history-item[data-run-id="${runId}"]`)).toContainText("已完成");
   await page.reload();
   await page.locator(`.history-item[data-run-id="${runId}"]`)
     .getByRole("button", { name: `打开 ${TICKER} 的研究记录`, exact: true }).click();
-  await expect(page.locator(".legacy-reader")).toHaveAttribute("data-run", runId!);
+  await expect(page.locator(".native-research-page")).toHaveAttribute("data-run", runId!);
 });
 
 test("configured secrets remain absent from the completed DOM", async ({ page }) => {
@@ -46,6 +48,7 @@ test("configured secrets remain absent from the completed DOM", async ({ page })
 test("cancel a running run transitions to cancelled", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("股票代码").fill(TICKER);
+  await page.getByLabel("分析日期").fill("2026-09-30");
   const created = page.waitForResponse(
     response => response.url().endsWith("/api/runs") && response.request().method() === "POST",
   );

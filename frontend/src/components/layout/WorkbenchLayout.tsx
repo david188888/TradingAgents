@@ -308,6 +308,7 @@ export function WorkbenchLayout(): JSX.Element {
 
   const handleRetryRun = async (): Promise<void> => {
     if (run_id === null) return;
+    if (!isNative) { selectRun(null); return; }
     const retried = await retryRun(run_id);
     await history.refresh();
     selectRun(retried.run_id);
@@ -417,7 +418,7 @@ export function WorkbenchLayout(): JSX.Element {
             </>
           ) : view.view ? (
             view.view.view.run.status === "failed" ? (
-              <FailedRunView envelope={view.view} onOpenAudit={openAudit} onRetry={handleRetryRun} />
+              <FailedRunView envelope={view.view} onOpenAudit={openAudit} onRetry={handleRetryRun} onNewResearch={() => selectRun(null)} />
             ) : route.kind === "catalyst" && catalyst.screen !== null ? (
               /*
                 T26 — the single main summary.

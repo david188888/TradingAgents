@@ -106,8 +106,14 @@ function makeCfg(overrides: Partial<UseConfigResult> = {}): UseConfigResult {
     llm_provider: "deepseek",
     setLlmProvider: vi.fn(),
     quick_think_llm: "deepseek-chat",
+    quick_model_selection: "deepseek-chat",
+    quick_custom_model_id: "",
+    setQuickCustomModelId: vi.fn(),
     setQuickThinkLlm: vi.fn(),
     deep_think_llm: "deepseek-reasoner",
+    deep_model_selection: "deepseek-reasoner",
+    deep_custom_model_id: "",
+    setDeepCustomModelId: vi.fn(),
     setDeepThinkLlm: vi.fn(),
     output_language: "Chinese",
     setOutputLanguage: vi.fn(),
@@ -115,6 +121,8 @@ function makeCfg(overrides: Partial<UseConfigResult> = {}): UseConfigResult {
     setCheckpointEnabled: vi.fn(),
     mode: "company_research",
     setMode: vi.fn(),
+    research_question: "",
+    setResearchQuestion: vi.fn(),
     horizon: "medium",
     setHorizon: vi.fn(),
     holding_quantity: "",
@@ -155,8 +163,8 @@ describe("BatchControls shared model selection", () => {
     render(<BatchControls cfg={cfg} onSelectRun={vi.fn()} />);
 
     const provider = screen.getByLabelText("LLM Provider") as HTMLSelectElement;
-    const quick = screen.getByLabelText("快速思考模型") as HTMLSelectElement;
-    const deep = screen.getByLabelText("深度思考模型") as HTMLSelectElement;
+    const quick = screen.getByLabelText("专项与挑战模型") as HTMLSelectElement;
+    const deep = screen.getByLabelText("综合模型") as HTMLSelectElement;
 
     expect(provider).toHaveValue("deepseek");
     expect(quick).toHaveValue("deepseek-chat");
@@ -174,12 +182,12 @@ describe("BatchControls shared model selection", () => {
     const cfg = makeCfg();
     render(<BatchControls cfg={cfg} onSelectRun={vi.fn()} />);
 
-    fireEvent.change(screen.getByLabelText("快速思考模型"), {
+    fireEvent.change(screen.getByLabelText("专项与挑战模型"), {
       target: { value: "deepseek-chat" },
     });
     expect(cfg.setQuickThinkLlm).toHaveBeenCalledWith("deepseek-chat");
 
-    fireEvent.change(screen.getByLabelText("深度思考模型"), {
+    fireEvent.change(screen.getByLabelText("综合模型"), {
       target: { value: "deepseek-reasoner" },
     });
     expect(cfg.setDeepThinkLlm).toHaveBeenCalledWith("deepseek-reasoner");
@@ -197,7 +205,9 @@ describe("BatchControls shared model selection", () => {
       quickOptions: [{ label: "GPT-4o", id: "gpt-4o" }],
       deepOptions: [{ label: "GPT-4o", id: "gpt-4o" }],
       quick_think_llm: "gpt-4o",
+      quick_model_selection: "gpt-4o",
       deep_think_llm: "gpt-4o",
+      deep_model_selection: "gpt-4o",
     });
     render(<BatchControls cfg={cfg} onSelectRun={vi.fn()} />);
 

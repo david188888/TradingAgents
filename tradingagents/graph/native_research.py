@@ -27,6 +27,7 @@ from tradingagents.execution.verification_executor import execute_verification
 from tradingagents.research.native_policy import (
     QUESTIONS,
     ROLE_ORDER,
+    dimension_claim_ids,
     dimension_policy,
     fact_views,
     gate_dimensions,
@@ -130,7 +131,7 @@ def load_native_seed(ledger: DurableBudgetLedger) -> ResearchRecordV1 | None:
 def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                         ledger: DurableBudgetLedger, research_question: str | None = None,
                         cancelled: Callable[[], bool] = lambda: False,
-                        concurrency: int = 2, scoped: bool = False) -> ResearchRecordV1:
+                        concurrency: int = 2, scoped: bool = False, valuation: bool = False) -> ResearchRecordV1:
     seed = ResearchRecordV1.model_validate_json(seed.model_dump_json())
     if (seed.construction != "native" or len(seed.snapshots) != 1 or seed.hypotheses
             or seed.challenges or seed.verifications or seed.assessment
@@ -148,7 +149,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     question = research_question if research_question is not None else QUESTIONS[seed.mode]
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 400:
         raise ValueError("research question must contain 1..400 characters")
-    identity = {"workflow_version": "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
+    identity = {"workflow_version": "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
     _bound_put(ledger.journal, "native_seed", seed.model_dump(mode="json"))
     _bound_put(ledger.journal, "native_input", identity)
@@ -157,7 +158,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         if cached_final["identity"] != identity:
             raise CatalystCheckpointConflict("native output identity mismatch")
         return ResearchRecordV1.model_validate(cached_final["record"])
-    views = fact_views(seed)
+    views = fact_views(seed, valuation=valuation)
     contexts, reservations = {}, {}
     for role in ROLE_ORDER:
         facts = views[role]
@@ -171,6 +172,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             "metrics": [item.model_dump(mode="json") for item in seed.metrics
                         if set(item.input_evidence_ids) <= source_ids] if role == "market_context" else [],
             "instruction": "只提出证据绑定的假设、必要与失效条件、替代解释。不得创造事实。"}
+        if valuation and role == "operating_quality" and seed.valuation is not None:
+            contexts[role]["valuation"] = {"assessment": seed.valuation.assessment.model_dump(mode="json"), "input_evidence_ids": seed.valuation.input_evidence_ids, "input_sha256": seed.valuation.input_sha256}
+            contexts[role]["valuation_instruction"] = "估值只引用估值事实。倍数和历史定位不能证明内在价值；参考区间依赖已保存盈利和历史倍数假设，无锚点时不得编造合理价格。经营判断仍需财务事实。"
         if scoped:
             contexts[role]["view_scope"] = {"role": role, "coverage_is": "isolated_specialist_input_only",
                 "instruction": "未在本专项看到的资料不等于全局缺失；unknowns只描述本专项待查问题。"}
@@ -268,8 +272,11 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     current = execution.record
     synthesis_context = {"mode": seed.mode, "question": question,
         "record": current.model_dump(mode="json"), "verification": execution.model_dump(mode="json"),
-        "dimension_policy": dimension_policy(current, scoped=scoped),
+        "dimension_policy": dimension_policy(current, scoped=scoped, valuation=valuation),
         "instruction": "核查仅证明条件；不能据此关闭经济假设挑战。按dimension_policy顺序输出维度，所有挑战保留unresolved。"}
+    if valuation:
+        synthesis_context["dimension_claim_ids"] = dimension_claim_ids(current)
+        synthesis_context["dimension_binding_instruction"] = "每个维度只能引用dimension_claim_ids中该维度的ID。允许空引用并明确待核查；估值不得引用纯财务或市场统计推断。"
     if scoped:
         synthesis_context["global_coverage"] = global_coverage(current)
         synthesis_context["coverage_scope_instruction"] = "专项未知项只代表对应专项输入/分析范围。全局缺失只按global_coverage和已保存来源判断；不得把缺经营明细写成无财务、把缺基准写成无行情。"
@@ -278,12 +285,12 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if synthesis is None:
         limits.append("native_synthesis_unavailable")
         dimensions = tuple(DimensionAssessmentV1(dimension=name, status="unresolved", judgement="证据或综合环节不足。",
-                            limitations=(reason,)) for name, (_, reason) in dimension_policy(current, scoped=scoped).items())
+                            limitations=(reason,)) for name, (_, reason) in dimension_policy(current, scoped=scoped, valuation=valuation).items())
         judgement, next_check, keys, primary = "资料或综合环节不足，暂不能形成完整研究判断。", "补齐缺失资料并重新核查。", (), None
         challenge_assessments = tuple(ChallengeAssessmentV1(challenge_id=item.challenge_id,
                                      rationale="未完成对整体假设的核查。") for item in current.challenges)
     else:
-        dimensions = gate_dimensions(current, synthesis.dimensions, scoped=scoped)
+        dimensions = gate_dimensions(current, synthesis.dimensions, scoped=scoped, valuation=valuation)
         judgement, next_check, keys, primary = synthesis.judgement, synthesis.next_check, synthesis.key_claim_ids, synthesis.primary_challenge_id
         challenge_assessments = synthesis.challenge_assessments
         critical_ids = {item.challenge_id for item in current.challenges if item.severity == "critical"}

@@ -8,6 +8,7 @@ export interface FailedRunViewProps {
   onOpenAudit: AuditOpenHandler;
   /** Re-runs this failed analysis as a new run (POST /retry, 201). */
   onRetry: () => Promise<void>;
+  onNewResearch?: () => void;
 }
 
 /**
@@ -16,7 +17,7 @@ export interface FailedRunViewProps {
  * the categorized failure reason instead of pretending a conclusion exists,
  * plus an inline retry that forks a fresh run from the same request.
  */
-export function FailedRunView({ envelope, onOpenAudit, onRetry }: FailedRunViewProps): JSX.Element {
+export function FailedRunView({ envelope, onOpenAudit, onRetry, onNewResearch }: FailedRunViewProps): JSX.Element {
   const { run } = envelope.view;
   const category = run.error_category;
   const message = run.error_message;
@@ -52,6 +53,8 @@ export function FailedRunView({ envelope, onOpenAudit, onRetry }: FailedRunViewP
       </p>
       {retryError ? <p className="entry-error">{retryError}</p> : null}
       <div className="failed-run-actions">
+        {onNewResearch ? <button type="button" onClick={onNewResearch}>使用新版新建研究</button> : null}
+        {!onNewResearch ? <>
         <button
           type="button"
           className="brief-audit-command"
@@ -59,7 +62,7 @@ export function FailedRunView({ envelope, onOpenAudit, onRetry }: FailedRunViewP
           onClick={handleRetry}
         >
           {retrying ? "正在重试…" : "重试本次运行"}
-        </button>
+        </button></> : null}
         <button
           type="button"
           className="brief-audit-command"

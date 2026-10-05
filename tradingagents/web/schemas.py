@@ -106,10 +106,8 @@ class RunCreateRequest(BaseModel):
     holding: HoldingInputRequest | None = None
     # Legacy-only input; new UI clients send HoldingInputRequest instead.
     portfolio: PortfolioRequest | None = None
-    # Omission means "classic". An explicit catalyst_v1 that cannot be honored
-    # is rejected with a readable error by the compatibility layer below; it is
-    # never silently downgraded.
-    research_profile: ResearchProfile = "classic"
+    # Web creation has migrated; persisted/neutral requests keep their defaults.
+    research_profile: ResearchProfile = "evidence_v1"
     research_question: str | None = Field(default=None, max_length=400)
     evidence_policy: NativeEvidencePolicyV1 | None = None
 
@@ -198,6 +196,9 @@ class BatchRunConfigRequest(BaseModel):
     output_language: str = "English"
     checkpoint_enabled: bool = False
     asset_type: Literal["stock", "crypto"] | None = None
+    research_profile: ResearchProfile = "evidence_v1"
+    research_question: str | None = Field(default=None, max_length=400)
+    evidence_policy: NativeEvidencePolicyV1 | None = None
 
     @field_validator("analysis_date")
     @classmethod

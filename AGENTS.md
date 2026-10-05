@@ -48,8 +48,8 @@ npm --prefix frontend run test -- --run
 npm --prefix frontend run test:e2e
 ```
 
-The supported user entry points are `tradingagents analyze` and
-`tradingagents web --port 8765 --open`. The latter is a loopback-only local
+The maintained user entry is `tradingagents web --port 8765 --open`. CLI analysis
+is retained legacy code and is outside continued product maintenance. The latter is a loopback-only local
 workbench; it binds to `127.0.0.1`.
 
 ## Change Routing

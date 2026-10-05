@@ -660,6 +660,8 @@ aside.inspector {
 
 .input-group input[type="text"],
 .input-group input[type="date"],
+.input-group input[type="number"],
+.input-group textarea,
 .input-group select {
   width: 100%;
   height: 36px;
@@ -672,16 +674,34 @@ aside.inspector {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.input-group input::placeholder {
+.input-group textarea {
+  display: block;
+  min-width: 0;
+  height: auto;
+  padding: 8px 11px;
+  resize: vertical;
+}
+
+.input-group small {
+  display: block;
+  margin-top: var(--sp-1);
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.input-group input::placeholder,
+.input-group textarea::placeholder {
   color: var(--faint);
 }
 
 .input-group input:hover,
+.input-group textarea:hover,
 .input-group select:hover {
   border-color: var(--faint);
 }
 
 .input-group input:focus,
+.input-group textarea:focus,
 .input-group select:focus {
   outline: none;
   border-color: var(--accent);
@@ -689,6 +709,7 @@ aside.inspector {
 }
 
 .input-group input:disabled,
+.input-group textarea:disabled,
 .input-group select:disabled {
   background: var(--panel-2);
   color: var(--faint);
@@ -4879,9 +4900,9 @@ td.input-ref {
 .reader-valuation__band--low .reader-valuation__percentile-value { color: var(--green); }
 .reader-valuation__band--high .reader-valuation__percentile-value { color: var(--red); }
 
-.reader-valuation__band--low > .reader-valuation__bar-fill { background: #4b9f7f; }
-.reader-valuation__band--mid > .reader-valuation__bar-fill { background: #c9a24b; }
-.reader-valuation__band--high > .reader-valuation__bar-fill { background: #c76a5b; }
+.reader-valuation__bar-fill.reader-valuation__band--low { background: #4b9f7f; }
+.reader-valuation__bar-fill.reader-valuation__band--mid { background: #c9a24b; }
+.reader-valuation__bar-fill.reader-valuation__band--high { background: #c76a5b; }
 
 .reader-valuation__anchors summary {
   cursor: pointer;

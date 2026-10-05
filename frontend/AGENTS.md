@@ -48,5 +48,5 @@ and inclusion of the resulting static-asset changes in the same change.
 
 Use `npm --prefix frontend run dev` for local Vite development. The end-to-end
 configuration starts the Python fixture server on `127.0.0.1:4173`, serving
-the built SPA and synthetic classic/catalyst runs. Build before running it;
+the built SPA, synthetic native 600803 runs and legacy Reader records. Build before running it;
 it can reuse an existing local server.

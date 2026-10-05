@@ -51,7 +51,7 @@ from tradingagents.web.manager import (
 V2_POLICY = "horizon-policy-v2"
 V3_POLICY = "horizon-policy-v3"
 V2_SCHEMA_SHA256 = (
-    "0aa01f8a0cca522554920bec7f212e120ba3d1a70032a17ab9f89da1b2b8b6b2"
+    "8aef5655698545c4aa4a1f5a996545f2becbe7bd06c971d1bf2d357f7b82a3c5"
 )
 V2_APPLICATION_FIELDS = (
     "a_share_supplement_bundle",
@@ -95,6 +95,7 @@ V2_APPLICATION_FIELDS = (
     "sentiment_report",
     "trade_date",
     "trader_investment_plan",
+    "valuation_bundle",
 )
 
 
@@ -192,7 +193,7 @@ def test_production_v2_fingerprint_bytes_are_frozen() -> None:
     )
     assert "runtime_contract" not in fingerprint.document
     assert fingerprint.sha256 == (
-        "cc5d8b1126cc10313629c3dcba060a9b869f4fadc6b53e9b73b138834d25bd7b"
+        "fc2fcd10aeccd802cf4a35102989065e711636abe1941950c2353bfda7e34c33"
     )
 
 

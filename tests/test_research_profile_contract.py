@@ -22,7 +22,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from tradingagents.analysts import ANALYST_WIRE_KEYS
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.research.catalyst_evidence_policy import (
     CATALYST_EVIDENCE_POLICY_VERSION,
@@ -189,227 +188,27 @@ def test_catalyst_policy_rejects_unknown_parameters():
         CatalystEvidencePolicyV1(unknown_window=3)
 
 
-# ---------------------------------------------------------------------------
-# Backward compatibility: omission == classic
-# ---------------------------------------------------------------------------
-
-
-def test_omitted_research_profile_behaves_as_classic(client_factory):
-    body = {key: value for key, value in CLASSIC_BODY.items() if key != "research_profile"}
+# Web migration retains neutral contracts and retires old public creation.
+@pytest.mark.parametrize("profile", ["classic", "catalyst_v1"])
+@pytest.mark.parametrize("changes", [{}, {"research_depth":3}, {"horizon":"long"}, {"selected_analysts":["market"]}, {"mode":"holding_review"}])
+def test_retired_web_creation_is_refused_without_charging(client_factory, catalyst_enabled, profile, changes):
     client, store, manager, ledger = client_factory()
+    response = client.post("/api/runs", json={**CATALYST_BODY, "research_profile":profile, **changes})
+    assert response.status_code == 410
+    assert response.json()["detail"]["code"] == "research_profile_retired"
+    assert manager.requests == [] and store.list_runs() == [] and ledger.total() == 0
 
+
+def test_web_omission_defaults_to_native_and_neutral_omission_stays_classic(client_factory):
+    client, store, manager, ledger = client_factory()
+    body = {key:value for key,value in CATALYST_BODY.items() if key != "research_profile"}
+    body["ticker"] = "600803"
     response = client.post("/api/runs", json=body)
-
     assert response.status_code == 201, response.text
-    assert len(manager.requests) == 1
-    request = manager.requests[0]
-    assert request.research_profile == "classic"
-    assert request.catalyst_policy is None
-    assert request.policy_version == "horizon-policy-v2"
-    # No budget is spent on the request-validation path itself; one charge comes
-    # from the single accepted run.
+    assert manager.requests[0].research_profile == "evidence_v1"
+    assert manager.requests[0].evidence_policy is not None
     assert ledger.total() == 1
-
-
-def test_explicit_classic_profile_is_unchanged(client_factory):
-    client, _store, manager, _ledger = client_factory()
-
-    response = client.post("/api/runs", json=CLASSIC_BODY)
-
-    assert response.status_code == 201, response.text
-    assert manager.requests[0].research_profile == "classic"
-    assert manager.requests[0].catalyst_policy is None
-
-
-def test_legacy_request_shape_with_selected_analysts_still_passes(client_factory):
-    """A pre-existing client that still sends selected_analysts is unaffected."""
-    body = {
-        **CLASSIC_BODY,
-        "selected_analysts": ["market", "fundamentals"],
-        "research_depth": 3,
-    }
-    client, _store, manager, _ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 201, response.text
-    assert manager.requests[0].research_profile == "classic"
-    assert manager.requests[0].selected_analysts == ("market", "fundamentals")
-
-
-# ---------------------------------------------------------------------------
-# catalyst_v1 catalog: reject, never silently downgrade
-# ---------------------------------------------------------------------------
-
-
-def test_catalyst_v1_company_research_a_share_is_accepted(client_factory, catalyst_enabled):
-    client, _store, manager, _ledger = client_factory()
-
-    response = client.post("/api/runs", json=CATALYST_BODY)
-
-    assert response.status_code == 201, response.text
-    request = manager.requests[0]
-    assert request.research_profile == "catalyst_v1"
-    assert request.catalyst_policy is not None
-    assert request.policy_version == CATALYST_EVIDENCE_POLICY_VERSION
-
-
-def test_catalyst_v1_is_rejected_when_the_feature_flag_is_off(client_factory):
-    """Default-off is a hard gate, not a silent fallback to classic."""
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=CATALYST_BODY)
-
-    assert response.status_code == 403
-    detail = response.json()["detail"]
-    assert detail["code"] == "catalyst_profile_unavailable"
-    assert "classic" in detail["message"]
-    # Not enqueued, not charged.
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_with_holding_review_is_rejected_not_downgraded(
-    client_factory, catalyst_enabled
-):
-    body = {
-        **CATALYST_BODY,
-        "mode": "holding_review",
-        "holding": {
-            "ticker": "600519.SS",
-            "quantity": 100,
-            "average_cost": 1500.0,
-            "cash": 10000.0,
-            "total_account_value": 200000.0,
-            "currency": "CNY",
-            "facts_as_of": "2026-07-18",
-        },
-    }
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert detail["code"] == "catalyst_mode_unsupported"
-    assert "holding review" in detail["message"]
-    assert "research_profile" in detail["fields"]
-    # The rejection is real: nothing ran as classic either.
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_with_non_a_share_ticker_is_rejected(client_factory, catalyst_enabled):
-    body = {**CATALYST_BODY, "ticker": "AAPL", "asset_type": "stock"}
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert detail["code"] == "catalyst_market_unsupported"
-    assert "A-share" in detail["message"]
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_with_crypto_is_rejected(client_factory, catalyst_enabled):
-    body = {**CATALYST_BODY, "ticker": "BTC-USD", "asset_type": "crypto"}
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 422
-    # The pre-existing schema rule for crypto + the default analyst tuple
-    # (which includes fundamentals) rejects first.  What matters for T07 is
-    # that the request is refused and never executed as classic.
-    assert response.json()["detail"]["code"] == "validation_error"
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_with_crypto_and_no_fundamentals_analyst_is_rejected(
-    client_factory, catalyst_enabled
-):
-    """The market gate is what rejects crypto, not the classic analyst rule."""
-    body = {
-        **CATALYST_BODY,
-        "ticker": "BTC-USD",
-        "asset_type": "crypto",
-        "selected_analysts": ["market"],
-    }
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "catalyst_market_unsupported"
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_with_non_default_scheduling_params_is_rejected(
-    client_factory, catalyst_enabled
-):
-    body = {**CATALYST_BODY, "research_depth": 3}
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert detail["code"] == "catalyst_legacy_scheduling_params_not_applicable"
-    assert "research_depth" in detail["fields"]
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_with_explicit_analyst_selection_is_rejected(
-    client_factory, catalyst_enabled
-):
-    body = {**CATALYST_BODY, "selected_analysts": ["market"]}
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "catalyst_legacy_scheduling_params_not_applicable"
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_with_non_medium_horizon_is_rejected(client_factory, catalyst_enabled):
-    body = {**CATALYST_BODY, "horizon": "long"}
-    client, store, manager, ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 422
-    detail = response.json()["detail"]
-    assert detail["code"] == "catalyst_horizon_not_supported"
-    assert "horizon" in detail["fields"]
-    assert manager.requests == []
-    assert store.list_runs() == []
-    assert ledger.total() == 0
-
-
-def test_catalyst_v1_accepts_the_explicit_default_analyst_tuple(
-    client_factory, catalyst_enabled
-):
-    """Sending the same default value explicitly is still the default."""
-    body = {**CATALYST_BODY, "selected_analysts": list(ANALYST_WIRE_KEYS)}
-    client, _store, manager, _ledger = client_factory()
-
-    response = client.post("/api/runs", json=body)
-
-    assert response.status_code == 201, response.text
+    assert AnalysisRequest(ticker="600803", analysis_date="2026-07-18").research_profile == "classic"
 
 
 def test_unknown_research_profile_value_is_rejected(client_factory):

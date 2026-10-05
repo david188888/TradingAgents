@@ -428,8 +428,8 @@ def test_missing_all_sources_completes_workflow_without_research_success(runtime
 
 
 @pytest.mark.parametrize("before_seed", [True, False])
-@pytest.mark.parametrize("version", ["evidence-production-v1", "evidence-production-v2"])
-def test_v1_v2_resume_keeps_original_collector_and_reuses_saved_results(runtime, monkeypatch, before_seed, version):
+@pytest.mark.parametrize("version", ["evidence-production-v1", "evidence-production-v2", "evidence-production-v3"])
+def test_legacy_native_resume_keeps_original_collector_and_reuses_saved_results(runtime, monkeypatch, before_seed, version):
     import tradingagents.execution.native_runner as native
 
     manager, caller = runtime
@@ -447,7 +447,8 @@ def test_v1_v2_resume_keeps_original_collector_and_reuses_saved_results(runtime,
     monkeypatch.setattr(native, "WORKFLOW_VERSION", current)
     monkeypatch.setattr(native, "CatalystSources", Sources if version == native.LEGACY_WORKFLOW_VERSION else lambda *a: pytest.fail("v2 used v1 topology"))
     monkeypatch.setattr(native, "NativeSources", Sources if version == native.PUBLIC_WORKFLOW_VERSION else lambda *a: pytest.fail("v1 used v2 topology"))
-    monkeypatch.setattr(native, "DisclosureSources", lambda *a: pytest.fail("old frontier used v3 topology"))
+    monkeypatch.setattr(native, "DisclosureSources", Sources if version == native.DISCLOSURE_WORKFLOW_VERSION else lambda *a: pytest.fail("old frontier used v3 topology"))
+    monkeypatch.setattr(native, "ValuationSources", lambda *a: pytest.fail("old frontier used v4 topology"))
     validate_native_resume(manager.store, snapshot.run_id, req)
     from tradingagents.execution.native_runner import NativeResumeGuard
     NativeRunner(observer, caller_factory=lambda **kwargs: caller).run(req,

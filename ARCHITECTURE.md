@@ -6,16 +6,16 @@ source of runtime truth.
 
 ## Consumers And Entry Flow
 
-Three consumer shapes share the same execution core:
+The maintained product entry is the Web workbench. Compatibility consumers share the neutral execution core:
 
-- `cli/main.py` is the Typer CLI adapter.
+- `cli/main.py` launches Web through `tradingagents web`. CLI analysis is legacy code outside continued product maintenance.
 - `tradingagents/web/` is the loopback-only FastAPI workbench. It creates and
   reads runs, streams durable events through SSE, and serves the bundled SPA.
 - Programmatic callers use the consumer-neutral execution boundary: classic
   constructs `TradingAgentsGraph`, while explicit native research uses
   `NativeRunner` with its durable observer and publication authorizer.
 
-The default classic flow is:
+The legacy neutral classic flow is:
 
 ```text
 AnalysisRequest -> TradingAgentsGraph -> AnalysisRunner -> LangGraph workflow
@@ -37,33 +37,31 @@ participate in saved effective configuration and resume identity. No additional
 model phases or default effort changes are introduced; see
 [reasoning configuration](docs/operations/llm-reasoning.md).
 
-The Web manager routes explicit `catalyst_v1` requests to
-`execution/catalyst_runner.py:CatalystRunner`. This neutral executor coordinates
-`dataflows/catalyst_sources.py`, the retry-free budgeted HTTP transport, and
-`graph/catalyst_workflow.py`. The classic graph facade rejects catalyst requests
-instead of silently running classic. The explicit Web entry is gated by
-`catalyst_profile_enabled`; classic remains the default.
+New Web single and batch requests default to `evidence_v1` and route to
+`execution/native_runner.py:NativeRunner`. The React creation form offers company,
+catalyst (84 calendar days), and holding scopes with a saved optional question.
+Roles and challenge count are code-owned. Old-profile creation and retry return
+410; legacy read/resume stays available. `TRADINGAGENTS_EVIDENCE_ENABLED=false`
+disables fresh native work without disabling reads or existing recovery.
 
-Explicit `evidence_v1` requests route to `execution/native_runner.py:NativeRunner`
-for A-share company, catalyst and holding research. The creation-only Web flag
-`TRADINGAGENTS_EVIDENCE_ENABLED=true` is independent of the catalyst flag;
-omitted profiles and existing forms retain classic defaults. The native trial
-is exposed through the Web API and neutral runner, without a new workbench
-selector or CLI profile option. Its `evidence-policy-v1` fixes historical source
-windows and is distinct from both catalyst lookahead and runtime horizon policy.
-New native runs use `dataflows/native_sources.py` for capability-specific public
-source chains and Tushare backup; `research/source_families.py` owns the finite
-identity/financial/price admission registry shared by facts, specialist views
-and verification. Financial fallback preserves separate provider bundles.
-Workflow v3 extends the collector with `dataflows/native_disclosures.py` and
-the pure `disclosure_documents.py` PDF/table qualifier. Separate official
-excerpt and operating-row families feed role-specific facts; they are not C1
-financial statement operands. Global capability coverage and scoped specialist
-unknowns remain distinct in saved limitations, synthesis context and readers.
-V1/v2 recovery retains its original collector and kernel/prompt input semantics
-or replays saved V0/output. See [native source policy](docs/operations/evidence-research.md#evidence-and-workflow).
+The `evidence-policy-v1` fixes source windows separately from outlook and runtime
+horizon policy. Workflow `evidence-production-v4` uses `dataflows/native_valuation.py:ValuationSources`,
+which extends the v3 bounded disclosures collector with qualified valuation
+sources before optional documents. `research/native_valuation.py` admits source
+fields and assembles deterministic inputs for the existing pure valuation chain.
+The optional record valuation includes saved inputs, input hash, evidence IDs,
+recomputed assessment and limitations. Company/holding valuation claims are
+restricted to valuation facts; synthesis receives allowed claim IDs per dimension.
+V4 validates dimension references during the existing bounded model repair
+opportunity. Failed synthesis remains explicitly partial, without relaxed gates.
 
-## Workflow And Research Routing
+V3 uses `native_disclosures.py`; V2 uses `native_sources.py`; V1 uses
+`catalyst_sources.py`. Recovery retains each collector and its original
+facts/views/policy/kernel/prompt semantics, or replays saved V0/output. Source
+families, publication times, global coverage and specialist scope remain distinct.
+See [native source policy](docs/operations/evidence-research.md#evidence-and-workflow).
+
+## Legacy Workflow And Research Routing
 
 `tradingagents/graph/setup.py` builds a deterministic prefix before analysis:
 adjusted-price, news-window, and fundamentals prefetch tasks always run; the
@@ -126,8 +124,7 @@ derived from that same case. No classic debate-summary call is scheduled.
 `/api/runs/{id}/catalyst` projects the committed case and durable stage facts.
 Reading, refreshing and reconnecting do not invoke models or providers.
 `ready`, run completion, evidence completeness and quality are separate axes.
-The SPA exposes an explicit catalyst form with the fixed 84-day outlook;
-classic selection and historical reading remain available. See
+The SPA retains these historical case readers. New creation uses the native form. See
 [catalyst operations](docs/operations/catalyst-research.md) for qualification limits.
 
 `observability/` records run events and graph-task candidates. `execution/`

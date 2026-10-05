@@ -45,7 +45,7 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
 - [Web batch analysis](operations/web-batch-analysis.md): 1-8 company batch research, global FIFO scheduler, concurrency, lifecycle, and notification limits.
 - [Catalyst trial operations](operations/catalyst-research.md): explicit entry, qualification limits, budgets, recovery and read semantics.
-- [Evidence research API trials](operations/evidence-research.md): explicit `evidence_v1` for company/catalyst/holding research, independent creation flag, native facts/conditions/synthesis, durable recovery and the single Reader; classic stays default.
+- [Web evidence research](operations/evidence-research.md): default `evidence_v1` for single/batch company research, catalyst and holding scopes, bounded valuation and verification, saved-content Reader and legacy recovery.
 - [Model reasoning configuration](operations/llm-reasoning.md): official DeepSeek model names, task effort overrides, inheritance and frozen-run recovery.
 
 ## Integrations
@@ -57,6 +57,11 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 ## Decisions
 
 - [Architecture decisions](decisions/README.md): ADR lifecycle and future decision records. No historical ADRs are reconstructed here.
+
+## Current Delivery Reviews
+
+- [v3.0.0 release notes](reviews/2026-10-05-v3-release-notes.md): Web product migration, changes since v2.10.0, verification and research-quality limits.
+- [Web final acceptance — 600803](reviews/2026-10-04-web-final-acceptance.md): delivered native Web default and Reader, real fresh/frozen trial outcomes, HTML preview, validation and remaining human/research-quality checks.
 
 ## Proposed Engineering Designs
 

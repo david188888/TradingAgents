@@ -2,7 +2,7 @@
 
 CAPABILITY_LABELS = {
     "security_identity": "证券身份", "fundamentals": "财务三表", "event_coverage": "公告列表",
-    "price_history": "历史行情", "announcement_bodies": "公告正文", "operating_detail": "经营披露明细",
+    "valuation": "估值输入", "price_history": "历史行情", "announcement_bodies": "公告正文", "operating_detail": "经营披露明细",
 }
 ROLE_LABELS = {"operating_quality": "经营专项", "event_context": "事件专项", "market_context": "市场专项"}
 STATUS_LABELS = {"qualified": "合格资料可用", "partial": "部分资料可用", "unavailable": "未取得合格资料",
@@ -22,6 +22,12 @@ REASON_LABELS = {
     "qualified_financial_fields_missing": "未取得合格财务字段",
     "qualified_valuation_inputs_missing": "未取得合格估值输入",
     "qualified_market_metrics_missing": "未取得合格市场指标",
+    "native_valuation_policy_v1": "估值参考由代码计算，并保留输入资格与假设限制",
+    "valuation_identity_or_calendar_missing": "证券身份或对应交易所的日历未通过资格检查",
+    "valuation_historical_vintage_unverified": "历史估值版本未经验证",
+    "valuation_snapshot_unavailable": "本次未取得合格估值快照",
+    "valuation_history_unavailable": "本次未取得合格历史倍数",
+    "valuation_budget_exhausted": "估值取数额度已用尽，保留已有合格资料",
     "qualified_event_evidence_missing": "未取得合格事件证据",
 }
 
@@ -39,4 +45,6 @@ def limitation_label(value):
     if value.startswith("global_gap:"):
         _, capability, reason = value.split(":", 2)
         return "全局覆盖限制 · "+CAPABILITY_LABELS.get(capability, capability)+"："+REASON_LABELS.get(reason, "取数或资格受限（"+reason+"）")
+    if value.startswith("native_stage_unavailable:"):
+        return ROLE_LABELS.get(value.split(":")[1], "研究综合")+"未形成合格输出"
     return REASON_LABELS.get(value, value)

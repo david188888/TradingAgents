@@ -32,6 +32,12 @@ LOCAL_URL = "http://127.0.0.1:8765"
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
+@pytest.fixture(autouse=True)
+def isolated_web_logs(tmp_path, monkeypatch):
+    # Launcher validation writes only disposable test logs, never user data.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+
 def _plain(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
