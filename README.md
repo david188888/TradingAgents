@@ -48,6 +48,15 @@ Missing inputs remain unavailable. Historical multiples are retrieved at the
 current cutoff and do not prove archived point-in-time availability; intervals
 are assumption-dependent research aids.
 
+New runs use workflow V5. Selected official reports, summaries and operating
+notices retain page/hash references, explicit current/prior numbers and cash-flow
+bridge rows. Code checks three bounded evidence questions before synthesis.
+Dated institution EPS and same-session industry-candidate quotes supplement
+valuation context when available; optional failures preserve other local results.
+The Reader distinguishes an answered evidence question, an observed risk and a
+future observation. Economic causes, persistence and fair value remain separate
+judgements; a passed check does not close them or upgrade research quality.
+
 Old `classic` and `catalyst_v1` records remain readable and compatible interrupted
 runs can resume with their original topology and spent budgets. New creation
 and fresh retry for those profiles return `410 research_profile_retired`.

@@ -20,6 +20,20 @@ QUESTIONS = {
 }
 
 
+def _valuation_sources(record):
+    if record.evidence_checks is not None:
+        from tradingagents.research.minimum_evidence import SUPPLEMENTAL_VALUATION_SOURCES
+        return VALUATION_SOURCES | SUPPLEMENTAL_VALUATION_SOURCES
+    return VALUATION_SOURCES
+
+
+def _operating_sources(record):
+    if record.evidence_checks is not None:
+        from tradingagents.dataflows.disclosure_documents_v2 import NUMERIC_SOURCE
+        return FINANCIAL_SOURCES | OPERATING_SOURCES | {NUMERIC_SOURCE}
+    return FINANCIAL_SOURCES | OPERATING_SOURCES
+
+
 def fact_views(record, *, valuation=False):
     sources = {source.evidence_id: source for source in record.evidence}
     metric_sources = {key for metric in record.metrics if metric.availability == "available"
@@ -32,7 +46,7 @@ def fact_views(record, *, valuation=False):
                or sources[key].usable_as_of is None for key in fact.evidence_ids):
             continue
         names = [sources[key].source_name for key in fact.evidence_ids]
-        if valuation and any(name in VALUATION_SOURCES for name in names) or any(name in FINANCIAL_SOURCES | OPERATING_SOURCES for name in names):
+        if valuation and any(name in _valuation_sources(record) for name in names) or any(name in _operating_sources(record) for name in names):
             views["operating_quality"].append(fact)
         elif any(name in BODY_SOURCES for name in names):
             role = "operating_quality" if "native_dimension:operating_quality" in fact.limitations else "event_context"
@@ -66,7 +80,7 @@ def dimension_policy(record, *, scoped=False, valuation=False):
     views = fact_views(record, valuation=valuation)
     thesis = any(source.source_name == "user.original_thesis" and source.availability == "available"
                  for source in record.evidence)
-    financial = any(any(source.source_name in FINANCIAL_SOURCES | OPERATING_SOURCES
+    financial = any(any(source.source_name in _operating_sources(record)
                         for source in record.evidence if source.evidence_id in fact.evidence_ids)
                     for fact in views["operating_quality"])
     policies = {
@@ -94,7 +108,7 @@ def dimension_claim_ids(record):
     for dimension in DIMENSIONS_BY_MODE[record.mode]:
         allowed = {f.claim_id for f in views[roles[dimension]]}
         if dimension == "valuation":
-            allowed = {f.claim_id for f in views["operating_quality"] if all(sources[key] in VALUATION_SOURCES for key in f.evidence_ids)}
+            allowed = {f.claim_id for f in views["operating_quality"] if all(sources[key] in _valuation_sources(record) for key in f.evidence_ids)}
         ids = []
         for claim in record.claims:
             deps = set(claim.supporting_fact_ids or (claim.claim_id,))
@@ -102,7 +116,7 @@ def dimension_claim_ids(record):
                 continue
             names = {sources[key] for dep in deps for key in facts[dep].evidence_ids}
             if dimension in {"operating_quality", "holding_thesis"}:
-                if not (FINANCIAL_SOURCES | OPERATING_SOURCES) & names:
+                if not _operating_sources(record) & names:
                     continue
                 if dimension == "holding_thesis" and "user.original_thesis" not in names:
                     continue
@@ -142,7 +156,7 @@ def gate_dimensions(record, proposed, *, scoped=False, valuation=False):
         allowed_facts = {fact.claim_id for fact in views.get(role_for.get(item.dimension), ())}
         if valuation and item.dimension == "valuation":
             allowed_facts = {fact.claim_id for fact in views["operating_quality"]
-                if set(fact.evidence_ids) <= {s.evidence_id for s in record.evidence if s.source_name in VALUATION_SOURCES}}
+                if set(fact.evidence_ids) <= {s.evidence_id for s in record.evidence if s.source_name in _valuation_sources(record)}}
         dependencies = set(item.claim_ids)
         for claim_id in item.claim_ids:
             claim = claims[claim_id]
@@ -153,7 +167,7 @@ def gate_dimensions(record, proposed, *, scoped=False, valuation=False):
         names = {source.source_name for fact in cited_facts for source in record.evidence
                  if source.evidence_id in fact.evidence_ids}
         if item.dimension in {"operating_quality", "holding_thesis"} and item.claim_ids:
-            if not (FINANCIAL_SOURCES | OPERATING_SOURCES) & names:
+            if not _operating_sources(record) & names:
                 raise ValueError("operating judgement requires cited financial evidence")
             if item.dimension == "holding_thesis" and "user.original_thesis" not in names:
                 raise ValueError("holding judgement requires cited original thesis")

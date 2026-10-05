@@ -112,7 +112,7 @@ unqualified; older cutoffs still need an archived factor vintage. SZSE calendar
 is not borrowed for Shanghai/Beijing securities; those currently use the backup.
 
 Programmatic `effective_config.evidence_source_vendors` can replace any of
-`identity`, `financial`, `calendar`, `price`, `events`, `valuation` with an ordered subset of
+`identity`, `financial`, `calendar`, `price`, `events`, `valuation`, `forecasts`, `peers` with an ordered subset of
 its candidates (empty disables it). `evidence_source_exclusions` removes named
 vendors afterwards. These native-only keys are bound to checkpoint identity;
 legacy `data_vendors`/`tool_vendors` keep their classic/catalyst meaning.
@@ -122,11 +122,54 @@ suppresses further Tushare attempts in that run; public sources remain eligible.
 All attempts share the existing capability/HTTP ceilings and active deadline.
 Cancellation, budget exhaustion and checkpoint conflicts stop execution.
 
-The current `evidence-production-v4` also binds valuation inputs and dimension-reference
-validation; v3 binds documents and scoped coverage. Original v1, v2 and v3 checkpoints
+The current `evidence-production-v5` adds the bounded minimum-evidence collector
+and code-owned local checks described below. V4 binds valuation inputs and dimension-reference
+validation; v3 binds documents and scoped coverage. Original v1–v4 checkpoints
 recover with their original collectors and kernel/prompt inputs when V0 is
 missing, or replay saved V0/output without new source calls. A new topology
 is never inserted into an old interrupted run.
+
+### V5 minimum sufficient evidence
+
+The code selects at most four official documents: latest admitted report,
+matching summary, matching operating notice and one recent event. PDF identity,
+publication and period must qualify. At most twelve excerpts per document are
+saved, each at most 4,000 characters; 20 MiB/500-page limits remain. Unsupported
+layouts remain unavailable without OCR, guessed columns or model-created numbers.
+Financial rows retain raw units and current/prior periods. Physical operating
+units and Q2/H1 cumulative values remain separate. Adjacent-page cash bridges
+must reconcile to consolidated net profit and CFO within source rounding precision;
+empty cells remain undisclosed, never zero.
+
+The optional `forecasts` chain is `ths`, then `eastmoney`: positive individual
+EPS rows need explicit forecast years, publication dates within 180 days and
+institution identity. Latest institution/year wins; at most eight institutions
+and three forecast years are saved. A mean needs at least three institutions;
+otherwise the Reader presents individual scenarios. Undated aggregates are not
+consensus evidence. EastMoney years come from explicit `currentYear`, not the
+publication year. One adequate feed stops the fallback chain.
+
+The optional `peers` candidates are `eastmoney`, `tencent`: at most five named
+industry candidates excluding the target and aggregate rows, followed by one
+Tencent batch for target and candidates. Each admitted quote must match the same
+settled session. Historical candidate financial values are not current quotes.
+The selected sample and business-comparability limits remain explicit.
+
+Three code-owned checks answer current-period disclosure coverage, reported
+cash-flow reconciliation and supplementary valuation positioning. The valuation
+check requires a qualified target snapshot and either three same-session PE/PB
+peers or one dated positive EPS scenario. Optional source failure does not erase
+passed disclosure or cash checks. Supplementary context creates no new fair-value
+anchor. Parent economic questions remain unresolved; CFO decline is a separate
+observed risk only with a positive same-period base. Explicit observation dates
+after cutoff remain future observations. Saved checks bind V0 identity/content
+hashes and are recomputed on validation; model narrative cannot write outcomes.
+
+V5 shares the existing 24 capability/64 HTTP ceilings and five main model stages
+with bounded repair. Old v1–v4 keep original collection, schema, prompt and replay.
+CLI analysis receives no new maintenance. See the
+[600803 acceptance snapshot](../reviews/2026-10-05-minimum-evidence-acceptance.md)
+for actual retrieval and fixed-proposal verification limits.
 Having credentials does not establish entitlement, complete coverage or
 point-in-time provenance. Opaque SDK sources and unqualified historical factors
 remain unavailable; a source gap never proves an event did not occur.

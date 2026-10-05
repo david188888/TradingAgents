@@ -429,9 +429,48 @@ def _build_v4_native_markdown(record: Any) -> str:
 
 def build_markdown_from_native_record(record: Any) -> str:
     """Retain byte-stable legacy reports; V4 uses the unified Reader order."""
+    if record.evidence_checks is not None:
+        return _build_v5_native_markdown(record)
     if record.valuation is not None or "native_valuation_policy_v1" in record.limitations:
         return _build_v4_native_markdown(record)
     return _build_legacy_native_markdown(record)
+
+
+def _build_v5_native_markdown(record: Any) -> str:
+    from tradingagents.agents.schemas._research_record import ResearchRecordV1
+    from tradingagents.research.check_labels import (
+        CHECK_LABELS,
+        CHECK_STATUS,
+        OUTCOME_LABELS,
+        observation_value,
+    )
+    from tradingagents.research.coverage_labels import limitation_label
+
+    record = ResearchRecordV1.model_validate(record.model_dump(mode="json"))
+    content = _build_v4_native_markdown(record)
+    text = _markdown_text
+    lines = ["## 证据核查", "", "按具体问题核对保存资料；经济原因、持续性与合理价值仍需另行判断。", ""]
+    for check in record.evidence_checks.checks:
+        lines.extend([f"### {CHECK_LABELS[check.check_id]} · {CHECK_STATUS[check.status]}", "", text(check.question), ""])
+        for observation in check.observations:
+            lines.append(f"- **{text(observation.label)}**：{observation_value(observation)}。{text(observation.method)}")
+        lines.extend(["", "依据："+"、".join(text(key) for key in check.evidence_ids), ""])
+        for limit in (*check.limitations, *check.missing):
+            lines.append("- "+text(limitation_label(limit)))
+        lines.append("")
+    lines.extend(["### 挑战回答范围", ""])
+    for item in record.assessment.challenge_assessments:
+        lines.extend([f"- **{OUTCOME_LABELS[item.outcome]} · 经济判断仍待核查**（{text(item.challenge_id)}）", "  "+text(item.rationale)])
+        if item.answered_question:
+            lines.append("  本次回答范围："+text(item.answered_question))
+        if item.observation_date:
+            lines.append("  后续观察日期："+str(item.observation_date))
+        for observation in item.observations:
+            lines.append("  "+text(observation.label)+"："+observation_value(observation))
+    content = content.replace("## 估值定位与参考区间", "\n".join(lines)+"\n## 估值定位与参考区间", 1)
+    content = content.replace("## 未解决挑战与实际核查", "## 挑战与实际核查", 1)
+    content = content.replace("没有实际执行的核查记录；模型意见不属于已执行核查。", "已执行上述本地证据核查；尚未执行新增来源的独立工具验证。经济假设仍需后续验证。", 1)
+    return content
 
 
 def _build_legacy_native_markdown(record: Any) -> str:

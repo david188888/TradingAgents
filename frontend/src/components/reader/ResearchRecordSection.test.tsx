@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import savedRecord from "../../../../shared_fixtures/research-record.json";
-import type { ResearchAssessmentV1DTO, ResearchRecordResponseDTO } from "../../api/contracts";
+import type { EvidenceChecksV1DTO, ResearchAssessmentV1DTO, ResearchAssessmentV2DTO, ResearchRecordResponseDTO } from "../../api/contracts";
 import { ResearchRecordSection, SourceContent } from "./ResearchRecordSection";
 
 const response = savedRecord as ResearchRecordResponseDTO;
@@ -128,4 +128,40 @@ it("keeps scoped unknowns separate from saved global financial coverage", () => 
   expect(screen.getByText("全局覆盖 · 经营披露明细：未取得合格资料")).toBeInTheDocument();
   expect(screen.getByText("事件专项待核查（仅代表该专项视图）：本专项未见财务明细")).toBeInTheDocument();
   expect(screen.getByText(/旧记录未保存专项范围，不能认定为全局缺失/)).toBeInTheDocument();
+});
+
+const observation = { key: "cfo_change", label: "经营现金流同比变化", value: "-1095420000", unit: "CNY", method: "本期披露减上年同期间披露；会计贡献不等于经济原因。", evidence_ids: [record.evidence[0].evidence_id] };
+const checks: EvidenceChecksV1DTO = {
+  schema_version: "evidence-checks-v1", calculation_version: "minimum-evidence-v1", run_id: record.run_id,
+  ticker: record.ticker, analysis_date: record.analysis_date, input_snapshot_id: record.snapshots[0].snapshot_id,
+  input_evidence_ids: [record.evidence[0].evidence_id], input_sha256: "a".repeat(64), checks: [
+    { check_id: "operating_disclosures", question_scope: "operating_disclosures.current_period_coverage", question: "当前经营基础披露是否充分？", status: "passed", satisfied: [], missing: [], observations: [], evidence_ids: [record.evidence[0].evidence_id], limitations: [] },
+    { check_id: "cash_conversion", question_scope: "cash_conversion.reported_bridge", question: "两期现金流桥是否可核对？", status: "passed", satisfied: [], missing: [], observations: [observation], evidence_ids: [record.evidence[0].evidence_id], limitations: ["reported_accounting_bridge_not_economic_causation"] },
+    { check_id: "valuation_context", question_scope: "valuation_context.supplementary_positioning", question: "估值补充背景是否可用？", status: "unavailable", satisfied: [], missing: ["peers_fewer_than_three"], observations: [], evidence_ids: [], limitations: [] },
+  ],
+};
+const assessmentV2: ResearchAssessmentV2DTO = { ...assessment, schema_version: "research-assessment-v2", challenge_assessments: [{
+  challenge_id: "c1", outcome: "risk_supported", economic_outcome: "unresolved", check_id: "cash_conversion",
+  question_scope: "cash_conversion.reported_bridge", answered_question: "两期现金流桥是否可核对？", rationale: "报告数值支持下降，经济原因仍待判断。",
+  observed_risk: "cash_conversion.cfo_yoy_decline", observation_date: null, evidence_ids: [record.evidence[0].evidence_id], observations: [observation], limitations: ["economic_parent_remains_unresolved"],
+}] };
+
+it("shows code-owned v2 scope and units while retaining economic uncertainty", () => {
+  render(<ResearchRecordSection runId={record.run_id} response={{ ...response, record: { ...record, evidence_checks: checks, assessment: assessmentV2 } }} loading={false} error={false} />);
+  fireEvent.click(screen.getByText("现金流桥核对 · 所需证据已核对"));
+  expect(screen.getAllByText(/-10.9542 亿元/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/共 1 项关键经济问题仍待核查/)).toBeVisible();
+  expect(screen.getByText(/本次回答范围：两期现金流桥是否可核对/)).toBeInTheDocument();
+  expect(screen.getByText("估值补充背景 · 所需证据不足")).toBeVisible();
+  expect(screen.getByText(/已执行上述本地证据核查/)).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole("button", { name: "核对保存的依据" })[0]);
+  expect(screen.getByRole("dialog")).toHaveTextContent(record.evidence[0].content!.text);
+});
+
+it("keeps a future observation explicit without labelling the whole risk resolved", () => {
+  const future: ResearchAssessmentV2DTO = { ...assessmentV2, challenge_assessments: [{ ...assessmentV2.challenge_assessments[0], outcome: "future_observation", observation_date: "2027-03-31" }] };
+  render(<ResearchRecordSection runId={record.run_id} response={{ ...response, record: { ...record, evidence_checks: checks, assessment: future } }} loading={false} error={false} />);
+  expect(screen.getByText("保留未来观察")).toBeInTheDocument();
+  expect(screen.getByText("后续观察日期：2027-03-31")).toBeInTheDocument();
+  expect(screen.getAllByText(/经济判断仍待核查/).length).toBeGreaterThan(0);
 });

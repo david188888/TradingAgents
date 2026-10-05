@@ -14,6 +14,7 @@ import requests
 from tradingagents.dataflows.catalyst_sources import CatalystSources
 from tradingagents.dataflows.catalyst_transport import BudgetedSession
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.minimum_sources import MinimumEvidenceSources
 from tradingagents.dataflows.native_disclosures import DisclosureSources
 from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
 from tradingagents.dataflows.native_sources import NativeSources
@@ -41,7 +42,8 @@ from tradingagents.runtime.catalyst_checkpoint import (
 )
 
 VALUATION_WORKFLOW_VERSION = "evidence-production-v4"
-WORKFLOW_VERSION = VALUATION_WORKFLOW_VERSION
+MINIMUM_WORKFLOW_VERSION = "evidence-production-v5"
+WORKFLOW_VERSION = MINIMUM_WORKFLOW_VERSION
 DISCLOSURE_WORKFLOW_VERSION = "evidence-production-v3"
 PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
@@ -70,7 +72,7 @@ def validate_native_resume(store, run_id, request):
         raise CatalystCheckpointConflict("native resume profile mismatch")
     state = load_checkpoint(store, run_id)
     version = state["identity"].get("workflow_version") if state is not None else None
-    if version not in {VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
+    if version not in {MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -229,6 +231,7 @@ class NativeRunner:
                     PUBLIC_WORKFLOW_VERSION: NativeSources,
                     DISCLOSURE_WORKFLOW_VERSION: DisclosureSources,
                     VALUATION_WORKFLOW_VERSION: ValuationSources,
+                    MINIMUM_WORKFLOW_VERSION: MinimumEvidenceSources,
                 }[version]
                 draft, context = factory(
                     source_request, run_id, session, fetch
@@ -242,8 +245,9 @@ class NativeRunner:
                 mode=request.mode,
                 original_thesis=holding.original_thesis if holding else None,
                 holding_facts_as_of=holding.facts_as_of if holding else None,
-                include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION},
-                include_valuation=version == VALUATION_WORKFLOW_VERSION,
+                include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
+                include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
+                include_minimum=version == MINIMUM_WORKFLOW_VERSION,
             )
             if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat()) != (
                 run_id,
@@ -285,8 +289,9 @@ class NativeRunner:
             ledger=journal.ledger,
             research_question=request.research_question,
             cancelled=cancelled,
-            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION},
-            valuation=version == VALUATION_WORKFLOW_VERSION,
+            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
+            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
+            minimum=version == MINIMUM_WORKFLOW_VERSION,
         )
         active()
         # Cached proposals close interrupted roles; stages lacking qualified

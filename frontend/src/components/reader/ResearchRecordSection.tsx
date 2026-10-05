@@ -2,10 +2,49 @@ import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
 import { ValuationPositionCard } from "./ValuationPositionCard";
-import type { QuantitativeMetricV1DTO, ResearchRecordResponseDTO, ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
+import type { CheckObservationV1DTO, ChallengeAssessmentV2DTO, QuantitativeMetricV1DTO, ResearchRecordResponseDTO, ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
 import { limitationLabel } from "../../domain/researchCoverage";
 
 const CONTENT_LABELS = { excerpt: "原文摘录", source_fields: "原始数据字段", saved_summary: "已保存摘要" };
+const CHECK_LABELS = { operating_disclosures: "经营披露依据", cash_conversion: "现金流桥核对", valuation_context: "估值补充背景" };
+const CHECK_STATUS = { passed: "所需证据已核对", unavailable: "所需证据不足", conflict: "数据冲突，待核查" };
+const OUTCOME_LABELS = { evidence_sufficient: "证据子问题已回答", risk_supported: "数据支持所列风险", future_observation: "保留未来观察", unresolved: "尚未解决" };
+
+function observationValue(item: CheckObservationV1DTO): string {
+  const value = Number(item.value);
+  if (!Number.isFinite(value)) return item.value;
+  const format = (n: number) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 4 }).format(n);
+  if (item.unit === "CNY") return Math.abs(value) >= 1e8 ? `${format(value / 1e8)} 亿元` : Math.abs(value) >= 1e4 ? `${format(value / 1e4)} 万元` : `${format(value)} 元`;
+  return `${format(value)} ${item.unit === "CNY/share" ? "元/股" : item.unit}`;
+}
+
+function LocalChallengeResult({ item }: { item: ChallengeAssessmentV2DTO }): JSX.Element {
+  return <section aria-label="挑战核查结果">
+    <p><strong>{OUTCOME_LABELS[item.outcome]}</strong> · 经济判断仍待核查</p>
+    {item.answered_question ? <p>本次回答范围：{item.answered_question}</p> : null}
+    <p>{item.rationale}</p>
+    {item.observation_date ? <p>后续观察日期：{item.observation_date}</p> : null}
+    {item.observations.map(value => <p key={value.key}>{value.label}：{observationValue(value)}</p>)}
+    {item.limitations.map((value, i) => <p className="record-meta" key={i}>{limitationLabel(value)}</p>)}
+  </section>;
+}
+
+function LocalEvidenceChecks({ record, onInspect }: { record: ResearchRecordV1DTO; onInspect: InspectSources }): JSX.Element | null {
+  const checks = record.evidence_checks;
+  if (!checks) return null;
+  return <section aria-label="证据核查">
+    <h3>证据核查</h3>
+    <p className="record-meta">按具体问题核对已保存资料。可选资料缺失会保留局部判断；核对通过仍需结合经济原因和后续变化。</p>
+    {checks.checks.map(check => <details key={check.check_id} className="record-evidence">
+      <summary>{CHECK_LABELS[check.check_id]} · {CHECK_STATUS[check.status]}</summary>
+      <p>{check.question}</p>
+      {check.observations.map(value => <p key={value.key}><strong>{value.label}：{observationValue(value)}</strong><br /><span className="record-meta">{value.method}</span></p>)}
+      {check.limitations.map((value, i) => <p className="record-meta" key={i}>{limitationLabel(value)}</p>)}
+      {check.missing.length > 0 ? <p className="record-meta">待补充或受限：{check.missing.map(limitationLabel).join("；")}</p> : null}
+      {check.evidence_ids.length > 0 ? <button type="button" className="record-reference" onClick={event => onInspect(record.evidence.filter(source => check.evidence_ids.includes(source.evidence_id)), check.question, event.currentTarget)}>核对保存的依据</button> : null}
+    </details>)}
+  </section>;
+}
 
 export function SourceContent({ evidence }: { evidence: SourceEvidenceV1DTO }): JSX.Element {
   const content = evidence.content;
@@ -83,8 +122,8 @@ function NativeAssessment({ record, onInspect }: { record: ResearchRecordV1DTO; 
     </div>
     <h4>主要风险与疑点</h4>
     <p>{primaryChallenge?.statement ?? (record.challenges.length > 0 ? "挑战条目尚未确定主次，请查看完整记录。" : "本次未形成挑战条目；不代表不存在风险。")}</p>
-    {primaryChallenge ? <p className="record-meta">{primaryChallenge.severity === "critical" ? "关键挑战" : "挑战"} · 尚未解决{primaryAssessment ? `：${primaryAssessment.rationale}` : ""}</p> : null}
-    {criticalChallenges.length > 0 ? <p className="record-meta">共 {criticalChallenges.length} 项关键挑战尚未解决，完整条目见下方验证记录。</p> : null}
+    {primaryChallenge ? <p className="record-meta">{primaryChallenge.severity === "critical" ? "关键挑战" : "挑战"} · {primaryAssessment ? OUTCOME_LABELS[primaryAssessment.outcome] : "尚未解决"}{assessment.schema_version === "research-assessment-v2" ? " · 经济判断仍待核查" : ""}{primaryAssessment ? `：${primaryAssessment.rationale}` : ""}</p> : null}
+    {criticalChallenges.length > 0 ? <p className="record-meta">共 {criticalChallenges.length} 项关键{assessment.schema_version === "research-assessment-v2" ? "经济问题仍待核查" : "挑战尚未解决"}，完整条目见下方验证记录。</p> : null}
     <h4>关键依据</h4>
     {assessment.key_claim_ids.slice(0, 3).map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} onInspect={onInspect} />)}
     {assessment.key_claim_ids.length === 0 ? <p>当前没有可展示的重点依据。</p> : null}
@@ -147,6 +186,7 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
   const additional = record.metrics.filter((metric) => !primaryIds.has(metric.metric_id));
   return <section className="research-record" data-run={runId} aria-label="证据与计算记录">
     <NativeAssessment record={record} onInspect={inspect} />
+    <LocalEvidenceChecks record={record} onInspect={inspect} />
     <section aria-label="估值定位" className="record-valuation">
       <h3>估值定位与参考区间</h3>
       {record.valuation ? <>
@@ -167,7 +207,7 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
     </section> : null}
     {record.assessment ? <section className="record-next"><h3>下一步核查</h3><p>{record.assessment.next_check}</p></section> : null}
     <details className="record-detail"><summary>查看证据、假设与验证记录</summary>
-      <p>{record.verifications.length === 0 ? "尚未执行独立工具验证。推断、反证处理意见和模型置信度都不等于验证结果。" : `保存了 ${record.verifications.length} 次验证执行；各项结果如下。`}</p>
+      <p>{record.verifications.length === 0 ? (record.evidence_checks ? "已执行上述本地证据核查；尚未执行新增来源的独立工具验证。经济假设仍需后续验证。" : "尚未执行独立工具验证。推断、反证处理意见和模型置信度都不等于验证结果。") : `保存了 ${record.verifications.length} 次验证执行；各项结果如下。`}</p>
       {record.hypotheses.map((hypothesis) => <article key={hypothesis.hypothesis_id}>
         <h4>{hypothesis.origin === "adapted_inference" ? "待验证推断（来自原流程）" : "研究假设"}</h4>
         <p>{record.claims.find((claim) => claim.claim_id === hypothesis.claim_id)?.statement}</p>
@@ -175,6 +215,7 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
       </article>)}
       {record.challenges.map((challenge) => <article key={challenge.challenge_id}>
         <h4>挑战</h4><p>{challenge.statement}</p><p>拟核查：{challenge.proposed_test}</p>
+        {record.assessment?.schema_version === "research-assessment-v2" ? record.assessment.challenge_assessments.filter(item => item.challenge_id === challenge.challenge_id).map(item => <LocalChallengeResult key={item.challenge_id} item={item} />) : null}
       </article>)}
       {record.verifications.map((verification) => <article key={verification.verification_id}>
         <h4>{verification.scope === "predicate_only" ? "条件核查" : "验证执行"} · {VERIFICATION_LABELS[verification.status]}</h4>
