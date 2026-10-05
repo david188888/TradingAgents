@@ -88,8 +88,9 @@ outlook from the collector's compatibility adapter.
 
 The code-owned source policy fixes 7/30/90-day event windows, 250 trading days
 of price history and eight financial-reporting quarters. Source windows are
-separate from research outlook. New native runs use the v4 `dataflows/native_valuation.py` collector, extending
-the bounded public sources and official disclosure collector in all three modes:
+separate from research outlook. New native runs use the v5
+`dataflows/minimum_sources.py` collector, extending the v4 valuation and bounded
+public-source collector in all three modes:
 
 | Capability | Native default candidates, in order |
 | --- | --- |
@@ -99,6 +100,8 @@ the bounded public sources and official disclosure collector in all three modes:
 | Calendar | Complete SZSE monthly natural-day grid for Shenzhen securities, then Tushare |
 | Adjusted prices | Tencent raw daily bars plus dated Sina qfq divisors, then Tushare daily/factors |
 | Valuation | Tencent exact dated current snapshot; Tushare daily_basic PE-TTM/PB history |
+| Dated EPS scenarios | THS individual institution rows, then EastMoney with explicit forecast years |
+| Industry candidates and quotes | EastMoney candidate selection, then one Tencent target/candidate batch |
 
 Sina financial admission requires consolidated scope, CNY yuan fields and real
 publication dates; an update timestamp after cutoff is excluded. Provider

@@ -111,6 +111,6 @@ The project license is in [LICENSE](LICENSE).
 
 ## Differences from upstream and acknowledgments
 
-This fork retains the LangGraph multi-agent foundation of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Its A-share-oriented research path adds local-market provider routing and supplemental data, an Evidence Steward gate before debate, explicit source and uncertainty handling, typed research cases, and a local Reader/Audit workbench. The current public modes end in a research-only review; they do not run the original trading-decision path. These are this fork's design choices, not claims that upstream lacks every corresponding capability.
+This fork retains the LangGraph multi-agent foundation of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Its maintained Web path adds bounded A-share source routing, isolated specialist hypotheses, independent challenges, code-owned evidence checks and a saved-record Reader/Audit workbench. Historical classic records retain the earlier Evidence Steward and debate path. The current public modes end in a research-only review; they do not run the original trading-decision path. These are this fork's design choices, not claims that upstream lacks every corresponding capability.
 
 Thanks to the TauricResearch contributors for the original TradingAgents framework and to [Simon Lin](https://github.com/simonlin1212/a-stock-data) for the A-share data reference. Thanks also to the maintainers of the data providers and open-source libraries used here.

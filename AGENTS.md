@@ -49,8 +49,8 @@ npm --prefix frontend run test:e2e
 ```
 
 The maintained user entry is `tradingagents web --port 8765 --open`. CLI analysis
-is retained legacy code and is outside continued product maintenance. The latter is a loopback-only local
-workbench; it binds to `127.0.0.1`.
+is retained legacy code and is outside continued product maintenance. The Web
+workbench is loopback-only; it binds to `127.0.0.1`.
 
 ## Change Routing
 

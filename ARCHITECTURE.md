@@ -176,9 +176,9 @@ first screen prioritizes judgement, key claims, primary challenge, next check
 and quantitative context; source content and per-dimension limits are expandable.
 Completion, readability, completeness and quality remain separate. Missing
 valuation or original-thesis inputs constrain their own dimensions, and a
-successful condition check cannot close an economic challenge. Default migration
-and paid accuracy evaluation remain separate from this engineering path. See
-[native trial operations](docs/operations/evidence-research.md) and
+successful condition check cannot close an economic challenge. Web creation
+already defaults to native research; paid accuracy evaluation remains a separate
+acceptance task. See [Web research operations](docs/operations/evidence-research.md) and
 [the contract](docs/contracts/research-record.md).
 `frontend/src/api/contracts.ts` is the TypeScript facade for those wire
 contracts. The client consumes server-projected data; it does not define the

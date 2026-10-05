@@ -4,7 +4,7 @@ Status: Historical
 
 Do not use this document as evidence of current implementation behavior.
 Current references: [documentation index](../../README.md).
-Approved direction: [design](../specs/2026-10-05-low-cost-evidence-design.md).
+Approved direction: [design](../designs/2026-10-05-low-cost-evidence-design.md).
 Spec review: Approved on 2026-10-05; user confirmed and requested implementation.
 Implemented locally. Actual public-source/fixed-proposal acceptance is recorded
 in [the acceptance snapshot](../../reviews/2026-10-05-minimum-evidence-acceptance.md).

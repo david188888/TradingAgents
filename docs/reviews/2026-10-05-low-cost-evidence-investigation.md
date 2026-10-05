@@ -5,8 +5,10 @@ Status: Historical
 Do not use this document as evidence of current implementation behavior.
 See [the documentation index](../README.md) for current-state references.
 The user approved the recommended scope on 2026-10-05; implementation and
-acceptance are still pending. The [design](../superpowers/specs/2026-10-05-low-cost-evidence-design.md)
+acceptance were pending when this investigation was written. The [design](../archive/designs/2026-10-05-low-cost-evidence-design.md)
 records the proposed implementation boundaries.
+Subsequent implementation and verification are recorded in the
+[V5 acceptance snapshot](2026-10-05-minimum-evidence-acceptance.md).
 
 Investigated on 2026-10-05 against `4f4a0eb775f6c121862da498df453609f0966dd9`.
 The prior frozen run `run_20261004T151705246468Z_32576e4c` and its evidence were

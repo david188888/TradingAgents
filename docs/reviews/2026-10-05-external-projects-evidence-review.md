@@ -7,7 +7,7 @@ See [the documentation index](../README.md) for current-state references.
 
 Reviewed on 2026-10-05 by three read-only subagents and consolidated against the
 local [investigation](2026-10-05-low-cost-evidence-investigation.md) and
-[proposed design](../superpowers/specs/2026-10-05-low-cost-evidence-design.md).
+[approved design history](../archive/designs/2026-10-05-low-cost-evidence-design.md).
 No external project was installed or executed. Tests were read, not run. One
 free public Sina request for 600803 checked response shape; Phoenix pages were
 read over ordinary HTTP. No model requests, production changes, saved-record
