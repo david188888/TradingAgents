@@ -10,10 +10,17 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import parse_qsl, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from tradingagents.research.valuation import (
     ValuationAssessmentV1,
@@ -21,7 +28,8 @@ from tradingagents.research.valuation import (
     assess_valuation,
 )
 
-from ._research_assessment import DIMENSIONS_BY_MODE, ResearchAssessmentV1
+from ._evidence_checks import ChallengeCheckBindingV1, EvidenceChecksV1
+from ._research_assessment import DIMENSIONS_BY_MODE, ResearchAssessmentV1, ResearchAssessmentV2
 from ._verification_plan import canonical_sha256
 
 RESEARCH_RECORD_CONTRACT = "research-record-v1"
@@ -239,10 +247,20 @@ class ResearchRecordV1(_RecordModel):
     challenges: tuple[ResearchChallengeV1, ...] = ()
     verifications: tuple[VerificationRecordV1, ...] = ()
     metrics: tuple[QuantitativeMetricV1, ...] = ()
-    assessment: ResearchAssessmentV1 | None = None
+    assessment: Annotated[ResearchAssessmentV1 | ResearchAssessmentV2, Field(discriminator="schema_version")] | None = None
     valuation: NativeValuationV1 | None = None
+    evidence_checks: EvidenceChecksV1 | None = None
+    challenge_bindings: tuple[ChallengeCheckBindingV1, ...] | None = None
     limitations: tuple[str, ...] = ()
 
+    @field_validator("assessment", mode="before")
+    @classmethod
+    def preserve_v1_default_tag(cls, value):
+        # V1 accepted an omitted schema tag and supplied its default. Keep
+        # that input contract; V2 still requires its explicit discriminator.
+        if isinstance(value, dict) and "schema_version" not in value:
+            return {"schema_version": "research-assessment-v1", **value}
+        return value
     @model_serializer(mode="wrap")
     def serialize_compatible_record(self, handler):
         value = handler(self)
@@ -251,6 +269,10 @@ class ResearchRecordV1(_RecordModel):
             value.pop("assessment", None)
         if self.valuation is None:
             value.pop("valuation", None)
+        if self.evidence_checks is None:
+            value.pop("evidence_checks", None)
+        if self.challenge_bindings is None:
+            value.pop("challenge_bindings", None)
         return value
 
     @model_validator(mode="after")
@@ -343,6 +365,20 @@ class ResearchRecordV1(_RecordModel):
                 raise ValueError("metric window is after research cutoff")
             if metric.availability == "available" and any(evidence[eid].availability != "available" for eid in metric.input_evidence_ids):
                 raise ValueError("available metrics require available input evidence")
+        if self.evidence_checks is not None:
+            from tradingagents.research.minimum_evidence import (
+                challenge_assessments,
+                compute_checks,
+            )
+            if self.construction != "native" or self.evidence_checks != compute_checks(self):
+                raise ValueError("local evidence checks or frozen input binding changed")
+            bindings = index(self.challenge_bindings or (), "challenge_id")
+            if bindings.keys() != challenges.keys():
+                raise ValueError("every v5 challenge requires a closed check binding")
+            if self.assessment is not None and (not isinstance(self.assessment, ResearchAssessmentV2) or self.assessment.challenge_assessments != challenge_assessments(self)):
+                raise ValueError("v2 outcomes or predicate/future/scope binding changed")
+        elif self.challenge_bindings is not None or isinstance(self.assessment, ResearchAssessmentV2):
+            raise ValueError("v2 assessment/bindings require frozen evidence checks")
         if self.assessment is not None:
             assessment = self.assessment
             if self.construction != "native" or assessment.input_snapshot_id != self.snapshots[-1].snapshot_id:

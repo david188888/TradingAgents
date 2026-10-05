@@ -178,3 +178,31 @@ field from serialized records, preserving old record and checkpoint digests.
 The code-owned schema, rather than this prose, defines the complete fields.
 V1–V3 recovery does not gain V4 facts, source views, valuation policy or prompt
 inputs. Reader displays missing valuation explicitly without deriving new data.
+
+## Native v5 bounded evidence checks
+
+The outer wire contract remains `research-record-v1`. Optional `evidence_checks`
+and `challenge_bindings` are omitted when absent, preserving old serialization.
+V5 uses `research-assessment-v2`; v1 remains accepted for old records. Canonical
+definitions are in `agents/schemas/_evidence_checks.py`, `_native_stage.py` and
+`_research_assessment.py`, with binding/recomputation in `_research_record.py`.
+
+Official numeric evidence carries explicit units, current/prior periods, raw
+cells and row/header page locators. Dated EPS scenarios and target-bound peer
+selection/quotes retain their dates and identities. They supplement the existing
+valuation artifact without manufacturing additional reference-price anchors.
+Official report, summary and notice for one security/period share one disclosure
+family; repeated fields and multiple wrappers do not create independent sources.
+
+`research/minimum_evidence.py` owns the finite question scopes, arithmetic and
+requirements. Check identity and input content digest bind frozen V0, even after
+C1 adds a later snapshot. Validation recomputes all saved checks and challenge
+assessments; changing outcome, question, arithmetic or scope rejects the record.
+The model may select an admitted check/risk/date binding but cannot write a
+resolved economic outcome. Reader distinguishes evidence sufficiency, an observed
+CFO-decline risk, future observations and unavailable/conflicting evidence.
+
+Reader and Markdown use this same validated record. Reading performs no external
+retrieval or model generation. The standalone 600803 HTML acceptance preview is
+an artifact produced from that record, not a new runtime HTML-export endpoint.
+V1–V4 recovery never acquires V5 source views, prompts, checks or outcomes.

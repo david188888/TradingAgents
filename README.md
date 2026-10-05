@@ -48,6 +48,15 @@ Missing inputs remain unavailable. Historical multiples are retrieved at the
 current cutoff and do not prove archived point-in-time availability; intervals
 are assumption-dependent research aids.
 
+New runs use workflow V5. Selected official reports, summaries and operating
+notices retain page/hash references, explicit current/prior numbers and cash-flow
+bridge rows. Code checks three bounded evidence questions before synthesis.
+Dated institution EPS and same-session industry-candidate quotes supplement
+valuation context when available; optional failures preserve other local results.
+The Reader distinguishes an answered evidence question, an observed risk and a
+future observation. Economic causes, persistence and fair value remain separate
+judgements; a passed check does not close them or upgrade research quality.
+
 Old `classic` and `catalyst_v1` records remain readable and compatible interrupted
 runs can resume with their original topology and spent budgets. New creation
 and fresh retry for those profiles return `410 research_profile_retired`.
@@ -102,6 +111,6 @@ The project license is in [LICENSE](LICENSE).
 
 ## Differences from upstream and acknowledgments
 
-This fork retains the LangGraph multi-agent foundation of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Its A-share-oriented research path adds local-market provider routing and supplemental data, an Evidence Steward gate before debate, explicit source and uncertainty handling, typed research cases, and a local Reader/Audit workbench. The current public modes end in a research-only review; they do not run the original trading-decision path. These are this fork's design choices, not claims that upstream lacks every corresponding capability.
+This fork retains the LangGraph multi-agent foundation of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Its maintained Web path adds bounded A-share source routing, isolated specialist hypotheses, independent challenges, code-owned evidence checks and a saved-record Reader/Audit workbench. Historical classic records retain the earlier Evidence Steward and debate path. The current public modes end in a research-only review; they do not run the original trading-decision path. These are this fork's design choices, not claims that upstream lacks every corresponding capability.
 
 Thanks to the TauricResearch contributors for the original TradingAgents framework and to [Simon Lin](https://github.com/simonlin1212/a-stock-data) for the A-share data reference. Thanks also to the maintainers of the data providers and open-source libraries used here.

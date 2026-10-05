@@ -122,6 +122,41 @@ export interface ResearchAssessmentV1DTO {
   limitations: string[];
 }
 
+// Canonical: agents/schemas/_evidence_checks.py and _research_assessment.py.
+export type EvidenceCheckId = "operating_disclosures" | "cash_conversion" | "valuation_context";
+export type EvidenceQuestionScope = "operating_disclosures.current_period_coverage" | "cash_conversion.reported_bridge" | "valuation_context.supplementary_positioning";
+export interface CheckObservationV1DTO {
+  key: string; label: string; value: string; unit: string; method: string; evidence_ids: string[];
+}
+export interface ChallengeAssessmentV2DTO {
+  challenge_id: string;
+  outcome: "evidence_sufficient" | "risk_supported" | "future_observation" | "unresolved";
+  economic_outcome: "unresolved";
+  question_scope: EvidenceQuestionScope | null;
+  answered_question: string | null;
+  check_id: EvidenceCheckId | null;
+  rationale: string;
+  evidence_ids: string[];
+  observed_risk: "cash_conversion.cfo_yoy_decline" | null;
+  observation_date: string | null;
+  observations: CheckObservationV1DTO[];
+  limitations: string[];
+}
+export interface ResearchAssessmentV2DTO extends Omit<ResearchAssessmentV1DTO, "schema_version" | "challenge_assessments"> {
+  schema_version: "research-assessment-v2";
+  challenge_assessments: ChallengeAssessmentV2DTO[];
+}
+export interface EvidenceChecksV1DTO {
+  schema_version: "evidence-checks-v1"; calculation_version: "minimum-evidence-v1";
+  run_id: string; ticker: string; analysis_date: string; input_snapshot_id: string;
+  input_evidence_ids: string[]; input_sha256: string;
+  checks: Array<{
+    check_id: EvidenceCheckId; question_scope: EvidenceQuestionScope; question: string;
+    status: "passed" | "unavailable" | "conflict"; satisfied: string[]; missing: string[];
+    evidence_ids: string[]; observations: CheckObservationV1DTO[]; limitations: string[];
+  }>;
+}
+
 export interface NativeValuationV1DTO {
   inputs: {
     run_id: string; ticker: string; as_of: string;
@@ -155,8 +190,10 @@ export interface ResearchRecordV1DTO {
   challenges: Array<{ challenge_id: string; target_claim_ids: string[]; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; evidence_ids: string[]; proposed_test: string; reported_disposition: string | null }>;
   verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string; scope?: "unspecified" | "predicate_only"; hypothesis_id?: string | null; plan_sha256?: string | null; condition_role?: "necessary" | "invalidation" | null; condition_text?: string | null }>;
   metrics: QuantitativeMetricV1DTO[];
-  assessment?: ResearchAssessmentV1DTO | null;
+  assessment?: ResearchAssessmentV1DTO | ResearchAssessmentV2DTO | null;
   valuation?: NativeValuationV1DTO | null;
+  evidence_checks?: EvidenceChecksV1DTO | null;
+  challenge_bindings?: Array<{ challenge_id: string; check_id: EvidenceCheckId | null; observed_risk: "cash_conversion.cfo_yoy_decline" | null; observation_date: string | null }> | null;
   limitations: string[];
 }
 

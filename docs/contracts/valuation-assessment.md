@@ -69,14 +69,14 @@ published.
 - All figures share the same currency/cutoff discipline as the rest of the
   research layer (annual monetary values normalized to CNY 亿元).
 
-## Native Web v4
+## Native Web valuation chain
 
 New Web studies reuse this same pure chain inside the optional `research-record-v1.valuation`.
 Their input assembler is `research/native_valuation.py`, with dated Tencent
 snapshot, direct Tushare `daily_basic` PE/PB history and the latest qualified
 consolidated annual net income attributable to parent shareholders. Native
-annual equity, peer valuation and 52-week price positioning are currently absent;
-the chain labels their unavailable outputs. Source refs, complete saved inputs,
+annual equity, peer valuation anchors and 52-week price positioning are not
+assembled into this chain; their outputs remain unavailable. Source refs, complete saved inputs,
 input SHA256 and recomputation protect the native record boundary.
 History is current-capture retrospective data, admitted only at today's requested
 cutoff; it does not prove archived historical PIT availability. Market cap / price
@@ -85,3 +85,12 @@ remains assumption-dependent; its interval does not establish intrinsic value.
 The native Reader and saved Markdown render this committed assessment without
 provider/model work during reading. V1–V3 records and old workflow recovery
 retain their prior semantics.
+
+V5 supplements this retained V4 chain with same-session industry-candidate
+quotes and dated institution EPS in `research-record-v1.evidence_checks`.
+`research/minimum_evidence.py` checks their finite evidence scope and saves
+sample medians or institution scenarios. These inputs do not populate the
+chain's peer anchor or create new fair-value ranges. Industry candidates are
+not assured business comparables; fewer than three institutions remain
+individual scenarios rather than a consensus mean. See
+[V5 source and check rules](../operations/evidence-research.md#v5-minimum-sufficient-evidence).

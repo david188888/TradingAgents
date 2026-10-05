@@ -6,11 +6,41 @@ This page maps the classic, catalyst and native research read paths. The public 
 
 ## Entry And Modes
 
-CLI, FastAPI/SSE workbench, and programmatic callers share [`AnalysisRequest`](../../tradingagents/execution/models.py). Classic validates `company_research` and `holding_review`, with `short`, `medium`, or `long` horizon. Explicit `catalyst_v1` supports A-share company research with its fixed outlook. Explicit `evidence_v1` supports company, catalyst and holding research through a separate native policy; it does not accept classic scheduling overrides. Holding research requires `HoldingContext`; company and catalyst modes cannot carry holding context. See [catalyst operations](../operations/catalyst-research.md) and [native API operations](../operations/evidence-research.md).
+The maintained entry is the Web workbench, launched by `tradingagents web`.
+New single and batch studies use `evidence_v1`; old `classic` and `catalyst_v1`
+records remain readable and compatible interrupted runs resume their original
+version and spent budget. New creation/retry for those old profiles returns
+`410 research_profile_retired`. CLI analysis remains legacy code outside
+continued maintenance. The neutral [`AnalysisRequest`](../../tradingagents/execution/models.py)
+still supports compatibility consumers and is not the Web default policy.
+
+Native research supports company, catalyst and holding scopes without classic
+scheduling overrides. Holding research requires `HoldingContext`; company and
+catalyst modes cannot carry it. The retained classic contract accepts company
+and holding modes with a horizon, while `catalyst_v1` uses company mode and its
+fixed outlook. See [legacy catalyst recovery](../operations/catalyst-research.md)
+and [Web operations](../operations/evidence-research.md).
 
 Classic is assembled by [`graph/setup.py`](../../tradingagents/graph/setup.py) and executed through [`TradingAgentsGraph`](../../tradingagents/graph/trading_graph.py) and [`AnalysisRunner`](../../tradingagents/execution/runner.py). Catalyst and native profiles use their neutral executors. The workbench observes runs through FastAPI/SSE adapters and persists events and artifacts in the local [`RunStore`](../../tradingagents/runtime/store.py), normally under `~/.tradingagents/web/runs/`.
 
-## Deterministic Research Path
+## Native Research Path
+
+New studies use workflow V5: freeze qualified sources, isolate operating/event/
+market specialists, merge in fixed order, run independent challenge and bounded
+checks, synthesize once, validate and publish the saved `research-record-v1`.
+`NativeRunner` and `graph/native_research.py` own execution; the host derives
+assessment v2 from admitted bindings and recomputed local results.
+
+The single-column Reader prioritizes judgement, unresolved risk, key evidence,
+valuation context and the next check. V5 adds expandable operating-disclosure,
+cash-reconciliation and valuation-context checks with values, units and saved
+source references. A passed evidence question does not resolve economic cause,
+persistence or fair value. Old V1–V4 recovery never acquires V5 collection,
+prompts or checks. Reader and Markdown consume the same validated record;
+the 600803 standalone HTML is a labelled acceptance artifact, not an additional
+runtime export endpoint. See the [record contract](../contracts/research-record.md#native-v5-bounded-evidence-checks).
+
+## Retained Classic Research Path
 
 Before role output is published, the classic graph resolves run-scoped identity and analysis cutoff, then follows the configured data-window policy. Its prefetch sequence is (the A-share supplement is conditional):
 

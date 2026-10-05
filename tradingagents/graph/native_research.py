@@ -12,13 +12,16 @@ from pydantic import BaseModel
 
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
+    ChallengesProposalV2,
     SpecialistProposalV1,
     SynthesisProposalV1,
+    SynthesisProposalV2,
 )
 from tradingagents.agents.schemas._research_assessment import (
     ChallengeAssessmentV1,
     DimensionAssessmentV1,
     ResearchAssessmentV1,
+    ResearchAssessmentV2,
 )
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import VerificationPlanV1, canonical_sha256
@@ -131,7 +134,8 @@ def load_native_seed(ledger: DurableBudgetLedger) -> ResearchRecordV1 | None:
 def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                         ledger: DurableBudgetLedger, research_question: str | None = None,
                         cancelled: Callable[[], bool] = lambda: False,
-                        concurrency: int = 2, scoped: bool = False, valuation: bool = False) -> ResearchRecordV1:
+                        concurrency: int = 2, scoped: bool = False, valuation: bool = False,
+                        minimum: bool = False) -> ResearchRecordV1:
     seed = ResearchRecordV1.model_validate_json(seed.model_dump_json())
     if (seed.construction != "native" or len(seed.snapshots) != 1 or seed.hypotheses
             or seed.challenges or seed.verifications or seed.assessment
@@ -142,6 +146,8 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         raise ValueError("native workflow requires the run's durable ledger")
     if concurrency not in (1, 2):
         raise ValueError("native specialist concurrency is bounded at two")
+    if minimum and seed.evidence_checks is None:
+        raise ValueError("v5 workflow requires frozen local checks")
     sources = {source.evidence_id: source for source in seed.evidence}
     if any(sources[key].availability != "available" or sources[key].content is None
            or sources[key].usable_as_of is None for fact in seed.claims for key in fact.evidence_ids):
@@ -149,7 +155,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     question = research_question if research_question is not None else QUESTIONS[seed.mode]
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 400:
         raise ValueError("research question must contain 1..400 characters")
-    identity = {"workflow_version": "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
+    identity = {"workflow_version": "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
     _bound_put(ledger.journal, "native_seed", seed.model_dump(mode="json"))
     _bound_put(ledger.journal, "native_input", identity)
@@ -178,6 +184,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         if scoped:
             contexts[role]["view_scope"] = {"role": role, "coverage_is": "isolated_specialist_input_only",
                 "instruction": "未在本专项看到的资料不等于全局缺失；unknowns只描述本专项待查问题。"}
+        if minimum and role == "operating_quality":
+            contexts[role]["local_checks"] = seed.evidence_checks.model_dump(mode="json")
+            contexts[role]["minimum_evidence_instruction"] = "局部检查仅回答其命名问题。可选数据缺失保留已有局部判断；会计桥不证明经济因果，同行样本和机构预测不证明合理价值。"
         logical = "native." + role
         if ledger.cached_result(logical) is None and not any(
             item.logical_call_id == logical and item.dispatched_at is not None for item in ledger.records()
@@ -241,9 +250,13 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if scoped:
         critic_context["global_coverage"] = global_coverage(current)
         critic_context["coverage_scope_instruction"] = "specialist_unknown为专项待查，不得据此断言全局来源缺失。"
-    critique = _call("challenge", critic_context, ChallengesProposalV1, caller=caller,
-                     ledger=ledger, cancelled=cancelled) if hypotheses else ChallengesProposalV1()
-    challenges, tasks = [], []
+    challenge_schema = ChallengesProposalV2 if minimum else ChallengesProposalV1
+    if minimum:
+        critic_context["local_checks"] = seed.evidence_checks.model_dump(mode="json")
+        critic_context["check_binding_instruction"] = "可选择给定check_id；它只回答固定证据子问题，不能改名或解决经济母问题。observed_risk仅可选cash_conversion.cfo_yoy_decline，observation_date保留明确后续日期。缺数据不等于风险消失。"
+    critique = _call("challenge", critic_context, challenge_schema, caller=caller,
+                     ledger=ledger, cancelled=cancelled) if hypotheses else challenge_schema()
+    challenges, tasks, bindings = [], [], []
     hypothesis_map = {item.hypothesis_id: item for item in current.hypotheses}
     if critique is None:
         limits.append("native_stage_unavailable:challenge")
@@ -259,11 +272,15 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             challenges.append({"challenge_id": challenge_id, "target_claim_ids": [target.claim_id],
                 "statement": item.statement, "severity": item.severity, "risk_type": item.risk_type,
                 "proposed_test": item.proposed_test})
+            if minimum:
+                bindings.append({"challenge_id": challenge_id, "check_id": item.check_id,
+                    "observed_risk": item.observed_risk, "observation_date": item.observation_date})
             if bound and bound["check"] is not None:
                 tasks.append({"task_id": "t." + challenge_id[2:], "challenge_id": challenge_id,
                     "hypothesis_id": item.hypothesis_id, "condition_role": bound["condition_role"],
                     "condition_text": bound["text"], "check": bound["check"]})
-    current = _validated(current, challenges=challenges, limitations=list(dict.fromkeys(limits)))
+    current = _validated(current, challenges=challenges, limitations=list(dict.fromkeys(limits)),
+        **({"challenge_bindings": bindings} if minimum else {}))
     plan = VerificationPlanV1.model_validate_json(json.dumps({
         "run_id": seed.run_id, "ticker": seed.ticker, "mode": seed.mode,
         "analysis_date": seed.analysis_date.isoformat(), "input_snapshot_id": seed.snapshots[0].snapshot_id,
@@ -280,8 +297,14 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if scoped:
         synthesis_context["global_coverage"] = global_coverage(current)
         synthesis_context["coverage_scope_instruction"] = "专项未知项只代表对应专项输入/分析范围。全局缺失只按global_coverage和已保存来源判断；不得把缺经营明细写成无财务、把缺基准写成无行情。"
+    if minimum:
+        from tradingagents.research.minimum_evidence import (
+            challenge_assessments as local_assessments,
+        )
+        synthesis_context["local_check_assessments"] = [a.model_dump(mode="json") for a in local_assessments(current)]
+        synthesis_context["local_check_instruction"] = "引用已保存的局部核查结果和回答范围；经济母问题仍未解决。schema中的challenge_assessments保留unresolved提议，最终局部outcome由代码生成，不得自行宣称风险已消除。"
     synthesis = _call("synthesis", synthesis_context,
-        SynthesisProposalV1, caller=caller, ledger=ledger, cancelled=cancelled) if seed.claims else None
+        SynthesisProposalV2 if minimum else SynthesisProposalV1, caller=caller, ledger=ledger, cancelled=cancelled) if seed.claims else None
     if synthesis is None:
         limits.append("native_synthesis_unavailable")
         dimensions = tuple(DimensionAssessmentV1(dimension=name, status="unresolved", judgement="证据或综合环节不足。",
@@ -298,7 +321,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             primary = next(item.challenge_id for item in current.challenges if item.severity == "critical")
     complete = (synthesis is not None and not any(item.status == "unresolved" for item in dimensions)
                 and not any(item.startswith("native_stage_unavailable:") for item in limits))
-    assessment = ResearchAssessmentV1(input_snapshot_id=current.snapshots[-1].snapshot_id,
+    if minimum:
+        challenge_assessments = local_assessments(current)
+    assessment = (ResearchAssessmentV2 if minimum else ResearchAssessmentV1)(input_snapshot_id=current.snapshots[-1].snapshot_id,
         research_question=question, judgement=judgement, dimensions=dimensions, key_claim_ids=keys,
         primary_challenge_id=primary, next_check=next_check, challenge_assessments=challenge_assessments,
         completeness="complete" if complete else "partial",

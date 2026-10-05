@@ -9,7 +9,7 @@ TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源�
 
 ## Demo
 
-观看一个已完成的 A 股研究样例演示，时长 20 秒。视频保留中文原界面并配有英文说明，仅用于展示研究流程，不构成投资建议。
+观看一个已完成的历史 A 股研究样例演示，时长 20 秒。视频展示上一版界面，保留中文并配有英文说明，仅用于展示研究流程，不构成投资建议。
 
 [![TradingAgents demo：002335.SZ 研究样例](https://david188888.github.io/images/tradingagents-demo-poster.jpg)](https://david188888.github.io/videos/tradingagents-demo.mp4)
 
@@ -33,6 +33,11 @@ CLI 分析代码保留为旧入口，此后不再维护；启动网页的 `tradi
 并保留 Tushare 备用来源。V4 增加带报价日期的腾讯估值快照和 Tushare PE/PB 历史。
 估值由代码计算；只有合格年度合并归母净利润和足够历史倍数同时存在时才生成参考区间。
 缺失输入保持不可用。当前抓取的历史倍数不证明历史档案时点可用性；区间依赖盈利和倍数假设。
+
+新运行使用 V5：选取正式报告、摘要及运营公告，保存页码、文档校验、明确的当期／同期数字与
+现金流桥，由代码核对三项有限的证据问题。有日期的机构 EPS 和同交易日行业候选报价补充估值背景；
+可选来源失败保留其它局部核查结果。结果页分别显示证据问题已回答、数据支持的风险和未来观察。
+现金流变化的经济原因、持续性及合理价值仍需判断；核查通过不会自动关闭这些问题或提升研究评级。
 
 旧 `classic` / `catalyst_v1` 记录仍可阅读；合格中断任务按原版本与已消耗预算恢复。
 旧流程新建和新运行重试返回 `410 research_profile_retired`。
@@ -82,6 +87,6 @@ Web 服务仅绑定到 `127.0.0.1`；运行时无需安装 Node.js。配置可�
 
 ## 与上游的区别及致谢
 
-本 fork 保留了 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) 的 LangGraph 多智能体基础，并围绕 A 股研究增加了本地市场数据路由和补充数据、辩论前的 Evidence Steward 证据检查、来源与不确定性的显式记录、结构化研究案例，以及本地 Reader/Audit 工作台。当前公开研究模式以研究复核结束，不再执行原有的交易决策流程。这些是本 fork 的设计选择，不代表上游没有任何类似能力。
+本 fork 保留了 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) 的 LangGraph 多智能体基础。持续维护的 Web 流程增加了有界 A 股数据路由、隔离的专项假设、独立挑战、代码裁定的证据核查，以及读取保存记录的 Reader/Audit 工作台。历史 classic 记录保留此前的 Evidence Steward 与辩论路径。当前公开研究模式以研究复核结束，不再执行原有的交易决策流程。这些是本 fork 的设计选择，不代表上游没有任何类似能力。
 
 感谢 TauricResearch 的贡献者开发 TradingAgents 框架，感谢 [Simon Lin](https://github.com/simonlin1212/a-stock-data) 提供 A 股数据参考，也感谢本项目所用数据服务和开源库的维护者。

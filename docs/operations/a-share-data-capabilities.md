@@ -88,6 +88,12 @@ Analyst bundle 中新增的业绩预告、回购、质押、IPO 日历、上证e
 
 ## 官方披露与覆盖语义
 
+`evidence-production-v5` 使用独立的正式报告／摘要／运营公告选择器和数字解析器。
+半年累计与季度运营数据、财务元值与物理单位分别保存；现金流桥必须核对合计及合并报表端点。
+可选补充来源为同花顺逐机构有日期 EPS（东财显式预测年份备源）、东财行业候选及腾讯同日批量报价。
+候选并非业务完全可比的同行，预测样本并非完整一致预期；资料不足会保留已通过的其它有限检查。
+V1–V4 继续使用原解析及恢复路径；详情见 [V5 来源与核查](evidence-research.md#v5-minimum-sufficient-evidence)。
+
 - 中长期策略要求 `cninfo.announcements` 与 `exchange.announcements` 至少一个
   完整可用；不是把 CNINFO 固定为唯一必需来源。
 - EastMoney 公告仍保留为旧工具的公开兼容备份，但使用非官方语义，不能

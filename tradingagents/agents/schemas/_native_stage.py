@@ -1,9 +1,11 @@
 """Closed model proposals; facts, IDs, execution and publication remain code-owned."""
 
+from datetime import date
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from tradingagents.agents.schemas._evidence_checks import CheckId, ObservedRisk
 from tradingagents.agents.schemas._research_assessment import (
     ChallengeAssessmentV1,
     DimensionAssessmentV1,
@@ -63,3 +65,24 @@ class SynthesisProposalV1(_Proposal):
     primary_challenge_id: str | None = None
     next_check: str = Field(min_length=1, max_length=240)
     challenge_assessments: tuple[ChallengeAssessmentV1, ...] = ()
+
+
+class ChallengeProposalV2(ChallengeProposalV1):
+    check_id: CheckId | None = None
+    observed_risk: ObservedRisk | None = None
+    observation_date: date | None = None
+
+    @model_validator(mode="after")
+    def risk_scope(self):
+        if self.observed_risk and self.check_id not in {None, "cash_conversion"}:
+            raise ValueError("CFO risk cannot answer another check's question")
+        return self
+
+
+class ChallengesProposalV2(_Proposal):
+    challenges: tuple[ChallengeProposalV2, ...] = Field(default=(), max_length=3)
+
+
+class SynthesisProposalV2(SynthesisProposalV1):
+    # Narrative rationales remain proposals. The host generates v2 outcomes.
+    pass

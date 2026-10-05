@@ -231,7 +231,8 @@ def _fact(source: SourceEvidenceV1, dimension: str, locator: str, statement: str
 def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode,
                         original_thesis: str | None = None,
                         holding_facts_as_of: str | None = None,
-                        include_coverage: bool = False, include_valuation: bool = False) -> ResearchRecordV1:
+                        include_coverage: bool = False, include_valuation: bool = False,
+                        include_minimum: bool = False) -> ResearchRecordV1:
     """Retain proven fields only; source coverage gaps never prove absence.
 
     Context bytes are bound to the collector's source-family digest before any
@@ -255,7 +256,11 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
             digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()).hexdigest()
             if item.source_family_id != f"{item.source_name}:{digest}":
                 raise ValueError("frozen source context changed from family digest")
-        source = _source_record(item, draft, payload)
+        if include_minimum:
+            from tradingagents.research.minimum_evidence import NEW_SOURCES, source_record
+        source = source_record(item, draft, payload) if include_minimum and item.source_name in NEW_SOURCES else _source_record(item, draft, payload)
+        if include_minimum and item.source_name in BODY_SOURCES and isinstance(payload, dict) and payload.get("report_period"):
+            source = source.model_copy(update={"source_family_id": f"cninfo.disclosure:{payload['ts_code']}:{payload['report_period']}"})
         sources.append(source)
         payloads[source.evidence_id] = payload
     if len({item.evidence_id for item in sources}) != len(sources):
@@ -295,13 +300,20 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
         snapshots=(make_evidence_snapshot(evidence),),
         limitations=(*coverage, *gaps, *identity_limits))
     if not identity_ok:
+        if include_minimum:
+            from tradingagents.research.minimum_evidence import compute_checks
+            seed = ResearchRecordV1.model_validate({**seed.model_dump(mode="python"), "evidence_checks": compute_checks(seed)})
         return seed
     facts = []
     metrics = []
     for source in sources:
         if source.availability != "available" or source.content is None:
             continue
-        if source.source_name in FINANCIAL_SOURCES:
+        if include_minimum and source.source_name in NEW_SOURCES:
+            from tradingagents.research.minimum_evidence import fact_statement
+            dimension, locator, statement = fact_statement(source.source_name, payloads[source.evidence_id])
+            facts.append(_fact(source, dimension, locator, statement))
+        elif source.source_name in FINANCIAL_SOURCES:
             selected = json.loads(source.content.text)
             for table, rows in selected.items():
                 for row in rows:
@@ -371,4 +383,7 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
         valuation = assemble_valuation(record, payloads)
         if valuation is not None:
             record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "valuation": valuation})
+    if include_minimum:
+        from tradingagents.research.minimum_evidence import compute_checks
+        record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "evidence_checks": compute_checks(record)})
     return record

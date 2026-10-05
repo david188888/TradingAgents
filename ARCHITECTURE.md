@@ -45,7 +45,19 @@ Roles and challenge count are code-owned. Old-profile creation and retry return
 disables fresh native work without disabling reads or existing recovery.
 
 The `evidence-policy-v1` fixes source windows separately from outlook and runtime
-horizon policy. Workflow `evidence-production-v4` uses `dataflows/native_valuation.py:ValuationSources`,
+horizon policy. New workflow `evidence-production-v5` uses
+`dataflows/minimum_sources.py:MinimumEvidenceSources`, an isolated extension of
+the native collector. `disclosure_documents_v2.py` admits bounded official
+reports/summary/operating notices and explicit numeric rows; supplementary
+valuation parses dated institution EPS and same-session industry candidates.
+`research/minimum_evidence.py` recomputes three closed checks from frozen V0.
+The critic selects optional check/risk/date bindings; the host owns assessment
+v2 outcomes and keeps economic parent questions unresolved. Saved record
+validation recomputes checks and challenge outcomes, so Reader/exports cannot
+relabel a successful data check as resolved economics. No model stage or budget
+ceiling is added.
+
+Workflow `evidence-production-v4` uses `dataflows/native_valuation.py:ValuationSources`,
 which extends the v3 bounded disclosures collector with qualified valuation
 sources before optional documents. `research/native_valuation.py` admits source
 fields and assembles deterministic inputs for the existing pure valuation chain.
@@ -55,7 +67,7 @@ restricted to valuation facts; synthesis receives allowed claim IDs per dimensio
 V4 validates dimension references during the existing bounded model repair
 opportunity. Failed synthesis remains explicitly partial, without relaxed gates.
 
-V3 uses `native_disclosures.py`; V2 uses `native_sources.py`; V1 uses
+V4 and its original valuation chain remain recoverable. V3 uses `native_disclosures.py`; V2 uses `native_sources.py`; V1 uses
 `catalyst_sources.py`. Recovery retains each collector and its original
 facts/views/policy/kernel/prompt semantics, or replays saved V0/output. Source
 families, publication times, global coverage and specialist scope remain distinct.
@@ -164,9 +176,9 @@ first screen prioritizes judgement, key claims, primary challenge, next check
 and quantitative context; source content and per-dimension limits are expandable.
 Completion, readability, completeness and quality remain separate. Missing
 valuation or original-thesis inputs constrain their own dimensions, and a
-successful condition check cannot close an economic challenge. Default migration
-and paid accuracy evaluation remain separate from this engineering path. See
-[native trial operations](docs/operations/evidence-research.md) and
+successful condition check cannot close an economic challenge. Web creation
+already defaults to native research; paid accuracy evaluation remains a separate
+acceptance task. See [Web research operations](docs/operations/evidence-research.md) and
 [the contract](docs/contracts/research-record.md).
 `frontend/src/api/contracts.ts` is the TypeScript facade for those wire
 contracts. The client consumes server-projected data; it does not define the

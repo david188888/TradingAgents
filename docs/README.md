@@ -62,18 +62,28 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 
 - [v3.0.0 release notes](reviews/2026-10-05-v3-release-notes.md): Web product migration, changes since v2.10.0, verification and research-quality limits.
 - [Web final acceptance — 600803](reviews/2026-10-04-web-final-acceptance.md): delivered native Web default and Reader, real fresh/frozen trial outcomes, HTML preview, validation and remaining human/research-quality checks.
+- [600803 minimum-evidence acceptance](reviews/2026-10-05-minimum-evidence-acceptance.md): actual V5 public-source retrieval, three bounded checks, fixed-proposal Web/HTML outputs and remaining research-quality limits.
+
+## Dated Investigations
+
+These record inspected evidence and recommendations, not delivered runtime changes.
+
+- [Low-cost evidence investigation — 600803](reviews/2026-10-05-low-cost-evidence-investigation.md): actual official PDFs, public-source probes, current selection/parser gaps and the approved minimum-evidence scope.
+- [External project evidence review](reviews/2026-10-05-external-projects-evidence-review.md): pinned-source review of TradingAgents-astock, Vibe-Research, vibe-astock and Phoenix Tree AI, practical adoption decisions and verification limits.
 
 ## Proposed Engineering Designs
 
 These are execution proposals, not descriptions of current runtime behavior.
 
-- [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): retained overall goals and remaining quality/readability evaluation and default-migration conditions. Current engineering behavior belongs in the operations and contract pages above.
+- [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): retained overall goals and remaining quality/readability evaluation criteria. The Web default migration is delivered; current engineering behavior belongs in the operations and contract pages above.
 - [Frozen evaluation criteria](superpowers/plans/eval-table-frozen.md) and [case inputs](superpowers/plans/eval-cases.json): retained classic/catalyst comparison protocol, not completed evaluation results or authorization for new paid calls.
 - [Unified Reader prototype](superpowers/prototypes/2026-09-30-unified-research-reader.html), [sample metric generator](superpowers/prototypes/reader_sample_metrics.py), [sample metrics](superpowers/prototypes/reader_sample_metrics.json), and [catalyst layout prototype](superpowers/specs/2026-09-28-catalyst-research-layout.html): retained synthetic design material, not live research or runtime contracts.
 
 ## Historical / Archive
 
 `Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
+
+- [Low-cost evidence design](archive/designs/2026-10-05-low-cost-evidence-design.md) and [implementation](archive/plans/2026-10-05-low-cost-evidence-implementation.md): completed V5 design and local delivery history; current rules are in Web operations and the research-record contract, with results in the dated acceptance above.
 
 - [Legacy learning-research composite](archive/legacy/learning-research-reader-2026-08-13.md): frozen historical reference for the learning research / Reader path and its implementation records.
 - [Catalyst redesign](archive/designs/2026-09-28-catalyst-research-redesign.md), [task plan](archive/plans/2026-09-29-catalyst-research-task-plan.md), and [engineering handoff](archive/reviews/2026-09-29-engineering-handoff.md): original scope, task dependencies and writing-time blockers; archiving does not certify every original goal.
