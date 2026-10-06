@@ -6,12 +6,16 @@ Status: Current
 
 The `deepseek` provider uses Chat Completions at `https://api.deepseek.com`
 unless the effective configuration overrides the endpoint. The official
-V4.1 Flash model ID is `deepseek-flash`; it is available in both quick and
-deep model selectors and uses the DeepSeek capability adapter. Existing
-`deepseek-v4-flash` configurations remain accepted. Repository model defaults
-and saved model IDs are not rewritten by this compatibility update.
+V4.1 Flash model ID is `deepseek-flash`; both quick and deep model defaults
+and the first option in each selector use this ID. It uses the DeepSeek
+capability adapter. Existing `deepseek-v4-flash` configurations remain accepted;
+explicit environment overrides and saved run model IDs retain their values.
+The selectors offer current Flash, Pro (deep tier) and a custom ID entry.
+The legacy Flash alias and expired temporary Flash ID are recognized for
+compatibility but are not advertised as new model choices. Recognizing an
+old ID does not guarantee continued provider availability.
 
-As verified on 2026-10-04, the official service temporarily routes the old
+As verified on 2026-10-06, the official service temporarily routes the old
 Flash ID to V4.1 Flash. This is provider behavior, not a pinned historical
 model version. See the [official change log](https://api-docs.deepseek.com/updates/).
 
@@ -68,6 +72,15 @@ The default global effort remains `high`. Deterministic data collection, metric
 calculation, source qualification, verification and report rendering have no
 effort setting. Effort changes do not enable optional stages or add calls.
 
+For new Web research without explicit overrides, the three specialist stages
+(`native.operating_quality`, `native.event_context`, `native.market_context`),
+the challenge stage (`native.challenge`) and final synthesis (`native.synthesis`)
+all use `high`. The first four select the quick model; synthesis selects the
+deep model. Both default to `deepseek-flash`. Structural repair inherits its
+stage's effort. `low` means lighter reasoning, `high` is the official default,
+and `max` requests the greatest reasoning depth; these are not fixed token
+budgets or guarantees of accuracy.
+
 For the CLI, place overrides under `run` in the ignored local JSON configuration.
 This is an optional comparison example, not an automatically enabled preset:
 
@@ -90,6 +103,15 @@ Programmatic `AnalysisRequest`/RunManager callers put the mapping directly in
 `effective_config`. The browser creation form has no per-task selector and its
 server does not read this CLI JSON. No environment mapping for task policies is
 introduced. Do not infer that selecting quick/deep model IDs selects effort.
+
+## API key location
+
+The DeepSeek client reads `DEEPSEEK_API_KEY` from the server process environment.
+The supported `tradingagents web` launcher loads the repository's ignored `.env`
+(with override), then `.env.enterprise` as a fallback. A direct package/API
+launch finds these files from its working directory and retains already exported
+environment values. The Web form does not store a key; `/api/config` reports only
+whether it is configured. Changes to files or defaults require a server restart.
 
 ## Isolation, persistence and repair
 

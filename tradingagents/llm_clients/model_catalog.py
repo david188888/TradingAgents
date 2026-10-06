@@ -141,28 +141,17 @@ MODEL_OPTIONS: ProviderModeOptions = {
             ("Grok 4.20 Multi-Agent - Multi-agent reasoning", "grok-4.20-multi-agent-0309"),
         ],
     },
-    # DeepSeek: the deepseek-chat / deepseek-reasoner aliases are deprecated
-    # (2026-07-24) and now map to V4 Flash; expose the V4 IDs directly. V4 Flash
-    # serves both non-thinking and thinking modes (the DeepSeekChatOpenAI client
+    # DeepSeek: offer current model IDs. Legacy IDs are validation-only below.
+    # Flash serves both non-thinking and thinking modes (the DeepSeekChatOpenAI client
     # handles the reasoning_content round-trip).
     "deepseek": {
         "quick": [
-            ("DeepSeek V4 Flash - Compatibility alias for V4.1 Flash", "deepseek-v4-flash"),
-            ("DeepSeek V4.1 Flash - Official model ID", "deepseek-flash"),
-            (
-                "DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option",
-                "deepseek-v4.1-flash-expires-on-0910",
-            ),
+            ("DeepSeek V4.1 Flash", "deepseek-flash"),
             ("Custom model ID", "custom"),
         ],
         "deep": [
-            ("DeepSeek V4 Pro - Latest flagship", "deepseek-v4-pro"),
-            ("DeepSeek V4 Flash - Compatibility alias for V4.1 Flash", "deepseek-v4-flash"),
-            ("DeepSeek V4.1 Flash - Official model ID", "deepseek-flash"),
-            (
-                "DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option",
-                "deepseek-v4.1-flash-expires-on-0910",
-            ),
+            ("DeepSeek V4.1 Flash", "deepseek-flash"),
+            ("DeepSeek V4 Pro", "deepseek-v4-pro"),
             ("Custom model ID", "custom"),
         ],
     },
@@ -203,20 +192,29 @@ MODEL_OPTIONS: ProviderModeOptions = {
 }
 
 
+_COMPATIBILITY_MODELS: dict[str, set[str]] = {
+    "deepseek": {"deepseek-v4-flash", "deepseek-v4.1-flash-expires-on-0910"},
+}
+
+
 def get_model_options(provider: str, mode: str) -> list[ModelOption]:
     """Return shared model options for a provider and selection mode."""
     return MODEL_OPTIONS[provider.lower()][mode]
 
 
 def get_known_models() -> dict[str, list[str]]:
-    """Build known model names from the shared CLI catalog."""
+    """Build validation IDs without advertising legacy IDs for new selection.
+
+    Keeping old IDs known preserves explicit configurations and saved runs;
+    it does not assert that a retired endpoint is still available.
+    """
     return {
         provider: sorted(
             {
                 value
                 for options in mode_options.values()
                 for _, value in options
-            }
+            } | _COMPATIBILITY_MODELS.get(provider, set())
         )
         for provider, mode_options in MODEL_OPTIONS.items()
     }
