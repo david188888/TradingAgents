@@ -14,18 +14,22 @@ from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 from tradingagents.llm_clients.validators import validate_model
 
 
-def test_deepseek_catalog_defaults_to_v4_models():
-    assert get_model_options("deepseek", "quick")[0][1] == "deepseek-v4-flash"
-    assert get_model_options("deepseek", "deep")[0][1] == "deepseek-v4-pro"
-    assert ("DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option", "deepseek-v4.1-flash-expires-on-0910") in get_model_options("deepseek", "quick")
-    assert ("DeepSeek V4.1 Flash (expires 09-10) - Temporary fast model option", "deepseek-v4.1-flash-expires-on-0910") in get_model_options("deepseek", "deep")
+def test_deepseek_catalog_defaults_to_official_flash():
+    assert get_model_options("deepseek", "quick")[0][1] == "deepseek-flash"
+    assert get_model_options("deepseek", "deep")[0][1] == "deepseek-flash"
+    assert {model for _, model in get_model_options("deepseek", "quick")} == {"deepseek-flash", "custom"}
+    assert {model for _, model in get_model_options("deepseek", "deep")} == {"deepseek-flash", "deepseek-v4-pro", "custom"}
 
 
-def test_official_flash_is_available_without_removing_legacy_alias():
+def test_official_flash_is_offered_and_legacy_ids_remain_valid():
     for tier in ("quick", "deep"):
         models = {model for _, model in get_model_options("deepseek", tier)}
-        assert {"deepseek-flash", "deepseek-v4-flash"} <= models
+        assert "deepseek-flash" in models
+        assert "deepseek-v4-flash" not in models
+        assert "deepseek-v4.1-flash-expires-on-0910" not in models
     assert validate_model("deepseek", "deepseek-flash")
+    assert validate_model("deepseek", "deepseek-v4-flash")
+    assert validate_model("deepseek", "deepseek-v4.1-flash-expires-on-0910")
 
 
 @pytest.mark.parametrize("thinking", ("enabled", "disabled"))

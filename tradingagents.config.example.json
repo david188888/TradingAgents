@@ -7,8 +7,8 @@
   },
   "llm": {
     "provider": "deepseek",
-    "quick_think_llm": "deepseek-v4-flash",
-    "deep_think_llm": "deepseek-v4-pro"
+    "quick_think_llm": "deepseek-flash",
+    "deep_think_llm": "deepseek-flash"
   },
   "run": {
     "analysts": ["market", "social", "news", "fundamentals"],

@@ -186,6 +186,15 @@ def test_config_uses_runtime_catalog_and_exposes_status_not_secret(
     assert response.status_code == 200
     payload = response.json()
     providers = {entry["id"]: entry for entry in payload["providers"]}
+    assert providers["deepseek"]["models"]["quick"] == [
+        {"label": "DeepSeek V4.1 Flash", "id": "deepseek-flash"},
+        {"label": "Custom model ID", "id": "custom"},
+    ]
+    assert providers["deepseek"]["models"]["deep"] == [
+        {"label": "DeepSeek V4.1 Flash", "id": "deepseek-flash"},
+        {"label": "DeepSeek V4 Pro", "id": "deepseek-v4-pro"},
+        {"label": "Custom model ID", "id": "custom"},
+    ]
     assert providers["openai"]["configured"] is True
     assert "gpt-5.4-mini" in str(providers["openai"])
     assert "gpt-5.5" in str(providers["openai"])

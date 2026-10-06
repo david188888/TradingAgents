@@ -41,8 +41,8 @@ curl --fail-with-body http://127.0.0.1:8765/api/runs \
   "mode": "company_research",
   "research_question": "哪些经营事实支持持续改善，哪些问题仍需核查？",
   "llm_provider": "deepseek",
-  "quick_think_llm": "deepseek-v4-flash",
-  "deep_think_llm": "deepseek-v4-flash",
+  "quick_think_llm": "deepseek-flash",
+  "deep_think_llm": "deepseek-flash",
   "output_language": "Chinese"
 }
 JSON
@@ -50,6 +50,21 @@ JSON
 
 The optional question is trimmed and limited to 400 Unicode code points. It
 is saved in run identity; omission uses the mode's code-owned question.
+It focuses the three specialist analyses, challenge and synthesis on the user's
+question using the policy's collected evidence. It does not change the mode,
+role sequence, source selection or call budget, and it does not enable open-ended
+search or chat. Batch research applies the same question to each company.
+
+| Mode | Question when left blank |
+| --- | --- |
+| Company | 公司经营质量如何，哪些证据支持判断，哪些关键问题尚未确定？ |
+| Catalyst | 未来84天哪些催化可能改变判断，其兑现条件和失效条件是什么？ |
+| Holding | 原持仓假设受到哪些新证据支持或挑战，哪些条件需要重新核查？ |
+
+For example, ask “利润增长是否转化为经营现金流，哪些证据支持或反驳？”
+to focus a company analysis. A question is an analytical goal, not a verified
+fact; missing evidence still produces explicit limitations.
+
 Native roles and the single challenge stage are code-owned. Omit classic
 scheduling fields, or retain their compatibility defaults: all four analyst
 keys, depth/rounds of one, and `horizon=medium`. Non-default selections are
