@@ -62,6 +62,10 @@ class PipelineCaller:
             return {"challenges": [{"hypothesis_id": condition["hypothesis_id"], "condition_id": condition_id,
                 "statement": "收入门槛不能证明经营改善可持续。", "severity": "critical",
                 "risk_type": "operations", "proposed_test": "核对收入门槛，并补充后续经营兑现证据。"}]}
+        if stage == "focus_response":
+            fact = next(c for c in context["record"]["claims"] if c["kind"] == "fact" and "income.revenue" in c["statement"])
+            return {"answer": "已有经营证据仅能部分回应，仍需细分业务披露。", "answerability": "partial",
+                    "claim_ids": [fact["claim_id"]], "limitations": ["已保存资料未提供细分业务收入。"]}
         assert stage == "synthesis"
         record = context["record"]
         assert record["verifications"] and record["verifications"][0]["scope"] == "predicate_only"

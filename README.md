@@ -25,7 +25,9 @@ flowchart LR
     B --> C[Independent challenge]
     C --> D[Bounded condition checks]
     D --> E[Dimension-gated synthesis]
-    E --> F[Saved record, Reader and Markdown]
+    E --> F[Freeze independent baseline]
+    F --> G[Optional focus response]
+    G --> H[Publish baseline and supplement, Reader and Markdown]
 ```
 
 Company research covers operating quality, valuation and market context;
@@ -33,7 +35,8 @@ catalyst research uses an 84-calendar-day outlook; holding review rechecks
 user-provided holdings and the original thesis. Batch research uses the same
 company workflow. Roles and attempt limits are fixed by code.
 
-The desktop Reader starts with the research question and its saved answer, then
+The desktop Reader starts with the mode-owned research scope and independent
+saved judgement, then
 key evidence, the main doubt and suggested next check, executed checks,
 valuation and historical quantitative context. A side panel explains linked
 facts, saved source content and financial terms; narrow desktop containers use
@@ -41,6 +44,10 @@ an evidence drawer. Report navigation includes the evidence directory, research
 process, each Agent's validated saved proposal, and the complete record.
 Contribution links show which role produced a hypothesis or challenge and how
 synthesis or code treated it. Reading does not fetch data or invoke models.
+An optional “补充关注点” is answered only after the baseline is durably saved,
+using existing evidence. It appears at the report end and cannot change baseline
+claims, challenges, quality or judgement. No focus means no supplemental call.
+Historical V1–V5 reports keep their original question-led analysis.
 A completed run may remain `partial / LOW_CONFIDENCE`.
 
 Technical diagnostics use the run's actual role registry and distinguish budget
@@ -57,7 +64,7 @@ Missing inputs remain unavailable. Historical multiples are retrieved at the
 current cutoff and do not prove archived point-in-time availability; intervals
 are assumption-dependent research aids.
 
-New runs use workflow V5. Selected official reports, summaries and operating
+New runs use workflow V6, retaining V5 source admission and bounded checks. Selected official reports, summaries and operating
 notices retain page/hash references, explicit current/prior numbers and cash-flow
 bridge rows. Code checks three bounded evidence questions before synthesis.
 Dated institution EPS and same-session industry-candidate quotes supplement

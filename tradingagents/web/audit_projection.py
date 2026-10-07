@@ -144,7 +144,9 @@ def _input_index(
 
 
 def _role_summaries(events: list[PersistedEvent], *, profile="classic", checkpoint=None) -> tuple[AuditRoleSummary, ...]:
-    registry = roles_for_profile(profile)
+    identity = checkpoint.get("identity", {}) if checkpoint else {}
+    registry = roles_for_profile(profile, workflow_version=identity.get("workflow_version"),
+                                 focus_requested=bool(identity.get("research_question")))
     statuses: dict[str, str] = {role.actor_id: "not_reached" for role in registry}
     turn_ids: dict[str, set[str]] = defaultdict(set)
     model_ids: dict[str, set[str]] = defaultdict(set)

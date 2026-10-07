@@ -14,8 +14,14 @@ from tradingagents.agents.schemas._native_stage import (
 )
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
+from tradingagents.research.native_versions import (
+    BASE_QUESTIONS,
+    FOCUS_KERNEL_VERSION,
+    FOCUS_WORKFLOW_VERSION,
+)
 from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.native_observation import SDK_OBSERVATION_KEY, NativeSDKObservationV1
+from tradingagents.web.focus_projection import project_reader_focus
 from tradingagents.web.native_reader_versions import saved_dimensions_match, saved_fact_views
 from tradingagents.web.reader_process_models import (
     AgentKey,
@@ -35,6 +41,7 @@ VERSIONS = {
     "evidence-production-v3": "native-research-kernel-v2",
     "evidence-production-v4": "native-research-kernel-v3",
     "evidence-production-v5": "native-research-kernel-v4",
+    FOCUS_WORKFLOW_VERSION: FOCUS_KERNEL_VERSION,
 }
 ROLE_INFO = {
     "evidence": (
@@ -72,6 +79,8 @@ ROLE_INFO = {
         "核对固定证据子问题和可执行条件，约束最终发布范围。",
         "已保存事实、固定检查与条件验证；不额外创建一个 Agent。",
     ),
+    "focus_response": ("关注点回应", "在独立研究保存之后，依据已有证据补充回应用户关注点。",
+                       "已保存的基础研究与用户关注点；不参与基础专项、挑战或综合。"),
 }
 SAFE_FAILURES = {
     "document_parser_not_installed",
@@ -79,7 +88,7 @@ SAFE_FAILURES = {
     "document_fetch_failed",
     "document_parse_failed",
 }
-MODEL_ROLES = tuple(key for key in ROLE_INFO if key not in {"evidence", "code_checks"})
+MODEL_ROLES = tuple(key for key in ROLE_INFO if key not in {"evidence", "code_checks", "focus_response"})
 
 
 def count(value=None, *, complete="not_recorded", basis="not_recorded"):
@@ -110,16 +119,18 @@ def native_counts(checkpoint, *, role=None):
         )
 
     coverage = False
+    focus_coverage = False
     try:
         marker = NativeSDKObservationV1.model_validate(checkpoint.get(SDK_OBSERVATION_KEY))
         coverage = marker.complete and checkpoint["identity"].get("workflow_version") in VERSIONS
+        focus_coverage = coverage and marker.prior_focus_authorizations is not None
     except (ValueError, TypeError):
         pass
     known_workflow = checkpoint["identity"].get("workflow_version") in VERSIONS
     flags = (
         sum(
             checkpoint.get("native.model." + key + ".dispatched") is True
-            for key in ((role,) if role else MODEL_ROLES)
+            for key in ((role,) if role in MODEL_ROLES else () if role else MODEL_ROLES)
         )
         if known_workflow
         else 0
@@ -134,10 +145,23 @@ def native_counts(checkpoint, *, role=None):
         )
 
     main, repairs = sdk(flags), sdk(repair)
+    has_focus = checkpoint["identity"].get("workflow_version") == FOCUS_WORKFLOW_VERSION
+    focus_flags = int(checkpoint.get("native.model.focus_response.dispatched") is True) if role in {None, "focus_response"} else 0
+    focus = count(focus_flags if focus_coverage or focus_flags else None,
+                  complete="complete" if focus_coverage else "known_lower_bound" if focus_flags else "not_recorded",
+                  basis="sdk_dispatch_authorization") if has_focus else count(0, complete="complete", basis="workflow_no_focus")
+    if has_focus and role is not None and role != "focus_response":
+        focus = count(0, complete="complete", basis="workflow_baseline_no_focus")
+    if has_focus and not checkpoint["identity"].get("research_question"):
+        focus = count(0, complete="complete", basis="workflow_focus_not_requested")
     if role in {"evidence", "code_checks"}:
         main = repairs = count(0, complete="complete", basis="code_no_model")
-    total_complete = main.completeness == repairs.completeness == "complete"
-    known = [item.value for item in (main, repairs) if item.value is not None]
+    if role == "focus_response" and has_focus:
+        main = repairs = count(0, complete="complete", basis="workflow_focus_only")
+    total_complete = main.completeness == repairs.completeness == focus.completeness == "complete"
+    known = [item.value for item in (main, repairs, focus) if item.value is not None]
+    if not has_focus:
+        known = [item.value for item in (main, repairs) if item.value is not None]
     total = count(
         sum(known) if known else None,
         complete="complete" if total_complete else "known_lower_bound" if known else "not_recorded",
@@ -151,6 +175,7 @@ def native_counts(checkpoint, *, role=None):
         sdk_total=total,
         data_capability=budget("data_capability_calls", records),
         data_http=budget("data_http_attempts", records),
+        focus_budget=budget("focus_response"), sdk_focus=focus,
     )
 
 
@@ -163,6 +188,7 @@ class Context:
     record: ResearchRecordV1 | None
     seed: ResearchRecordV1 | None
     reason: str | None
+    store: Any = None
 
 
 def _context(store, run_id, through=None):
@@ -173,18 +199,18 @@ def _context(store, run_id, through=None):
     events = store.read_events(run_id, through=sequence)
     reason, cp, seed, record = None, None, None, None
     if (snapshot.metadata or {}).get("research_profile") != "evidence_v1":
-        return Context(snapshot, sequence, events, None, None, None, "profile_not_applicable")
+        return Context(snapshot, sequence, events, None, None, None, "profile_not_applicable", store)
     try:
         cp = load_checkpoint(store, run_id, through=sequence)
     except Exception:
         reason = "checkpoint_unavailable"
     if cp is None:
         return Context(
-            snapshot, sequence, events, None, None, None, reason or "checkpoint_not_recorded"
+            snapshot, sequence, events, None, None, None, reason or "checkpoint_not_recorded", store
         )
     version = cp["identity"].get("workflow_version")
     if version not in VERSIONS:
-        return Context(snapshot, sequence, events, cp, None, None, "workflow_unsupported")
+        return Context(snapshot, sequence, events, cp, None, None, "workflow_unsupported", store)
     try:
         identity = cp["identity"]
         if (identity.get("ticker"), identity.get("mode"), identity.get("cutoff")) != (
@@ -195,8 +221,10 @@ def _context(store, run_id, through=None):
             raise ValueError("identity")
         published = project_research_record(store, run_id, through=sequence)
         if published["state"] != "ready":
-            return Context(snapshot, sequence, events, cp, None, None, "publication_pending")
+            return Context(snapshot, sequence, events, cp, None, None, "publication_pending", store)
         record = ResearchRecordV1.model_validate(published["record"])
+        if version == FOCUS_WORKFLOW_VERSION and record.assessment.research_question != BASE_QUESTIONS[record.mode]:
+            raise ValueError("baseline_objective")
         seed = ResearchRecordV1.model_validate(cp["native_seed"])
         native_input = cp["native_input"]
         if native_input != {
@@ -236,8 +264,8 @@ def _context(store, run_id, through=None):
         ):
             raise ValueError("seed_content")
     except Exception:
-        return Context(snapshot, sequence, events, cp, record, None, "output_identity_unavailable")
-    return Context(snapshot, sequence, events, cp, record, seed, None)
+        return Context(snapshot, sequence, events, cp, record, None, "output_identity_unavailable", store)
+    return Context(snapshot, sequence, events, cp, record, seed, None, store)
 
 
 def _proposal(ctx, role):
@@ -249,9 +277,9 @@ def _proposal(ctx, role):
     schema = (
         SpecialistProposalV1
         if role in {"operating_quality", "event_context", "market_context"}
-        else (ChallengesProposalV2 if version == "evidence-production-v5" else ChallengesProposalV1)
+        else (ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION} else ChallengesProposalV1)
         if role == "challenge"
-        else (SynthesisProposalV2 if version == "evidence-production-v5" else SynthesisProposalV1)
+        else (SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION} else SynthesisProposalV1)
     )
     proposal = schema.model_validate(saved["proposal"])
     claims = {c.claim_id: c for c in record.claims}
@@ -353,7 +381,7 @@ def _proposal(ctx, role):
                 != item.hypothesis_id
             ):
                 raise ValueError("challenge_condition")
-            if version == "evidence-production-v5":
+            if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION}:
                 binding = next(b for b in record.challenge_bindings if b.challenge_id == cid)
                 if (binding.check_id, binding.observed_risk, binding.observation_date) != (
                     item.check_id,
@@ -381,7 +409,7 @@ def _proposal(ctx, role):
         if primary != assessment.primary_challenge_id:
             raise ValueError("primary_binding")
         if (
-            version != "evidence-production-v5"
+            version not in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION}
             and proposal.challenge_assessments != assessment.challenge_assessments
         ):
             raise ValueError("assessment_binding")
@@ -406,6 +434,16 @@ def _agent(ctx, role):
         "origin": origin,
         "input_description": ROLE_INFO[role][2],
     }
+    if role == "focus_response":
+        focus = project_reader_focus(ctx.store, ctx.snapshot.run_id, through=ctx.sequence)
+        response = focus.get("response")
+        if focus["state"] == "ready" and response["status"] == "available":
+            from tradingagents.agents.schemas._research_focus import FocusProposalV1
+            proposal = FocusProposalV1.model_validate(response["proposal"])
+            return ReaderAgentDTO(**base, availability="available", proposal=proposal, claim_ids=proposal.claim_ids)
+        return ReaderAgentDTO(**base, availability="not_applicable" if focus["state"] == "not_applicable"
+                              else "pending_publication" if focus["state"] == "pending" else "unavailable",
+                              reason_code=response["reason_code"] if response else focus["reason_code"])
     if ctx.reason:
         pending = ctx.reason == "publication_pending"
         saved = ctx.checkpoint and ctx.checkpoint["results"].get("native." + role)
@@ -518,6 +556,9 @@ def _process(ctx):
     roles, origins, agents = [], [], {}
     if profile == "evidence_v1":
         for key in ROLE_INFO:
+            if key == "focus_response" and (cp is None or cp["identity"].get("workflow_version") != FOCUS_WORKFLOW_VERSION
+                                             or not metadata.get("research_question")):
+                continue
             agent = _agent(ctx, key)
             agents[key] = agent
             n = native_counts(cp, role=key)
@@ -550,7 +591,7 @@ def _process(ctx):
                             and e.status == "committed"
                             and isinstance(e.payload.get("committed_sequence"), int)
                             and e.payload["committed_sequence"] <= ctx.sequence
-                            and e.payload.get("public_contract") == "research-record-v1"
+                            and e.payload.get("public_contract") == ("research-focus-response-v1" if key == "focus_response" else "research-record-v1")
                         ),
                         default=None,
                     )
@@ -559,6 +600,7 @@ def _process(ctx):
                     main_budget=n.main_budget,
                     sdk_main=n.sdk_main,
                     sdk_repair=n.sdk_repair,
+                    focus_budget=n.focus_budget, sdk_focus=n.sdk_focus,
                 )
             )
             if key in {"operating_quality", "event_context", "market_context"}:
@@ -594,7 +636,8 @@ def _process(ctx):
         if cp
         else "unavailable",
         reason_code=ctx.reason,
-        question_origin=("user" if metadata["research_question"] is not None else "default")
+        question_origin="default" if cp and cp["identity"].get("workflow_version") == FOCUS_WORKFLOW_VERSION
+        else ("user" if metadata["research_question"] is not None else "default")
         if "research_question" in metadata
         else "not_recorded",
         primary_selection=primary,

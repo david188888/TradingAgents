@@ -10,7 +10,7 @@
  * decoded via explicit type assertions on the parsed JSON.
  */
 import type {
-  AgentKey, ReaderProcessDTO, ReaderAgentDTO,
+  AgentKey, ReaderProcessDTO, ReaderAgentDTO, ReaderFocusDTO,
   ApiErrorCode,
   ApiErrorResponse,
   BatchCreateRequestDTO,
@@ -441,4 +441,8 @@ export function getReaderAgent(runId: string, role: AgentKey, sourceSequence: nu
   assertRunId(runId);
   if (!Number.isInteger(sourceSequence) || sourceSequence < 0) throw new RangeError("Invalid Reader boundary");
   return request<ReaderAgentDTO>("GET", `${API.readerAgent(runId, role)}?source_sequence=${sourceSequence}`, undefined, signal);
+}
+
+export function getReaderFocus(runId: string, sourceSequence: number, signal?: AbortSignal): Promise<ReaderFocusDTO> {
+  return request<ReaderFocusDTO>("GET", `${API.readerFocus(runId)}?source_sequence=${sourceSequence}`, undefined, signal);
 }

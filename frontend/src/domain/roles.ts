@@ -132,6 +132,7 @@ export const ROLE_LABELS_ZH: Record<string, string> = {
   "native.market_context": "市场背景",
   "native.challenge": "独立挑战",
   "native.synthesis": "研究综合",
+  "native.focus_response": "关注点回应",
 };
 
 // ---------------------------------------------------------------------------

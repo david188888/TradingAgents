@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getReaderAgent, getReaderProcess } from "../api/client";
-import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO } from "../api/contracts";
+import { getReaderAgent, getReaderFocus, getReaderProcess } from "../api/client";
+import type { AgentKey, ReaderAgentDTO, ReaderFocusDTO, ReaderProcessDTO } from "../api/contracts";
 import type { RunStreamStatus } from "./useRunStream";
 
 const terminal = new Set(["completed", "failed", "cancelled", "interrupted"]);
@@ -47,6 +47,27 @@ export function useReaderProcess(runId: string, sequence: number, status: string
     return () => { stopped = true; controller?.abort(); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
   }, [runId, retryKey]);
   return { response: response?.run_id === runId ? response : null, error, retry: () => setRetryKey(k => k + 1) };
+}
+
+/** Supplemental output shares the process boundary; late responses cannot cross runs. */
+export function useReaderFocus(runId: string, process: ReaderProcessDTO | null) {
+  const [response, setResponse] = useState<ReaderFocusDTO | null>(null);
+  const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const sequence = process?.source_sequence;
+  const version = process?.workflow_version;
+  useEffect(() => {
+    const controller = new AbortController();
+    setResponse(null); setError(false);
+    if (sequence === undefined || version !== "evidence-production-v6") return () => controller.abort();
+    void getReaderFocus(runId, sequence, controller.signal).then(next => {
+      if (controller.signal.aborted) return;
+      if (next.run_id !== runId || next.source_sequence !== sequence || next.workflow_version !== version) throw new Error("Reader focus identity mismatch");
+      setResponse(next);
+    }).catch(() => { if (!controller.signal.aborted) setError(true); });
+    return () => controller.abort();
+  }, [runId, sequence, version, retryKey]);
+  return { response: response?.run_id === runId && response.source_sequence === sequence ? response : null, error, retry: () => setRetryKey(k => k + 1) };
 }
 
 /** Role/generation/boundary guards protect against slow responses and run switches. */

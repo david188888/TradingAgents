@@ -1,9 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO } from "../api/contracts";
-import { getReaderAgent, getReaderProcess } from "../api/client";
-import { useReaderAgent, useReaderProcess } from "./useReaderProcess";
-vi.mock("../api/client", () => ({getReaderAgent:vi.fn(),getReaderProcess:vi.fn()}));
+import type { AgentKey, ReaderAgentDTO, ReaderFocusDTO, ReaderProcessDTO } from "../api/contracts";
+import { getReaderAgent, getReaderFocus, getReaderProcess } from "../api/client";
+import { useReaderAgent, useReaderFocus, useReaderProcess } from "./useReaderProcess";
+vi.mock("../api/client", () => ({getReaderAgent:vi.fn(),getReaderProcess:vi.fn(),getReaderFocus:vi.fn()}));
 const unknown = {value:null,completeness:"not_recorded",basis:"not_recorded"} as const;
 function process(run="run-a", seq=10, availability="pending_publication" as "pending_publication" | "available"): ReaderProcessDTO {
  return {schema_version:1,run_id:run,source_sequence:seq,profile:"evidence_v1",workflow_version:"evidence-production-v5",availability:"partial",reason_code:null,question_origin:"user",primary_selection:"not_recorded",counts:{main_budget:unknown,repair_budget:unknown,sdk_main:unknown,sdk_repair:unknown,sdk_total:unknown,data_capability:unknown,data_http:unknown},claim_origins:[],source_failures:[],roles:[{role_key:"operating_quality",actor_id:"native.operating_quality",label:"经营研究",purpose:"核对经营",origin:"model",status:"completed",output_availability:availability,reason_code:null,output_count:null,output_sequence:availability==="available" ? 9:null,main_budget:unknown,sdk_main:unknown,sdk_repair:unknown}]};
@@ -44,5 +44,24 @@ describe("bounded saved Reader reads",()=>{
   const {result,rerender}=renderHook(({role})=>useReaderAgent("run-a",role,process()),{initialProps:{role:"operating_quality" as AgentKey}});
   rerender({role:"challenge"});await waitFor(()=>expect(result.current.response?.role_key).toBe("challenge"));
   await act(async()=>old.resolve(output("run-a","operating_quality",10)));expect(result.current.response?.role_key).toBe("challenge");
+ });
+});
+
+
+const focus = (run="run-a",seq=10): ReaderFocusDTO => ({schema_version:1,run_id:run,source_sequence:seq,workflow_version:"evidence-production-v6",state:"ready",focus:"AI 关系",response:null,reason_code:null});
+const independent = (run="run-a",seq=10): ReaderProcessDTO => ({...process(run,seq),workflow_version:"evidence-production-v6"});
+describe("supplemental read boundaries",()=>{
+ beforeEach(()=>vi.clearAllMocks());
+ it("does not fetch legacy output and rejects a stale supplement after switching runs",async()=>{
+  const old=deferred<ReaderFocusDTO>();vi.mocked(getReaderFocus).mockReturnValueOnce(old.promise).mockResolvedValue(focus("run-b"));
+  const {result,rerender}=renderHook(({run,p})=>useReaderFocus(run,p),{initialProps:{run:"run-a",p:process()}});
+  expect(getReaderFocus).not.toHaveBeenCalled();rerender({run:"run-a",p:independent()});
+  rerender({run:"run-b",p:independent("run-b")});await waitFor(()=>expect(result.current.response?.run_id).toBe("run-b"));
+  await act(async()=>old.resolve(focus()));expect(result.current.response?.run_id).toBe("run-b");
+ });
+ it("rejects a response from another event boundary",async()=>{
+  vi.mocked(getReaderFocus).mockResolvedValue(focus("run-a",9));
+  const {result}=renderHook(()=>useReaderFocus("run-a",independent()));
+  await waitFor(()=>expect(result.current.error).toBe(true));expect(result.current.response).toBeNull();
  });
 });

@@ -97,6 +97,11 @@ from ._research_case_draft import (
     ScenarioDraft,
     render_learning_case_draft,
 )
+from ._research_focus import (  # noqa: F401 - facade re-export
+    FOCUS_RESPONSE_CONTRACT,
+    FocusProposalV1,
+    ResearchFocusResponseV1,
+)
 from ._research_record import (  # noqa: F401 - facade re-export
     RESEARCH_RECORD_CONTRACT,
     EvidenceSnapshotV1,

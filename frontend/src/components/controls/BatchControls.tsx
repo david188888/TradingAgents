@@ -216,9 +216,9 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
       </div>
       <div className="input-group"><label htmlFor="batch-date">分析日期</label><input id="batch-date" type="date" value={cfg.analysis_date} onChange={(event) => cfg.setAnalysisDate(event.target.value)} /></div>
       <div className="input-group">
-        <label htmlFor="batch-question">研究问题（可选）</label>
-        <textarea id="batch-question" value={cfg.research_question} onChange={event => cfg.setResearchQuestion(event.target.value)} maxLength={800} rows={3} placeholder="留空使用公司研究默认问题" />
-        <small>本批次均为公司研究；该问题会应用于每家公司。</small>
+        <label htmlFor="batch-question">补充关注点（可选）</label>
+        <textarea id="batch-question" value={cfg.research_question} onChange={event => cfg.setResearchQuestion(event.target.value)} maxLength={800} rows={3} placeholder="独立研究完成后，补充回应你关心的角度" />
+        <small>每家公司先完成独立基础分析，再依据已有证据回应同一关注点；不会改写综合判断。</small>
       </div>
       <div className="input-group">
         <label htmlFor="batch-provider">LLM Provider</label>

@@ -36,6 +36,7 @@ export const API = {
   readerPackage: (run_id: string) => `/api/runs/${run_id}/reader/package`,
   readerProcess: (run_id: string) => `/api/runs/${run_id}/reader/process`,
   readerAgent: (run_id: string, role: AgentKey) => `/api/runs/${run_id}/reader/agents/${role}`,
+  readerFocus: (run_id: string) => `/api/runs/${run_id}/reader/focus`,
   readerRecord: (run_id: string) => `/api/runs/${run_id}/reader/record`,
   readerCompanion: (run_id: string) => `/api/runs/${run_id}/reader/companion`,
   audit: (run_id: string) => `/api/runs/${run_id}/audit`,
@@ -700,6 +701,7 @@ export interface DeleteAllRunsResultDTO {
  * tests/test_frontend_wire_contract.py::test_api_error_codes_match_backend.
  */
 export type ApiErrorCode =
+  | "reader_sequence_unavailable"
   | "asset_type_mismatch"
   | "audit_item_not_found"
   | "audit_summary_stale"
@@ -806,6 +808,8 @@ export interface ObservationCommitV1DTO {
 // --- run.* -----------------------------------------------------------------
 
 export interface RunStartedPayload {
+  native_workflow_version?: string | null;
+  focus_requested?: boolean;
   run_status: RunStatusLiteral;
 }
 
@@ -2251,14 +2255,15 @@ export interface CatalystLegacyRecordDTO {
 }
 
 // Canonical: web/reader_process_models.py; proposals: agents/schemas/_native_stage.py.
-export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks";
+export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks" | "focus_response";
 export type OutputAvailability = "available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
 export interface ObservedCountDTO { value: number | null; completeness: "complete" | "known_lower_bound" | "not_recorded" | "unavailable"; basis: string }
-export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO }
+export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO; focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null }
 export interface ReaderRoleDTO {
   role_key: AgentKey; actor_id: string; label: string; origin: "model" | "code"; purpose: string; status: string;
   output_availability: OutputAvailability; reason_code: string | null; output_count: number | null; output_sequence: number | null;
   main_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO;
+  focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null;
 }
 export interface ReaderProcessDTO {
   schema_version: 1; run_id: string; source_sequence: number; profile: string; workflow_version: string | null;
@@ -2274,7 +2279,24 @@ export interface ChallengesProposalDTO { challenges: Array<{ hypothesis_id: stri
 export interface SynthesisProposalDTO { judgement: string; dimensions: DimensionAssessmentV1DTO[]; key_claim_ids: string[]; primary_challenge_id: string | null; next_check: string; challenge_assessments: Array<{ challenge_id: string; outcome: "unresolved"; rationale: string }> }
 export interface ReaderAgentDTO {
   schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;
-  proposal: SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalDTO | null;
+  proposal: SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalDTO | FocusProposalDTO | null;
   relations: Array<{entity_id: string; kind: "claim" | "challenge"; in_record: boolean; is_key: boolean; dimensions: string[]; challenge_ids: string[]}>;
   claim_ids: string[]; input_fact_ids: string[]; challenge_ids: string[]; code_sections: Array<"facts" | "sources" | "checks" | "verifications" | "publication">;
+}
+
+// Canonical: agents/schemas/_research_focus.py and web/focus_projection.py.
+export interface FocusProposalDTO {
+  answer: string; answerability: "answered" | "partial" | "unresolved";
+  claim_ids: string[]; evidence_ids: string[]; limitations: string[]; suggested_next_check: string | null;
+}
+export type FocusReason = "base_synthesis_unavailable" | "budget_exhausted" | "deadline_exceeded" | "response_unknown" | "model_failed" | "invalid_response";
+export interface ResearchFocusResponseDTO {
+  schema_version: "research-focus-response-v1"; run_id: string; ticker: string; mode: ResearchMode;
+  analysis_date: string; input_snapshot_id: string; base_record_sha256: string; focus: string;
+  status: "available" | "unavailable"; proposal: FocusProposalDTO | null; reason_code: FocusReason | null;
+}
+export interface ReaderFocusDTO {
+  schema_version: 1; run_id: string; source_sequence: number; workflow_version: string | null;
+  state: "ready" | "pending" | "unavailable" | "not_applicable"; focus: string | null; response: ResearchFocusResponseDTO | null;
+  reason_code: "focus_not_requested" | "legacy_question_semantics" | "unsupported_profile" | "workflow_unsupported" | "publication_pending" | "not_published" | "publication_failed" | "corrupt" | "base_unavailable" | null;
 }

@@ -2,7 +2,7 @@
  * F2 - Pure derived views over ReducerState. No mutation, no side effects.
  */
 import { laneOf } from "../domain/roles";
-import { NATIVE_ROLE_REGISTRY, ROLE_REGISTRY, rolesForProfile } from "./model";
+import { FOCUS_ROLE, NATIVE_ROLE_REGISTRY, ROLE_REGISTRY, rolesForProfile } from "./model";
 import type {
   ApplicationStatus,
   ArtifactRecord,
@@ -37,7 +37,7 @@ export type DebateBlock =
   | { kind: "linear"; turn: Turn };
 
 const ACTOR_ORDER = new Map(
-  [...ROLE_REGISTRY, ...NATIVE_ROLE_REGISTRY].map((role, index) => [role.actor_id, index]),
+  [...ROLE_REGISTRY, ...NATIVE_ROLE_REGISTRY, FOCUS_ROLE].map((role, index) => [role.actor_id, index]),
 );
 
 const LANE_ORDER: Record<DebateStage, readonly DebateLaneId[]> = {
@@ -57,7 +57,7 @@ function compareTurns(left: Turn, right: Turn): number {
 function actorsForFilter(filter?: string): Set<string> | null {
   if (!filter || filter === "all") return null;
   return new Set(
-    [...ROLE_REGISTRY, ...NATIVE_ROLE_REGISTRY].filter((role) => role.team_id === filter).map(
+    [...ROLE_REGISTRY, ...NATIVE_ROLE_REGISTRY, FOCUS_ROLE].filter((role) => role.team_id === filter).map(
       (role) => role.actor_id,
     ),
   );
@@ -66,7 +66,7 @@ function actorsForFilter(filter?: string): Set<string> | null {
 /** Roles present in state.roles, ordered by ROLE_REGISTRY. */
 export function roleList(state: ReducerState): RoleCard[] {
   const out: RoleCard[] = [];
-  for (const def of rolesForProfile(state.meta.research_profile)) {
+  for (const def of rolesForProfile(state.meta.research_profile, state.meta.native_workflow_version, state.meta.focus_requested)) {
     const card = state.roles[def.actor_id];
     if (card) out.push(card);
   }

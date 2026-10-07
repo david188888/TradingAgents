@@ -77,7 +77,8 @@ For new Web research without explicit overrides, the three specialist stages
 the challenge stage (`native.challenge`) and final synthesis (`native.synthesis`)
 all use `high`. The first four select the quick model; synthesis selects the
 deep model. Both default to `deepseek-flash`. Structural repair inherits its
-stage's effort. `low` means lighter reasoning, `high` is the official default,
+stage's effort. V6 optional `native.focus_response` selects quick and inherits
+the global effort unless overridden. `low` means lighter reasoning, `high` is the official default,
 and `max` requests the greatest reasoning depth; these are not fixed token
 budgets or guarantees of accuracy.
 
@@ -150,3 +151,12 @@ accuracy, actual savings, or the benefit of `max`. Keep those claims unverified
 until bounded comparisons are authorized and measured.
 The [validation record](../archive/reviews/2026-10-04-deepseek-task-effort-validation.md)
 also covers one live wiring case and browser checks; it is not a quality comparison.
+
+
+## V6 supplementary focus task
+
+`native.focus_response` uses the quick model, inherits global reasoning effort,
+and accepts the same optional per-task override. It runs only after the independent
+baseline is durable. Its one dedicated call counts within twelve total model
+attempts; it has no structural repair, SDK/network retry or tools. Timeout uses
+remaining active time. Legacy V1–V5 never acquire this task, prompt or budget.

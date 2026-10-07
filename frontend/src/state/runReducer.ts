@@ -114,6 +114,8 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   // Gaps: RunSnapshotDTO has no checkpoint_enabled (default false) and no
   // research_depth (default 1).
   const meta: RunMeta = {
+    native_workflow_version: typeof s.metadata?.native_workflow_version === "string" ? s.metadata.native_workflow_version : undefined,
+    focus_requested: Boolean(s.metadata?.research_question),
     research_profile: s.metadata?.research_profile === "evidence_v1" ? "evidence_v1" : s.metadata?.research_profile === "catalyst_v1" ? "catalyst_v1" : "classic",
     run_id: s.run_id,
     status: s.status,
@@ -150,7 +152,7 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   };
   return {
     meta,
-    roles: seedRoles(s.run_id, s.selected_analysts, meta.research_profile),
+    roles: seedRoles(s.run_id, s.selected_analysts, meta.research_profile, meta.native_workflow_version, meta.focus_requested),
     turns: {},
     model_calls: {},
     tool_calls: {},
@@ -162,10 +164,10 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   };
 }
 
-function seedRoles(run_id: string, selected_analysts: string[], profile?: ResearchProfile): Record<string, RoleCard> {
+function seedRoles(run_id: string, selected_analysts: string[], profile?: ResearchProfile, version?: string, focusRequested=false): Record<string, RoleCard> {
   const selected = new Set(selected_analysts);
   const roles: Record<string, RoleCard> = {};
-  for (const def of rolesForProfile(profile)) {
+  for (const def of rolesForProfile(profile, version, focusRequested)) {
     const key = def.analyst_key;
     let status: RoleStatus;
     let reason: string | undefined;
@@ -325,6 +327,8 @@ function applyRunStarted(
     payloadAnalysts.length > 0 ? payloadAnalysts : state.meta.selected_analysts;
   const meta: RunMeta = {
     ...state.meta,
+    native_workflow_version: typeof p.native_workflow_version === "string" ? p.native_workflow_version : state.meta.native_workflow_version,
+    focus_requested: typeof p.focus_requested === "boolean" ? p.focus_requested : state.meta.focus_requested,
     run_id,
     status: "running",
     research_profile: p.research_profile === "evidence_v1" ? "evidence_v1" : p.research_profile === "catalyst_v1" ? "catalyst_v1" : state.meta.research_profile,
@@ -342,7 +346,7 @@ function applyRunStarted(
     checkpoint_enabled: bool(p.checkpoint_enabled, state.meta.checkpoint_enabled),
     created_at: event.timestamp,
   };
-  return { ...state, meta, roles: seedRoles(run_id, selected_analysts, meta.research_profile) };
+  return { ...state, meta, roles: seedRoles(run_id, selected_analysts, meta.research_profile, meta.native_workflow_version, meta.focus_requested) };
 }
 
 function applyRunTerminal(
@@ -418,7 +422,7 @@ function convertStatus(
 function applyRoleStatusChanged(state: ReducerState, p: Record<string, unknown>): ReducerState {
   const role_instance_id = str(p.role_instance_id);
   const actor_id = actorIdFromRoleInstance(role_instance_id);
-  const def = rolesForProfile(state.meta.research_profile).find((r) => r.actor_id === actor_id);
+  const def = rolesForProfile(state.meta.research_profile, state.meta.native_workflow_version, state.meta.focus_requested).find((r) => r.actor_id === actor_id);
   if (!def) return state;
   const existing = state.roles[actor_id];
   const new_status =

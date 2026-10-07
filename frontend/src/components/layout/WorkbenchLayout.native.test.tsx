@@ -9,7 +9,7 @@ import { createInitialState } from "../../state/runReducer";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { WorkbenchLayout } from "./WorkbenchLayout";
 
-vi.mock("../../hooks/useReaderProcess", () => ({ useReaderProcess: () => ({response:null,error:false,retry:vi.fn()}), useReaderAgent: () => ({response:null,error:false,retry:vi.fn()}) }));
+vi.mock("../../hooks/useReaderProcess", () => ({ useReaderProcess: () => ({response:null,error:false,retry:vi.fn()}), useReaderAgent: () => ({response:null,error:false,retry:vi.fn()}), useReaderFocus: () => ({response:null,error:false,retry:vi.fn()}) }));
 vi.mock("../../hooks/useRunHistory", () => ({ useRunHistory: vi.fn() }));
 vi.mock("../../hooks/useCatalyst", () => ({ useCatalyst: vi.fn() }));
 vi.mock("../../hooks/useResearchRecord", () => ({ useResearchRecord: vi.fn() }));

@@ -94,6 +94,10 @@ class NativeFixtureCaller:
 
     def __call__(self, stage, context):
         time.sleep(.25)
+        if stage == "focus_response":
+            return {"answer": "固定测试补充回应：已有经营数据不能证明 AI 业务关系。",
+                    "answerability": "partial", "claim_ids": [context["record"]["claims"][0]["claim_id"]],
+                    "limitations": ["固定测试未提供细分业务披露。"]}
         if stage == "operating_quality":
             # One admitted, bound hypothesis makes Agent-to-fact navigation testable.
             # Other specialists retain legal zero proposals; no real model is invoked.

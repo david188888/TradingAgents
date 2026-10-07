@@ -138,9 +138,9 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
       </div>
 
       <div className="input-group">
-        <label htmlFor="ctrl-question">研究问题（可选）</label>
-        <textarea id="ctrl-question" value={cfg.research_question} onChange={e => cfg.setResearchQuestion(e.target.value)} maxLength={800} placeholder="留空使用本研究范围的问题" rows={3} />
-        <small>证据 → 专项假设 → 独立挑战 → 条件核查 → 综合判断</small>
+        <label htmlFor="ctrl-question">补充关注点（可选）</label>
+        <textarea id="ctrl-question" value={cfg.research_question} onChange={e => cfg.setResearchQuestion(e.target.value)} maxLength={800} placeholder="独立研究完成后，补充回应你关心的角度" rows={3} />
+        <small>独立基础分析完成后，再依据已有证据回应；不会参与基础分析或改写综合判断。</small>
       </div>
 
       <div className="input-group">

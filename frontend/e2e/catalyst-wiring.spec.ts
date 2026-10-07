@@ -32,7 +32,7 @@ for (const viewport of [{width:1440,height:900}, {width:1280,height:800}, {width
     await expect(page.getByLabel("研究深度")).toHaveCount(0);
     await page.getByLabel("股票代码").fill("600803");
     await page.getByLabel("分析日期").fill("2026-09-30");
-    await page.getByLabel("研究问题（可选）").fill("核验经营兑现😀");
+    await page.getByLabel("补充关注点（可选）").fill("核验经营兑现😀");
     const created = page.waitForResponse(r => r.url().endsWith("/api/runs") && r.request().method()==="POST");
     await page.getByRole("button",{name:"开始分析",exact:true}).click();
     const response=await created;
@@ -60,7 +60,9 @@ for (const viewport of [{width:1440,height:900}, {width:1280,height:800}, {width
     await page.locator(`.history-item[data-run-id="${snapshot.run_id}"]`).getByRole("button",{name:`打开 ${snapshot.ticker} 的研究记录`,exact:true}).click();
     await expect(brief).toBeVisible();
     const read=await page.request.get(`/api/runs/${snapshot.run_id}/reader/record`);
-    expect((await read.json()).record.assessment.research_question).toBe("核验经营兑现😀");
+    expect((await read.json()).record.assessment.research_question).not.toBe("核验经营兑现😀");
+    const focus=await page.request.get(`/api/runs/${snapshot.run_id}/reader/focus`);
+    expect(await focus.json()).toMatchObject({state:"ready",focus:"核验经营兑现😀",response:{status:"available"}});
     await page.screenshot({path:test.info().outputPath(`native-${viewport.width}.png`),fullPage:true});
   });
 }
