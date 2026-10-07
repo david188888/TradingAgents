@@ -99,15 +99,13 @@ source .venv/bin/activate
 pip install -e ".[china,web]"
 
 cp .env.example .env
-cp tradingagents.config.example.json tradingagents.local.json
 # Set your LLM key in .env (for example DEEPSEEK_API_KEY), and configure
-# the data providers you use (for example TUSHARE_TOKEN for A-share financials).
-# Adjust tradingagents.local.json if you want to change the default routing.
+# optional data providers (for example TUSHARE_TOKEN for Tushare backup).
 
 tradingagents web --port 8765 --open  # local workbench
 ```
 
-The web server binds to `127.0.0.1`; the bundled frontend needs no Node.js at runtime. Configuration comes from `TRADINGAGENTS_*` environment variables, or the ignored local JSON file. Blank results, cache, memory-log, and news-cache path settings use their built-in defaults. See [.env.example](.env.example) and [default_config.py](tradingagents/default_config.py). Local runs and reports live under `~/.tradingagents/`; see [the architecture map](ARCHITECTURE.md) for paths. Developers changing `frontend/src/` should rebuild `tradingagents/web/static/` with `npm --prefix frontend run build`.
+The web server binds to `127.0.0.1`; the bundled frontend needs no Node.js at runtime. The Web launcher loads the ignored `.env`; supported `TRADINGAGENTS_*` variables set server defaults, and the form selects models, language and research scope. The legacy CLI's `tradingagents.local.json` is not loaded by the Web server. Blank results, cache, memory-log, and news-cache path settings use their built-in defaults. See [.env.example](.env.example) and [default_config.py](tradingagents/default_config.py). Local runs and reports live under `~/.tradingagents/`; see [the architecture map](ARCHITECTURE.md) for paths. Developers changing `frontend/src/` should rebuild `tradingagents/web/static/` with `npm --prefix frontend run build`.
 
 Both model tiers default to official DeepSeek V4.1 Flash (`deepseek-flash`);
 existing `deepseek-v4-flash` configurations remain accepted. Thinking

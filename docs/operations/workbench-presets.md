@@ -1,20 +1,20 @@
-# Workbench analyst presets
+# Legacy analyst presets
 
 - **Status: Current**
 
-The workbench loads YAML presets for the four existing analyst roles. A preset
-can enable a subset and choose their execution order; it cannot add tools,
-agents, prompts, retries, or graph edges.
+YAML presets remain available to the legacy CLI and preset inspection tooling
+for the four classic analyst roles. The maintained Web form creates only
+`evidence_v1` research with fixed native roles and has no preset selector.
+Presets cannot change native roles, prompts or research-methodology mapping.
+A classic preset can enable a subset and choose execution order; it cannot add
+tools, agents, prompts, retries or graph edges.
 
-The downstream decision roles — Evidence Steward, Bull/Bear, Research Manager,
-Trader, the three risk analysts, and Portfolio Manager — are fixed graph nodes
-that a preset cannot configure. Whether each node actually executes depends on
-the research `mode` and conditional routing, not on preset selection. In the
-two supported typed modes (`company_research` and `holding_review`), the graph
-routes from Research Manager directly to Portfolio Manager; Trader and the
-three risk analysts are skipped entirely. The legacy upstream-compatible graph
-branch that runs Trader and the risk debate is retained for compatibility with
-older runs, but it is not selected by current typed request modes.
+The classic graph's downstream research roles — Evidence Steward, Bull/Bear,
+Research Manager and Portfolio Manager — are code-owned and cannot be configured
+by a preset. Evidence qualification and debate routing determine which execute.
+Both typed modes (`company_research` and `holding_review`) route from Research
+Manager directly to Portfolio Manager. Trader and the three risk analysts have
+been retired from the execution graph; they are not an alternate runtime branch.
 
 Built-in presets live in `tradingagents/presets/`. To create a local override
 that survives package upgrades, place a file in `~/.tradingagents/presets/`
@@ -32,13 +32,12 @@ The loader accepts only `id`, `label`, and `analysts`. Analyst IDs must be one
 or more unique values chosen from `market`, `social`, `news`, and
 `fundamentals`. Invalid local files are ignored and do not block the built-in
 presets; `inspect_preset(path)` provides the same validation for tooling. Its
-dry-run invariant confirms that any accepted non-empty analyst sequence
-terminates in the code-owned convergence path (the nine downstream nodes above
-are registered in `tradingagents.analysts.MANDATORY_CONVERGENCE_NODE_IDS`);
-YAML v1 deliberately cannot declare nodes, edges, tools, variables, or
-downstream input mappings. Being part of that fixed path means the nodes exist
-and are not preset-configurable; it does not mean each one runs on every
-analysis.
+inspection checks syntax, allow-listed roles and the presence of fixed
+convergence metadata. `tradingagents.analysts.MANDATORY_CONVERGENCE_NODE_IDS`
+retains nine historical names, including the retired Trader/risk roles; it is
+compatibility metadata, not evidence that those nodes exist in the current graph.
+The executable topology is owned by `graph/setup.py`. YAML v1 deliberately
+cannot declare nodes, edges, tools, variables or downstream input mappings.
 
 For a deterministic, no-LLM command-line check before committing a local
 preset, run:
@@ -48,7 +47,7 @@ tradingagents inspect-preset ~/.tradingagents/presets/news-first.yaml
 ```
 
 On success it prints the requested analyst order and the code-owned
-mandatory convergence roles. Invalid YAML exits with status `2` and one
+convergence metadata. Invalid YAML exits with status `2` and one
 stable error line, so it is suitable for local scripts and CI checks.
 
 Duplicate preset IDs in a single directory are rejected during catalog loading.

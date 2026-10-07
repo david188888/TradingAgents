@@ -1,10 +1,21 @@
 # Research Package Interoperability
 
 Status: Current — this page documents how an external Agent (Proma, Codex,
-etc.) consumes a completed TradingAgents run through the public research-package
+etc.) consumes retained classic runs through the public research-package
 and reader fact layer. The machine-owned package contract lives in
 `tradingagents/research/research_package.py`; canonical public hashing lives in
 `tradingagents/research/public_hash.py`.
+
+New `evidence_v1` studies publish a mandatory `research-record-v1`, without a
+paired classic case or research package. For those studies, use
+`GET /api/runs/{run_id}/reader/record` and its explicit availability state;
+`/reader/process` and `/reader/agents/{role_key}` expose qualified saved proposals.
+V6 `/reader/focus` reads a separate optional supplement, which cannot change the
+baseline. Missing `/reader/package` is not a native execution failure. The
+package-hashing and bundled Skill procedure below applies only when an actual
+`research-package-v1` exists; do not synthesize a package from Reader prose.
+See the [record contract](../contracts/research-record.md) and
+[Reader architecture](../architecture/research-reader.md).
 
 ## Boundary
 

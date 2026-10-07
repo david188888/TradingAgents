@@ -201,7 +201,9 @@ qualified saved source fields -> facts-only V0
   -> operating quality / event context / market context specialists
   -> one independent challenge stage (zero to three challenges)
   -> bounded condition verification (up to three checks)
-  -> one dimension-gated synthesis -> authorized native record and Markdown
+  -> one dimension-gated synthesis -> durably frozen independent baseline
+  -> optional saved-evidence focus response
+  -> authorized baseline publication -> optional supplement -> Markdown
 ```
 
 Facts and source identity are extracted by code. Specialists see isolated fact
@@ -231,10 +233,10 @@ dimension with usable inputs is not labelled as missing those same inputs.
 
 The synthesis follows code-owned dimensions and evidence ceilings. Unavailable
 valuation inputs constrain valuation; missing qualified prices constrain market
-context. Announcement titles do not establish delivery. The current source
-adapters do not supply qualified valuation inputs to this native workflow, so
-company and holding research retain an unresolved valuation dimension and a
-partial assessment. Risk/ATR statistics do not fill that gap.
+context. Announcement titles do not establish delivery. V4–V6 can supply
+qualified valuation inputs through the saved snapshot/history chain below.
+Missing or unqualified inputs leave that dimension unresolved and the assessment
+partial. Risk/ATR statistics cannot substitute for valuation inputs.
 
 Model proposals must include each mode dimension exactly once. Their array
 order is normalized to the code-owned output order: JSON prompt serialization
@@ -335,8 +337,10 @@ See [the shared record contract](../contracts/research-record.md) and
 
 ## Official document admission
 
-New v3 runs share `DisclosureSources` in all three modes. The existing CNINFO
-90-day announcement list remains distinct from document coverage. When no
+Saved V3 workflows use `DisclosureSources` in all three modes; V4 extends it
+with valuation. New V6 workflows retain V5's document selection and numeric
+admission described above. The following selection rules describe V3/V4 recovery.
+The existing CNINFO 90-day announcement list remains distinct from document coverage. When no
 formal annual/interim report occurs in that list, a separate bounded 550-day
 catalogue query supplies candidates. Selection is deterministic by publication
 and identifier: at most one formal report and three recent operating/project/

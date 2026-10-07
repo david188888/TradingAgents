@@ -85,7 +85,7 @@ The original Reader projection reads persisted artifacts and events only. It is 
 Native Agent review validates the known workflow/kernel pair, checkpoint and
 published-record integrity, input/seed digest, exact proposal-derived IDs and
 historical role eligibility. [`native_reader_versions.py`](../../tradingagents/web/native_reader_versions.py)
-freezes V1–V5 read policy, including the original and patched V1 publication
+freezes V1–V6 read policy, including the original and patched V1 publication
 gate. A bad role binding degrades that role while leaving the published report
 readable. Missing legacy proposals are unrecorded; saved but unpublished output
 remains pending publication. No role body is exposed before qualification.
@@ -107,13 +107,14 @@ Companion is an on-demand, bounded explanation of one public `role`, `claim`, `e
 
 Audit Center is a separate terminal-run projection. Its summary and detail routes are backed by [`audit_models.py`](../../tradingagents/web/audit_models.py), [`audit_projection.py`](../../tradingagents/web/audit_projection.py), and `/api/runs/{run_id}/audit*`. It exposes safe counts, stage/role/capability/tool/artifact metadata, and bounded detail availability. Running analyses use the real-time inspector; Audit Center rejects non-terminal runs and never becomes a raw trace dump.
 
-The UI labels this entry “技术诊断与执行记录”. Native audit uses the six actual
-native roles; code checks are explained separately rather than invented as an
+The UI labels this entry “技术诊断与执行记录”. Native audit uses six baseline
+roles, plus `native.focus_response` only for V6 runs with a requested focus;
+code checks are explained separately rather than invented as an
 extra Agent. Native SDK counts report authorization, not proven network delivery,
 completion or billing. [`native_observation.py`](../../tradingagents/runtime/native_observation.py)
 records coverage before new SDK-adapter MAIN dispatch. Historical incomplete
 coverage is a lower bound or unrecorded; starting observation on resume cannot
-certify earlier calls. Budget main/repair, SDK main/repair/total, data-capability,
+certify earlier calls. Budget main/focus/repair, SDK main/focus/repair/total, data-capability,
 HTTP, checkpoint/artifact counts remain distinct; absent turns/tokens/durations
 are never manufactured as zero.
 

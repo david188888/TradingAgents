@@ -38,6 +38,10 @@ Wind AIFin Market 通过官方 `wind-mcp-skill` CLI（固定版本 `2.0.4`）接
 
 ## 配置与路由
 
+以下配置和供应商链属于保留的 classic 工具路径。新版 Web `evidence_v1`
+使用独立有界来源路由，不调用 Wind，也不会因 `wind_enabled=true` 自动加入它。
+新版候选和不可用语义见 [Web 来源政策](../operations/evidence-research.md#evidence-and-workflow)。
+
 | 配置项 | 默认值 | 含义 |
 |---|---|---|
 | `wind_enabled` | `true` | 是否启用 Wind 能力（关闭不影响核心研究路径） |
@@ -62,7 +66,7 @@ A 股补充能力（资金流、两融、公告、大宗、龙虎榜、涨停梯
 以下能力**尚未**接入生产链，不能当作已交付功能：
 
 - Wind 财务报表/公司基本面（`stock_data.get_stock_fundamentals`）：A 股三大报表仍走 `tushare → sina → yfinance → alpha_vantage`。
-- Wind 公司新闻/事件（`financial_docs.get_financial_news`、`stock_data.get_stock_events`）：新闻仍走 `tavily → eastmoney → yfinance → alpha_vantage` 降级链。
+- Wind 公司新闻/事件（`financial_docs.get_financial_news`、`stock_data.get_stock_events`）：classic 新闻工具默认走 `tavily → doubao → bocha → eastmoney → yfinance → alpha_vantage` 降级链。
 - Wind 公告语义检索（`financial_docs.get_company_announcements`）：官方公告仍以 CNINFO/交易所原站优先。
 - `fund_data` / `bond_data` / `analytics_data`：不进入当前默认路由。
 

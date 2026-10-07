@@ -4,13 +4,16 @@ Status: Current
 
 `dataflows/risk_metrics.py` owns deterministic calculations. No function fetches
 data or qualifies provider identity, adjustment, cutoff or calendar coverage.
-`dataflows/tushare_price_history.py` qualifies the bounded source payload;
-`research/price_statistics.py` calculates descriptive statistics inside that
-payload. `CatalystSources` freezes it as price evidence, and `CatalystRunner`
-persists and supplies that evidence to the market specialist. Saved qualified
-results are also published inside [research-record-v1](research-record.md),
-then shown as quantitative context below the catalyst brief. This is separate
-from valuation. Classic records do not yet publish these local price metrics.
+`dataflows/tushare_price_history.py` qualifies bounded Tushare payloads;
+`dataflows/native_sources.py` also admits Tencent raw bars with dated Sina factors
+under the native source policy. `research/price_statistics.py` calculates
+descriptive statistics inside the qualified payload. Native collectors and
+`NativeRunner` freeze/persist this evidence for the market specialist;
+`CatalystSources`/`CatalystRunner` retain the legacy path. Saved qualified
+results are published inside [research-record-v1](research-record.md) and shown
+as quantitative context in the native Reader or below the legacy catalyst brief.
+This is separate from valuation. Classic records do not yet publish these local
+price metrics.
 
 ## Methods and degradation
 

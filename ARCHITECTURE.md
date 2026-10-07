@@ -1,5 +1,7 @@
 # TradingAgents Architecture
 
+Status: Current
+
 This is the current-state architecture map. Canonical machine contracts remain
 in the referenced Python and TypeScript models; plans and reviews are not a
 source of runtime truth.

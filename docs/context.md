@@ -16,8 +16,8 @@ not an execution or account-management product.
 
 ## Goals
 
-- Combine market, social, news, and fundamentals lenses in an auditable
-  research workflow.
+- Combine operating quality, event context and market context through isolated
+  specialist hypotheses, independent challenge and code-owned evidence checks.
 - Make evidence provenance, coverage limitations, and persisted artifacts
   available to local readers rather than hiding provider failures.
 - Support Web company, catalyst and holding research, plus batch company research.
@@ -31,7 +31,9 @@ New single and batch runs use `evidence_v1`; old profiles are read/resume only.
 CLI analysis is outside continued maintenance. The FastAPI/SSE adapter serves
 its bundled frontend on loopback only. The native kernel freezes evidence,
 creates isolated hypotheses, challenges and bounded conditions, then synthesizes
-one saved research record consumed by both Reader and Markdown.
+one saved research record consumed by both Reader and Markdown. V6 uses the
+mode-owned objective for this independent baseline; optional user focus is
+answered afterward from saved evidence and cannot change the baseline.
 
 ## Non-Goals
 
@@ -42,18 +44,23 @@ not a trading instruction.
 
 ## Core Concepts
 
-- **Analysis request:** typed ticker, date, analyst selection, horizon, and
-  research mode passed into the shared execution boundary.
+- **Analysis request:** typed ticker, date, profile, research mode and optional
+  holding context passed into the shared execution boundary. Native roles and
+  source policy are code-owned; analyst selection and horizon overrides belong
+  to retained classic compatibility callers.
 - **Evidence and capability result:** provider output with source and
   availability semantics. Missing, degraded, and unavailable sources are not
   evidence that an event did not occur.
-- **Research case:** a public, evidence-bound artifact assembled from a
-  validated research draft; partial and fail-stop outputs are explicit.
+- **Research record:** the mandatory native `research-record-v1`, binding saved
+  evidence, hypotheses, challenges, checks and dimension-level assessment.
+  Classic/catalyst cases remain compatibility artifacts; partial and unavailable
+  outputs stay explicit. V6 focus uses a separate baseline-bound artifact.
 - **Reader and audit projection:** read-only Web views of persisted artifacts
   and events, including compatibility/degradation states for incomplete or
   older runs.
-- **Checkpoint:** local durable LangGraph state used for resumable runs when
-  configured and compatible with the current runtime.
+- **Checkpoint:** native/catalyst durable attempt and publication state,
+  independent of the classic checkpoint toggle. Classic LangGraph checkpoints
+  remain optional. Recovery preserves saved versions, identity and spent budget.
 
 ## A-Share-First Constraints
 
