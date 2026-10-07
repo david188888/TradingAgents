@@ -76,6 +76,7 @@ These record inspected evidence and recommendations, not delivered runtime chang
 
 These are execution proposals, not descriptions of current runtime behavior.
 
+- [Independent research and focus-response design](superpowers/specs/2026-10-07-independent-research-and-focus-response-design.md): approved direction A, proposed V6 separation of immutable baseline research and an optional bounded response; written-spec review precedes implementation.
 - [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): retained overall goals and remaining quality/readability evaluation criteria. The Web default migration is delivered; current engineering behavior belongs in the operations and contract pages above.
 - [Frozen evaluation criteria](superpowers/plans/eval-table-frozen.md) and [case inputs](superpowers/plans/eval-cases.json): retained classic/catalyst comparison protocol, not completed evaluation results or authorization for new paid calls.
 - [Unified Reader prototype](superpowers/prototypes/2026-09-30-unified-research-reader.html), [sample metric generator](superpowers/prototypes/reader_sample_metrics.py), [sample metrics](superpowers/prototypes/reader_sample_metrics.json), and [catalyst layout prototype](superpowers/specs/2026-09-28-catalyst-research-layout.html): retained synthetic design material, not live research or runtime contracts.
