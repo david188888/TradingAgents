@@ -10,6 +10,7 @@
  * decoded via explicit type assertions on the parsed JSON.
  */
 import type {
+  AgentKey, ReaderProcessDTO, ReaderAgentDTO,
   ApiErrorCode,
   ApiErrorResponse,
   BatchCreateRequestDTO,
@@ -430,4 +431,14 @@ export async function readArtifactText(
 ): Promise<string> {
   const { content } = await readArtifact(run_id, artifact_id, signal);
   return new TextDecoder("utf-8").decode(content);
+}
+
+export function getReaderProcess(runId: string, signal?: AbortSignal): Promise<ReaderProcessDTO> {
+  assertRunId(runId);
+  return request<ReaderProcessDTO>("GET", API.readerProcess(runId), undefined, signal);
+}
+export function getReaderAgent(runId: string, role: AgentKey, sourceSequence: number, signal?: AbortSignal): Promise<ReaderAgentDTO> {
+  assertRunId(runId);
+  if (!Number.isInteger(sourceSequence) || sourceSequence < 0) throw new RangeError("Invalid Reader boundary");
+  return request<ReaderAgentDTO>("GET", `${API.readerAgent(runId, role)}?source_sequence=${sourceSequence}`, undefined, signal);
 }

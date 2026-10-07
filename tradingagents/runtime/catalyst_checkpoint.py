@@ -25,9 +25,9 @@ class CatalystCheckpointConflict(ValueError):
     pass
 
 
-def load_checkpoint(store: Any, run_id: str) -> dict[str, Any] | None:
+def load_checkpoint(store: Any, run_id: str, *, through: int | None = None) -> dict[str, Any] | None:
     events = [
-        event for event in store.read_events(run_id)
+        event for event in (store.read_events(run_id) if through is None else store.read_events(run_id, through=through))
         if event.type == "artifact.written"
         and event.status == "committed"
         and event.payload.get("kind") == CHECKPOINT_KIND

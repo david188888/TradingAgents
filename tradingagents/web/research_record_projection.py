@@ -45,9 +45,12 @@ def _read_checked(store, run_id, event):
     return raw
 
 
-def project_research_record(store: Any, run_id: str) -> dict[str, Any]:
+def project_research_record(store: Any, run_id: str, *, through: int | None = None) -> dict[str, Any]:
     snapshot = store.read_snapshot(run_id)  # Existing global 404 for missing run.
-    events = store.read_events(run_id)
+    events = (store.read_events(run_id) if through is None else store.read_events(run_id, through=through))
+    if through is not None:
+        events = [event for event in events if not isinstance(event.payload.get("committed_sequence"), int)
+                  or event.payload["committed_sequence"] <= through]
     event = _latest(events, RESEARCH_RECORD_CONTRACT)
     reason = "not_published"
     if event is None and any(item.type == "artifact.projection_unavailable"

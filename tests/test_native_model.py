@@ -420,3 +420,21 @@ def test_v4_synthesis_dimension_binding_uses_one_bounded_repair(journal, monkeyp
     assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 1
     assert c("synthesis", context) == result
     assert len(stub.prompts) == 2
+
+
+def test_sdk_observation_precedes_main_authorization_and_initialization_failure(journal, monkeypatch):
+    from tradingagents.web.reader_process_projection import native_counts
+
+    journal.state['identity']['workflow_version'] = 'evidence-production-v5'
+    native = caller(journal)
+    assert journal.state['native_sdk_observation']['prior_main_authorizations'] == 0
+    main(journal)
+    def unavailable(**kwargs):
+        raise RuntimeError('offline initialization')
+    monkeypatch.setattr(adapter, 'create_llm_client', unavailable)
+    with pytest.raises(adapter.NativeModelUnavailable):
+        native('operating_quality', {'facts':[], 'mode':'company_research'})
+    observed = native_counts(journal.state, role='operating_quality')
+    assert observed.main_budget.value == 1
+    assert observed.sdk_main.value == observed.sdk_repair.value == 0
+    assert observed.sdk_total.completeness == 'complete'

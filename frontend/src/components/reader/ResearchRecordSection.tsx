@@ -6,7 +6,7 @@ import type { CheckObservationV1DTO, ChallengeAssessmentV2DTO, QuantitativeMetri
 import { limitationLabel } from "../../domain/researchCoverage";
 
 const CONTENT_LABELS = { excerpt: "原文摘录", source_fields: "原始数据字段", saved_summary: "已保存摘要" };
-const CHECK_LABELS = { operating_disclosures: "经营披露依据", cash_conversion: "现金流桥核对", valuation_context: "估值补充背景" };
+export const CHECK_LABELS = { operating_disclosures: "经营披露依据", cash_conversion: "现金流桥核对", valuation_context: "估值补充背景" };
 const CHECK_STATUS = { passed: "所需证据已核对", unavailable: "所需证据不足", conflict: "数据冲突，待核查" };
 const OUTCOME_LABELS = { evidence_sufficient: "证据子问题已回答", risk_supported: "数据支持所列风险", future_observation: "保留未来观察", unresolved: "尚未解决" };
 
@@ -18,7 +18,7 @@ function observationValue(item: CheckObservationV1DTO): string {
   return `${format(value)} ${item.unit === "CNY/share" ? "元/股" : item.unit}`;
 }
 
-function LocalChallengeResult({ item }: { item: ChallengeAssessmentV2DTO }): JSX.Element {
+export function LocalChallengeResult({ item }: { item: ChallengeAssessmentV2DTO }): JSX.Element {
   return <section aria-label="挑战核查结果">
     <p><strong>{OUTCOME_LABELS[item.outcome]}</strong> · 经济判断仍待核查</p>
     {item.answered_question ? <p>本次回答范围：{item.answered_question}</p> : null}
@@ -29,7 +29,7 @@ function LocalChallengeResult({ item }: { item: ChallengeAssessmentV2DTO }): JSX
   </section>;
 }
 
-function LocalEvidenceChecks({ record, onInspect }: { record: ResearchRecordV1DTO; onInspect: InspectSources }): JSX.Element | null {
+export function LocalEvidenceChecks({ record, onInspect }: { record: ResearchRecordV1DTO; onInspect: InspectSources }): JSX.Element | null {
   const checks = record.evidence_checks;
   if (!checks) return null;
   return <section aria-label="证据核查">
@@ -73,7 +73,7 @@ const VERIFICATION_LABELS = { supports: "支持", contradicts: "反驳", inconcl
 const DIMENSION_LABELS = { operating_quality: "经营质量", valuation: "估值", market_context: "市场背景", catalyst_delivery: "催化兑现", holding_thesis: "原持仓假设" };
 const ASSESSMENT_STATUS_LABELS = { supported: "有事实支持", conditional: "有条件判断", unresolved: "待核查" };
 
-function claimText(statement: string): string {
+export function claimText(statement: string): string {
   const match = /^合并财务字段：报告期 (\d{4}-\d{2}-\d{2})，(?:income|balancesheet|cashflow)\.(\w+) = ([\d.-]+) CNY。$/.exec(statement);
   const labels: Record<string, string> = { revenue: "营业收入", n_income: "净利润", n_income_attr_p: "归母净利润", total_assets: "总资产", total_liab: "总负债", n_cashflow_act: "经营现金流净额" };
   if (!match || !labels[match[2]] || !Number.isFinite(Number(match[3]))) return statement;
@@ -149,7 +149,7 @@ function metricValue(metric: QuantitativeMetricV1DTO): string {
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(metric.value) + (metric.unit === "CNY/share" ? " 元/股" : "");
 }
 
-function MetricCard({ metric }: { metric: QuantitativeMetricV1DTO }): JSX.Element {
+export function MetricCard({ metric }: { metric: QuantitativeMetricV1DTO }): JSX.Element {
   return <article className="record-metric">
     <h4>{metric.label}</h4><strong>{metricValue(metric)}</strong>
     <details><summary>口径与依据</summary>

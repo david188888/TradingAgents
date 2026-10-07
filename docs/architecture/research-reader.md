@@ -31,11 +31,15 @@ checks, synthesize once, validate and publish the saved `research-record-v1`.
 `NativeRunner` and `graph/native_research.py` own execution; the host derives
 assessment v2 from admitted bindings and recomputed local results.
 
-The single-column Reader prioritizes judgement, unresolved risk, key evidence,
-valuation context and the next check. V5 adds expandable operating-disclosure,
-cash-reconciliation and valuation-context checks with values, units and saved
-source references. A passed evidence question does not resolve economic cause,
-persistence or fair value. Old V1–V4 recovery never acquires V5 collection,
+The desktop Reader prioritizes the research question and saved answer, key
+evidence, the main doubt and suggested next check, executed checks, valuation
+and quantitative context. Linked facts, saved source content and fixed financial
+concept explanations appear beside the report; narrower desktop containers use
+an evidence drawer. Navigation also exposes the evidence directory, research
+process, per-Agent saved proposals and complete record. V5 includes operating-
+disclosure, cash-reconciliation and valuation-context checks with values, units
+and source references. A passed evidence question does not resolve economic
+cause, persistence or fair value. Old V1–V4 recovery never acquires V5 collection,
 prompts or checks. Reader and Markdown consume the same validated record;
 the 600803 standalone HTML is a labelled acceptance artifact, not an additional
 runtime export endpoint. See the [record contract](../contracts/research-record.md#native-v5-bounded-evidence-checks).
@@ -68,10 +72,28 @@ This case path describes classic publication. Native publication instead require
 - `typed`: a readable `ResearchCaseV2` projection with research tilt, claims, scenarios, review items, analyst cards, coverage, omissions, optional thesis diff, and bounded audit counts.
 - `research-package-v1`: a separate read-only structured package at `/api/runs/{run_id}/reader/package` for metric definitions, point-in-time observations, peer comparisons, logic edges, and portable Agent consumption. Its absence or partial unknowns never upgrades a Reader conclusion.
 - `research-record-v1`: a committed record at `/api/runs/{run_id}/reader/record`, additive for classic/catalyst and the mandatory main report for native research. It carries admitted public source content, inference dependencies and saved quantitative metrics. Converted legacy inferences are not executed verification; native checks carry explicit execution and lineage. This separate endpoint exposes public content hashes/snapshots; it excludes private locators and raw envelopes. See [contract and compatibility limits](../contracts/research-record.md).
+- Process and selected-role outputs at `/api/runs/{run_id}/reader/process` and `/api/runs/{run_id}/reader/agents/{role_key}`: closed DTOs in [`reader_process_models.py`](../../tradingagents/web/reader_process_models.py), projected from a captured sequence by [`reader_process_projection.py`](../../tradingagents/web/reader_process_projection.py). Roles are fixed. The selected-role request can use the process `source_sequence`; future boundaries are rejected. These routes do not execute or backfill research.
 - `legacy`: a historical run without a typed case; it remains explicitly legacy and does not fabricate typed fields.
 - `unavailable`: a typed case is missing, unreadable, or unsupported; the response carries a stable reason code and audit counts.
 
 The original Reader projection reads persisted artifacts and events only. It is side-effect free, does not call an LLM or network, and does not expose raw evidence payloads, prompt text, locators, content hashes, or internal snapshots. The separate shared-record endpoint admits only its explicitly public content and provenance.
+
+Native Agent review validates the known workflow/kernel pair, checkpoint and
+published-record integrity, input/seed digest, exact proposal-derived IDs and
+historical role eligibility. [`native_reader_versions.py`](../../tradingagents/web/native_reader_versions.py)
+freezes V1–V5 read policy, including the original and patched V1 publication
+gate. A bad role binding degrades that role while leaving the published report
+readable. Missing legacy proposals are unrecorded; saved but unpublished output
+remains pending publication. No role body is exposed before qualification.
+Every valid specialist hypothesis, scoped unknown and condition, every challenge,
+and the complete synthesis proposal remain reviewable even when absent from the
+first screen. Original proposals and code-owned final handling are separate.
+
+The frontend process hook follows SSE sequence/role changes, coalesces reads,
+pauses hidden polling, uses bounded retries, and stops after terminal convergence.
+Role bodies are fetched only for the selected role, with run/role/sequence guards.
+Entity links preserve the return reading position and highlight the exact output;
+drawer focus and Escape use the shared modal focus boundary.
 
 The workbench routes native runs to `NativeResearchPage`, catalyst cases to their case page, and classic terminal summaries to `LegacyReader`. The original typed Reader/Companion API remains supported but is not a second default classic completion page. A readable or completed result may still be partial or LOW_CONFIDENCE; those states do not establish research adequacy or predictive accuracy.
 
@@ -80,5 +102,15 @@ The workbench routes native runs to `NativeResearchPage`, catalyst cases to thei
 Companion is an on-demand, bounded explanation of one public `role`, `claim`, `evidence`, or `risk` selection: [`reader_projection.py`](../../tradingagents/web/reader_projection.py) and `/api/runs/{run_id}/reader/companion`.
 
 Audit Center is a separate terminal-run projection. Its summary and detail routes are backed by [`audit_models.py`](../../tradingagents/web/audit_models.py), [`audit_projection.py`](../../tradingagents/web/audit_projection.py), and `/api/runs/{run_id}/audit*`. It exposes safe counts, stage/role/capability/tool/artifact metadata, and bounded detail availability. Running analyses use the real-time inspector; Audit Center rejects non-terminal runs and never becomes a raw trace dump.
+
+The UI labels this entry “技术诊断与执行记录”. Native audit uses the six actual
+native roles; code checks are explained separately rather than invented as an
+extra Agent. Native SDK counts report authorization, not proven network delivery,
+completion or billing. [`native_observation.py`](../../tradingagents/runtime/native_observation.py)
+records coverage before new SDK-adapter MAIN dispatch. Historical incomplete
+coverage is a lower bound or unrecorded; starting observation on resume cannot
+certify earlier calls. Budget main/repair, SDK main/repair/total, data-capability,
+HTTP, checkpoint/artifact counts remain distinct; absent turns/tokens/durations
+are never manufactured as zero.
 
 The frontend wire facade for these routes is [`frontend/src/api/contracts.ts`](../../frontend/src/api/contracts.ts), with request functions in [`frontend/src/api/client.ts`](../../frontend/src/api/client.ts).

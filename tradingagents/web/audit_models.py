@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from tradingagents.web.reader_process_models import NativeCounts, ObservedCount
+
 AuditKind = Literal[
     "run",
     "role",
@@ -60,8 +62,9 @@ class AuditSectionSummary(_AuditModel):
 class AuditCounts(_AuditModel):
     stages: int = Field(ge=0)
     roles: int = Field(ge=0)
-    turns: int = Field(ge=0)
-    model_calls: int = Field(ge=0)
+    turns: int | None = Field(ge=0)
+    model_calls: int | None = Field(ge=0)
+    native_counts: NativeCounts | None = None
     tool_calls: int = Field(ge=0)
     artifacts: int = Field(ge=0)
     prompts: int = Field(ge=0)
@@ -89,8 +92,9 @@ class AuditRoleSummary(_AuditModel):
     actor_id: str
     label: str
     status: str
-    turn_count: int = Field(ge=0)
-    model_call_count: int = Field(ge=0)
+    turn_count: int | None = Field(ge=0)
+    model_call_count: int | None = Field(ge=0)
+    model_observation: ObservedCount | None = None
     duration_ms: int | None = Field(default=None, ge=0)
 
 
@@ -142,6 +146,7 @@ class AuditStageSummary(_AuditModel):
     label: str
     status: Literal[
         "not_started",
+        "skipped",
         "running",
         "completed",
         "failed",

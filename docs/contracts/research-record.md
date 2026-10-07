@@ -138,9 +138,14 @@ unavailable reason; missing runs use the existing 404. Missing historical
 records remain missing. Reading, expanding and refreshing never backfill,
 dispatch models or query providers.
 
-The evidence_v1 workbench uses the native record as its single main Reader: judgement,
-principal challenge, key grounds, valuation/risk context and next check appear before
-collapsed evidence/hypothesis/verification details. It does not fetch or mount the
+The evidence_v1 workbench uses the native record as its single main Reader. Its
+desktop report answers the research question before key grounds, principal doubt
+and next check, executed checks, valuation and quantitative context. Linked facts
+and saved source content appear in the evidence panel or narrow-desktop drawer.
+Process, per-Agent proposals and the complete record remain separate read views;
+proposal authorship requires frozen version-specific qualification, not text
+similarity. See the [Reader architecture](../architecture/research-reader.md#reader-projection-and-degradation)
+for sequence and degradation boundaries. It does not fetch or mount the
 classic/catalyst case Reader. Creation offers the three native scopes and fixed roles.
 Existing profiles retain saved quantitative context below the catalyst brief and
 alongside the classic Reader. The catalyst citation drawer shows saved source content

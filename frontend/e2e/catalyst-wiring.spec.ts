@@ -21,7 +21,7 @@ test("custom model IDs survive single/batch switching and reach native admission
   const response = await created;
   expect(response.status()).toBe(201);
   expect(response.request().postDataJSON()).toMatchObject({quick_think_llm:"deepseek-chat",deep_think_llm:"deepseek-reasoner"});
-  await expect(page.locator(".research-record")).toBeVisible({timeout:20000});
+  await expect(page.locator(".question-reader")).toBeVisible({timeout:20000});
 });
 
 for (const viewport of [{width:1440,height:900}, {width:1280,height:800}, {width:390,height:844}, {width:720,height:450}]) {
@@ -39,20 +39,20 @@ for (const viewport of [{width:1440,height:900}, {width:1280,height:800}, {width
     expect(response.status()).toBe(201);
     expect(response.request().postDataJSON()).toMatchObject({research_profile:"evidence_v1",research_depth:1,research_question:"核验经营兑现😀"});
     const snapshot=await response.json();
-    const brief=page.locator(".research-record");
+    const brief=page.locator(".question-reader");
     await expect(brief).toBeVisible({timeout:20000});
     await expect(page.locator("[data-main-summary]")).toHaveCount(1);
     await expect(page.getByRole("img",{name:/参考区间每股/})).toBeVisible();
-    await expect(page.getByText("当前只有一个估值锚点，未做交叉验证；该区间不能视为充分估值。")).toBeVisible();
+    await expect(page.getByText(/只有一个有效锚点，未做交叉验证。/)).toBeVisible();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
-    const ref=brief.getByRole("button",{name:/查看引用/}).first();
+    const ref=brief.locator(".qr-evidence-entry");
     await ref.click();
-    const dialog=page.getByRole("dialog",{name:"保存的引用"});
+    const dialog=page.getByRole("dialog",{name:"依据与概念解释"});
     await expect(dialog).toBeVisible();
     await expect(page.locator("#root")).toHaveAttribute("inert","");
-    await expect(dialog.getByRole("button",{name:"关闭引用"})).toBeFocused();
+    await expect(dialog.getByRole("button",{name:"关闭",exact:true})).toBeFocused();
     await page.keyboard.press("Shift+Tab");
-    await expect(dialog.getByRole("button",{name:"关闭引用"})).toBeFocused();
+    expect(await dialog.evaluate(el=>el.contains(document.activeElement))).toBe(true);
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await expect(ref).toBeFocused();
@@ -76,8 +76,8 @@ for (const mode of ["catalyst_research","holding_review"]) {
       await page.getByLabel("平均成本（每单位）").fill("20");
     }
     await page.getByRole("button",{name:"开始分析",exact:true}).click();
-    await expect(page.locator(".research-record")).toBeVisible({timeout:20000});
+    await expect(page.locator(".question-reader")).toBeVisible({timeout:20000});
     if(mode==="catalyst_research") await expect(page.getByText(/展望 84 个日历日/)).toBeVisible();
-    else await expect(page.getByText("原持仓假设 · 待核查")).toHaveCount(1);
+    else { await page.getByRole("button",{name:"完整记录",exact:true}).click(); await expect(page.getByText("原持仓假设 · 待核查")).toHaveCount(1); }
   });
 }

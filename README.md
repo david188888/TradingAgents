@@ -33,10 +33,19 @@ catalyst research uses an 84-calendar-day outlook; holding review rechecks
 user-provided holdings and the original thesis. Batch research uses the same
 company workflow. Roles and attempt limits are fixed by code.
 
-The Reader puts judgement, unresolved risks and key evidence first, followed by
-valuation context, historical risk statistics and the next check. References
-open saved content with timestamps and hashes. Reading does not fetch data or
-invoke models. A completed run may remain `partial / LOW_CONFIDENCE`.
+The desktop Reader starts with the research question and its saved answer, then
+key evidence, the main doubt and suggested next check, executed checks,
+valuation and historical quantitative context. A side panel explains linked
+facts, saved source content and financial terms; narrow desktop containers use
+an evidence drawer. Report navigation includes the evidence directory, research
+process, each Agent's validated saved proposal, and the complete record.
+Contribution links show which role produced a hypothesis or challenge and how
+synthesis or code treated it. Reading does not fetch data or invoke models.
+A completed run may remain `partial / LOW_CONFIDENCE`.
+
+Technical diagnostics use the run's actual role registry and distinguish budget
+authorization from SDK dispatch authorization. Incomplete historical observation
+is labelled as a known lower bound or unrecorded, rather than zero calls.
 
 Native sources prioritize bounded public company profiles, Sina financial
 tables, CNINFO disclosures and qualified Tencent/Sina adjusted prices, with

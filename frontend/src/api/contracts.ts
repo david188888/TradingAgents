@@ -7,6 +7,7 @@
  *   tradingagents/web/run_models.py
  *   tradingagents/web/schemas.py
  *   tradingagents/web/api.py
+ *   tradingagents/web/reader_process_models.py
  *
  * Field names are snake_case-matched to the backend wire format. The reducer
  * MUST NOT rename keys. `any` is only used where the backend emits an opaque
@@ -33,6 +34,8 @@ export const API = {
   runView: (run_id: string) => `/api/runs/${run_id}/view`,
   reader: (run_id: string) => `/api/runs/${run_id}/reader`,
   readerPackage: (run_id: string) => `/api/runs/${run_id}/reader/package`,
+  readerProcess: (run_id: string) => `/api/runs/${run_id}/reader/process`,
+  readerAgent: (run_id: string, role: AgentKey) => `/api/runs/${run_id}/reader/agents/${role}`,
   readerRecord: (run_id: string) => `/api/runs/${run_id}/reader/record`,
   readerCompanion: (run_id: string) => `/api/runs/${run_id}/reader/companion`,
   audit: (run_id: string) => `/api/runs/${run_id}/audit`,
@@ -1715,8 +1718,9 @@ export interface AuditRunSummaryDTO {
 export interface AuditCountsDTO {
   stages: number;
   roles: number;
-  turns: number;
-  model_calls: number;
+  turns: number | null;
+  model_calls: number | null;
+  native_counts?: NativeCountsDTO | null;
   tool_calls: number;
   artifacts: number;
   prompts: number;
@@ -1727,7 +1731,7 @@ export interface AuditCountsDTO {
 export interface AuditStageSummaryDTO {
   stage_id: string;
   label: string;
-  status: "not_started" | "running" | "completed" | "failed" | "cancelled" | "interrupted" | "unknown";
+  status: "not_started" | "running" | "completed" | "failed" | "cancelled" | "interrupted" | "skipped" | "unknown";
   availability: "ready" | "not_recorded";
   reason_code: "legacy_event_gap" | "not_recorded" | null;
   related_selections: AuditSelectionDTO[];
@@ -1738,8 +1742,9 @@ export interface AuditRoleSummaryDTO {
   actor_id: string;
   label: string;
   status: string;
-  turn_count: number;
-  model_call_count: number;
+  turn_count: number | null;
+  model_call_count: number | null;
+  model_observation?: ObservedCountDTO | null;
   duration_ms: number | null;
 }
 
@@ -2243,4 +2248,33 @@ export interface CatalystLegacyRecordDTO {
   catalysts: unknown[];
   invalidation_conditions: unknown[];
   evidence_refs: Array<{ ref_id: string; label: string; resolution_status: string }>;
+}
+
+// Canonical: web/reader_process_models.py; proposals: agents/schemas/_native_stage.py.
+export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks";
+export type OutputAvailability = "available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
+export interface ObservedCountDTO { value: number | null; completeness: "complete" | "known_lower_bound" | "not_recorded" | "unavailable"; basis: string }
+export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO }
+export interface ReaderRoleDTO {
+  role_key: AgentKey; actor_id: string; label: string; origin: "model" | "code"; purpose: string; status: string;
+  output_availability: OutputAvailability; reason_code: string | null; output_count: number | null; output_sequence: number | null;
+  main_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO;
+}
+export interface ReaderProcessDTO {
+  schema_version: 1; run_id: string; source_sequence: number; profile: string; workflow_version: string | null;
+  availability: "ready" | "partial" | "unavailable" | "not_applicable"; reason_code: string | null;
+  question_origin: "user" | "default" | "not_recorded"; primary_selection: "synthesis" | "code" | "not_recorded";
+  counts: NativeCountsDTO; roles: ReaderRoleDTO[]; claim_origins: Array<{claim_id: string; role_key: AgentKey}>; source_failures: string[];
+}
+export interface SpecialistProposalDTO { hypotheses: Array<{ statement: string; supporting_fact_ids: string[]; conditions: Array<{condition_role: "necessary" | "invalidation"; text: string; check: VerificationConditionDTO | null}>; alternative_explanation: string }>; unknowns: string[] }
+export interface NumericPredicateDTO { operator: "lt" | "le" | "eq" | "ge" | "gt"; threshold: string; unit: string }
+export interface FinancialOperandDTO { evidence_id: string; table: "income" | "balancesheet" | "cashflow"; field: string; report_period: string }
+export type VerificationConditionDTO = { kind: "financial"; operation: "value" | "difference" | "growth"; current: FinancialOperandDTO; base: FinancialOperandDTO | null; predicate: NumericPredicateDTO } | { kind: "metric"; metric_id: string; predicate: NumericPredicateDTO };
+export interface ChallengesProposalDTO { challenges: Array<{ hypothesis_id: string; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; proposed_test: string; condition_id: string | null; check_id?: EvidenceCheckId | null; observed_risk?: "cash_conversion.cfo_yoy_decline" | null; observation_date?: string | null }> }
+export interface SynthesisProposalDTO { judgement: string; dimensions: DimensionAssessmentV1DTO[]; key_claim_ids: string[]; primary_challenge_id: string | null; next_check: string; challenge_assessments: Array<{ challenge_id: string; outcome: "unresolved"; rationale: string }> }
+export interface ReaderAgentDTO {
+  schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;
+  proposal: SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalDTO | null;
+  relations: Array<{entity_id: string; kind: "claim" | "challenge"; in_record: boolean; is_key: boolean; dimensions: string[]; challenge_ids: string[]}>;
+  claim_ids: string[]; input_fact_ids: string[]; challenge_ids: string[]; code_sections: Array<"facts" | "sources" | "checks" | "verifications" | "publication">;
 }

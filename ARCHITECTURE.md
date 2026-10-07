@@ -171,9 +171,27 @@ the kernel's MAIN result without another model call.
 
 Native publication requires an assessed `research-record-v1` and its durable
 authorization barrier; failure cannot complete the run or fall back to a case.
-Markdown and the single native Reader consume that same record. The native
-first screen prioritizes judgement, key claims, primary challenge, next check
-and quantitative context; source content and per-dimension limits are expandable.
+Markdown and the single native Reader consume that same record. The desktop
+Reader starts with the research question and answer, then key claims, primary
+challenge and proposed next check, executed checks, valuation and quantitative
+context. Linked facts, source content and fixed concept explanations appear in
+a side panel or narrow-container drawer. Evidence, process, Agent outputs and
+the complete record are explicit navigation destinations.
+
+`web/reader_process_models.py` owns the additive process and per-role DTOs.
+`web/reader_process_projection.py` captures an event-sequence boundary, validates
+the native workflow/input/output/seed identities and maps proposals to their
+published IDs. `web/native_reader_versions.py` freezes read qualification for
+the supported saved V1–V5 workflows; unknown versions or failed bindings degrade
+without exposing unqualified proposals. The process endpoint reads summary
+metadata; the selected-role endpoint returns only closed research schema fields,
+never prompts, adapter responses or checkpoint envelopes. Both are read-only.
+`runtime/native_observation.py` records SDK observation coverage before MAIN
+authorization for new SDK-adapter runs. Reader and Audit separately report
+budget, SDK main/repair, data-capability and HTTP authorizations; legacy incomplete
+coverage is nullable or a lower bound. This marker does not change recovery
+identity, prompts, role selection or the research record.
+
 Completion, readability, completeness and quality remain separate. Missing
 valuation or original-thesis inputs constrain their own dimensions, and a
 successful condition check cannot close an economic challenge. Web creation
