@@ -58,6 +58,7 @@ The finite code-owned registry is `llm_clients/task_effort.py`:
 | `native.operating_quality`, `native.event_context` | Operating mechanisms and event implementation: retain `high`. |
 | `native.market_context` | Market interpretation: retain `high`; candidate for a later low comparison. |
 | `native.challenge`, `native.synthesis` | Alternatives, unresolved risks and synthesis: retain `high`; explicit `max` can be evaluated for complex cases. |
+| `native.focus_response` | Optional V6 saved-evidence interpretation after the baseline; inherits global effort unless explicitly overridden, with one call and no repair. |
 | `classic.market`, `classic.social`, `classic.news`, `classic.fundamentals` | Four analyst tasks. Market/social are later low candidates; news/fundamentals are substantive analysis. |
 | `classic.bull`, `classic.bear`, `classic.research_manager` | Causal arguments and final synthesis: retain `high`. |
 | `catalyst.catalyst_events`, `catalyst.operating_delivery`, `catalyst.market_reaction`, `catalyst.independent_refutation`, `catalyst.synthesis` | Existing legacy stages; preserve global behavior unless explicitly configured. |

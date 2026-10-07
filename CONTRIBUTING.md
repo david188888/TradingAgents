@@ -11,7 +11,7 @@ pip install -e ".[china,web,dev]"
 npm --prefix frontend ci
 ```
 
-Copy `.env.example` to `.env` and `tradingagents.config.example.json` to `tradingagents.local.json` for local configuration. Both local files are ignored. Never commit API keys, provider responses, local run stores, or private datasets.
+Copy `.env.example` to `.env` for Web credentials and supported environment defaults. The retained CLI can additionally load `tradingagents.config.example.json` copied to the ignored `tradingagents.local.json`; the Web server does not load that JSON. Never commit API keys, provider responses, local run stores, or private datasets.
 
 ## Scoped Validation
 

@@ -1,5 +1,7 @@
 # Valuation Assessment Contract (valuation-assessment-v1)
 
+Status: Current
+
 ## What it is
 
 `valuation-assessment-v1` is a derived public artifact computed after the

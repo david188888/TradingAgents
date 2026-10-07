@@ -36,7 +36,7 @@ graphs do not call it.
 The plan binds a single-target challenge, native hypothesis and exact saved
 assumption or invalidation text. Code accepts at most three allowlisted checks
 in one supplementary round, critical challenges first. Pure tools read saved,
-untruncated, qualified Tushare financial fields or compare a saved metric to an
+untruncated, qualified Sina/Tushare financial fields or compare a saved metric to an
 explicit threshold. Financial operands require matching fields/report periods,
 disclosure qualification and CNY amounts; growth requires a positive base and
 uses the unit `ratio`. Metric units must match. Tools cannot fetch documents,
@@ -103,9 +103,11 @@ record bytes/digests. `execution/native_model.py` supplies a bounded SDK adapter
 the kernel itself has no model/provider SDK dependency.
 
 Source content distinguishes excerpts, saved summaries and selected original
-fields. The adapter admits only narrow source-specific field allowlists: CNINFO
-announcement-list fields, Tushare identity/financial fields and qualified price
-fields, plus matching classic financial bundles. Announcement titles are not
+fields. The adapter admits only narrow source-specific content: qualified public/Tushare
+identity, Sina/Tushare financial fields, CNINFO announcement fields and bounded
+document excerpts/operating rows, qualified price and valuation fields, and V5/V6
+dated EPS/industry-candidate context. Compatibility adapters admit matching
+classic financial bundles. Announcement titles are not
 document bodies or proof that an event occurred. Missing content is explicit;
 analyst prose is never relabelled as original source text. Private storage
 locators, response envelopes and prompts are excluded. Content/snapshot hashes
@@ -113,7 +115,7 @@ refer to the admitted public content, not private files.
 
 ## Metrics and reading
 
-Saved qualified native and catalyst Tushare price evidence projects annualized volatility,
+Saved qualified native public/Tushare and legacy catalyst Tushare price evidence projects annualized volatility,
 signed historical return quantile, ES, drawdown, ATR and unavailable Beta when
 no qualified benchmark exists. The projection does not recalculate metrics.
 Each item carries its input reference/hash, method, unit, window, sample,

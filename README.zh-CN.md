@@ -18,7 +18,7 @@ TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源�
 ## 研究流程
 
 Web 是持续维护的产品入口，单公司和批量新建统一使用 `evidence_v1`：
-合格证据冻结 → 经营／事件／市场专项假设 → 独立挑战 → 有界条件核查 → 分维度综合 → 保存记录与报告。
+合格证据冻结 → 经营／事件／市场专项假设 → 独立挑战 → 有界条件核查 → 分维度综合 → 冻结独立基础记录 → 可选关注点回应 → 发布基础记录、补充与报告。
 CLI 分析代码保留为旧入口，此后不再维护；启动网页的 `tradingagents web` 命令继续使用。
 
 公司研究覆盖经营质量、估值和市场背景；催化研究展望未来 84 个日历日；
@@ -67,15 +67,13 @@ source .venv/bin/activate
 pip install -e ".[china,web]"
 
 cp .env.example .env
-cp tradingagents.config.example.json tradingagents.local.json
 # 在 .env 中设置 LLM Key（例如 DEEPSEEK_API_KEY），并配置所用数据供应商
-# （例如 A 股财务数据可设置 TUSHARE_TOKEN）。
-# 如需修改默认路由，可编辑 tradingagents.local.json。
+# （例如 Tushare 备源可设置 TUSHARE_TOKEN）。
 
 tradingagents web --port 8765 --open  # 本地 Web 工作台
 ```
 
-Web 服务仅绑定到 `127.0.0.1`；运行时无需安装 Node.js。配置可来自 `TRADINGAGENTS_*` 环境变量、本地 JSON 文件或交互式提示。结果、缓存、记忆日志和新闻缓存路径留空时会使用内置默认值。完整选项见 [.env.example](.env.example) 和 [default_config.py](tradingagents/default_config.py)。本地运行记录和报告保存在 `~/.tradingagents/`；路径说明见[架构文档](ARCHITECTURE.md)。修改 `frontend/src/` 后，开发者应运行 `npm --prefix frontend run build`，并更新 `tradingagents/web/static/` 中的生成文件。
+Web 服务仅绑定到 `127.0.0.1`；运行时无需安装 Node.js。Web 启动器加载被忽略的 `.env`，支持的 `TRADINGAGENTS_*` 环境变量设置服务默认值；模型、语言和研究范围在网页表单选择。旧 CLI 的 `tradingagents.local.json` 不会被 Web 服务读取。结果、缓存、记忆日志和新闻缓存路径留空时会使用内置默认值。完整选项见 [.env.example](.env.example) 和 [default_config.py](tradingagents/default_config.py)。本地运行记录和报告保存在 `~/.tradingagents/`；路径说明见[架构文档](ARCHITECTURE.md)。修改 `frontend/src/` 后，开发者应运行 `npm --prefix frontend run build`，并更新 `tradingagents/web/static/` 中的生成文件。
 
 官方 DeepSeek V4.1 Flash 的模型 ID `deepseek-flash` 可用于快速与深度两个
 模型入口；原有 `deepseek-v4-flash` 配置仍可使用。思考模式默认启用，effort

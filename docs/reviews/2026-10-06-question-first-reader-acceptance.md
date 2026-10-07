@@ -1,6 +1,11 @@
 # 问题优先 Reader 桌面实施核对
 
-Status: Current
+Status: Historical
+
+Do not use this document as evidence of current implementation behavior.
+This snapshot predates V6 independent baseline/focus semantics; current behavior
+belongs to [Reader architecture](../architecture/research-reader.md) and
+[Web operations](../operations/evidence-research.md).
 
 实施开始于 2026-10-06，最终本地核对完成于 2026-10-07。实施依据为用户确认的 [B4 规格](../superpowers/specs/2026-10-06-question-first-reader-design.md)与[实施计划](../superpowers/plans/2026-10-06-question-first-reader-implementation.md)。实施阶段为本地桌面实现，不包含新研究或付费模型/数据请求。2026-10-07 用户另行授权发布合并与文档收尾；该授权取代实施阶段的“仅本地”发布限制。
 

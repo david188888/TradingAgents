@@ -1,5 +1,7 @@
 # Web Batch Analysis
 
+Status: Current
+
 The localhost Web workbench supports single-company and batch company research. CLI batch creation is out of scope.
 
 ## Limits and scheduling

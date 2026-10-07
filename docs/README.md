@@ -42,9 +42,9 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 - [A-share data capabilities](operations/a-share-data-capabilities.md): A-share supplemental data sources, fallback, coverage, and unavailable semantics.
 - [Observability and replay](operations/observability-replay.md): replay / audit / privacy boundaries.
 - [Research package interoperability](operations/research-package-interoperability.md): external Agent consumption contract over the public research-package and reader fact layer.
-- [Workbench presets](operations/workbench-presets.md): YAML analyst presets and the fixed downstream graph nodes.
+- [Legacy analyst presets](operations/workbench-presets.md): retained CLI/inspection YAML contracts and compatibility metadata; new Web native roles are fixed.
 - [Web batch analysis](operations/web-batch-analysis.md): 1-8 company batch research, global FIFO scheduler, concurrency, lifecycle, and notification limits.
-- [Catalyst trial operations](operations/catalyst-research.md): explicit entry, qualification limits, budgets, recovery and read semantics.
+- [Legacy catalyst recovery](operations/catalyst-research.md): retained qualification limits, budgets, recovery and read semantics; historical setup does not enable new creation.
 - [Web evidence research](operations/evidence-research.md): default `evidence_v1` for single/batch company research, catalyst and holding scopes, bounded valuation and verification, saved-content Reader and legacy recovery.
 - [Model reasoning configuration](operations/llm-reasoning.md): official DeepSeek model names, task effort overrides, inheritance and frozen-run recovery.
 
@@ -58,7 +58,11 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 
 - [Architecture decisions](decisions/README.md): ADR lifecycle and future decision records. No historical ADRs are reconstructed here.
 
-## Current Delivery Reviews
+## Delivery Snapshots
+
+These are dated delivery and verification records, not current-state contracts.
+Later workflows can supersede their UI, question or role semantics; follow the
+current architecture, operations and contract pages for supported behavior.
 
 - [Independent research and focus-response acceptance](reviews/2026-10-07-independent-research-focus-acceptance.md): local V6 information-flow isolation, bounded supplemental response, recovery/publication, Reader and offline/browser checks; original 002130 files retained.
 - [Question-first Reader implementation](reviews/2026-10-06-question-first-reader-acceptance.md): desktop report/evidence/Agent review, truthful native diagnostics, offline and saved-record validation, and remaining research limits.
