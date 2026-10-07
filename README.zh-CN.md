@@ -4,7 +4,7 @@
 
 TradingAgents 是一个基于 LangGraph 的本地多智能体研究框架，源自 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)。本 fork 主要面向中国 A 股：收集合格证据，通过经营、事件、市场专项与独立挑战检验研究假设，并生成可复核的研究记录。Web 工作台是持续维护的产品入口，支持公司研究、催化研究与持仓复盘；CLI 分析保留为不再维护的旧代码。系统不生成订单或目标仓位，也不构成投资建议。
 
-3.0.0 统一 Web 新建流程并退休旧研究模式的新建入口。升级边界与主要变化见
+3.1.0 增加独立基础研究、基于保存证据的补充关注点回应、证据 Reader 与腾讯股票成交量单位修正。见 [3.1 发布说明](docs/reviews/2026-10-07-v3.1-release-notes.md)。3.0.0 的升级边界与入口迁移见
 [大版本发布说明](docs/reviews/2026-10-05-v3-release-notes.md)。
 
 ## Demo
