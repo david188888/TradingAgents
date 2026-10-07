@@ -17,6 +17,8 @@ This page is a map, not a second schema. Python and TypeScript definitions remai
 | Runtime compatibility and replay contracts | [`tradingagents/runtime/`](../../tradingagents/runtime/) | Runner, observer, checkpoint and resume paths |
 | Web request and response models | [`tradingagents/web/schemas.py`](../../tradingagents/web/schemas.py), [`reader_models.py`](../../tradingagents/web/reader_models.py), [`audit_models.py`](../../tradingagents/web/audit_models.py), [`batch_models.py`](../../tradingagents/web/batch_models.py) | FastAPI routes (including `/api/batches`), projections, API clients |
 | Reader and Companion projection | [`tradingagents/web/reader_models.py`](../../tradingagents/web/reader_models.py), [`reader_projection.py`](../../tradingagents/web/reader_projection.py) | `/api/runs/{run_id}/reader` and `/reader/companion` |
+| Native process and per-Agent output projection | [`reader_process_models.py`](../../tradingagents/web/reader_process_models.py), [`reader_process_projection.py`](../../tradingagents/web/reader_process_projection.py), [`native_reader_versions.py`](../../tradingagents/web/native_reader_versions.py) | `/api/runs/{run_id}/reader/process` and `/reader/agents/{role_key}`; captured sequence and frozen V1–V5 qualification |
+| Native SDK observation coverage | [`native_observation.py`](../../tradingagents/runtime/native_observation.py) | Native SDK adapter, process and Audit counts; independent of research/recovery identity |
 | Audit Center projection | [`tradingagents/web/audit_models.py`](../../tradingagents/web/audit_models.py), [`audit_projection.py`](../../tradingagents/web/audit_projection.py) | `/api/runs/{run_id}/audit` and `/audit/detail` |
 | Browser wire facade | [`frontend/src/api/contracts.ts`](../../frontend/src/api/contracts.ts) | React API client and state consumers |
 
@@ -28,6 +30,7 @@ The frontend facade mirrors the backend wire shape and documents intentional opa
 - Treat `ResearchCaseV2` and `ThesisDiffV1` as versioned public artifacts. Assembly must bind claims to current-run evidence and coverage; readers must not infer a new contract from Markdown reports.
 - Keep Reader responses discriminated by `kind`: `typed`, `legacy`, or `unavailable`. Legacy runs remain readable without being upgraded by inference.
 - Keep Companion and Audit Center bounded projections. They may expose safe summaries and metadata, but not prompts, raw provider payloads, locators, secrets, or internal debugging state.
+- Native process/Agent projections expose only qualified public proposals and relationships at the captured sequence. Missing, unpublished, corrupt and unsupported output stays explicit; opening a view never backfills research. SDK authorization counts carry complete/lower-bound/unrecorded coverage and are distinct from budget authorizations, network delivery and charges. Missing native turns/calls may be null; consumers must not coerce them to zero.
 - Runtime policy and resume/fingerprint semantics are selected as a coherent versioned family. Classic uses `horizon-policy-v2`; explicit catalyst/native profiles use their separate evidence policies. Test-gated horizon variants must not be described as production behavior.
 
 ## Change Propagation

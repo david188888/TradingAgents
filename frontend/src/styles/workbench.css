@@ -4937,3 +4937,8 @@ td.input-ref {
   color: var(--faint);
   font-size: 11px;
 }
+
+.layout.sidebar-collapsed {grid-template-columns:minmax(0,1fr);} .layout.sidebar-collapsed.with-inspector {grid-template-columns:minmax(0,1fr) 10px clamp(320px,var(--inspector-width),min(640px,45vw));}
+.layout.sidebar-collapsed >aside.sidebar {display:none;}
+
+.main:has(.question-reader) { overflow:visible; }

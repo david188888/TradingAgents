@@ -23,7 +23,7 @@ async function startRun(page: Page): Promise<void> {
   await page.getByLabel("分析日期").fill("2026-09-30");
   await page.getByRole("button", { name: "开始分析", exact: true }).click();
   await expect(page.locator(".native-research-page")).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator(".research-record")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".question-reader")).toBeVisible({ timeout: 20_000 });
 }
 
 test("history reopens the exact persisted completed record", async ({ page }) => {
@@ -54,7 +54,7 @@ test("cancel a running run transitions to cancelled", async ({ page }) => {
   );
   await page.getByRole("button", { name: "开始分析", exact: true }).click();
   const snapshot = await (await created).json();
-  const cancel = page.getByRole("button", { name: "取消", exact: true });
+  const cancel = page.getByRole("button", { name: "取消研究", exact: true });
   await expect(cancel).toBeVisible();
   await cancel.click();
   await expect(page.locator(`.history-item[data-run-id="${snapshot.run_id}"]`)).toContainText("已取消");

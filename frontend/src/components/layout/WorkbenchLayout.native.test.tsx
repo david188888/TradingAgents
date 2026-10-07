@@ -9,6 +9,7 @@ import { createInitialState } from "../../state/runReducer";
 import { useWorkbenchStore } from "../../state/WorkbenchStore";
 import { WorkbenchLayout } from "./WorkbenchLayout";
 
+vi.mock("../../hooks/useReaderProcess", () => ({ useReaderProcess: () => ({response:null,error:false,retry:vi.fn()}), useReaderAgent: () => ({response:null,error:false,retry:vi.fn()}) }));
 vi.mock("../../hooks/useRunHistory", () => ({ useRunHistory: vi.fn() }));
 vi.mock("../../hooks/useCatalyst", () => ({ useCatalyst: vi.fn() }));
 vi.mock("../../hooks/useResearchRecord", () => ({ useResearchRecord: vi.fn() }));
@@ -77,10 +78,10 @@ describe("evidence_v1 owns its single native Reader", () => {
   it("keeps missing publication unavailable instead of falling back to a case summary", () => {
     vi.mocked(useResearchRecord).mockReturnValue({ response: { state: "unavailable", schema_version: 1, run_id: RUN_ID, reason_code: "not_published" }, loading: false, error: false });
     render(<WorkbenchLayout />);
-    expect(screen.getByText("该运行未保存新版证据与计算记录。")).toBeVisible();
+    expect(screen.getByText("本次没有合格的已发布研究记录。")).toBeVisible();
     expect(screen.queryByTestId("legacy-reader")).toBeNull();
     expect(screen.queryByTestId("catalyst-reader")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "打开审计中心" }));
+    fireEvent.click(screen.getByRole("button", { name: "技术诊断与执行记录" }));
     expect(screen.getByTestId("native-audit")).toBeInTheDocument();
   });
 
@@ -88,24 +89,24 @@ describe("evidence_v1 owns its single native Reader", () => {
     const current = vi.mocked(useWorkbenchStore).mock.results.at(-1)?.value;
     vi.mocked(useWorkbenchStore).mockReturnValue({ ...current, stream: { state: null, status: "connecting", error: null } });
     render(<WorkbenchLayout />);
-    expect(screen.getByRole("region", { name: "研究简报" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "问题优先研究报告" })).toBeInTheDocument();
     expect(screen.queryByTestId("legacy-reader")).toBeNull();
   });
 
   it("routes from same-run snapshot identity on an older run-view projection", () => {
     install("completed", false);
     render(<WorkbenchLayout />);
-    expect(screen.getByRole("region", { name: "研究简报" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "问题优先研究报告" })).toBeInTheDocument();
   });
 
   it("shows generic native stages while running without final or classic role claims", () => {
     install("running");
     vi.mocked(useResearchRecord).mockReturnValue({ response: null, loading: false, error: false });
     render(<WorkbenchLayout />);
-    expect(screen.getByText("正在整理研究证据")).toBeVisible();
+    expect(screen.getByText("正在把证据整理成可核查的回答")).toBeVisible();
     expect(screen.getByText("证据冻结 · 已完成")).toBeVisible();
     expect(screen.queryByText("多方研究员")).toBeNull();
-    expect(screen.queryByRole("region", { name: "研究简报" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "问题优先研究报告" })).toBeNull();
     expect(vi.mocked(useResearchRecord).mock.calls.at(-1)?.[0]).toBeNull();
   });
 
@@ -113,6 +114,6 @@ describe("evidence_v1 owns its single native Reader", () => {
     vi.mocked(useResearchRecord).mockReturnValue({ response: stored, loading: false, error: false });
     render(<WorkbenchLayout />);
     expect(screen.getByText(/未包含原生研究判断/)).toBeVisible();
-    expect(screen.queryByRole("region", { name: "研究简报" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "问题优先研究报告" })).toBeNull();
   });
 });

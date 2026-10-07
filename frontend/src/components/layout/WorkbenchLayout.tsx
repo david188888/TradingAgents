@@ -62,6 +62,7 @@ export function WorkbenchLayout(): JSX.Element {
   const [selectedTurn, setSelectedTurn] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditContext, setAuditContext] = useState<AuditEntryContext | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [expandedStage, setExpandedStage] = useState<JourneyStageId | null>(null);
@@ -93,7 +94,7 @@ export function WorkbenchLayout(): JSX.Element {
    * mounting it costs nothing.
    */
   const catalyst = useCatalyst(isNative ? null : run_id, JSON.stringify([state?.meta.catalyst_stages, state?.meta.status]));
-  const recordRunId = selectedViewRun?.status === "completed" || (isNative && selectedState?.meta.status === "completed") ? run_id : null;
+  const recordRunId = selectedViewRun?.status === "completed" || (isNative && ["completed", "failed", "cancelled", "interrupted"].includes(selectedViewRun?.status ?? selectedState?.meta.status ?? "")) ? run_id : null;
   const researchRecord = useResearchRecord(recordRunId);
 
   /**
@@ -336,6 +337,7 @@ export function WorkbenchLayout(): JSX.Element {
           TradingAgents <span className="brand-sub">Research Console</span>
         </div>
         <div className="top-meta">
+          <button type="button" className="audit-toggle" onClick={() => setSidebarCollapsed(v=>!v)} aria-expanded={!sidebarCollapsed}>{sidebarCollapsed ? "展开研究配置" : "收起研究配置"}</button>
           <span className="local-pill">● localhost</span>
           <span>仅用于研究，不构成投资建议</span>
           {run_id !== null && state && !view.view?.terminal ? (
@@ -347,11 +349,11 @@ export function WorkbenchLayout(): JSX.Element {
       </header>
 
       <div
-        className={`layout${inspectorOpen ? " with-inspector" : ""}`}
+        className={`layout${inspectorOpen ? " with-inspector" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
         ref={layoutRef}
         aria-hidden={auditOpen ? true : undefined}
       >
-        <aside className="sidebar">
+        <aside className="sidebar" hidden={sidebarCollapsed}>
           <Controls refreshHistory={history.refresh} />
           <RunHistory
             runs={history.runs}
@@ -371,6 +373,8 @@ export function WorkbenchLayout(): JSX.Element {
             </section>
           ) : isNative ? (
             <NativeResearchPage
+              key={run_id}
+              streamStatus={stream.status}
               runId={run_id}
               ticker={selectedViewRun?.ticker ?? selectedState?.meta.ticker ?? ""}
               status={selectedViewRun?.status ?? selectedState?.meta.status ?? "created"}

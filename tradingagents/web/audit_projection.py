@@ -11,7 +11,8 @@ from urllib.parse import quote
 
 from tradingagents.observability.events import PersistedEvent
 from tradingagents.observability.redaction import redact_recursive
-from tradingagents.observability.roles import ROLE_REGISTRY
+from tradingagents.observability.roles import roles_for_profile
+from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.run_models import RunSnapshot
 from tradingagents.runtime.store import RunStore
 
@@ -32,6 +33,14 @@ from .audit_models import (
     AuditToolSummary,
 )
 from .projections import build_workflow
+from .reader_process_projection import native_counts
+
+
+def _audit_checkpoint(store, run_id, sequence):
+    try:
+        return load_checkpoint(store, run_id, through=sequence)
+    except Exception:
+        return None
 
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
 INLINE_LIMIT_BYTES = 256 * 1024
@@ -134,8 +143,9 @@ def _input_index(
     return captured
 
 
-def _role_summaries(events: list[PersistedEvent]) -> tuple[AuditRoleSummary, ...]:
-    statuses: dict[str, str] = {role.actor_id: "not_reached" for role in ROLE_REGISTRY}
+def _role_summaries(events: list[PersistedEvent], *, profile="classic", checkpoint=None) -> tuple[AuditRoleSummary, ...]:
+    registry = roles_for_profile(profile)
+    statuses: dict[str, str] = {role.actor_id: "not_reached" for role in registry}
     turn_ids: dict[str, set[str]] = defaultdict(set)
     model_ids: dict[str, set[str]] = defaultdict(set)
     durations: Counter[str] = Counter()
@@ -166,11 +176,12 @@ def _role_summaries(events: list[PersistedEvent]) -> tuple[AuditRoleSummary, ...
             actor_id=role.actor_id,
             label=role.display_name,
             status=statuses[role.actor_id],
-            turn_count=len(turn_ids[role.actor_id]),
-            model_call_count=len(model_ids[role.actor_id]),
+            turn_count=len(turn_ids[role.actor_id]) if profile == "classic" else None,
+            model_call_count=native_counts(checkpoint, role=role.node_id).sdk_total.value if profile == "evidence_v1" else len(model_ids[role.actor_id]) if profile == "classic" else None,
+            model_observation=native_counts(checkpoint, role=role.node_id).sdk_total if profile == "evidence_v1" else None,
             duration_ms=durations[role.actor_id] if role.actor_id in has_duration else None,
         )
-        for role in ROLE_REGISTRY
+        for role in registry
     )
 
 
@@ -319,8 +330,14 @@ def _stage_navigation(
     roles: tuple[AuditRoleSummary, ...],
     *,
     legacy: bool,
+    profile: str = "classic",
 ) -> tuple[AuditStageSummary, ...]:
     role_index = {item.item_id: item for item in roles}
+    if profile != "classic":
+        return tuple(AuditStageSummary(stage_id=r.actor_id, label=r.label,
+            status=r.status if r.status in {"running", "completed", "failed", "cancelled", "interrupted", "skipped"} else "not_started",
+            availability="not_recorded" if r.status == "not_reached" else "ready",
+            related_selections=(AuditSelection(kind="role", id=r.actor_id),)) for r in roles)
     if legacy:
         return tuple(
             AuditStageSummary(
@@ -376,18 +393,20 @@ def _data_quality(snapshot: RunSnapshot) -> str:
 def _build_summary(
     snapshot: RunSnapshot,
     events: list[PersistedEvent],
+    checkpoint=None,
 ) -> AuditSummaryDTO:
     artifacts = _artifact_index(events)
     prompt_index = _input_index(events, artifacts, "input.prompt_snapshot")
     config_index = _input_index(events, artifacts, "input.config_snapshot")
-    roles = _role_summaries(events)
+    profile = (snapshot.metadata or {}).get("research_profile", "classic")
+    roles = _role_summaries(events, profile=profile, checkpoint=checkpoint)
     capabilities = _capability_summaries(snapshot, events)
     tools = _tool_summaries(events)
     artifact_summaries = _artifact_summaries(artifacts)
     prompts = _prompt_config_summaries(prompt_index, artifacts, label="Prompt snapshot")
     configs = _prompt_config_summaries(config_index, artifacts, label="Effective config")
     legacy = snapshot.mode is None or snapshot.horizon is None
-    stages = _stage_navigation(events, roles, legacy=legacy)
+    stages = _stage_navigation(events, roles, legacy=legacy, profile=profile)
     report_count = sum(item.is_report for item in artifact_summaries)
     turn_count = len(
         {
@@ -445,8 +464,9 @@ def _build_summary(
         counts=AuditCounts(
             stages=len(stages),
             roles=len(roles),
-            turns=turn_count,
-            model_calls=model_count,
+            turns=turn_count if profile == "classic" else None,
+            model_calls=native_counts(checkpoint).sdk_total.value if profile == "evidence_v1" else model_count if profile == "classic" else None,
+            native_counts=native_counts(checkpoint) if profile == "evidence_v1" else None,
             tool_calls=len(tools),
             artifacts=len(artifact_summaries),
             prompts=len(prompts),
@@ -474,7 +494,7 @@ def _terminal_snapshot(store: RunStore, run_id: str) -> RunSnapshot:
 def project_audit_summary(store: RunStore, run_id: str) -> dict[str, Any]:
     snapshot = _terminal_snapshot(store, run_id)
     try:
-        summary = _build_summary(snapshot, store.read_events(run_id))
+        summary = _build_summary(snapshot, store.read_events(run_id, through=snapshot.latest_sequence), _audit_checkpoint(store, run_id, snapshot.latest_sequence))
     except Exception:  # noqa: BLE001 - the public envelope hides storage details
         summary = _unavailable_summary(snapshot)
     return summary.model_dump(mode="json")
@@ -518,8 +538,8 @@ def _unavailable_summary(snapshot: RunSnapshot) -> AuditSummaryDTO:
         counts=AuditCounts(
             stages=0,
             roles=0,
-            turns=0,
-            model_calls=0,
+            turns=None,
+            model_calls=None,
             tool_calls=0,
             artifacts=0,
             prompts=0,
@@ -817,7 +837,7 @@ def project_audit_detail(
     if snapshot.latest_sequence != source_sequence:
         raise AuditSummaryStale(run_id)
     events = store.read_events(run_id, through=source_sequence)
-    summary = _build_summary(snapshot, events)
+    summary = _build_summary(snapshot, events, _audit_checkpoint(store, run_id, snapshot.latest_sequence))
     if not _selection_exists(summary, selection):
         raise AuditItemNotFound(selection.id)
     artifacts = _artifact_index(events)
@@ -850,7 +870,8 @@ def project_audit_detail(
                 _facts(
                     状态=role.status,
                     轮次=role.turn_count,
-                    模型调用=role.model_call_count,
+                    模型发出授权=role.model_call_count,
+                    记录口径=role.model_observation.completeness if role.model_observation else "event_journal",
                     耗时毫秒=role.duration_ms,
                 ),
             )

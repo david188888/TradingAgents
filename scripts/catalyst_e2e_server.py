@@ -94,6 +94,18 @@ class NativeFixtureCaller:
 
     def __call__(self, stage, context):
         time.sleep(.25)
+        if stage == "operating_quality":
+            # One admitted, bound hypothesis makes Agent-to-fact navigation testable.
+            # Other specialists retain legal zero proposals; no real model is invoked.
+            return {"hypotheses": [{
+                "statement": "固定测试假设：经营改善仍需验证。",
+                "supporting_fact_ids": [context["facts"][0]["claim_id"]],
+                "conditions": [
+                    {"condition_role": "necessary", "text": "需要同口径的持续经营数据。"},
+                    {"condition_role": "invalidation", "text": "后续同口径数据不能支持改善。"},
+                ],
+                "alternative_explanation": "测试替代解释：期间差异。",
+            }]}
         if stage == "synthesis":
             dimensions = []
             for dimension, (ceiling, reason) in context["dimension_policy"].items():

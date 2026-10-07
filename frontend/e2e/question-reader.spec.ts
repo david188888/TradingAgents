@@ -1,0 +1,40 @@
+/** Desktop-only acceptance: saved output review, context return and count semantics. */
+import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+
+test("desktop question, evidence, agent review and diagnostic truth",async({page})=>{
+ await page.setViewportSize({width:1512,height:900});
+ await page.goto("/");await page.getByLabel("股票代码").fill("600803");await page.getByLabel("分析日期").fill("2026-09-30");
+ await page.getByLabel("研究问题（可选）").fill("需要核对哪些经营事实？");
+ await page.getByRole("button",{name:"开始分析",exact:true}).click();
+ const reader=page.locator(".question-reader");await expect(reader).toBeVisible({timeout:20000});
+ await expect(reader.getByRole("heading",{name:"需要核对哪些经营事实？"})).toBeVisible();
+ await page.getByRole("button",{name:"收起研究配置",exact:true}).click();await expect(page.locator("aside.sidebar")).toBeHidden();
+ await expect(page.getByRole("complementary",{name:"相关依据",exact:true})).toBeVisible();
+ const entry=reader.getByRole("button",{name:"来自研究综合 · 回顾产物 →"}).first();await entry.click();
+ await expect(reader.getByRole("heading",{name:"原回答",exact:true})).toBeVisible();
+ await expect(reader.getByRole("heading",{name:"完整下一步",exact:true})).toBeVisible();
+ await reader.getByRole("button",{name:"市场研究",exact:true}).click();await expect(reader.getByRole("status")).toContainText("没有本专项的合格输入事实，本环节未调用");
+ await reader.getByRole("button",{name:"独立挑战",exact:true}).click();await expect(reader.getByText("保存的是合法的零挑战提议；不代表不存在风险。")).toBeVisible();
+ await reader.getByRole("button",{name:"← 返回刚才的阅读位置",exact:true}).click();await expect(entry).toBeFocused();
+ await reader.getByRole("button",{name:"研究过程",exact:true}).click();await expect(reader.locator(".qr-process-step")).toHaveCount(7);
+ await reader.getByText("调用记录与统计口径",{exact:true}).click();await expect(reader.getByText(/SDK 主发出授权：未记录/)).toBeVisible();
+ await reader.getByRole("button",{name:"研究报告",exact:true}).click();
+ const modalEntry=reader.locator(".qr-evidence-entry");await modalEntry.click();const dialog=page.getByRole("dialog",{name:"依据与概念解释",exact:true});await expect(dialog).toBeVisible();
+ await expect(page.locator("#root")).toHaveAttribute("inert","");
+ expect((await new AxeBuilder({page}).include('.qr-evidence-dialog').analyze()).violations).toEqual([]);
+ await page.keyboard.press("Escape");await expect(dialog).toHaveCount(0);await expect(modalEntry).toBeFocused();
+ await page.setViewportSize({width:1280,height:650});await page.getByRole("button",{name:"展开研究配置",exact:true}).click();
+ await expect(page.getByRole("complementary",{name:"相关依据",exact:true})).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ await reader.getByRole("button",{name:"Agent 产物",exact:true}).click();
+ await reader.getByRole("button",{name:"经营研究",exact:true}).click();
+ await expect(reader.getByRole("heading",{name:"固定测试假设：经营改善仍需验证。",exact:true})).toBeVisible();
+ const checkSource=reader.locator('.qr-fact-link').first();await checkSource.click();
+ await expect(dialog).toBeVisible();await page.keyboard.press("Escape");await expect(checkSource).toBeFocused();
+ await reader.getByRole("button",{name:"证据目录",exact:true}).click();
+ await reader.locator('.qr-catalog-card').filter({has:page.getByRole("heading",{name:"tushare.financial_statements",exact:true})}).first().getByRole("button").click();
+ await expect(dialog.getByRole("heading",{name:"此来源中的保存事实",exact:true})).toBeVisible();
+ await page.keyboard.press("Escape");await reader.getByRole("button",{name:"研究报告",exact:true}).click();
+ await page.screenshot({path:test.info().outputPath('question-reader-desktop-short.png')});
+});

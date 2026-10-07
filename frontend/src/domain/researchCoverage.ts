@@ -6,6 +6,7 @@ const CAPABILITIES: Record<string, string> = {
 const ROLES: Record<string, string> = { operating_quality: "经营专项", event_context: "事件专项", market_context: "市场专项" };
 const STATUSES: Record<string, string> = { qualified: "合格资料可用", partial: "部分资料可用", unavailable: "未取得合格资料", coverage_unknown: "覆盖未确定", covered_no_match: "查询完成且无命中", not_applicable: "本次不适用" };
 const REASONS: Record<string, string> = {
+  source_fields_are_not_full_document_text: "这些是已保存的数据字段，不是公告全文。",
   selected_disclosure_coverage_not_complete_business_verification: "已核对选取披露；仍需判断经营兑现和披露覆盖限制",
   single_disclosure_family_no_supplier_crosscheck: "当前依据来自同一公司披露，尚无供应商同口径核对",
   reported_accounting_bridge_not_economic_causation: "现金流桥解释报表调整，不证明经济原因",

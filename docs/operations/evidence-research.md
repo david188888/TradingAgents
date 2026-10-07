@@ -274,10 +274,37 @@ record, without a second summary model.
 `GET /api/runs/{id}/reader/record` reads the committed `research-record-v1`.
 Native records require their assessment and no paired legacy case. The
 workbench routes an explicitly native run to this record as its single main
-Reader. It shows the judgement, up to three key claims, primary risk and next
-check first; historical quantitative context remains on the main surface.
-Supporting facts and saved original content are available on demand. Missing
-publication stays unavailable rather than showing a legacy summary.
+Reader. The desktop first screen answers the original question, then shows key
+claims, primary doubt and suggested next check, executed evidence checks,
+valuation and historical quantitative context. Click “核对依据” to read bound
+facts and saved content in the side panel; a narrow desktop container uses a
+drawer. The panel can follow the report or stay pinned, and includes fixed term
+explanations. Source fields remain labelled as fields when full document text is
+unavailable. Missing publication stays unavailable rather than showing a legacy
+summary.
+
+Use “研究过程” to understand each step's purpose, state and output availability.
+“Agent 产物” reviews all validated saved specialist hypotheses, conditions,
+alternative explanations and scoped unknowns; all challenge proposals; and the
+full synthesis proposal. Contribution links jump to the relevant saved entity,
+show its final-record treatment and allow return to the previous reading
+position. Code evidence/check/publication work is labelled separately.
+“完整记录” retains dimensions, all facts/sources/hypotheses/challenges and actual
+verification results, including material omitted from the first screen.
+
+`GET /api/runs/{id}/reader/process` captures a saved sequence; the fixed-role
+`GET /api/runs/{id}/reader/agents/{role_key}?source_sequence=...` reads that boundary.
+V1–V5 outputs require version-specific identity and qualification checks.
+Unknown versions, missing/corrupt bindings and unpublished proposals have explicit
+states, never inferred authorship or backfilled output.
+
+The terminal “技术诊断与执行记录” entry is for execution troubleshooting, not
+reading the report. Native roles come from the native registry. Main/repair
+budget authorizations and SDK dispatch authorizations are separate; SDK counts
+are exact only with complete observation coverage. Old records can show a known
+lower bound or “未记录”, and resumed old runs cannot certify prior calls. Data
+capability/HTTP and artifact/checkpoint counts have their own units. None of these
+counts proves network delivery, provider success or charges.
 
 `ready` means readable, and `completed` means the execution/publication path
 finished. Neither establishes complete research or predictive accuracy. Inspect

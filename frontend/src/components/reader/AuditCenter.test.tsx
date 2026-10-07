@@ -147,7 +147,7 @@ describe("AuditCenter", () => {
         onClose={close}
       />,
     );
-    const role = screen.getByRole("button", { name: /Fundamentals Analyst/ });
+    const role = screen.getByRole("button", { name: /基本面分析师/ });
     expect(role).toHaveAttribute("data-highlighted", "true");
     expect(mockedDetail).toHaveBeenLastCalledWith(summary.run_id, summary.source_sequence, null, refresh);
 
@@ -172,7 +172,7 @@ describe("AuditCenter", () => {
     render(
       <AuditCenter runId={summary.run_id} open context={{ section: "roles" }} returnFocus={null} onClose={vi.fn()} />,
     );
-    const role = screen.getByRole("button", { name: /Fundamentals Analyst/ });
+    const role = screen.getByRole("button", { name: /基本面分析师/ });
     fireEvent.click(role);
     const overlay = screen.getByRole("dialog", { name: "审计详情" });
     expect(overlay).toHaveAttribute("aria-modal", "true");
@@ -198,5 +198,20 @@ describe("AuditCenter", () => {
     expect(screen.queryByText("private backend failure")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "重新读取审计摘要" }));
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps native authorization lower bounds and missing counts distinct from zero", () => {
+    const complete = (value: number) => ({ value, completeness: "complete" as const, basis: "budget_dispatch_authorization" });
+    const missing = { value: null, completeness: "not_recorded" as const, basis: "sdk_dispatch_authorization" };
+    const lower = { value: 5, completeness: "known_lower_bound" as const, basis: "sdk_dispatch_authorization" };
+    mockedSummary.mockReturnValue({ summary: { ...summary, counts: { ...summary.counts, turns: null, model_calls: 5, native_counts: {
+      main_budget: complete(5), repair_budget: complete(0), sdk_main: lower, sdk_repair: missing, sdk_total: lower,
+      data_capability: complete(17), data_http: complete(35),
+    }}}, loading: false, refreshing: false, error: null, refresh });
+    render(<AuditCenter runId={summary.run_id} open context={null} returnFocus={null} onClose={vi.fn()} />);
+    expect(screen.getByText(/结构化修复预算授权：0/)).toBeInTheDocument();
+    expect(screen.getByText(/SDK 主发出授权：至少 5.*修复：未记录/)).toBeInTheDocument();
+    expect(screen.getByText(/SDK 合计：至少 5/)).toBeInTheDocument();
+    expect(screen.getByText("未记录")).toBeInTheDocument();
   });
 });

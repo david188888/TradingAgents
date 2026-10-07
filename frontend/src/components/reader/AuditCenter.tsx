@@ -1,3 +1,5 @@
+import { ROLE_LABELS_ZH } from "../../domain/roles";
+import { countLabel } from "../../domain/readerExplanation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AuditArtifactSummaryDTO,
@@ -211,6 +213,7 @@ export function AuditCenter({
             <div>
               <span className="eyebrow">Audit Center · Terminal record</span>
               <h2 id="audit-center-title">审计中心</h2>
+              <p className="qr-meta">技术诊断与执行记录：用于排查运行和记录问题。回顾研究内容请使用报告里的“Agent 产物”。</p>
             </div>
           </div>
           <div className="audit-center-runline">
@@ -359,6 +362,7 @@ function AuditSection({
           <Count label="工具" value={summary.counts.tool_calls} />
           <Count label="产物" value={summary.counts.artifacts} />
         </div>
+        {summary.counts.native_counts ? <section className="audit-stage-ledger"><h4>原生调用的记录口径</h4><p>主分析预算授权：{countLabel(summary.counts.native_counts.main_budget)}；结构化修复预算授权：{countLabel(summary.counts.native_counts.repair_budget)}</p><p>SDK 主发出授权：{countLabel(summary.counts.native_counts.sdk_main)}；修复：{countLabel(summary.counts.native_counts.sdk_repair)}</p><p>SDK 合计：{countLabel(summary.counts.native_counts.sdk_total)}。授权不证明供应商接收、成功或计费。</p><p>数据能力：{countLabel(summary.counts.native_counts.data_capability)}；HTTP 尝试：{countLabel(summary.counts.native_counts.data_http)}</p><p>产物数量包括过程保存文件，不等于研究成果数量。</p></section> : null}
         <section className="audit-stage-ledger">
           <h4>阶段导航</h4>
           {summary.stage_navigation.map((stage, index) => (
@@ -379,8 +383,8 @@ function AuditSection({
     return <AuditList empty="没有记录角色执行事实。">{summary.roles.map((item) => (
       <AuditItemButton
         key={item.item_id}
-        title={item.label}
-        meta={`${statusLabel(item.status)} · ${item.turn_count} 轮 · ${item.model_call_count} 次模型调用`}
+        title={ROLE_LABELS_ZH[item.actor_id] ?? item.label}
+        meta={`${statusLabel(item.status)} · ${item.turn_count === null ? "轮次未记录" : `${item.turn_count} 轮`} · ${item.model_observation ? `SDK 发出授权 ${countLabel(item.model_observation)}` : item.model_call_count === null ? "模型调用未记录" : `${item.model_call_count} 次模型调用`}`}
         highlighted={context?.itemId === item.item_id}
         onClick={(event) => onSelect({ kind: "role", id: item.item_id }, event.currentTarget)}
       />
@@ -441,8 +445,8 @@ function AuditSection({
   );
 }
 
-function Count({ label, value }: { label: string; value: number }): JSX.Element {
-  return <div><strong>{value}</strong><span>{label}</span></div>;
+function Count({ label, value }: { label: string; value: number | null }): JSX.Element {
+  return <div><strong>{value ?? "未记录"}</strong><span>{label}</span></div>;
 }
 
 function AuditList({ children, empty }: { children: React.ReactNode; empty: string }): JSX.Element {

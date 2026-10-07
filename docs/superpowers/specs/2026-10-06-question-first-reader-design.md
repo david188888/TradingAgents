@@ -1,8 +1,10 @@
 # 问题优先的双栏 Reader 与研究贡献说明
 
-Status: Proposed
+Status: Frozen Design — 已确认并于 2026-10-07 完成桌面实施；保留以核对批准的范围与 B4 视觉方向。
 
 Do not use this document as evidence of current implementation behavior.
+
+当前行为见 [Reader 架构](../../architecture/research-reader.md)、[研究操作](../../operations/evidence-research.md)及[实施核对](../../reviews/2026-10-06-question-first-reader-acceptance.md)。本文是设计依据，不再作为待实施提案。
 
 用户已于 2026-10-06 确认 [B2 阅读草图](../prototypes/2026-10-06-question-first-reader-b-v2.html)，并要求继续、简明解释各区域来自哪些 agent 或代码环节。本规格将已确认的视觉方向转为工程边界；当前生产行为仍以代码、ARCHITECTURE.md 和 operations 文档为准。
 

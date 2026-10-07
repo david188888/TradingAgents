@@ -42,6 +42,8 @@ from tradingagents.research.native_evidence_policy import (
     is_native_stock_ticker,
 )
 from tradingagents.runtime.run_models import generate_run_id
+from tradingagents.web.reader_process_models import AgentKey
+from tradingagents.web.reader_process_projection import project_reader_agent, project_reader_process
 from tradingagents.web.research_record_projection import project_research_record
 
 from .audit_models import AuditSelection
@@ -558,6 +560,17 @@ def create_app(
                 "research_package_unavailable",
                 "The public research package is not available for this run.",
             ) from exc
+
+    @app.get("/api/runs/{run_id}/reader/process")
+    def get_reader_process(run_id: str) -> dict[str, Any]:
+        return project_reader_process(selected_store, run_id)
+
+    @app.get("/api/runs/{run_id}/reader/agents/{role_key}")
+    def get_reader_agent(run_id: str, role_key: AgentKey, source_sequence: int | None = Query(default=None, ge=0)) -> dict[str, Any]:
+        try:
+            return project_reader_agent(selected_store, run_id, role_key, through=source_sequence)
+        except ValueError:
+            raise ApiBoundaryError(409, "reader_sequence_unavailable", "Requested Reader boundary is unavailable") from None
 
     @app.get("/api/runs/{run_id}/reader/record")
     def get_reader_record(run_id: str) -> dict[str, Any]:

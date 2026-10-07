@@ -89,6 +89,9 @@ class NativeModelCaller:
         task_effort_overrides(self.config)
         self.run_id, self.ledger = run_id, ledger
         self.cancelled, self.deadline = cancelled, deadline
+        from tradingagents.runtime.native_observation import establish_sdk_observation
+
+        establish_sdk_observation(ledger)
         self.schemas = dict(STAGE_SCHEMAS)
         self.instructions = dict(STAGE_INSTRUCTIONS)
         if ledger.journal.state.get("identity", {}).get("workflow_version") == "evidence-production-v5":
