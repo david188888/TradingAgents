@@ -66,7 +66,7 @@ export function useConfig() {
   const commonError = error ? "无法读取服务配置" : config === null ? "正在读取服务配置"
     : support?.supported !== true ? support?.reason ?? "此服务不支持新建证据研究"
     : !analysis_date || analysis_date > todayIso() ? "请选择有效的分析日期"
-    : Array.from(research_question.trim()).length > 400 ? "研究问题最多 400 个字符"
+    : Array.from(research_question.trim()).length > 400 ? "补充关注点最多 400 个字符"
     : !selectedProvider ? "请选择 LLM Provider"
     : selectedProvider.requires_api_key && configured_keys[llm_provider] !== true ? "所选 Provider 未配置 API Key"
     : !quick_think_llm || !deep_think_llm || quick_think_llm === "custom" || deep_think_llm === "custom" ? "请选择研究模型；自定义模型需填写实际 ID" : null;

@@ -5,10 +5,14 @@ import AxeBuilder from "@axe-core/playwright";
 test("desktop question, evidence, agent review and diagnostic truth",async({page})=>{
  await page.setViewportSize({width:1512,height:900});
  await page.goto("/");await page.getByLabel("股票代码").fill("600803");await page.getByLabel("分析日期").fill("2026-09-30");
- await page.getByLabel("研究问题（可选）").fill("需要核对哪些经营事实？");
+ await page.getByLabel("补充关注点（可选）").fill("需要核对哪些经营事实？");
  await page.getByRole("button",{name:"开始分析",exact:true}).click();
  const reader=page.locator(".question-reader");await expect(reader).toBeVisible({timeout:20000});
  await expect(reader.getByRole("heading",{name:"需要核对哪些经营事实？"})).toBeVisible();
+ await expect(reader.getByRole("heading",{name:"综合判断",exact:true})).toBeVisible();
+ const supplemental=reader.getByRole("region",{name:"补充关注点回应",exact:true});
+ await expect(supplemental.getByText("固定测试补充回应：已有经营数据不能证明 AI 业务关系。",{exact:true})).toBeVisible();
+ expect(await reader.evaluate(el=>{const sections=el.querySelectorAll('.qr-report-section');return sections[sections.length-1].id;})).toBe("qr-focus");
  await page.getByRole("button",{name:"收起研究配置",exact:true}).click();await expect(page.locator("aside.sidebar")).toBeHidden();
  await expect(page.getByRole("complementary",{name:"相关依据",exact:true})).toBeVisible();
  const entry=reader.getByRole("button",{name:"来自研究综合 · 回顾产物 →"}).first();await entry.click();
@@ -17,7 +21,8 @@ test("desktop question, evidence, agent review and diagnostic truth",async({page
  await reader.getByRole("button",{name:"市场研究",exact:true}).click();await expect(reader.getByRole("status")).toContainText("没有本专项的合格输入事实，本环节未调用");
  await reader.getByRole("button",{name:"独立挑战",exact:true}).click();await expect(reader.getByText("保存的是合法的零挑战提议；不代表不存在风险。")).toBeVisible();
  await reader.getByRole("button",{name:"← 返回刚才的阅读位置",exact:true}).click();await expect(entry).toBeFocused();
- await reader.getByRole("button",{name:"研究过程",exact:true}).click();await expect(reader.locator(".qr-process-step")).toHaveCount(7);
+ await reader.getByRole("button",{name:"研究过程",exact:true}).click();await expect(reader.locator(".qr-process-step")).toHaveCount(8);
+ await expect(reader.getByText("关注点回应",{exact:false})).toBeVisible();
  await reader.getByText("调用记录与统计口径",{exact:true}).click();await expect(reader.getByText(/SDK 主发出授权：未记录/)).toBeVisible();
  await reader.getByRole("button",{name:"研究报告",exact:true}).click();
  const modalEntry=reader.locator(".qr-evidence-entry");await modalEntry.click();const dialog=page.getByRole("dialog",{name:"依据与概念解释",exact:true});await expect(dialog).toBeVisible();

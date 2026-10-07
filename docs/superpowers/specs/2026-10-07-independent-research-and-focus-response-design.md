@@ -1,10 +1,10 @@
 # 独立基础研究与后置关注点回应
 
-Status: Proposed
+Status: Frozen Design
 
 Do not use this document as evidence of current implementation behavior.
 
-2026-10-07 用户确认方案 A：先完成并保存独立分析、挑战与综合，再单独回应用户关注点。本规格细化这一已确认方向；规格审查与用户书面规格确认完成后进入实施计划。当前行为以 [文档索引](../../README.md)、[Web 研究操作](../../operations/evidence-research.md)和[研究记录契约](../../contracts/research-record.md)为准。
+2026-10-07 用户确认方案 A：先完成并保存独立分析、挑战与综合，再单独回应用户关注点。本规格细化这一已确认方向；规格审查与用户书面确认已完成，实施与验证另见同日计划和验收记录。当前行为以 [文档索引](../../README.md)、[Web 研究操作](../../operations/evidence-research.md)和[研究记录契约](../../contracts/research-record.md)为准。
 
 ## 1. 问题、目标与范围
 

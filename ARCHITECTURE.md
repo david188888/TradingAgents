@@ -33,19 +33,19 @@ Optional DeepSeek effort overrides are keyed by actual call task in
 `llm_clients/task_effort.py`. Native/catalyst executors freeze configuration
 before source collection; classic roles with explicit overrides use separate
 clients, while news helpers bind immutable invocation settings. Task policies
-participate in saved effective configuration and resume identity. No additional
-model phases or default effort changes are introduced; see
+participate in saved effective configuration and resume identity. Effort overrides
+do not add model phases or change default effort; see
 [reasoning configuration](docs/operations/llm-reasoning.md).
 
 New Web single and batch requests default to `evidence_v1` and route to
 `execution/native_runner.py:NativeRunner`. The React creation form offers company,
-catalyst (84 calendar days), and holding scopes with a saved optional question.
+catalyst (84 calendar days), and holding scopes with a saved optional supplementary focus.
 Roles and challenge count are code-owned. Old-profile creation and retry return
 410; legacy read/resume stays available. `TRADINGAGENTS_EVIDENCE_ENABLED=false`
 disables fresh native work without disabling reads or existing recovery.
 
 The `evidence-policy-v1` fixes source windows separately from outlook and runtime
-horizon policy. New workflow `evidence-production-v5` uses
+horizon policy. New workflow `evidence-production-v6` retains V5 collection through
 `dataflows/minimum_sources.py:MinimumEvidenceSources`, an isolated extension of
 the native collector. `disclosure_documents_v2.py` admits bounded official
 reports/summary/operating notices and explicit numeric rows; supplementary
@@ -54,8 +54,12 @@ valuation parses dated institution EPS and same-session industry candidates.
 The critic selects optional check/risk/date bindings; the host owns assessment
 v2 outcomes and keeps economic parent questions unresolved. Saved record
 validation recomputes checks and challenge outcomes, so Reader/exports cannot
-relabel a successful data check as resolved economics. No model stage or budget
-ceiling is added.
+relabel a successful data check as resolved economics. V5 introduced these
+checks without an extra model stage. V6 freezes the independent baseline first,
+then optionally answers the user focus once through `execution/native_focus.py`.
+The collector and core kernel never receive that focus. `research/native_versions.py`
+owns the V6 mode objectives, kernel identity and frozen focus-budget policy; old
+V1–V5 prompt, role and budget semantics remain versioned.
 
 Workflow `evidence-production-v4` uses `dataflows/native_valuation.py:ValuationSources`,
 which extends the v3 bounded disclosures collector with qualified valuation
@@ -172,25 +176,36 @@ the kernel's MAIN result without another model call.
 Native publication requires an assessed `research-record-v1` and its durable
 authorization barrier; failure cannot complete the run or fall back to a case.
 Markdown and the single native Reader consume that same record. The desktop
-Reader starts with the research question and answer, then key claims, primary
+V6 Reader starts with the independent scope and judgement, then key claims, primary
 challenge and proposed next check, executed checks, valuation and quantitative
 context. Linked facts, source content and fixed concept explanations appear in
 a side panel or narrow-container drawer. Evidence, process, Agent outputs and
-the complete record are explicit navigation destinations.
+the complete record are explicit navigation destinations. The optional response
+appears last; historical reports keep their original question-led presentation.
+`research-focus-response-v1` is a separate closed artifact bound to the frozen
+baseline digest. `execution/native_focus_publication.py` commits it only after
+the mandatory record, using the same lifecycle authorization. Durable publication
+dispositions make local optional failure stable across report generation and
+recovery. Cancellation or global persistence corruption still fails the run.
 
 `web/reader_process_models.py` owns the additive process and per-role DTOs.
 `web/reader_process_projection.py` captures an event-sequence boundary, validates
 the native workflow/input/output/seed identities and maps proposals to their
 published IDs. `web/native_reader_versions.py` freezes read qualification for
-the supported saved V1–V5 workflows; unknown versions or failed bindings degrade
+the supported saved V1–V6 workflows; unknown versions or failed bindings degrade
 without exposing unqualified proposals. The process endpoint reads summary
 metadata; the selected-role endpoint returns only closed research schema fields,
 never prompts, adapter responses or checkpoint envelopes. Both are read-only.
 `runtime/native_observation.py` records SDK observation coverage before MAIN
 authorization for new SDK-adapter runs. Reader and Audit separately report
-budget, SDK main/repair, data-capability and HTTP authorizations; legacy incomplete
+budget, SDK main/focus/repair, data-capability and HTTP authorizations; legacy incomplete
 coverage is nullable or a lower bound. This marker does not change recovery
-identity, prompts, role selection or the research record.
+identity, prompts, role selection or the research record. The separate
+`/reader/focus` projection validates committed supplemental bytes and their
+checkpoint barrier at the selected sequence; it never serves a saved candidate.
+V6 focus has one dedicated model bucket within the unchanged twelve total
+attempts. It has no repair, retry or tool access and uses remaining active time;
+optional timeout allows publication of the already-completed baseline.
 
 Completion, readability, completeness and quality remain separate. Missing
 valuation or original-thesis inputs constrain their own dimensions, and a

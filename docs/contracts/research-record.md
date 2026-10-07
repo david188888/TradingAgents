@@ -139,7 +139,7 @@ records remain missing. Reading, expanding and refreshing never backfill,
 dispatch models or query providers.
 
 The evidence_v1 workbench uses the native record as its single main Reader. Its
-desktop report answers the research question before key grounds, principal doubt
+V6 desktop report presents mode scope and independent judgement before key grounds, principal doubt
 and next check, executed checks, valuation and quantitative context. Linked facts
 and saved source content appear in the evidence panel or narrow-desktop drawer.
 Process, per-Agent proposals and the complete record remain separate read views;
@@ -211,3 +211,33 @@ Reader and Markdown use this same validated record. Reading performs no external
 retrieval or model generation. The standalone 600803 HTML acceptance preview is
 an artifact produced from that record, not a new runtime HTML-export endpoint.
 V1–V4 recovery never acquires V5 source views, prompts, checks or outcomes.
+
+
+## Native v6 supplementary focus contract
+
+The baseline remains `ResearchRecordV1` / `research-record-v1`, without supplemental
+fields. For V6, `assessment.research_question` contains the code-owned mode
+objective. The original optional request field remains `research_question` for
+compatibility and recovery identity, while the core kernel never consumes it.
+
+`agents/schemas/_research_focus.py` owns `FocusProposalV1` and
+`ResearchFocusResponseV1` / `research-focus-response-v1`. Host-owned identity binds
+run, ticker, mode, cutoff, final input snapshot, baseline canonical digest and
+normalized focus. Available responses contain a closed proposal; unavailable
+responses contain only a stable reason. Answerability is distinct from
+verification and research quality. References must point to qualified saved
+baseline claims/sources; unsupported, undated, unavailable or future material is
+rejected. The supplement cannot add or edit baseline research entities.
+
+A separate publication barrier and frozen candidate bind the already-committed
+baseline. The read-only `/reader/focus` envelope (`web/focus_projection.py`) uses
+schema version 1 and explicit ready/pending/unavailable/not_applicable states.
+Ready can contain a canonical unavailable response. Only committed bytes can
+supply a proposal; local optional promotion failure is a durable unavailable
+state. Reader, Agent review and Markdown consume these same qualified sources.
+
+V6 enables one dedicated focus budget within twelve total model attempts. V1–V5
+retain zero focus budget, their original prompts/identities/roles and Markdown
+semantics. No optional failure may change baseline judgement, quality, references,
+challenges or next checks. Explicit cancel and global persistence/integrity
+errors retain existing terminal behavior.

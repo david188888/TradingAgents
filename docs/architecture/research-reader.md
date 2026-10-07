@@ -25,13 +25,15 @@ Classic is assembled by [`graph/setup.py`](../../tradingagents/graph/setup.py) a
 
 ## Native Research Path
 
-New studies use workflow V5: freeze qualified sources, isolate operating/event/
+New studies use workflow V6, retaining the V5 source/check rules: freeze qualified sources, isolate operating/event/
 market specialists, merge in fixed order, run independent challenge and bounded
-checks, synthesize once, validate and publish the saved `research-record-v1`.
+checks, synthesize once, durably freeze the independent `research-record-v1`, optionally interpret the
+user focus, then validate and publish the baseline followed by its supplement.
 `NativeRunner` and `graph/native_research.py` own execution; the host derives
 assessment v2 from admitted bindings and recomputed local results.
 
-The desktop Reader prioritizes the research question and saved answer, key
+The V6 desktop Reader prioritizes the mode-owned scope and independent
+judgement, key
 evidence, the main doubt and suggested next check, executed checks, valuation
 and quantitative context. Linked facts, saved source content and fixed financial
 concept explanations appear beside the report; narrower desktop containers use
@@ -39,7 +41,9 @@ an evidence drawer. Navigation also exposes the evidence directory, research
 process, per-Agent saved proposals and complete record. V5 includes operating-
 disclosure, cash-reconciliation and valuation-context checks with values, units
 and source references. A passed evidence question does not resolve economic
-cause, persistence or fair value. Old V1–V4 recovery never acquires V5 collection,
+cause, persistence or fair value. The focus response is a separate final section
+and never changes the baseline. Old V1–V5 retain original question-led semantics;
+V1–V4 recovery never acquires V5 collection,
 prompts or checks. Reader and Markdown consume the same validated record;
 the 600803 standalone HTML is a labelled acceptance artifact, not an additional
 runtime export endpoint. See the [record contract](../contracts/research-record.md#native-v5-bounded-evidence-checks).
@@ -114,3 +118,19 @@ HTTP, checkpoint/artifact counts remain distinct; absent turns/tokens/durations
 are never manufactured as zero.
 
 The frontend wire facade for these routes is [`frontend/src/api/contracts.ts`](../../frontend/src/api/contracts.ts), with request functions in [`frontend/src/api/client.ts`](../../frontend/src/api/client.ts).
+
+
+## Supplementary focus projection
+
+`web/focus_projection.py` serves `/reader/focus` with a selected event sequence.
+`runtime/focus_artifacts.py` qualifies the committed artifact, immutable baseline
+digest, snapshot/request text, saved input/result, and publication barrier.
+A corrupt supplement degrades independently of a valid baseline; no candidate
+or raw SDK payload is returned. Historical versions and empty focus are explicitly
+not applicable. The frontend hook rejects stale run/boundary responses.
+
+Focus output uses a closed proposal separate from `ResearchRecordV1`. It is shown
+after baseline sections in Reader and Markdown, with citations, answerability
+and limits. Agent review adds this role only for requested V6 focus; claim origins
+still come from baseline specialists. SDK main/focus/repair authorization counts
+are separate from budget reservations; total includes the optional focus call.

@@ -36,6 +36,7 @@ from tradingagents.research.native_policy import (
     gate_dimensions,
     global_coverage,
 )
+from tradingagents.research.native_versions import BASE_QUESTIONS, FOCUS_KERNEL_VERSION
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
     DurableBudgetLedger,
@@ -135,7 +136,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                         ledger: DurableBudgetLedger, research_question: str | None = None,
                         cancelled: Callable[[], bool] = lambda: False,
                         concurrency: int = 2, scoped: bool = False, valuation: bool = False,
-                        minimum: bool = False) -> ResearchRecordV1:
+                        minimum: bool = False, independent: bool = False) -> ResearchRecordV1:
     seed = ResearchRecordV1.model_validate_json(seed.model_dump_json())
     if (seed.construction != "native" or len(seed.snapshots) != 1 or seed.hypotheses
             or seed.challenges or seed.verifications or seed.assessment
@@ -152,10 +153,10 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if any(sources[key].availability != "available" or sources[key].content is None
            or sources[key].usable_as_of is None for fact in seed.claims for key in fact.evidence_ids):
         raise ValueError("native facts require qualified saved source content")
-    question = research_question if research_question is not None else QUESTIONS[seed.mode]
+    question = BASE_QUESTIONS[seed.mode] if independent else research_question if research_question is not None else QUESTIONS[seed.mode]
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 400:
         raise ValueError("research question must contain 1..400 characters")
-    identity = {"workflow_version": "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
+    identity = {"workflow_version": FOCUS_KERNEL_VERSION if independent else "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
     _bound_put(ledger.journal, "native_seed", seed.model_dump(mode="json"))
     _bound_put(ledger.journal, "native_input", identity)

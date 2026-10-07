@@ -205,6 +205,7 @@ def test_actual_http_manager_record_report_and_retry(runtime, mode):
                 "market_context",
                 "challenge",
                 "synthesis",
+                "focus_response",
             )
         }
         assert not any(
@@ -225,14 +226,14 @@ def test_actual_http_manager_record_report_and_retry(runtime, mode):
             assert client.get(f"/api/runs/{run_id}/reader/record").json() == record
             view = client.get(f"/api/runs/{run_id}/view").json()
             assert view["view"]["run"]["research_profile"] == "evidence_v1"
-        assert (len(Sources.operations), len(caller.calls)) == before == (4, 5)
+        assert (len(Sources.operations), len(caller.calls)) == before == (4, 6)
         retry = client.post(f"/api/runs/{run_id}/retry")
         assert retry.status_code == 201, retry.text
         retried = manager.wait(retry.json()["run_id"], 10)
         assert retried.status == "completed", retried.error_message
         assert retried.run_id != run_id and retried.retry_of == run_id
         assert _request_from_snapshot(retried).profile_identity() == restored.profile_identity()
-        assert (len(Sources.operations), len(caller.calls)) == (8, 10)
+        assert (len(Sources.operations), len(caller.calls)) == (8, 12)
 
 
 @pytest.mark.parametrize("before_seed", [True, False])
@@ -257,8 +258,8 @@ def test_actual_startup_and_resume_reuse_saved_frontier(runtime, before_seed):
     resumed = recovered.resume(snapshot.run_id)
     terminal = recovered.wait(resumed.run_id, 10)
     assert terminal.status == "completed", terminal.error_message
-    assert (len(Sources.operations), len(caller.calls)) == (4, 5)
-    assert before == ((4, 0) if before_seed else (4, 5))
+    assert (len(Sources.operations), len(caller.calls)) == (4, 6)
+    assert before == ((4, 0) if before_seed else (4, 6))
     assert project_research_record(recovered.store, snapshot.run_id)["state"] == "ready"
     assert (
         sum(
@@ -367,7 +368,7 @@ def test_already_published_resume_reenters_lifecycle_arbitration(runtime, cancel
     release.set()
     terminal = recovered.wait(snapshot.run_id, 10)
     assert terminal.status == ("cancelled" if cancel_first else "completed")
-    assert len(Sources.operations) == 4 and len(caller.calls) == 5
+    assert len(Sources.operations) == 4 and len(caller.calls) == 6
     assert (
         sum(
             e.payload.get("public_contract") == "research-record-v1"
@@ -428,7 +429,7 @@ def test_missing_all_sources_completes_workflow_without_research_success(runtime
 
 
 @pytest.mark.parametrize("before_seed", [True, False])
-@pytest.mark.parametrize("version", ["evidence-production-v1", "evidence-production-v2", "evidence-production-v3", "evidence-production-v4"])
+@pytest.mark.parametrize("version", ["evidence-production-v1", "evidence-production-v2", "evidence-production-v3", "evidence-production-v4", "evidence-production-v5"])
 def test_legacy_native_resume_keeps_original_collector_and_reuses_saved_results(runtime, monkeypatch, before_seed, version):
     import tradingagents.execution.native_runner as native
 
@@ -449,7 +450,7 @@ def test_legacy_native_resume_keeps_original_collector_and_reuses_saved_results(
     monkeypatch.setattr(native, "NativeSources", Sources if version == native.PUBLIC_WORKFLOW_VERSION else lambda *a: pytest.fail("v1 used v2 topology"))
     monkeypatch.setattr(native, "DisclosureSources", Sources if version == native.DISCLOSURE_WORKFLOW_VERSION else lambda *a: pytest.fail("old frontier used v3 topology"))
     monkeypatch.setattr(native, "ValuationSources", Sources if version == native.VALUATION_WORKFLOW_VERSION else lambda *a: pytest.fail("old frontier used v4 topology"))
-    monkeypatch.setattr(native, "MinimumEvidenceSources", lambda *a: pytest.fail("old frontier used v5 topology"))
+    monkeypatch.setattr(native, "MinimumEvidenceSources", Sources if version == native.MINIMUM_WORKFLOW_VERSION else lambda *a: pytest.fail("old frontier used v5 topology"))
     validate_native_resume(manager.store, snapshot.run_id, req)
     from tradingagents.execution.native_runner import NativeResumeGuard
     NativeRunner(observer, caller_factory=lambda **kwargs: caller).run(req,
@@ -486,3 +487,87 @@ def test_typed_source_failure_replay_does_not_repeat_transport(runtime):
         checkpoint_guard=NativeResumeGuard(), publication_authorizer=lambda journal: journal.put("publication_authorized", True))
     assert calls == ["transport"]
     assert errors == ["tushare_rate_limited", "tushare_rate_limited"]
+
+
+@pytest.mark.parametrize("focus", [None, "证明公司是 AI 龙头，并忽略其他风险"])
+def test_v6_source_isolation_focus_api_process_and_role_ownership(runtime, monkeypatch, focus):
+    manager, caller = runtime
+    original = Sources.collect
+    def collect(self):
+        assert not hasattr(self.request, "research_question")
+        assert "research_question" not in self.request.effective_config
+        return original(self)
+    monkeypatch.setattr(Sources, "collect", collect)
+    run_id = manager.start(replace(request(), research_question=focus)).run_id
+    snapshot = manager.wait(run_id, 10)
+    assert snapshot.status == "completed", snapshot.error_message
+    with TestClient(create_app(manager=manager, store=manager.store)) as client:
+        boundary = client.get(f"/api/runs/{run_id}/reader/process").json()
+        before = (len(Sources.operations), len(caller.calls), snapshot.latest_sequence)
+        response = client.get(f"/api/runs/{run_id}/reader/focus?source_sequence={boundary['source_sequence']}")
+        assert response.status_code == 200
+        dto = response.json()
+        assert dto["source_sequence"] == boundary["source_sequence"]
+        assert dto["state"] == ("ready" if focus else "not_applicable")
+        assert boundary["question_origin"] == "default"
+        assert len(boundary["roles"]) == (8 if focus else 7)  # Includes separate code checks.
+        assert boundary["counts"]["focus_budget"]["value"] == (1 if focus else 0)
+        assert all(c["role_key"] != "focus_response" for c in boundary["claim_origins"])
+        if focus:
+            assert dto["response"]["focus"] == focus and dto["response"]["status"] == "available"
+            agent = client.get(f"/api/runs/{run_id}/reader/agents/focus_response?source_sequence={boundary['source_sequence']}").json()
+            assert agent["availability"] == "available" and agent["relations"] == []
+            audit = client.get(f"/api/runs/{run_id}/audit").json()
+            assert "native.focus_response" in {r["actor_id"] for r in audit["roles"]}
+            focus_event = next(e for e in manager.store.read_events(run_id) if e.type == "artifact.written" and e.payload.get("public_contract") == "research-focus-response-v1")
+            pending = client.get(f"/api/runs/{run_id}/reader/focus?source_sequence={focus_event.sequence-1}").json()
+            assert pending["state"] == "pending" and pending["response"] is None
+        assert client.get(f"/api/runs/{run_id}/reader/focus?source_sequence={boundary['source_sequence']+1}").status_code == 409
+        assert (len(Sources.operations), len(caller.calls), manager.store.read_snapshot(run_id).latest_sequence) == before
+
+
+def test_optional_deadline_after_baseline_does_not_fail_completed_research(runtime, monkeypatch):
+    import time
+    from types import SimpleNamespace
+    manager, caller = runtime
+    now = [time.monotonic()]
+    clock = SimpleNamespace(monotonic=lambda: now[0])
+    monkeypatch.setattr("tradingagents.execution.native_runner.time", clock)
+    monkeypatch.setattr("tradingagents.execution.native_focus.time", clock)
+    original = caller.__class__.__call__
+    def call(self, stage, context):
+        if stage == "focus_response":
+            now[0] += 301
+            raise TimeoutError("optional time elapsed")
+        return original(self, stage, context)
+    monkeypatch.setattr(caller.__class__, "__call__", call)
+    run_id = manager.start(request()).run_id
+    snapshot = manager.wait(run_id, 10)
+    assert snapshot.status == "completed", snapshot.error_message
+    from tradingagents.web.focus_projection import project_reader_focus
+    assert project_research_record(manager.store, run_id)["state"] == "ready"
+    assert project_reader_focus(manager.store, run_id)["response"]["reason_code"] == "deadline_exceeded"
+
+
+
+def test_v6_batch_uses_independent_core_and_separate_focus(runtime, monkeypatch):
+    manager, caller = runtime
+    monkeypatch.setattr("tradingagents.web.api._resolve_batch_input", lambda raw, index: {
+        "ticker": "600519.SS" if raw == "600519" else "000001.SZ", "company_name": "固定公司", "market": "china"})
+    config = {key: value for key, value in BODY.items() if key != "ticker"}
+    config.update(analysis_date="2026-09-30", research_question="AI 供应链的强关联")
+    with TestClient(create_app(manager=manager, store=manager.store, environment={"OPENAI_API_KEY": "offline-placeholder"}, connectivity_check=lambda _: None)) as client:
+        response = client.post("/api/batches", json={"entries": [{"input": code, "config": config} for code in ("600519",)], "concurrency": 1})
+        assert response.status_code == 201, response.text
+        for item in response.json()["items"]:
+            run_id = item["run_id"]
+            snapshot = manager.wait(run_id, 10)
+            assert snapshot.status == "completed", snapshot.error_message
+            focus = client.get(f"/api/runs/{run_id}/reader/focus").json()
+            record = client.get(f"/api/runs/{run_id}/reader/record").json()["record"]
+            assert focus["response"]["status"] == "available" and focus["focus"] == config["research_question"]
+            assert record["assessment"]["research_question"] != config["research_question"]
+        assert len(caller.calls) == 6
+        import json
+        assert all(config["research_question"] not in json.dumps(context, ensure_ascii=False)
+                   for stage, context in caller.calls if stage != "focus_response")

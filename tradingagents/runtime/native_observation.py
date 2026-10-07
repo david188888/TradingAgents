@@ -15,10 +15,11 @@ class NativeSDKObservationV1(BaseModel):
     start_sequence: int = Field(ge=0)
     prior_main_authorizations: int = Field(ge=0)
     prior_repair_authorizations: int = Field(ge=0)
+    prior_focus_authorizations: int | None = Field(default=None, ge=0)
 
     @property
     def complete(self) -> bool:
-        return self.prior_main_authorizations == self.prior_repair_authorizations == 0
+        return self.prior_main_authorizations == self.prior_repair_authorizations == 0 and self.prior_focus_authorizations in (None, 0)
 
 
 def establish_sdk_observation(ledger) -> None:
@@ -35,11 +36,14 @@ def establish_sdk_observation(ledger) -> None:
         from tradingagents.execution.budget import BudgetBucket
 
         records = [r for r in ledger.records() if r.dispatched_at is not None]
+        from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
         marker = NativeSDKObservationV1(
             start_sequence=journal.last_event.sequence,
             prior_main_authorizations=sum(r.bucket == BudgetBucket.MAIN_ANALYSIS for r in records),
             prior_repair_authorizations=sum(
                 r.bucket == BudgetBucket.STRUCTURED_REPAIR for r in records
             ),
+            **({"prior_focus_authorizations": sum(r.bucket == BudgetBucket.FOCUS_RESPONSE for r in records)}
+               if journal.state["identity"].get("workflow_version") == FOCUS_WORKFLOW_VERSION else {}),
         )
-        journal.put(SDK_OBSERVATION_KEY, marker.model_dump(mode="json"))
+        journal.put(SDK_OBSERVATION_KEY, marker.model_dump(mode="json", exclude_none=True))

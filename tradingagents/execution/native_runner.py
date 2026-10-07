@@ -28,13 +28,22 @@ from tradingagents.execution.models import (
     AnalysisResult,
     CancellationToken,
 )
+from tradingagents.execution.native_focus import execute_focus_response
+from tradingagents.execution.native_focus_publication import publish_focus_response
 from tradingagents.execution.native_model import NativeModelCaller
 from tradingagents.execution.native_publication import publish_native_record
 from tradingagents.graph.native_research import load_native_seed, run_native_research
 from tradingagents.llm_clients.task_effort import task_effort_overrides
+from tradingagents.observability.canonical import canonical_sha256 as config_sha256
 from tradingagents.observability.events import RunEventDraft
-from tradingagents.observability.roles import NATIVE_ROLE_REGISTRY, role_instance_id
+from tradingagents.observability.roles import (
+    FOCUS_ROLE,
+    NATIVE_ROLE_REGISTRY,
+    role_instance_id,
+    roles_for_profile,
+)
 from tradingagents.research.native_record import build_native_record
+from tradingagents.research.native_versions import FOCUS_BUDGET_POLICY, FOCUS_WORKFLOW_VERSION
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
     CatalystJournal,
@@ -43,7 +52,7 @@ from tradingagents.runtime.catalyst_checkpoint import (
 
 VALUATION_WORKFLOW_VERSION = "evidence-production-v4"
 MINIMUM_WORKFLOW_VERSION = "evidence-production-v5"
-WORKFLOW_VERSION = MINIMUM_WORKFLOW_VERSION
+WORKFLOW_VERSION = FOCUS_WORKFLOW_VERSION
 DISCLOSURE_WORKFLOW_VERSION = "evidence-production-v3"
 PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
@@ -59,6 +68,7 @@ def native_identity(request, *, workflow_version=WORKFLOW_VERSION):
         "holding_context": asdict(request.holding_context) if request.holding_context else None,
         "config": prepare_effective_config(request.effective_config),
         "active_timeout_seconds": request.effective_config.get("evidence_timeout_seconds", 300),
+        **({"focus_budget_policy": dict(FOCUS_BUDGET_POLICY)} if workflow_version == FOCUS_WORKFLOW_VERSION else {}),
     }
 
 
@@ -72,7 +82,7 @@ def validate_native_resume(store, run_id, request):
         raise CatalystCheckpointConflict("native resume profile mismatch")
     state = load_checkpoint(store, run_id)
     version = state["identity"].get("workflow_version") if state is not None else None
-    if version not in {MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
+    if version not in {FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -116,7 +126,7 @@ class NativeRunner:
             )
             if previous == status:
                 return
-            role = next(item for item in NATIVE_ROLE_REGISTRY if item.actor_id == actor)
+            role = next(item for item in (*NATIVE_ROLE_REGISTRY, FOCUS_ROLE) if item.actor_id == actor)
             journal.put("native_stages", {**journal.state.get("native_stages", {}), key: status})
             self.observer.emit(
                 RunEventDraft(
@@ -220,9 +230,14 @@ class NativeRunner:
                 active()
                 return value
 
-            source_request = SimpleNamespace(
-                **{**vars(request), "catalyst_policy": request.evidence_policy.collector_policy()}
-            )
+            source_fields = {**vars(request), "catalyst_policy": request.evidence_policy.collector_policy()}
+            if version == FOCUS_WORKFLOW_VERSION:
+                source_fields.pop("research_question", None)
+                source_fields["effective_config"] = {
+                    key: value for key, value in request.effective_config.items()
+                    if key != "research_question"
+                }
+            source_request = SimpleNamespace(**source_fields)
             with BudgetedSession(
                 journal.ledger, active, lambda: deadline - time.monotonic()
             ) as session:
@@ -232,6 +247,7 @@ class NativeRunner:
                     DISCLOSURE_WORKFLOW_VERSION: DisclosureSources,
                     VALUATION_WORKFLOW_VERSION: ValuationSources,
                     MINIMUM_WORKFLOW_VERSION: MinimumEvidenceSources,
+                    FOCUS_WORKFLOW_VERSION: MinimumEvidenceSources,
                 }[version]
                 draft, context = factory(
                     source_request, run_id, session, fetch
@@ -245,9 +261,9 @@ class NativeRunner:
                 mode=request.mode,
                 original_thesis=holding.original_thesis if holding else None,
                 holding_facts_as_of=holding.facts_as_of if holding else None,
-                include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
-                include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
-                include_minimum=version == MINIMUM_WORKFLOW_VERSION,
+                include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
+                include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
+                include_minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
             )
             if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat()) != (
                 run_id,
@@ -262,7 +278,7 @@ class NativeRunner:
             effective_config=request.effective_config,
             run_id=run_id,
             ledger=journal.ledger,
-            cancelled=cancelled,
+            cancelled=(lambda: token.is_cancelled) if version == FOCUS_WORKFLOW_VERSION else cancelled,
             deadline=lambda: deadline,
         )
         runner = self
@@ -289,15 +305,32 @@ class NativeRunner:
             ledger=journal.ledger,
             research_question=request.research_question,
             cancelled=cancelled,
-            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
-            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION},
-            minimum=version == MINIMUM_WORKFLOW_VERSION,
+            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
+            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
+            minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
+            independent=version == FOCUS_WORKFLOW_VERSION,
         )
         active()
+        focus_response = None
+        if version == FOCUS_WORKFLOW_VERSION:
+            focus_response = execute_focus_response(
+                record, request.research_question, ledger=journal.ledger, caller=ProgressCaller(),
+                cancelled=lambda: token.is_cancelled, deadline=lambda: deadline,
+                output_language=str(request.effective_config.get("output_language", "Chinese")),
+                model_policy_sha256=config_sha256(prepare_effective_config(request.effective_config)),
+            )
+            token.raise_if_cancelled()
+            if focus_response is not None:
+                dispatched = any(r.logical_call_id == "native.focus_response" and r.dispatched_at is not None
+                                 for r in journal.ledger.records())
+                self._stage(journal, "focus_response", "completed" if focus_response.status == "available"
+                            else "failed" if dispatched else "skipped")
         # Cached proposals close interrupted roles; stages lacking qualified
         # inputs remain skipped. A completed run never leaves an open role.
-        for role in NATIVE_ROLE_REGISTRY:
+        for role in roles_for_profile("evidence_v1", workflow_version=version, focus_requested=bool(request.research_question)):
             key = role.node_id
+            if key == "focus_response":
+                continue
             if key == "evidence" or journal.ledger.cached_result("native." + key) is not None:
                 self._stage(journal, key, "completed")
             elif journal.state.get("native_stages", {}).get(key) not in {"completed", "failed"}:
@@ -311,13 +344,16 @@ class NativeRunner:
             publication_authorizer(value)
             lifecycle_entered = True
 
-        publish_native_record(
+        base_artifact = publish_native_record(
             self.observer, record=record, ledger=journal.ledger, publication_authorizer=authorize
         )
         if not lifecycle_entered:
             # A verified artifact replay is read-only in the publisher. The
             # resumed consumer must still arbitrate its new lifecycle with cancel.
             authorize(journal)
+        if focus_response is not None:
+            publish_focus_response(self.observer, record=record, response=focus_response,
+                                   ledger=journal.ledger, base_artifact_id=base_artifact)
         return AnalysisResult(
             {
                 "research_profile": "evidence_v1",

@@ -22,6 +22,7 @@ DERIVED_PUBLIC_CONTRACTS = frozenset(
         "valuation-assessment-v1",
         "catalyst-research-case-v1",
         "research-record-v1",
+        "research-focus-response-v1",
     }
 )
 

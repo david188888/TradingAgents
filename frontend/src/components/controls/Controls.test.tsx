@@ -236,7 +236,7 @@ describe("Controls", () => {
     render(<Controls />);
     await waitForConfig();
     fireEvent.change(screen.getByLabelText("股票代码"), { target: { value: "600803" } });
-    fireEvent.change(screen.getByLabelText("研究问题（可选）"), { target: { value: "核查现金流" } });
+    fireEvent.change(screen.getByLabelText("补充关注点（可选）"), { target: { value: "核查现金流" } });
     fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
     await waitFor(() => expect(mockClient.createRun).toHaveBeenCalledTimes(1));
     expect(mockClient.createRun.mock.calls[0][0]).toMatchObject({ research_profile: "evidence_v1", research_question: "核查现金流", research_depth: 1 });

@@ -431,6 +431,7 @@ class SingleRunManager:
         queued: bool = True,
     ) -> RunSnapshot:
         config = dict(request.effective_config)
+        from tradingagents.execution.native_runner import WORKFLOW_VERSION
         safe_config = prepare_effective_config(config)
         snapshot = RunSnapshot.create(
             ticker=request.ticker,
@@ -464,6 +465,7 @@ class SingleRunManager:
                     else {}
                 ),
                 **({**request.profile_identity(),
+                    "native_workflow_version": WORKFLOW_VERSION,
                     "evidence_policy": request.evidence_policy.model_dump(mode="json")}
                     if request.research_profile == "evidence_v1" else {}),
                 **(
@@ -558,6 +560,8 @@ class SingleRunManager:
                     "deep_think_llm": snapshot.deep_think_llm,
                     "checkpoint_enabled": bool(request.effective_config.get("checkpoint_enabled")),
                     **({"research_profile": request.research_profile} if request.research_profile in {"catalyst_v1", "evidence_v1"} else {}),
+                    **({"native_workflow_version": snapshot.metadata.get("native_workflow_version"),
+                        "focus_requested": bool(request.research_question)} if request.research_profile == "evidence_v1" else {}),
                 },
                 status="running",
             )
@@ -661,7 +665,10 @@ class SingleRunManager:
             self.scheduler.mark_terminalizing(run_id)
 
     def _roles_for_run(self, run_id):
-        return roles_for_profile(self.store.read_snapshot(run_id).metadata.get("research_profile", "classic"))
+        metadata = self.store.read_snapshot(run_id).metadata
+        return roles_for_profile(metadata.get("research_profile", "classic"),
+                                 workflow_version=metadata.get("native_workflow_version"),
+                                 focus_requested=bool(metadata.get("research_question")))
 
     def _finish_success(
         self,

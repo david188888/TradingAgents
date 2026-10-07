@@ -11,6 +11,7 @@ from tradingagents.agents.schemas._native_stage import (
     SynthesisProposalV1,
     SynthesisProposalV2,
 )
+from tradingagents.agents.schemas._research_focus import FocusProposalV1
 
 AgentKey = Literal[
     "evidence",
@@ -20,6 +21,7 @@ AgentKey = Literal[
     "challenge",
     "synthesis",
     "code_checks",
+    "focus_response",
 ]
 OutputAvailability = Literal[
     "available",
@@ -49,6 +51,8 @@ class NativeCounts(_ReaderModel):
     sdk_total: ObservedCount
     data_capability: ObservedCount
     data_http: ObservedCount
+    focus_budget: ObservedCount | None = None
+    sdk_focus: ObservedCount | None = None
 
 
 class ClaimOrigin(_ReaderModel):
@@ -70,6 +74,8 @@ class ReaderRole(_ReaderModel):
     main_budget: ObservedCount
     sdk_main: ObservedCount
     sdk_repair: ObservedCount
+    focus_budget: ObservedCount | None = None
+    sdk_focus: ObservedCount | None = None
 
 
 class ReaderProcessDTO(_ReaderModel):
@@ -113,6 +119,7 @@ class ReaderAgentDTO(_ReaderModel):
         | ChallengesProposalV1
         | SynthesisProposalV2
         | SynthesisProposalV1
+        | FocusProposalV1
         | None
     ) = None
     relations: tuple[OutputRelation, ...] = ()

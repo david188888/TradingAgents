@@ -19,6 +19,16 @@ function event(sequence: number, type: string, payload: Record<string, unknown>)
 }
 
 describe("native reducer and role projections", () => {
+  it("selects the supplemental role only for requested V6 focus and replays its state", () => {
+    const metadata = {research_profile:"evidence_v1",native_workflow_version:"evidence-production-v6",research_question:"AI 关系"};
+    let state = createInitialState({...snapshot,metadata});
+    expect(roleList(state)).toHaveLength(7);
+    state = runReducer(state,{type:"event",event:event(1,"run.started",{research_profile:"evidence_v1",native_workflow_version:"evidence-production-v6",focus_requested:true})});
+    state = runReducer(state,{type:"event",event:event(2,"role.status_changed",{role_instance_id:`${RUN_ID}:native.focus_response`,previous_status:"pending",new_status:"completed"})});
+    expect(roleList(state).at(-1)?.status).toBe("completed");
+    expect(roleList(createInitialState({...snapshot,metadata:{...metadata,native_workflow_version:"evidence-production-v5"}}))).toHaveLength(6);
+    expect(roleList(createInitialState({...snapshot,metadata:{...metadata,research_question:null}}))).toHaveLength(6);
+  });
   it("seeds six native roles from the snapshot while retaining the exact classic registry", () => {
     const native = createInitialState(snapshot);
     expect(native.meta.research_profile).toBe("evidence_v1");

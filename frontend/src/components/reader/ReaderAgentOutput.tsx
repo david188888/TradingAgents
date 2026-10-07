@@ -2,6 +2,7 @@ import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO, ResearchRecordV1DTO } 
 import { AGENT_LABELS, countLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 import { CHECK_LABELS, LocalChallengeResult, LocalEvidenceChecks, claimText } from "./ResearchRecordSection";
 import type { EvidenceSelection } from "./ReaderEvidence";
+import { FocusAnswer } from "./FocusResponse";
 
 export function ReaderAgentOutput({ role, process, output, error, record, entity, onRole, onInspect, onLocate, onRetry }: {
   role: AgentKey; process: ReaderProcessDTO | null; output: ReaderAgentDTO | null; error: boolean; record: ResearchRecordV1DTO | null; entity: string | null;
@@ -14,10 +15,11 @@ export function ReaderAgentOutput({ role, process, output, error, record, entity
     return r ? <footer className="qr-actions"><span className="qr-meta">{r.in_record ? "进入完整记录" : "未进入记录"}{r.is_key ? kind === "challenge" && process?.primary_selection === "code" ? " · 代码置顶主要疑点" : " · 综合选为重点" : " · 未列为首页重点"}{r.dimensions.length ? ` · ${r.dimensions.map(d => DIMENSION_LABELS[d] ?? d).join("、")}引用` : ""}{r.challenge_ids.length ? ` · 关联 ${r.challenge_ids.length} 条挑战` : ""}</span><button onClick={() => onLocate({kind, id})}>定位最终记录 →</button></footer> : null;
   };
   return <section className="qr-agent-review" aria-label="Agent 产物回顾">
-    <div className="qr-agent-tabs" aria-label="选择角色">{Object.entries(AGENT_LABELS).map(([key, label]) => <button key={key} aria-pressed={role === key} onClick={() => onRole(key as AgentKey)}>{label}{key === "evidence" || key === "code_checks" ? " · 代码" : ""}</button>)}</div>
+    <div className="qr-agent-tabs" aria-label="选择角色">{Object.entries(AGENT_LABELS).filter(([key])=>key !== "focus_response" || process?.roles.some(r=>r.role_key === key)).map(([key, label]) => <button key={key} aria-pressed={role === key} onClick={() => onRole(key as AgentKey)}>{label}{key === "evidence" || key === "code_checks" ? " · 代码" : ""}</button>)}</div>
     <header><span className="qr-eyebrow">{meta?.origin === "code" ? "代码环节" : "Agent 保存产物"}</span><h2>{AGENT_LABELS[role]}</h2><p>{meta?.purpose}</p><p className="qr-meta">{STATUS_LABELS[meta?.status ?? ""] ?? "状态未记录"} · {meta ? outputLabel(meta.output_availability, meta.reason_code) : "正在读取保存状态"}</p></header>
     <div className="qr-method-note"><h3>使用了什么输入</h3><p>{output?.input_description ?? "等待读取已保存的输入范围说明。"}</p><p className="qr-meta">这里只展示研究字段，不包含模型对话、提示词或内部思考。</p></div>
     {error ? <p role="status">产物暂时无法读取。<button onClick={onRetry}>重试读取</button></p> : !output ? <p aria-busy="true">正在读取所选角色的保存产物…</p> : output.availability !== "available" ? <p role="status">{outputLabel(output.availability, output.reason_code)}。最终报告仍可按原保存记录阅读。</p> : <>
+      {p && "answer" in p ? <><p className="qr-meta">此回应引用基础研究，不是被引用事实或推断的作者，也不会改写基础综合。</p><FocusAnswer proposal={p} onInspect={onInspect}/></> : null}
       {p && "hypotheses" in p ? <>
         <h3>全部研究假设（{p.hypotheses.length}）</h3>
         {!p.hypotheses.length ? <p>该专项返回了合法的零假设提议。</p> : null}
@@ -62,6 +64,6 @@ export function ReaderAgentOutput({ role, process, output, error, record, entity
       </> : null}
       <details><summary>{output.origin === "model" ? "保存的结构化提议（JSON）" : "保存的代码产物字段"}</summary><pre>{JSON.stringify(output.origin === "model" ? output.proposal : { code_sections:output.code_sections, evidence_checks:record?.evidence_checks, verifications:record?.verifications, assessment:record?.assessment }, null, 2)}</pre></details>
     </>}
-    {meta ? <details><summary>执行统计与记录口径</summary><p>主分析预算授权：{countLabel(meta.main_budget)}；SDK 主发出授权：{countLabel(meta.sdk_main)}；SDK 修复发出授权：{countLabel(meta.sdk_repair)}。</p><p>授权不证明网络送达、供应商接收、成功完成或计费。</p></details> : null}
+    {meta ? <details><summary>执行统计与记录口径</summary><p>主分析预算授权：{countLabel(meta.main_budget)}；SDK 主发出授权：{countLabel(meta.sdk_main)}；SDK 修复发出授权：{countLabel(meta.sdk_repair)}。</p>{meta.focus_budget ? <p>补充回应预算授权：{countLabel(meta.focus_budget)}；SDK 补充发出授权：{countLabel(meta.sdk_focus)}。</p> : null}<p>授权不证明网络送达、供应商接收、成功完成或计费。</p></details> : null}
   </section>;
 }

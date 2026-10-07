@@ -67,6 +67,7 @@ class MinimumFixtureSources:
 
 
 def start_fixture(root, monkeypatch):
+    monkeypatch.setattr("tradingagents.execution.native_runner.WORKFLOW_VERSION", "evidence-production-v5")
     def forbidden(*args, **kwargs):
         pytest.fail("fixture acceptance must not call network or SDK")
     monkeypatch.setattr("requests.sessions.Session.request", forbidden)

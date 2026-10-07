@@ -180,7 +180,29 @@ class ReportArtifactWriter:
             raise ReportPublicationError("native report identity mismatch")
         if record.construction != "native" or record.assessment is None:
             raise ReportPublicationError("native report requires a native assessment")
-        content = build_markdown_from_native_record(record)
+        from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+        from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
+        from tradingagents.runtime.focus_artifacts import (
+            read_focus_artifact,
+            read_focus_publication_failure,
+        )
+
+        checkpoint = load_checkpoint(self.store, run_id)
+        version = checkpoint["identity"].get("workflow_version") if checkpoint else None
+        response, reason = None, None
+        if version == FOCUS_WORKFLOW_VERSION and checkpoint["identity"].get("research_question"):
+            events = self.store.read_events(run_id)
+            saved = read_focus_artifact(self.store, run_id, record, checkpoint, events)
+            reason = read_focus_publication_failure(self.store, run_id, record, checkpoint, events)
+            if saved is not None:
+                if checkpoint.get("native_focus_publication", {}).get("state") != "committed":
+                    raise ReportPublicationError("focus publication disposition is pending")
+                response = saved[0]
+            elif reason is None:
+                raise ReportPublicationError("focus publication has no durable disposition")
+        content = build_markdown_from_native_record(record, workflow_version=version,
+                                                   focus_response=response, focus_reason=reason,
+                                                   focus_text=checkpoint["identity"].get("research_question") if checkpoint else None)
         run_dir = self.store._run_dir(run_id)
         reports_dir = run_dir / "reports"
         with self.store.lock_for(run_id):
@@ -427,13 +449,42 @@ def _build_v4_native_markdown(record: Any) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def build_markdown_from_native_record(record: Any) -> str:
+def build_markdown_from_native_record(record: Any, *, workflow_version=None, focus_response=None, focus_reason=None, focus_text=None) -> str:
     """Retain byte-stable legacy reports; V4 uses the unified Reader order."""
     if record.evidence_checks is not None:
-        return _build_v5_native_markdown(record)
-    if record.valuation is not None or "native_valuation_policy_v1" in record.limitations:
-        return _build_v4_native_markdown(record)
-    return _build_legacy_native_markdown(record)
+        content = _build_v5_native_markdown(record)
+    elif record.valuation is not None or "native_valuation_policy_v1" in record.limitations:
+        content = _build_v4_native_markdown(record)
+    else:
+        content = _build_legacy_native_markdown(record)
+    from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+    if workflow_version != FOCUS_WORKFLOW_VERSION:
+        return content
+    content = content.replace("。研究问题：", "。研究范围：", 1)
+    content = content.replace(f"**{_markdown_text(record.assessment.judgement)}**", "## 综合判断\n\n" + f"**{_markdown_text(record.assessment.judgement)}**", 1)
+    if focus_response is None and focus_reason is None:
+        return content
+    lines = [content.rstrip(), "", "## 补充关注点回应", "", "独立基础研究完成后，依据已有保存证据补充回应；不改写上文的综合判断。", ""]
+    if focus_reason:
+        if focus_text:
+            lines.extend(["关注点：" + _markdown_text(focus_text), ""])
+        lines.append("补充回应未能发布；基础研究已独立保存。")
+    else:
+        from tradingagents.agents.schemas._research_focus import validate_focus_response
+        validate_focus_response(record, focus_response)
+        lines.extend(["关注点：" + _markdown_text(focus_response.focus), ""])
+        if focus_response.status == "unavailable":
+            from tradingagents.research.focus_context import FOCUS_REASON_LABELS
+            lines.append(FOCUS_REASON_LABELS[focus_response.reason_code] + " 基础研究按独立保存记录呈现。")
+        else:
+            proposal = focus_response.proposal
+            labels = {"answered": "已有证据可回应", "partial": "只能部分回应", "unresolved": "现有证据无法判断"}
+            lines.extend([labels[proposal.answerability], "", _markdown_text(proposal.answer), ""])
+            lines.extend("- " + _markdown_text(limit) for limit in proposal.limitations)
+            if proposal.suggested_next_check:
+                lines.extend(["", "建议后续核查：" + _markdown_text(proposal.suggested_next_check)])
+            lines.extend(["", "引用记录：" + "、".join(_markdown_text(key) for key in (*proposal.claim_ids, *proposal.evidence_ids))])
+    return "\n".join(lines) + "\n"
 
 
 def _build_v5_native_markdown(record: Any) -> str:

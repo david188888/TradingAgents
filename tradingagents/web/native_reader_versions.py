@@ -45,13 +45,14 @@ POLICIES = {
     "evidence-production-v3": SavedPolicy(OPERATING, PRICES, BODIES, scoped=True),
     "evidence-production-v4": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
     "evidence-production-v5": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
+    "evidence-production-v6": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
 }
 
 
 def _policy(record, version):
     policy = POLICIES[version]
     # v5's expanded partition was enabled by the persisted evidence-check pack.
-    if version == "evidence-production-v5" and record.evidence_checks is not None:
+    if version in {"evidence-production-v5", "evidence-production-v6"} and record.evidence_checks is not None:
         return SavedPolicy(
             policy.operating | {"cninfo.numeric_row.v2"},
             policy.prices,

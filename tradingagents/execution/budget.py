@@ -55,6 +55,7 @@ class BudgetBucket(str, Enum):
     """
 
     MAIN_ANALYSIS = "main_analysis"
+    FOCUS_RESPONSE = "focus_response"
     SEMANTIC_PREPROCESS = "semantic_preprocess"
     STRUCTURED_REPAIR = "structured_repair"
     NETWORK_RETRY = "network_retry"
@@ -71,6 +72,7 @@ class BudgetBucket(str, Enum):
 _MODEL_BUCKETS = frozenset(
     {
         BudgetBucket.MAIN_ANALYSIS,
+        BudgetBucket.FOCUS_RESPONSE,
         BudgetBucket.SEMANTIC_PREPROCESS,
         BudgetBucket.STRUCTURED_REPAIR,
         BudgetBucket.NETWORK_RETRY,
@@ -84,6 +86,7 @@ _MODEL_BUCKETS = frozenset(
 # ceiling.  ``None`` would mean "no ceiling" and is not accepted.
 DEFAULT_LIMITS: Mapping[BudgetBucket, int] = {
     BudgetBucket.MAIN_ANALYSIS: 5,
+    BudgetBucket.FOCUS_RESPONSE: 0,
     BudgetBucket.SEMANTIC_PREPROCESS: 2,
     BudgetBucket.STRUCTURED_REPAIR: 2,
     BudgetBucket.NETWORK_RETRY: 3,

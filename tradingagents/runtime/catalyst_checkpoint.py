@@ -149,7 +149,17 @@ class DurableBudgetLedger(BudgetLedger):
 
     def __init__(self, journal: CatalystJournal):
         self.journal = journal
-        super().__init__(journal.observer.run_id, records=(
+        from tradingagents.research.native_versions import (
+            FOCUS_BUDGET_POLICY,
+            FOCUS_WORKFLOW_VERSION,
+        )
+        identity = journal.state["identity"]
+        limits = None
+        if identity.get("workflow_version") == FOCUS_WORKFLOW_VERSION:
+            if identity.get("focus_budget_policy") != FOCUS_BUDGET_POLICY:
+                raise CatalystCheckpointConflict("native focus budget policy mismatch")
+            limits = {BudgetBucket(key): value for key, value in FOCUS_BUDGET_POLICY.items()}
+        super().__init__(journal.observer.run_id, limits=limits, records=(
             _record_from_json(value) for value in journal.state["records"]
         ))
 

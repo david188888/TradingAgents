@@ -48,22 +48,26 @@ curl --fail-with-body http://127.0.0.1:8765/api/runs \
 JSON
 ```
 
-The optional question is trimmed and limited to 400 Unicode code points. It
-is saved in run identity; omission uses the mode's code-owned question.
-It focuses the three specialist analyses, challenge and synthesis on the user's
-question using the policy's collected evidence. It does not change the mode,
-role sequence, source selection or call budget, and it does not enable open-ended
-search or chat. Batch research applies the same question to each company.
+The optional `research_question` field is labelled “补充关注点（可选）” in the
+workbench, trimmed and limited to 400 Unicode code points. V6 saves it in run
+identity but excludes it from the collector, specialists, challenge, verification
+selection and synthesis. Those stages always use the mode's code-owned objective.
+After the baseline is durable, a separate response interprets the focus using
+saved evidence. It consumes at most one focus attempt within the existing total
+budget; leaving it blank makes no supplemental call. Batch research applies the
+same focus independently after each company's baseline. See the
+[supplement and recovery contract](#v6-independent-baseline-and-supplementary-focus).
 
-| Mode | Question when left blank |
+| Mode | Independent baseline objective |
 | --- | --- |
-| Company | 公司经营质量如何，哪些证据支持判断，哪些关键问题尚未确定？ |
-| Catalyst | 未来84天哪些催化可能改变判断，其兑现条件和失效条件是什么？ |
-| Holding | 原持仓假设受到哪些新证据支持或挑战，哪些条件需要重新核查？ |
+| Company | 公司经营质量、估值定位与市场风险如何，哪些重要事件和证据可能改变判断，哪些关键问题尚未确定？ |
+| Catalyst | 未来84天哪些催化可能改变判断，经营基础、兑现与失效条件、市场背景和关键缺口是什么？ |
+| Holding | 原持仓假设受到哪些新证据支持或挑战，经营、估值与市场风险如何，哪些条件需要重新核查？ |
 
-For example, ask “利润增长是否转化为经营现金流，哪些证据支持或反驳？”
-to focus a company analysis. A question is an analytical goal, not a verified
-fact; missing evidence still produces explicit limitations.
+For example, “利润增长是否转化为经营现金流，哪些证据支持或反驳？” requests a
+supplementary interpretation of the saved baseline. It is not a fact or a data
+source; missing evidence still produces explicit limitations. Historical V1–V5
+retain their original question-led analysis and recovery semantics.
 
 Native roles and the single challenge stage are code-owned. Omit classic
 scheduling fields, or retain their compatibility defaults: all four analyst
@@ -140,7 +144,7 @@ suppresses further Tushare attempts in that run; public sources remain eligible.
 All attempts share the existing capability/HTTP ceilings and active deadline.
 Cancellation, budget exhaustion and checkpoint conflicts stop execution.
 
-The current `evidence-production-v5` adds the bounded minimum-evidence collector
+The V5 collector (retained by current V6) adds the bounded minimum-evidence collector
 and code-owned local checks described below. V4 binds valuation inputs and dimension-reference
 validation; v3 binds documents and scoped coverage. Original v1–v4 checkpoints
 recover with their original collectors and kernel/prompt inputs when V0 is
@@ -244,12 +248,14 @@ retain their source-partition checks.
 ## Budget, cancellation and recovery
 
 The native flow reuses the existing durable ledger and its hard limits: five
-main model calls, two structured repairs across the run with at most one per
+main model calls, at most one V6 supplemental focus call, two structured repairs across the run with at most one per
 stage, and twelve model attempts in total. Data calls retain the existing
 twenty-four capability and sixty-four HTTP-attempt ceilings. One bounded
 verification round covers at most three supplementary capabilities. This
 profile does not increase the ceilings to compensate for missing sources.
-SDK retries are disabled; each actual model request acquires one process-wide
+The supplement is reserved after the baseline, has no repair/tool/retry, and
+counts within the same twelve total attempts. Legacy workflows retain a zero
+focus budget. SDK retries are disabled; each actual model request acquires one process-wide
 model slot. Specialists/challenge use quick, synthesis uses deep.
 
 Native checkpoints persist independently of the classic checkpoint toggle.
@@ -274,7 +280,8 @@ record, without a second summary model.
 `GET /api/runs/{id}/reader/record` reads the committed `research-record-v1`.
 Native records require their assessment and no paired legacy case. The
 workbench routes an explicitly native run to this record as its single main
-Reader. The desktop first screen answers the original question, then shows key
+Reader. The V6 desktop first screen shows the independent research scope and
+judgement, then key
 claims, primary doubt and suggested next check, executed evidence checks,
 valuation and historical quantitative context. Click “核对依据” to read bound
 facts and saved content in the side panel; a narrow desktop container uses a
@@ -294,12 +301,13 @@ verification results, including material omitted from the first screen.
 
 `GET /api/runs/{id}/reader/process` captures a saved sequence; the fixed-role
 `GET /api/runs/{id}/reader/agents/{role_key}?source_sequence=...` reads that boundary.
-V1–V5 outputs require version-specific identity and qualification checks.
+V1–V6 outputs require version-specific identity and qualification checks.
 Unknown versions, missing/corrupt bindings and unpublished proposals have explicit
 states, never inferred authorship or backfilled output.
 
 The terminal “技术诊断与执行记录” entry is for execution troubleshooting, not
-reading the report. Native roles come from the native registry. Main/repair
+reading the report. V6 has six baseline runtime roles and one additional focus role only when
+requested; code checks stay separate. Old workflows retain their six roles. Main/focus/repair
 budget authorizations and SDK dispatch authorizations are separate; SDK counts
 are exact only with complete observation coverage. Old records can show a known
 lower bound or “未记录”, and resumed old runs cannot certify prior calls. Data
@@ -395,3 +403,37 @@ saved content before locator metadata, with timestamps and hashes; Escape, Tab
 trapping, inert background and returned focus are part of the interaction.
 Single-symbol smoke validates wiring and readability; wider same-evidence quality,
 cost and accuracy comparisons remain separate work.
+
+
+## V6 independent baseline and supplementary focus
+
+New single and batch studies use `evidence-production-v6` / `native-research-kernel-v5`.
+The request key `research_question` remains trim-normalized and limited to 400
+Unicode characters, but the Web label is “补充关注点（可选）”. Mode objectives,
+qualified evidence and legitimate original holding thesis determine the baseline.
+The user focus never reaches the collector, specialists, challenge, verification
+selection or synthesis, and never becomes a claim or source.
+
+After `native.output` is durable, `native.focus_response` consumes that frozen
+record and focus once. It can cite saved qualified facts, hypotheses and sources;
+it cannot alter baseline judgement, dimensions, key claims, challenge selection,
+next check or quality. `answered` / `partial` / `unresolved` describe answerability,
+not verification success. A synthesis fallback skips the focus. Budget refusal,
+invalid citations, SDK failure, unknown dispatch or timeout yield a typed missing
+response while preserving baseline publication. Explicit cancellation still
+cancels the run before lifecycle authorization. Global corruption and mandatory
+baseline publication failure remain errors.
+
+The supplement is a separate `research-focus-response-v1` artifact. Baseline
+publication precedes optional promotion; durable `native_focus_publication`
+records pending, committed or stable unavailable disposition before Markdown.
+Interrupted recovery reuses validated results; unknown dispatched focus calls
+are never repeated, and a saved local publication failure is not retried silently.
+
+`GET /api/runs/{id}/reader/focus?source_sequence=...` qualifies the committed
+artifact, baseline hash, original focus and authorization barrier at that boundary.
+It returns ready, pending, unavailable or not_applicable; a checkpoint candidate
+is never exposed. Old V1–V5 retain their original question semantics and report
+bytes. The original 002130.SZ sample is unchanged. V6 Reader/Markdown put the
+supplement after all baseline sections, and focus references never confer
+baseline authorship. Reads never call a model/provider or mutate saved state.

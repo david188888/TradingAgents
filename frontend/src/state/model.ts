@@ -189,6 +189,8 @@ export type ApplicationStatus =
   | "abandoned";
 
 export interface RunMeta {
+  native_workflow_version?: string;
+  focus_requested?: boolean;
   research_profile?: ResearchProfile;
   catalyst_stages?: Record<string, string>;
   run_id: string;
@@ -309,8 +311,10 @@ export const NATIVE_ROLE_REGISTRY: readonly RoleDefinition[] = [
   ["synthesis", "Synthesis"],
 ].map(([key, label]) => ({ actor_id: `native.${key}`, node_id: key, team_id: "native", display_name: label, icon_id: "verified-magnifier", analyst_key: null }));
 
-export function rolesForProfile(profile?: ResearchProfile): readonly RoleDefinition[] {
-  return profile === "evidence_v1" ? NATIVE_ROLE_REGISTRY : ROLE_REGISTRY;
+export const FOCUS_ROLE: RoleDefinition = {actor_id:"native.focus_response",node_id:"focus_response",team_id:"native",display_name:"Focus response",icon_id:"verified-magnifier",analyst_key:null};
+
+export function rolesForProfile(profile?: ResearchProfile, version?: string, focusRequested=false): readonly RoleDefinition[] {
+  return profile === "evidence_v1" ? version === "evidence-production-v6" && focusRequested ? [...NATIVE_ROLE_REGISTRY, FOCUS_ROLE] : NATIVE_ROLE_REGISTRY : ROLE_REGISTRY;
 }
 
 export const ROLE_REGISTRY: readonly RoleDefinition[] = [

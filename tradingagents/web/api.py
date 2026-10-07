@@ -42,6 +42,7 @@ from tradingagents.research.native_evidence_policy import (
     is_native_stock_ticker,
 )
 from tradingagents.runtime.run_models import generate_run_id
+from tradingagents.web.focus_projection import project_reader_focus
 from tradingagents.web.reader_process_models import AgentKey
 from tradingagents.web.reader_process_projection import project_reader_agent, project_reader_process
 from tradingagents.web.research_record_projection import project_research_record
@@ -575,6 +576,13 @@ def create_app(
     @app.get("/api/runs/{run_id}/reader/record")
     def get_reader_record(run_id: str) -> dict[str, Any]:
         return project_research_record(selected_store, run_id)
+
+    @app.get("/api/runs/{run_id}/reader/focus")
+    def get_reader_focus(run_id: str, source_sequence: int | None = Query(default=None, ge=0)) -> dict[str, Any]:
+        try:
+            return project_reader_focus(selected_store, run_id, through=source_sequence)
+        except ValueError:
+            raise ApiBoundaryError(409, "reader_sequence_unavailable", "Requested Reader boundary is unavailable") from None
 
     @app.get("/api/runs/{run_id}/reader/companion")
     def get_reader_companion(
