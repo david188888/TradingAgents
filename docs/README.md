@@ -64,7 +64,9 @@ These are dated delivery and verification records, not current-state contracts.
 Later workflows can supersede their UI, question or role semantics; follow the
 current architecture, operations and contract pages for supported behavior.
 
+- [v3.1.0 release notes](reviews/2026-10-07-v3.1-release-notes.md): cumulative independent research, evidence Reader, bounded checks, DeepSeek default and Tencent stock-volume correction since v3.0.0.
 - [Independent research and focus-response acceptance](reviews/2026-10-07-independent-research-focus-acceptance.md): local V6 information-flow isolation, bounded supplemental response, recovery/publication, Reader and offline/browser checks; original 002130 files retained.
+- [a-stock-data v3.10.1 acceptance](reviews/2026-10-07-a-stock-data-v3101-acceptance.md): local Tencent stock volume-unit correction and regression evidence, plus the separately authorized Proma fixed-tag upgrade and rollback record.
 - [Question-first Reader implementation](reviews/2026-10-06-question-first-reader-acceptance.md): desktop report/evidence/Agent review, truthful native diagnostics, offline and saved-record validation, and remaining research limits.
 - [v3.0.0 release notes](reviews/2026-10-05-v3-release-notes.md): Web product migration, changes since v2.10.0, verification and research-quality limits.
 - [Web final acceptance — 600803](reviews/2026-10-04-web-final-acceptance.md): delivered native Web default and Reader, real fresh/frozen trial outcomes, HTML preview, validation and remaining human/research-quality checks.
@@ -74,6 +76,7 @@ current architecture, operations and contract pages for supported behavior.
 
 These record inspected evidence and recommendations, not delivered runtime changes.
 
+- [a-stock-data v3.10.1 review](reviews/2026-10-07-a-stock-data-v3101-review.md) and [Proma skill review](reviews/2026-10-07-proma-a-stock-data-v3101-review.md): pinned upstream changes, confirmed Tencent volume-label defect, pre-upgrade Proma version/dirty state, and proposed update/validation scope; delivery evidence is in the acceptance record above.
 - [Low-cost evidence investigation — 600803](reviews/2026-10-05-low-cost-evidence-investigation.md): actual official PDFs, public-source probes, current selection/parser gaps and the approved minimum-evidence scope.
 - [External project evidence review](reviews/2026-10-05-external-projects-evidence-review.md): pinned-source review of TradingAgents-astock, Vibe-Research, vibe-astock and Phoenix Tree AI, practical adoption decisions and verification limits.
 

@@ -413,6 +413,46 @@ def test_qfq_and_raw_agree_on_the_last_settled_session():
 # ------------------------------------------------------ provenance / units
 
 
+@pytest.mark.parametrize("period", ["day", "week", "month"])
+@pytest.mark.parametrize("adjust", ["none", "qfq"])
+@pytest.mark.parametrize(
+    "ticker,code,unit",
+    [
+        ("688981.SH", "sh688981", "shares"),
+        ("689009.SH", "sh689009", "shares"),
+        ("688981.XSHG", "sh688981", "shares"),
+        ("SH689009", "sh689009", "shares"),
+        ("600688.SH", "sh600688", "lots (100 shares)"),
+        ("000001.SZ", "sz000001", "lots (100 shares)"),
+        ("300750.SZ", "sz300750", "lots (100 shares)"),
+    ],
+)
+def test_stock_volume_units_preserve_provider_values(ticker, code, unit, period, adjust):
+    """#57: STAR K-line volume is shares in every supported price/period pair."""
+    key = period if adjust == "none" else "qfq" + period
+    session = _FakeSession({
+        "2026-08-31": _page(code, key, [_row("2026-08-31", 10, 11, 12, 9, 12345)])
+    })
+    getter = (
+        tencent_kline.get_a_share_kline_df
+        if adjust == "none"
+        else tencent_kline.get_a_share_kline_qfq_df
+    )
+    frame, provenance = getter(
+        ticker, "2026-08-31", "2026-08-31", period=period,
+        session=session, now=datetime(2026, 10, 7, 16),
+    )
+
+    assert provenance["volume_unit"] == unit
+    assert provenance["code"] == code
+    assert frame["Volume"].tolist() == [12345.0]  # Never silently rescale the source.
+    report = tencent_kline._render(frame, provenance, title="Synthetic volume regression")
+    assert f"# Volume unit: {unit}." in report
+    assert "2026-08-31,10.0,11.0,12.0,9.0,12345.0" in report
+    if unit == "shares":
+        assert "# Volume unit: lots (100 shares)." not in report
+
+
 def test_provenance_records_units_convention_and_source():
     session = _FakeSession({"2026-09-28": _page("sh600519", "day", _TDX2_ROWS)})
 

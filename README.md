@@ -6,8 +6,10 @@ TradingAgents is a local, LangGraph-based multi-agent research framework built o
 
 ## Demo
 
-Version 3.0.0 makes the Web workbench the maintained product and retires new
-classic/catalyst-profile runs. See the [release notes and migration boundary](docs/reviews/2026-10-05-v3-release-notes.md).
+Version 3.1.0 adds independent baseline research, an optional saved-evidence focus response,
+the evidence Reader and corrected Tencent stock volume labels. See the
+[3.1 release notes](docs/reviews/2026-10-07-v3.1-release-notes.md) and
+[3.0 migration boundary](docs/reviews/2026-10-05-v3-release-notes.md).
 
 Watch a 20-second walkthrough of a historical A-share research-only sample (the previous interface). English annotations guide the original Chinese interface; the video is for research demonstration only, not investment advice.
 

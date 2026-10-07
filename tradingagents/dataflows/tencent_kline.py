@@ -14,6 +14,11 @@ field-by-field match against the live ``qt.gtimg.cn`` snapshot (4/4 exact on
 open/now/high/low).  :func:`_parse_kline_row` encodes that map and
 ``tests/test_tencent_kline_tdx2.py`` re-asserts the invariant.
 
+Volume is kept as reported. STAR Market stocks (688/689) report shares;
+other A-share stocks report lots of 100 shares (a-stock-data v3.10.1 #57).
+Non-STAR daily volume is rounded to whole lots; weekly/monthly volume sums
+the daily lots, so multiplying by 100 does not establish exact share counts.
+
 Three further behaviours are load-bearing and are *not* self-evident from the
 payload:
 
@@ -462,7 +467,7 @@ def _tencent_kline_df(
         "requested_end": end_date,
         "settled_through": effective_end,
         "column_order": "[date, OPEN, CLOSE, HIGH, LOW, VOLUME]",
-        "volume_unit": "lots (100 shares)",
+        "volume_unit": "shares" if code.startswith(("sh688", "sh689")) else "lots (100 shares)",
         **walk,
     }
     if adjust == "qfq":
@@ -522,7 +527,7 @@ def _render(frame: pd.DataFrame, provenance: dict[str, Any], *, title: str) -> s
         f"# Bar period: {provenance.get('period', 'day')}",
         f"# Price basis: {basis}",
         f"# Settled through: {provenance['settled_through']}",
-        "# Volume unit: lots (100 shares).",
+        f"# Volume unit: {provenance['volume_unit']}.",
         f"# Provenance: {json.dumps(provenance, ensure_ascii=False, sort_keys=True)}",
     ]
     if basis == "qfq":
