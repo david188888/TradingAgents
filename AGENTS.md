@@ -82,6 +82,12 @@ large schema definitions in prose.
 
 ## Finish Checklist
 
+- When the user authorizes Git publication (commit/push or PR creation), default
+  to branch → PR → merge after applicable local checks and required GitHub checks
+  and reviews pass. No separate merge confirmation is needed. Stop for material
+  scope uncertainty, conflicts, failed/pending checks or missing required review;
+  never bypass protections. Preserve unrelated work and user data.
+
 - Scope changes to the owning layer; retain existing uncommitted work.
 - Start contract changes from their canonical Python or TypeScript schema and
   update every affected adapter, projection, and consumer.
