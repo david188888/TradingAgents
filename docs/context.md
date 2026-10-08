@@ -2,8 +2,8 @@
 
 - **Status: Current**（current-state 文档；行为变化时对照代码与测试校验）
 
-TradingAgents is a local-first, LangGraph-based multi-agent financial research
-framework. This fork prioritizes China A-share research with a maintained A-share Web product and retained compatibility code for older instruments. It is a research tool,
+TradingAgents is a local-first multi-agent financial research framework derived
+from TauricResearch/TradingAgents. This fork prioritizes China A-share research with a maintained A-share Web product and retained compatibility code for older instruments. It is a research tool,
 not an execution or account-management product.
 
 ## Users

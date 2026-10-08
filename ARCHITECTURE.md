@@ -8,7 +8,8 @@ source of runtime truth.
 
 ## Consumers And Entry Flow
 
-The maintained product entry is the Web workbench. Compatibility consumers share the neutral execution core:
+The maintained product entry is the Web workbench. Its adapters delegate to the
+consumer-neutral execution layer; legacy callers retain compatibility paths:
 
 - `cli/main.py` launches Web through `tradingagents web`. CLI analysis is legacy code outside continued product maintenance.
 - `tradingagents/web/` is the loopback-only FastAPI workbench. It creates and
@@ -17,18 +18,6 @@ The maintained product entry is the Web workbench. Compatibility consumers share
   constructs `TradingAgentsGraph`, while explicit native research uses
   `NativeRunner` with its durable observer and publication authorizer.
 
-The legacy neutral classic flow is:
-
-```text
-AnalysisRequest -> TradingAgentsGraph -> AnalysisRunner -> LangGraph workflow
-```
-
-`AnalysisRequest` and `AnalysisResult` in
-`tradingagents/execution/models.py` define the shared input/output boundary.
-`TradingAgentsGraph` validates effective configuration, builds tools and a
-workflow, and delegates run execution to `AnalysisRunner`. The runner resolves
-run context, creates state, invokes or streams LangGraph, handles cancellation
-and checkpoint coordination, then returns a result.
 Each analysis binds its effective dataflow configuration to the run's execution
 context, so concurrent Web runs route through their own configured providers.
 Optional DeepSeek effort overrides are keyed by actual call task in
@@ -38,6 +27,29 @@ clients, while news helpers bind immutable invocation settings. Task policies
 participate in saved effective configuration and resume identity. Effort overrides
 do not add model phases or change default effort; see
 [reasoning configuration](docs/operations/llm-reasoning.md).
+
+## Native Research Architecture
+
+```text
+Web form / API -> manager and scheduler -> NativeRunner
+  -> qualified, frozen source evidence -> native research kernel
+  -> validated research-record-v1 -> local run store -> Reader / Markdown
+```
+
+The maintained kernel is `graph/native_research.py`. Operating, event and
+market specialists receive separate frozen fact views and cannot read each
+other's drafts. Outputs merge in a fixed role order before independent challenge,
+bounded verification and synthesis. Independence means task-context isolation,
+not statistical independence or a guarantee of correctness.
+`NativeRunner` calls this Python kernel directly, with bounded specialist workers
+and a durable ledger; the retained classic workflow uses LangGraph.
+
+Models propose evidence-bound hypotheses, counterarguments and dimensional
+judgements. The code host owns source qualification, input/reference validation,
+deterministic calculations, execution limits and durable publication. Missing
+inputs remain explicit; a successful computable check cannot establish economic
+causality. The canonical boundaries are in `agents/schemas/` and `research/`;
+see the [contract index](docs/contracts/README.md) for producers and consumers.
 
 New Web single and batch requests default to `evidence_v1` and route to
 `execution/native_runner.py:NativeRunner`. The React creation form offers company,
@@ -81,6 +93,19 @@ See [native source policy](docs/operations/evidence-research.md#evidence-and-wor
 
 ## Legacy Workflow And Research Routing
 
+The legacy neutral classic flow is:
+
+```text
+AnalysisRequest -> TradingAgentsGraph -> AnalysisRunner -> LangGraph workflow
+```
+
+`AnalysisRequest` and `AnalysisResult` in
+`tradingagents/execution/models.py` define the shared input/output boundary.
+`TradingAgentsGraph` validates effective configuration, builds tools and a
+workflow, and delegates run execution to `AnalysisRunner`. The runner resolves
+run context, creates state, invokes or streams LangGraph, handles cancellation
+and checkpoint coordination, then returns a result.
+
 `tradingagents/graph/setup.py` builds a deterministic prefix before analysis:
 adjusted-price, news-window, and fundamentals prefetch tasks always run; the
 A-share supplement task runs when a selected analyst needs it. Selected market,
@@ -108,6 +133,11 @@ coverage. The thesis-diff code compares committed research cases; derived
 artifacts are promoted only after durable graph commit barriers.
 
 ## Publication And Projections
+
+### Legacy Catalyst Publication
+
+The following describes retained `catalyst_v1` execution and recovery. Current
+native publication is described below.
 
 Catalyst freezes one cutoff-qualified evidence draft, then executes three
 specialists, independent refutation and one synthesis. Model proposals pass
@@ -144,6 +174,8 @@ Reading, refreshing and reconnecting do not invoke models or providers.
 `ready`, run completion, evidence completeness and quality are separate axes.
 The SPA retains these historical case readers. New creation uses the native form. See
 [catalyst operations](docs/operations/catalyst-research.md) for qualification limits.
+
+### Shared Projections And Native Publication
 
 `observability/` records run events and graph-task candidates. `execution/`
 promotes committed state, public role outputs, evidence bundles, report
