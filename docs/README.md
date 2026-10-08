@@ -12,6 +12,11 @@ For any question about current behavior:
 2. Inspect the canonical code and passing tests.
 3. Treat plans/reviews/designs separately: they describe work, constraints, or historical snapshots, never deployed behavior.
 
+For initial orientation, read the concise [Chinese README](../README.md) or
+[English README](../README.en.md). Coding Agents start with [AGENTS.md](../AGENTS.md),
+then the scoped guide, architecture and owning contract. Keep detailed execution
+rules here in focused documents rather than duplicating them in the README.
+
 ## Current State
 
 `Status: Current` — 描述当前受支持的产品与架构；行为变化时必须对照实现校验。
@@ -23,7 +28,7 @@ For any question about current behavior:
 
 ## Architecture
 
-- [Research Reader architecture](architecture/research-reader.md): the current learning-research path (see Current State).
+- [Research Reader architecture](architecture/research-reader.md): native saved-record reading and legacy compatibility paths (see Current State).
 - [Repository architecture](../ARCHITECTURE.md): module ownership and dependency flow (see Current State).
 
 ## Contracts

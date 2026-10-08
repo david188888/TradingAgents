@@ -6,11 +6,13 @@ for repository-wide setup and finish rules.
 ## Boundaries
 
 - `execution/` is the consumer-neutral execution boundary. `AnalysisRequest`,
-  `AnalysisResult`, cancellation, and `AnalysisRunner` serve CLI, Web, and
-  programmatic callers without importing consumer-specific UI concerns.
-- `graph/` assembles the LangGraph workflow. `setup.py` owns node and edge
-  construction; `trading_graph.py` owns configured graph construction and the
-  compatibility-facing graph facade.
+  `AnalysisResult` and cancellation are shared contracts. `NativeRunner` owns
+  maintained Web research; `AnalysisRunner` retains classic execution for
+  compatibility callers. Neither should import consumer-specific UI concerns.
+- `graph/native_research.py` owns the maintained evidence-research kernel,
+  with isolated specialists, fixed merge order, challenge and synthesis.
+  `setup.py` assembles the retained classic LangGraph nodes/edges;
+  `trading_graph.py` owns its compatibility-facing facade.
 - `dataflows/` owns provider interfaces, vendor selection, normalization, and
   capability results. Provider failures must remain typed and source-labelled.
 - `agents/schemas/` and `research/` own public research artifacts, evidence

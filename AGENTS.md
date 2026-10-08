@@ -1,9 +1,25 @@
 # TradingAgents Working Guide
 
 This file is the operational entry point for contributors and coding agents.
-Read [README.md](README.md) for product setup, [ARCHITECTURE.md](ARCHITECTURE.md)
+Read [README.md](README.md) ([English](README.en.md)) for product orientation, [ARCHITECTURE.md](ARCHITECTURE.md)
 for the current system map, and [docs/README.md](docs/README.md) for detailed
 references.
+
+## Reading And Documentation Ownership
+
+Start here, then read the scoped `AGENTS.md` for the files being changed.
+Use the architecture and documentation index to find the owning contract and
+inspect its canonical code before changing behavior. New Web research uses
+`evidence_v1`; classic/catalyst paths in older documents are compatibility paths.
+
+- `README.md` is the concise Chinese product overview; `README.en.md` is its
+  English counterpart and the package long description. Keep their structure,
+  capabilities and limitations aligned. `README.zh-CN.md` preserves the old link.
+- Keep the README focused on purpose, architecture, Agent design, highlights,
+  startup and major limitations. Detailed budgets, versioned workflow rules,
+  endpoint errors and recovery belong in the indexed operations/contracts docs.
+- `ARCHITECTURE.md` owns the current module map; this file and scoped guides own
+  contribution rules. Plans and dated reviews retain their writing-time facts.
 
 ## Repository Map
 
@@ -14,9 +30,9 @@ references.
   be changed by Markdown edits or presets. See `tradingagents/skills/registry.py`.
 - `frontend/`: React workbench source. See [frontend/AGENTS.md](frontend/AGENTS.md).
 - `tradingagents/web/static/`: generated SPA assets served by the Python package.
-- `tests/`, frontend test files, and `frontend/e2e/`: local test scaffolding that is
-  tracked and shipped with the repository since 2026-08 (run them when present; they
-  are not part of the public fresh-clone contract).
+- `tests/`, frontend test files, and `frontend/e2e/`: tracked contributor tests
+  available in fresh clones. They run locally and are not required to use the
+  installed Web product.
 - `docs/`: focused operational references, plans, and reviews. Plans and reviews are not
   current-state architecture sources.
 
@@ -29,7 +45,7 @@ tooling is:
 pip install -e ".[china,web,dev]"
 ```
 
-Public, fresh-clone checks are:
+Baseline contributor checks are:
 
 ```bash
 python scripts/check_agent_docs.py
@@ -39,7 +55,7 @@ npm --prefix frontend run typecheck
 npm --prefix frontend run build
 ```
 
-Run the following when the corresponding tracked test scaffolding exists:
+Run the applicable tracked tests for the changed layer:
 
 ```bash
 python -m pytest
@@ -47,6 +63,12 @@ python -m pytest -m unit
 npm --prefix frontend run test -- --run
 npm --prefix frontend run test:e2e
 ```
+
+For first-time end-to-end setup, install Playwright Chromium from `frontend/`
+with `npx playwright install chromium`, and build the SPA before running tests.
+The fixture server needs the contributor Python environment; set
+`TRADINGAGENTS_E2E_PYTHON` when `python` resolves elsewhere. See
+[scoped validation](CONTRIBUTING.md#scoped-validation).
 
 The maintained user entry is `tradingagents web --port 8765 --open`. CLI analysis
 is retained legacy code and is outside continued product maintenance. The Web
@@ -62,7 +84,7 @@ workbench is loopback-only; it binds to `127.0.0.1`.
 | Research methodology skills or role mapping | `tradingagents/skills/registry.py` (code-owned) and `tradingagents/skills/library/`; keep threshold heuristics labeled advisory |
 | Web API, SSE, persistence, or Reader/Audit projection | `tradingagents/web/`, `frontend/src/api/contracts.ts`, relevant frontend consumers |
 | React/TypeScript source | `frontend/AGENTS.md`; rebuild generated assets |
-| Runtime, configuration, CLI, or workflow behavior | `README.md`, `ARCHITECTURE.md`, and focused docs |
+| Runtime, configuration, CLI, or workflow behavior | Indexed operations/contracts docs and `ARCHITECTURE.md`; update both READMEs when the product overview changes |
 
 Code schemas and validation are authoritative for machine contracts. Markdown
 documents intent, ownership, compatibility, and navigation; do not duplicate
@@ -92,8 +114,8 @@ large schema definitions in prose.
 - Start contract changes from their canonical Python or TypeScript schema and
   update every affected adapter, projection, and consumer.
 - Run `python scripts/check_agent_docs.py` and the applicable Ruff, frontend
-  install/typecheck/build checks; run pytest, Vitest, or Playwright only when
-  their local-only scaffolding is present.
+  install/typecheck/build checks; run pytest, Vitest, or Playwright for the
+  affected layer using the tracked tests.
 - Rebuild `tradingagents/web/static/` after frontend source changes.
 - Update the current-state documentation surface when behavior, configuration,
   contract ownership, or operational workflow changed.

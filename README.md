@@ -1,97 +1,43 @@
-English | [简体中文](README.zh-CN.md)
+简体中文 | [English](README.en.md)
 
 # TradingAgents
 
-TradingAgents is a local, LangGraph-based multi-agent research framework built on [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). This fork focuses on China A-shares: it gathers market, sentiment, news, and company evidence; checks its quality; tests opposing theses; and publishes a reviewable research case. The local Web workbench is the maintained product entry. It supports company research, catalyst research and holding review, with saved evidence, explicit unknowns and deterministic calculations. CLI analysis is retained as legacy code and is no longer maintained.
+面向中国 A 股的本地多 Agent 研究工作台，源自 [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)。它把公司资料、公告、财务和行情组织成可复核的研究记录，帮助研究者看清**关键依据、主要疑点和下一步需要验证什么**。
 
-## Demo
+支持公司研究、催化研究、持仓复盘与批量公司研究。持续维护的入口是 Web 工作台；系统不生成订单或目标仓位，也不构成投资建议。
 
-Version 3.1.0 adds independent baseline research, an optional saved-evidence focus response,
-the evidence Reader and corrected Tencent stock volume labels. See the
-[3.1 release notes](docs/reviews/2026-10-07-v3.1-release-notes.md) and
-[3.0 migration boundary](docs/reviews/2026-10-05-v3-release-notes.md).
+[![观看 TradingAgents 24 秒演示](https://david188888.github.io/images/tradingagents-demo-poster-20261008.jpg)](https://david188888.github.io/videos/tradingagents-demo-20261008.mp4)
 
-Watch a 20-second walkthrough of a historical A-share research-only sample (the previous interface). English annotations guide the original Chinese interface; the video is for research demonstration only, not investment advice.
+24 秒演示：英文旁白与字幕，展示当前 Reader 中保存的历史研究样例（2026-10-06）；点击封面播放。
 
-[![TradingAgents demo: a completed 002335.SZ research-only sample](https://david188888.github.io/images/tradingagents-demo-poster.jpg)](https://david188888.github.io/videos/tradingagents-demo.mp4)
+## 项目亮点
 
-[Open the 20-second demo video](https://david188888.github.io/videos/tradingagents-demo.mp4) · [View the project page](https://david188888.github.io/en/projects/tradingagents/)
+- **A 股证据链**：整合公开公司资料、官方披露、财务与行情，保留来源、时点和覆盖限制。
+- **有分工的多 Agent 研究**：经营、事件、市场专项独立形成假设，由挑战与综合角色审查；代码负责证据资格、引用校验与确定性计算。
+- **可追溯的研究阅读**：从结论回看依据、疑点和各 Agent 的产物；Reader 与 Markdown 使用同一保存记录，阅读不重新取数或调用模型。
 
-## Research pipeline
-
-The Web workbench uses `evidence_v1` for all new single-company and batch runs:
+## 整体架构与 Agent 设计
 
 ```mermaid
 flowchart LR
-    A[Freeze qualified evidence] --> B[Operating, event and market hypotheses]
-    B --> C[Independent challenge]
-    C --> D[Bounded condition checks]
-    D --> E[Dimension-gated synthesis]
-    E --> F[Freeze independent baseline]
-    F --> G[Optional focus response]
-    G --> H[Publish baseline and supplement, Reader and Markdown]
+    A[公开数据源] --> B[资格校验与证据冻结]
+    B --> C[证据研究内核]
+    C --> D[本地运行与研究记录]
+    D --> E[Web Reader 与 Markdown]
 ```
 
-Company research covers operating quality, valuation and market context;
-catalyst research uses an 84-calendar-day outlook; holding review rechecks
-user-provided holdings and the original thesis. Batch research uses the same
-company workflow. Roles and attempt limits are fixed by code.
+| 角色／层 | 职责 |
+| --- | --- |
+| 经营、事件、市场专项 Agent | 使用各自的证据视图提出假设与失效条件，互不读取其它专项草稿。 |
+| 独立挑战 Agent | 寻找反证、证据缺口与需要核查的条件。 |
+| 综合 Agent | 综合证据与挑战，形成分维度判断、关键疑点和下一步。 |
+| 代码宿主 | 控制数据准入与运行边界，核查可计算条件，校验并保存研究结果。 |
 
-The desktop Reader starts with the mode-owned research scope and independent
-saved judgement, then
-key evidence, the main doubt and suggested next check, executed checks,
-valuation and historical quantitative context. A side panel explains linked
-facts, saved source content and financial terms; narrow desktop containers use
-an evidence drawer. Report navigation includes the evidence directory, research
-process, each Agent's validated saved proposal, and the complete record.
-Contribution links show which role produced a hypothesis or challenge and how
-synthesis or code treated it. Reading does not fetch data or invoke models.
-An optional “补充关注点” is answered only after the baseline is durably saved,
-using existing evidence. It appears at the report end and cannot change baseline
-claims, challenges, quality or judgement. No focus means no supplemental call.
-Historical V1–V5 reports keep their original question-led analysis.
-A completed run may remain `partial / LOW_CONFIDENCE`.
+基础研究先独立完成并保存，再按需回应用户关注点；补充回应不能改写基础结论。完整执行、恢复和模块边界见[系统架构](ARCHITECTURE.md)。
 
-Technical diagnostics use the run's actual role registry and distinguish budget
-authorization from SDK dispatch authorization. Incomplete historical observation
-is labelled as a known lower bound or unrecorded, rather than zero calls.
+## 快速开始
 
-Native sources prioritize bounded public company profiles, Sina financial
-tables, CNINFO disclosures and qualified Tencent/Sina adjusted prices, with
-Tushare backup. V4 adds a dated Tencent valuation snapshot and Tushare daily
-PE/PB history. The existing pure valuation chain computes historical positioning
-and, when qualified annual consolidated profit attributable to parent
-shareholders and enough history exist, a multiple-based reference interval.
-Missing inputs remain unavailable. Historical multiples are retrieved at the
-current cutoff and do not prove archived point-in-time availability; intervals
-are assumption-dependent research aids.
-
-New runs use workflow V6, retaining V5 source admission and bounded checks. Selected official reports, summaries and operating
-notices retain page/hash references, explicit current/prior numbers and cash-flow
-bridge rows. Code checks three bounded evidence questions before synthesis.
-Dated institution EPS and same-session industry-candidate quotes supplement
-valuation context when available; optional failures preserve other local results.
-The Reader distinguishes an answered evidence question, an observed risk and a
-future observation. Economic causes, persistence and fair value remain separate
-judgements; a passed check does not close them or upgrade research quality.
-
-Old `classic` and `catalyst_v1` records remain readable and compatible interrupted
-runs can resume with their original topology and spent budgets. New creation
-and fresh retry for those profiles return `410 research_profile_retired`.
-Native creation is enabled by default; `TRADINGAGENTS_EVIDENCE_ENABLED=false`
-blocks new runs, batches and retries while preserving reading and recovery.
-No automatic rewrite or deletion of old records occurs.
-
-See [Web operations](docs/operations/evidence-research.md),
-[research record](docs/contracts/research-record.md),
-[valuation rules](docs/contracts/valuation-assessment.md) and
-[architecture](ARCHITECTURE.md). Real smoke evidence validates operation on a
-specific symbol; it does not establish predictive accuracy or a completed
-same-evidence quality comparison.
-
-## Quick start
-
-Python 3.10 or newer is required. Configure an API key for your chosen LLM provider and any optional data or news services you use; the default LLM provider is DeepSeek. Keep credentials in the ignored local files.
+需要 Python 3.10+ 和所选模型供应商的 API Key。默认模型为 DeepSeek V4.1 Flash（`deepseek-flash`）。
 
 ```bash
 git clone https://github.com/david188888/TradingAgents.git
@@ -101,32 +47,33 @@ source .venv/bin/activate
 pip install -e ".[china,web]"
 
 cp .env.example .env
-# Set your LLM key in .env (for example DEEPSEEK_API_KEY), and configure
-# optional data providers (for example TUSHARE_TOKEN for Tushare backup).
+# 在 .env 中填写 DEEPSEEK_API_KEY，或配置其它模型供应商。
 
-tradingagents web --port 8765 --open  # local workbench
+tradingagents web --port 8765 --open
 ```
 
-The web server binds to `127.0.0.1`; the bundled frontend needs no Node.js at runtime. The Web launcher loads the ignored `.env`; supported `TRADINGAGENTS_*` variables set server defaults, and the form selects models, language and research scope. The legacy CLI's `tradingagents.local.json` is not loaded by the Web server. Blank results, cache, memory-log, and news-cache path settings use their built-in defaults. See [.env.example](.env.example) and [default_config.py](tradingagents/default_config.py). Local runs and reports live under `~/.tradingagents/`; see [the architecture map](ARCHITECTURE.md) for paths. Developers changing `frontend/src/` should rebuild `tradingagents/web/static/` with `npm --prefix frontend run build`.
+Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记录保存在 `~/.tradingagents/`。凭据仅放在被 Git 忽略的本地配置中。数据权限与配置见 [.env.example](.env.example) 和 [Web 操作说明](docs/operations/evidence-research.md)。
 
-Both model tiers default to official DeepSeek V4.1 Flash (`deepseek-flash`);
-existing `deepseek-v4-flash` configurations remain accepted. Thinking
-defaults to enabled with effort `high`. An explicit disabled setting omits the
-effort so it cannot re-enable thinking. Optional `deepseek_task_efforts` can
-override individual agents, native/legacy stages and auxiliary tasks; unlisted
-tasks retain the global setting. Defaults remain `high`; see
-[model reasoning configuration](docs/operations/llm-reasoning.md).
+## 当前限制
 
-## More documentation
+- **覆盖有限**：公开来源可能缺失、限流或无法验证历史时点；部分交易日历与历史估值能力依赖 Tushare 凭据和权限。
+- **研究质量仍需验证**：运行完成可能仍是 `partial / LOW_CONFIDENCE`；证据核查通过不代表经济原因或合理价值已确定，也未证明预测准确率提升。
+- **产品范围明确**：当前维护本地 A 股 Web 研究；CLI 分析不再维护，旧流程保留历史读取与兼容恢复。
 
-- [Documentation index](docs/README.md) and [current architecture](ARCHITECTURE.md)
-- [Research Reader architecture](docs/architecture/research-reader.md) and [web batch analysis](docs/operations/web-batch-analysis.md)
-- [Agent working rules](AGENTS.md), [contract index](docs/contracts/README.md), and [contributing guide](CONTRIBUTING.md)
+## 深入了解
 
-The project license is in [LICENSE](LICENSE).
+| 想了解什么 | 文档入口 |
+| --- | --- |
+| 整体架构、模块职责与 Agent 边界 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 运行、数据源、模型与恢复 | [Web 操作](docs/operations/evidence-research.md) · [模型配置](docs/operations/llm-reasoning.md) |
+| 研究记录与证据契约 | [契约索引](docs/contracts/README.md) · [研究记录](docs/contracts/research-record.md) |
+| Reader 的证据追溯与展示 | [Reader 架构](docs/architecture/research-reader.md) |
+| 编码 Agent 与贡献者如何修改项目 | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
+| 全部文档与发布记录 | [文档索引](docs/README.md) · [3.1 发布说明](docs/reviews/2026-10-07-v3.1-release-notes.md) |
 
-## Differences from upstream and acknowledgments
+编码 Agent 从 [AGENTS.md](AGENTS.md) 开始；当前行为以代码、契约和当前状态文档为准，历史计划不是实现证据。
 
-This fork retains the LangGraph multi-agent foundation of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). Its maintained Web path adds bounded A-share source routing, isolated specialist hypotheses, independent challenges, code-owned evidence checks and a saved-record Reader/Audit workbench. Historical classic records retain the earlier Evidence Steward and debate path. The current public modes end in a research-only review; they do not run the original trading-decision path. These are this fork's design choices, not claims that upstream lacks every corresponding capability.
 
-Thanks to the TauricResearch contributors for the original TradingAgents framework and to [Simon Lin](https://github.com/simonlin1212/a-stock-data) for the A-share data reference. Thanks also to the maintainers of the data providers and open-source libraries used here.
+## 致谢与许可
+
+感谢 [TauricResearch](https://github.com/TauricResearch/TradingAgents) 的多 Agent 框架、[Simon Lin](https://github.com/simonlin1212/a-stock-data) 的 A 股数据参考，以及数据服务与开源库维护者。本 fork 在上游基础上发展了上述证据研究与本地工作台设计。许可见 [LICENSE](LICENSE)。

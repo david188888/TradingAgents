@@ -20,6 +20,8 @@ from urllib.parse import unquote, urlsplit
 
 REQUIRED_FILES = (
     "README.md",
+    "README.en.md",
+    "README.zh-CN.md",
     "AGENTS.md",
     "ARCHITECTURE.md",
     "CONTRIBUTING.md",
