@@ -427,6 +427,7 @@ def create_app(
     def create_batch(body: BatchCreateRequest) -> dict[str, Any]:
         for entry in body.entries:
             _require_native_creation(entry.config.research_profile)
+            _require_unified_mode(getattr(entry.config, "mode", None))
         if not evidence_profile_enabled():
             raise ApiBoundaryError(403, "evidence_profile_unavailable", "此服务已停用新建证据研究。", fields=("research_profile",))
         configured_keys = _configured_keys(selected_environment)
@@ -717,6 +718,7 @@ def create_app(
         _require_native_creation(source.metadata.get("research_profile", "classic"))
         if not evidence_profile_enabled():
             raise ApiBoundaryError(403, "evidence_profile_unavailable", "此服务已关闭新建研究。")
+        _require_unified_mode(source.mode)
         connectivity_check(source.ticker)
         return selected_manager.retry(run_id).as_dict()
 
@@ -903,6 +905,7 @@ def _analysis_request(
     chatgpt_auth=None,
 ) -> tuple[AnalysisRequest, dict[str, bool]]:
     _require_native_creation(body.research_profile)
+    _require_unified_mode(body.mode)
     provider = body.llm_provider.lower()
     if provider not in PROVIDER_API_KEY_ENV and provider != "chatgpt":
         raise ApiBoundaryError(
@@ -1113,6 +1116,12 @@ def catalyst_profile_enabled() -> bool:
     return bool(DEFAULT_CONFIG.get("catalyst_profile_enabled", False))
 
 
+def _require_unified_mode(mode):
+    if mode not in {None, "company_research"}:
+        raise ApiBoundaryError(422, "unified_research_mode_required",
+            "新建研究统一分析公司投资吸引力；旧模式仅用于历史读取和恢复。", fields=("mode",))
+
+
 def _require_native_creation(profile: str) -> None:
     if profile != "evidence_v1":
         raise ApiBoundaryError(410, "research_profile_retired",
@@ -1160,7 +1169,7 @@ def _normalize_research_context(
 
     mode = body.mode
     if mode is None:
-        mode = "holding_review" if holding is not None or portfolio is not None else "company_research"
+        mode = "company_research"
 
     if mode == "catalyst_research" and body.research_profile != "evidence_v1":
         raise ApiBoundaryError(422, "evidence_mode_unsupported",

@@ -406,7 +406,7 @@ def test_native_creation_rejects_legacy_analyst_order(api):
 
 
 
-def test_create_normalizes_portfolio_symbols_before_manager(api):
+def test_create_does_not_infer_a_holding_mode_from_legacy_portfolio(api):
     client, _store, manager = api
     body = {
         **VALID_RUN_BODY,
@@ -435,16 +435,9 @@ def test_create_normalizes_portfolio_symbols_before_manager(api):
 
     response = client.post("/api/runs", json=body)
 
-    assert response.status_code == 201
-    request, _configured_keys = manager.calls[0][1]
-    assert request.ticker == "600519.SS"
-    # A legacy portfolio is converted into a HoldingContext (source-tagged);
-    # the request model has no portfolio object anymore.
-    assert request.holding_context is not None
-    assert request.holding_context.ticker == "600519.SS"
-    assert request.holding_context.quantity == 200
-    assert request.holding_context.currency == "CNY"
-    assert request.holding_context.source == "legacy_portfolio"
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "legacy_portfolio_not_allowed"
+    assert manager.calls == []
 
 
 def test_create_rejects_portfolio_with_duplicate_normalized_positions(api):
@@ -466,7 +459,7 @@ def test_create_rejects_portfolio_with_duplicate_normalized_positions(api):
 
     assert response.status_code == 422
     assert (
-        response.json()["detail"]["code"] == "legacy_target_position_ambiguous"
+        response.json()["detail"]["code"] == "legacy_portfolio_not_allowed"
     )
     assert manager.calls == []
 

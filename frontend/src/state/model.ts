@@ -313,8 +313,15 @@ export const NATIVE_ROLE_REGISTRY: readonly RoleDefinition[] = [
 
 export const FOCUS_ROLE: RoleDefinition = {actor_id:"native.focus_response",node_id:"focus_response",team_id:"native",display_name:"Focus response",icon_id:"verified-magnifier",analyst_key:null};
 
+export const UNIFIED_ROLE_REGISTRY: readonly RoleDefinition[] = [
+  ...NATIVE_ROLE_REGISTRY.slice(0,-1),
+  ...["operating_quality", "event_context", "market_context"].map(role => ({actor_id:`native.response_${role}`,node_id:`response_${role}`,team_id:"native",display_name:`${role} response`,icon_id:"verified-magnifier",analyst_key:null})),
+  NATIVE_ROLE_REGISTRY[NATIVE_ROLE_REGISTRY.length-1],
+];
 export function rolesForProfile(profile?: ResearchProfile, version?: string, focusRequested=false): readonly RoleDefinition[] {
-  return profile === "evidence_v1" ? version === "evidence-production-v6" && focusRequested ? [...NATIVE_ROLE_REGISTRY, FOCUS_ROLE] : NATIVE_ROLE_REGISTRY : ROLE_REGISTRY;
+  if (profile !== "evidence_v1") return ROLE_REGISTRY;
+  const roles = version === "evidence-production-v7" ? UNIFIED_ROLE_REGISTRY : NATIVE_ROLE_REGISTRY;
+  return (version === "evidence-production-v6" || version === "evidence-production-v7") && focusRequested ? [...roles, FOCUS_ROLE] : roles;
 }
 
 export const ROLE_REGISTRY: readonly RoleDefinition[] = [

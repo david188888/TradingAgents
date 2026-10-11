@@ -56,24 +56,14 @@ it("creates native company research with normalized scheduling regardless of leg
   const { result } = await mount();
   expect(result.current.buildRequest()).toMatchObject({ ticker: "600803", mode: "company_research", research_profile: "evidence_v1", research_depth: 1, horizon: "medium", selected_analysts: ["market", "social", "news", "fundamentals"], checkpoint_enabled: false });
 });
-it("keeps catalyst question and mode without carrying holding fields", async () => {
-  const { result } = await mount();
-  act(() => { result.current.setMode("catalyst_research"); result.current.setResearchQuestion("  兑现条件？  "); result.current.setHoldingQuantity("100"); });
-  const request = result.current.buildRequest();
-  expect(request).toMatchObject({ mode: "catalyst_research", research_question: "兑现条件？" });
-  expect(request).not.toHaveProperty("holding");
-});
-it("validates user holdings, while batch company requests ignore single holding state", async () => {
-  const { result } = await mount();
-  act(() => result.current.setMode("holding_review"));
-  expect(result.current.buildRequest()).toBeNull();
-  expect(result.current.buildRequestForTicker("600803")).toMatchObject({mode: "company_research", research_profile: "evidence_v1"});
-  act(() => { result.current.setHoldingQuantity("100"); result.current.setHoldingAverageCost("20"); result.current.setHoldingOriginalThesis("收入改善"); });
-  expect(result.current.buildRequest()?.holding).toMatchObject({ quantity: 100, average_cost: 20, original_thesis: "收入改善" });
-  act(() => result.current.setHoldingOriginalThesis("😀".repeat(4000)));
-  expect(result.current.buildRequest()).not.toBeNull();
-  act(() => result.current.setHoldingOriginalThesis("😀".repeat(4001)));
-  expect(result.current.buildRequest()).toBeNull();
+it("keeps an optional focus in the single company workflow and uses the same scope for batch", async () => {
+  const {result} = await mount();
+  act(() => result.current.setResearchQuestion("  兑现条件？  "));
+  for (const request of [result.current.buildRequest(), result.current.buildRequestForTicker("002130")]) {
+    expect(request).toMatchObject({mode:"company_research",research_question:"兑现条件？"});
+    expect(request).not.toHaveProperty("holding");
+  }
+  expect(result.current).not.toHaveProperty("setMode");
 });
 it("enforces 400 Unicode code points for the question", async () => {
   const { result } = await mount();

@@ -120,23 +120,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         />
       </div>
 
-      <div className="input-group">
-        <label htmlFor="ctrl-mode">研究模式</label>
-        <select
-          id="ctrl-mode"
-          value={cfg.mode}
-          onChange={(e) =>
-            cfg.setMode(
-              e.target.value === "holding_review" ? "holding_review" : e.target.value === "catalyst_research" ? "catalyst_research" : "company_research",
-            )
-          }
-        >
-          <option value="company_research">公司研究</option>
-          <option value="catalyst_research">催化研究 · 未来 84 天</option>
-          <option value="holding_review">持仓复盘</option>
-        </select>
-        <small>公司研究用于理解标的；持仓复盘只用于学习和复查已有或模拟持仓。</small>
-      </div>
+      <p className="qr-meta">结合经营、当前估值、事件与市场风险，核对证据、质疑并回应，给出投资吸引力判断及理由。</p>
 
       <div className="input-group">
         <label htmlFor="ctrl-question">补充关注点（可选）</label>
@@ -231,96 +215,6 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
           ))}
         </select>
       </div>
-
-      {cfg.mode === "holding_review" && (
-        <>
-          <div className="input-group">
-            <label htmlFor="ctrl-holding-quantity">
-              持仓数量
-              <input
-                id="ctrl-holding-quantity"
-                type="number"
-                min="0.000001"
-                step="any"
-                value={cfg.holding_quantity}
-                onChange={(e) => cfg.setHoldingQuantity(e.target.value)}
-                placeholder="必填，如 100"
-              />
-            </label>
-            <label htmlFor="ctrl-holding-cost">
-              平均成本（每单位）
-              <input
-                id="ctrl-holding-cost"
-                type="number"
-                min="0.000001"
-                step="any"
-                value={cfg.holding_average_cost}
-                onChange={(e) => cfg.setHoldingAverageCost(e.target.value)}
-                placeholder="必填"
-              />
-            </label>
-          </div>
-          <div className="input-group grid-2">
-            <label htmlFor="ctrl-holding-cash">
-              现金（可选）
-              <input
-                id="ctrl-holding-cash"
-                type="number"
-                min="0"
-                step="any"
-                value={cfg.holding_cash}
-                onChange={(e) => cfg.setHoldingCash(e.target.value)}
-              />
-            </label>
-            <label htmlFor="ctrl-holding-nav">
-              账户总资产（可选）
-              <input
-                id="ctrl-holding-nav"
-                type="number"
-                min="0.000001"
-                step="any"
-                value={cfg.holding_total_account_value}
-                onChange={(e) => cfg.setHoldingTotalAccountValue(e.target.value)}
-              />
-            </label>
-          </div>
-          <div className="input-group grid-2">
-            <label htmlFor="ctrl-holding-currency">
-              金额币种（可选）
-              <input
-                id="ctrl-holding-currency"
-                type="text"
-                maxLength={3}
-                value={cfg.holding_currency}
-                onChange={(e) => cfg.setHoldingCurrency(e.target.value)}
-                placeholder="如 CNY"
-              />
-            </label>
-            <label htmlFor="ctrl-holding-as-of">
-              持仓事实日期（可选）
-              <input
-                id="ctrl-holding-as-of"
-                type="date"
-                value={cfg.holding_facts_as_of}
-                onChange={(e) => cfg.setHoldingFactsAsOf(e.target.value)}
-              />
-            </label>
-          </div>
-          <div className="input-group">
-            <label htmlFor="ctrl-holding-thesis">原始持仓理由（可选）</label>
-            <textarea
-              id="ctrl-holding-thesis"
-              value={cfg.holding_original_thesis}
-              onChange={(e) => cfg.setHoldingOriginalThesis(e.target.value)}
-              placeholder="用于复查当初的研究逻辑；留空则不推测。"
-              rows={3}
-            />
-            <small>
-              持仓事实以分析日期为准。仅用于学习和复盘，不构成交易指令，也不会连接券商或执行订单。
-            </small>
-          </div>
-        </>
-      )}
 
       {cfg.validationError !== null && (
         <div className="error-text" style={{ color: "var(--red)" }}>

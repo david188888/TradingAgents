@@ -12,6 +12,12 @@ from tradingagents.agents.schemas._research_assessment import (
 )
 from tradingagents.agents.schemas._verification_plan import VerificationConditionV1
 
+from ._research_dialogue import (
+    ChallengeAdjudicationV1,
+    InvestmentArgumentV1,
+    JudgementConditionV1,
+)
+
 
 class _Proposal(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -86,3 +92,14 @@ class ChallengesProposalV2(_Proposal):
 class SynthesisProposalV2(SynthesisProposalV1):
     # Narrative rationales remain proposals. The host generates v2 outcomes.
     pass
+
+
+
+
+
+class SynthesisProposalV3(SynthesisProposalV2):
+    investment_stance: Literal["favorable", "neutral", "unfavorable", "insufficient_evidence"]
+    supporting_arguments: tuple[InvestmentArgumentV1, ...] = Field(default=(), max_length=3)
+    opposing_arguments: tuple[InvestmentArgumentV1, ...] = Field(default=(), max_length=3)
+    change_conditions: tuple[JudgementConditionV1, ...] = Field(default=(), max_length=3)
+    adjudications: tuple[ChallengeAdjudicationV1, ...] = Field(default=(), max_length=3)

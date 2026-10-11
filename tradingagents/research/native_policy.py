@@ -1,16 +1,22 @@
 """Code-owned questions, source partitions and dimension ceilings."""
 
 from tradingagents.agents.schemas._research_assessment import (
-    DIMENSIONS_BY_MODE,
     DimensionAssessmentV1,
 )
+from tradingagents.agents.schemas._research_dialogue import excluded_support
 from tradingagents.research.native_valuation import VALUATION_SOURCES
+from tradingagents.research.native_versions import UNIFIED_DIMENSIONS, assessment_dimensions
 from tradingagents.research.source_families import (
     BODY_SOURCES,
     FINANCIAL_SOURCES,
     OPERATING_SOURCES,
     PRICE_SOURCES,
 )
+
+
+def record_dimensions(record):
+    return UNIFIED_DIMENSIONS if record.dialogue is not None else assessment_dimensions(record.mode)
+
 
 ROLE_ORDER = ("operating_quality", "event_context", "market_context")
 QUESTIONS = {
@@ -94,7 +100,7 @@ def dimension_policy(record, *, scoped=False, valuation=False):
         for name, (status, _reason) in policies.items():
             if status != "unresolved":
                 policies[name] = (status, "dimension_judgement_requires_further_validation")
-    return {name: policies[name] for name in DIMENSIONS_BY_MODE[record.mode]}
+    return {name: policies[name] for name in record_dimensions(record)}
 
 
 def dimension_claim_ids(record):
@@ -105,7 +111,7 @@ def dimension_claim_ids(record):
              "valuation": "operating_quality", "catalyst_delivery": "event_context", "market_context": "market_context"}
     output = {}
     facts = {f.claim_id: f for f in record.claims if f.kind == "fact"}
-    for dimension in DIMENSIONS_BY_MODE[record.mode]:
+    for dimension in record_dimensions(record):
         allowed = {f.claim_id for f in views[roles[dimension]]}
         if dimension == "valuation":
             allowed = {f.claim_id for f in views["operating_quality"] if all(sources[key] in _valuation_sources(record) for key in f.evidence_ids)}
@@ -122,12 +128,16 @@ def dimension_claim_ids(record):
                     continue
             ids.append(claim.claim_id)
         output[dimension] = ids
-    return output
+    excluded = excluded_support(record)
+    return {name: [key for key in ids if key not in excluded] for name, ids in output.items()}
 
 
 def gate_dimensions(record, proposed, *, scoped=False, valuation=False):
     """Propagate challenged dependencies, never permit narrative to raise a ceiling."""
-    order = DIMENSIONS_BY_MODE[record.mode]
+    order = record_dimensions(record)
+    excluded = excluded_support(record)
+    if any(excluded & set(item.claim_ids) for item in proposed):
+        raise ValueError("withdrawn or revised hypothesis cannot support a dimension")
     supplied = {item.dimension: item for item in proposed}
     if len(supplied) != len(proposed) or set(supplied) != set(order):
         raise ValueError("synthesis must contain each mode dimension exactly once")

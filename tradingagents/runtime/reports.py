@@ -180,7 +180,10 @@ class ReportArtifactWriter:
             raise ReportPublicationError("native report identity mismatch")
         if record.construction != "native" or record.assessment is None:
             raise ReportPublicationError("native report requires a native assessment")
-        from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+        from tradingagents.research.native_versions import (
+            FOCUS_WORKFLOW_VERSION,
+            UNIFIED_WORKFLOW_VERSION,
+        )
         from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
         from tradingagents.runtime.focus_artifacts import (
             read_focus_artifact,
@@ -190,7 +193,7 @@ class ReportArtifactWriter:
         checkpoint = load_checkpoint(self.store, run_id)
         version = checkpoint["identity"].get("workflow_version") if checkpoint else None
         response, reason = None, None
-        if version == FOCUS_WORKFLOW_VERSION and checkpoint["identity"].get("research_question"):
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and checkpoint["identity"].get("research_question"):
             events = self.store.read_events(run_id)
             saved = read_focus_artifact(self.store, run_id, record, checkpoint, events)
             reason = read_focus_publication_failure(self.store, run_id, record, checkpoint, events)
@@ -357,11 +360,39 @@ def _build_v4_native_markdown(record: Any) -> str:
         "operating_quality": "经营质量", "valuation": "估值依据", "market_context": "市场与价格背景",
         "catalyst_delivery": "催化兑现", "holding_thesis": "原持仓假设",
     }
+    if assessment.schema_version == "research-assessment-v3":
+        dimensions["catalyst_delivery"] = "事件影响与兑现"
     modes = {"company_research": "公司研究", "catalyst_research": "催化研究", "holding_review": "持仓复盘"}
     lines = [f"# {text(record.ticker)} · {modes[record.mode]}", "",
         f"研究截点：{record.analysis_date.isoformat()}。研究问题：{text(assessment.research_question)}", "",
         f"**{text(assessment.judgement)}**", "",
         f"证据完整性：{assessment.completeness}；研究质量：{assessment.quality}。运行完成不表示证据充分。", ""]
+    if assessment.schema_version == "research-assessment-v3":
+        stances = {"favorable": "偏有吸引力", "neutral": "中性", "unfavorable": "偏缺乏吸引力", "insufficient_evidence": "证据不足"}
+        dispositions = {"maintained": "维持", "revised": "修正", "withdrawn": "撤回", "unanswerable": "无法回答"}
+        lines.extend(["## 投资吸引力判断", "", stances[assessment.investment_stance], ""])
+        for label, arguments in (("支持理由", assessment.supporting_arguments), ("反对理由与反证", assessment.opposing_arguments)):
+            lines.extend(["### " + label, ""])
+            lines.extend("- " + text(a.rationale) + "（依据：" + "、".join(text(c) for c in a.claim_ids) + "；回应：" + "、".join(text(r) for r in a.response_ids) + "）" for a in arguments)
+            if not arguments:
+                lines.append("本次未形成合格的此类理由。")
+            lines.append("")
+        lines.extend(["### 哪些条件会改变判断", ""])
+        lines.extend("- " + text(c.text) + "（原假设：" + text(c.hypothesis_id) + "）" for c in assessment.change_conditions)
+        lines.extend(["", "## 一轮质疑与专项回应", ""])
+        hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
+        for reply in record.dialogue.responses:
+            hypothesis = hypotheses[reply.hypothesis_id]
+            challenge = challenges[reply.challenge_id]
+            adjudication = next(a for a in assessment.adjudications if a.challenge_id == reply.challenge_id)
+            lines.extend(["### 原观点：" + text(claims[hypothesis.claim_id].statement), "",
+                "质疑：" + text(challenge.statement), "",
+                "专项回应：" + dispositions[reply.disposition] + ("（回应缺席）" if reply.status == "unavailable" else "") + "；" + text(reply.rationale), "",
+                "回应依据：" + "、".join(text(c) for c in reply.supporting_fact_ids), "",
+                "综合裁决：" + dispositions[adjudication.disposition] + "；" + text(adjudication.rationale), "",
+                "专项回应与综合意见不等于实际核查，也不自动关闭经济挑战。", ""])
+        if not record.dialogue.responses:
+            lines.extend(["没有需要专项回应的挑战，未调用回应环节。", ""])
     if assessment.forward_window_calendar_days is not None:
         lines.extend([f"催化观察窗口：截点后 {assessment.forward_window_calendar_days} 个自然日。", ""])
     lines.extend(["## 主要风险与疑点", ""])
@@ -457,8 +488,11 @@ def build_markdown_from_native_record(record: Any, *, workflow_version=None, foc
         content = _build_v4_native_markdown(record)
     else:
         content = _build_legacy_native_markdown(record)
-    from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
-    if workflow_version != FOCUS_WORKFLOW_VERSION:
+    from tradingagents.research.native_versions import (
+        FOCUS_WORKFLOW_VERSION,
+        UNIFIED_WORKFLOW_VERSION,
+    )
+    if workflow_version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
         return content
     content = content.replace("。研究问题：", "。研究范围：", 1)
     content = content.replace(f"**{_markdown_text(record.assessment.judgement)}**", "## 综合判断\n\n" + f"**{_markdown_text(record.assessment.judgement)}**", 1)

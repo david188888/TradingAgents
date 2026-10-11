@@ -190,7 +190,7 @@ inputs. Reader displays missing valuation explicitly without deriving new data.
 
 The outer wire contract remains `research-record-v1`. Optional `evidence_checks`
 and `challenge_bindings` are omitted when absent, preserving old serialization.
-V5 uses `research-assessment-v2`; v1 remains accepted for old records. Canonical
+V5/V6 use `research-assessment-v2`; V7 uses `research-assessment-v3`; v1 remains accepted for old records. Canonical
 definitions are in `agents/schemas/_evidence_checks.py`, `_native_stage.py` and
 `_research_assessment.py`, with binding/recomputation in `_research_record.py`.
 
@@ -243,3 +243,8 @@ retain zero focus budget, their original prompts/identities/roles and Markdown
 semantics. No optional failure may change baseline judgement, quality, references,
 challenges or next checks. Explicit cancel and global persistence/integrity
 errors retain existing terminal behavior.
+
+
+## Native V7 investment assessment and dialogue
+
+Current new studies use the closed V3 investment assessment and optional-on-the-outer-record V1 dialogue. V7 requires both; absent dialogue stays omitted from old serialization. Four ordered dimensions, bounded referenced reasons, original falsifiers, targeted specialist responses and separate adjudications are code-validated. Revised/withdrawn inference support is excluded. Missing operating/valuation support forces insufficient evidence; critical unresolved challenges or absent cited valuation anchors prohibit favorable. Version-specific publication and Reader qualification retain V1–V6 behavior. See the [unified company contract](unified-company-research.md) for workflow, failure and budget ownership.

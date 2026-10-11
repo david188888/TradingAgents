@@ -40,7 +40,7 @@ def journal(tmp_path):
         metadata={"research_profile": "evidence_v1", "research_question": request.research_question,
                   "native_workflow_version": FOCUS_WORKFLOW_VERSION})
     store.create_run(snapshot)
-    return CatalystJournal(DurableRunObserver(store, snapshot.run_id, development_assertions=False), native_identity(request))
+    return CatalystJournal(DurableRunObserver(store, snapshot.run_id, development_assertions=False), native_identity(request, workflow_version=FOCUS_WORKFLOW_VERSION))
 
 
 def baseline(journal):

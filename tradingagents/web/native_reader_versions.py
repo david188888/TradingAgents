@@ -9,9 +9,10 @@ The initial v1 gate in a549afb is accepted only when its exact output matches.
 from dataclasses import dataclass
 
 from tradingagents.agents.schemas._research_assessment import (
-    DIMENSIONS_BY_MODE,
     DimensionAssessmentV1,
 )
+from tradingagents.agents.schemas._research_dialogue import excluded_support
+from tradingagents.research.native_versions import assessment_dimensions
 
 
 @dataclass(frozen=True)
@@ -46,13 +47,14 @@ POLICIES = {
     "evidence-production-v4": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
     "evidence-production-v5": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
     "evidence-production-v6": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
+    "evidence-production-v7": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
 }
 
 
 def _policy(record, version):
     policy = POLICIES[version]
     # v5's expanded partition was enabled by the persisted evidence-check pack.
-    if version in {"evidence-production-v5", "evidence-production-v6"} and record.evidence_checks is not None:
+    if version in {"evidence-production-v5", "evidence-production-v6", "evidence-production-v7"} and record.evidence_checks is not None:
         return SavedPolicy(
             policy.operating | {"cninfo.numeric_row.v2"},
             policy.prices,
@@ -128,7 +130,9 @@ def _dimensions(record, proposed, version, *, initial_v1=False):
         ),
     }
     supplied = {item.dimension: item for item in proposed}
-    order = DIMENSIONS_BY_MODE[record.mode]
+    order = assessment_dimensions(record.mode, record.assessment.schema_version)
+    if version == "evidence-production-v7" and any(excluded_support(record) & set(d.claim_ids) for d in proposed):
+        raise ValueError("invalid_retracted_support")
     if len(supplied) != len(proposed) or set(supplied) != set(order):
         raise ValueError("invalid_saved_dimensions")
     if initial_v1 and tuple(item.dimension for item in proposed) != order:

@@ -37,13 +37,16 @@ from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.observability.canonical import canonical_sha256 as config_sha256
 from tradingagents.observability.events import RunEventDraft
 from tradingagents.observability.roles import (
-    FOCUS_ROLE,
-    NATIVE_ROLE_REGISTRY,
     role_instance_id,
     roles_for_profile,
 )
 from tradingagents.research.native_record import build_native_record
-from tradingagents.research.native_versions import FOCUS_BUDGET_POLICY, FOCUS_WORKFLOW_VERSION
+from tradingagents.research.native_versions import (
+    FOCUS_BUDGET_POLICY,
+    FOCUS_WORKFLOW_VERSION,
+    UNIFIED_BUDGET_POLICY,
+    UNIFIED_WORKFLOW_VERSION,
+)
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
     CatalystJournal,
@@ -52,7 +55,7 @@ from tradingagents.runtime.catalyst_checkpoint import (
 
 VALUATION_WORKFLOW_VERSION = "evidence-production-v4"
 MINIMUM_WORKFLOW_VERSION = "evidence-production-v5"
-WORKFLOW_VERSION = FOCUS_WORKFLOW_VERSION
+WORKFLOW_VERSION = UNIFIED_WORKFLOW_VERSION
 DISCLOSURE_WORKFLOW_VERSION = "evidence-production-v3"
 PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
@@ -70,9 +73,9 @@ def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_p
         "holding_context": asdict(request.holding_context) if request.holding_context else None,
         "config": prepare_effective_config(request.effective_config),
         "active_timeout_seconds": request.effective_config.get("evidence_timeout_seconds", 300),
-        **({"focus_budget_policy": dict(FOCUS_BUDGET_POLICY)} if workflow_version == FOCUS_WORKFLOW_VERSION else {}),
+        **({"focus_budget_policy": dict(UNIFIED_BUDGET_POLICY if workflow_version == UNIFIED_WORKFLOW_VERSION else FOCUS_BUDGET_POLICY)} if workflow_version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else {}),
         **({"model_retry_policy": deepcopy(MODEL_RETRY_POLICY)}
-           if workflow_version == FOCUS_WORKFLOW_VERSION and model_retry_policy else {}),
+           if workflow_version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and model_retry_policy else {}),
     }
 
 
@@ -87,7 +90,7 @@ def validate_native_resume(store, run_id, request):
     state = load_checkpoint(store, run_id)
     version = state["identity"].get("workflow_version") if state is not None else None
     retry_policy = state is not None and "model_retry_policy" in state["identity"]
-    if version not in {FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy):
+    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -103,6 +106,14 @@ def validate_native_resume(store, run_id, request):
                 raise CatalystCheckpointConflict("native checkpoint record identity mismatch")
             if record.construction != "native":
                 raise CatalystCheckpointConflict("native checkpoint construction mismatch")
+            if key == "native_seed" and record.dialogue is not None:
+                raise CatalystCheckpointConflict("native seed contains dialogue")
+            if key == "native_publication_candidate":
+                from tradingagents.research.native_versions import validate_assessment_version
+                try:
+                    validate_assessment_version(record, version)
+                except (ValueError, AttributeError):
+                    raise CatalystCheckpointConflict("native checkpoint assessment version mismatch") from None
     if state.get("publication_authorized") and "native_publication_candidate" not in state:
         raise CatalystCheckpointConflict("native authorization has no candidate")
 
@@ -134,7 +145,7 @@ class NativeRunner:
             )
             if previous == status:
                 return
-            role = next(item for item in (*NATIVE_ROLE_REGISTRY, FOCUS_ROLE) if item.actor_id == actor)
+            role = next(item for item in roles_for_profile("evidence_v1", workflow_version=journal.state["identity"].get("workflow_version"), focus_requested=True) if item.actor_id == actor)
             journal.put("native_stages", {**journal.state.get("native_stages", {}), key: status})
             self.observer.emit(
                 RunEventDraft(
@@ -241,7 +252,7 @@ class NativeRunner:
                 return value
 
             source_fields = {**vars(request), "catalyst_policy": request.evidence_policy.collector_policy()}
-            if version == FOCUS_WORKFLOW_VERSION:
+            if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
                 source_fields.pop("research_question", None)
                 source_fields["effective_config"] = {
                     key: value for key, value in request.effective_config.items()
@@ -258,6 +269,7 @@ class NativeRunner:
                     VALUATION_WORKFLOW_VERSION: ValuationSources,
                     MINIMUM_WORKFLOW_VERSION: MinimumEvidenceSources,
                     FOCUS_WORKFLOW_VERSION: MinimumEvidenceSources,
+                    UNIFIED_WORKFLOW_VERSION: MinimumEvidenceSources,
                 }[version]
                 draft, context = factory(
                     source_request, run_id, session, fetch
@@ -271,9 +283,9 @@ class NativeRunner:
                 mode=request.mode,
                 original_thesis=holding.original_thesis if holding else None,
                 holding_facts_as_of=holding.facts_as_of if holding else None,
-                include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
-                include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
-                include_minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
+                include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
+                include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
+                include_minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
             )
             if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat()) != (
                 run_id,
@@ -288,7 +300,7 @@ class NativeRunner:
             effective_config=request.effective_config,
             run_id=run_id,
             ledger=journal.ledger,
-            cancelled=(lambda: token.is_cancelled) if version == FOCUS_WORKFLOW_VERSION else cancelled,
+            cancelled=(lambda: token.is_cancelled) if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else cancelled,
             deadline=lambda: deadline,
         )
         runner = self
@@ -315,14 +327,15 @@ class NativeRunner:
             ledger=journal.ledger,
             research_question=request.research_question,
             cancelled=cancelled,
-            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
-            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
-            minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION},
-            independent=version == FOCUS_WORKFLOW_VERSION,
+            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
+            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
+            minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
+            independent=version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
+            unified=version == UNIFIED_WORKFLOW_VERSION,
         )
         active()
         focus_response = None
-        if version == FOCUS_WORKFLOW_VERSION:
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
             focus_response = execute_focus_response(
                 record, request.research_question, ledger=journal.ledger, caller=ProgressCaller(),
                 cancelled=lambda: token.is_cancelled, deadline=lambda: deadline,

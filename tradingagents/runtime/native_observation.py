@@ -36,7 +36,10 @@ def establish_sdk_observation(ledger) -> None:
         from tradingagents.execution.budget import BudgetBucket
 
         records = [r for r in ledger.records() if r.dispatched_at is not None]
-        from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+        from tradingagents.research.native_versions import (
+            FOCUS_WORKFLOW_VERSION,
+            UNIFIED_WORKFLOW_VERSION,
+        )
         marker = NativeSDKObservationV1(
             start_sequence=journal.last_event.sequence,
             prior_main_authorizations=sum(r.bucket == BudgetBucket.MAIN_ANALYSIS for r in records),
@@ -44,6 +47,6 @@ def establish_sdk_observation(ledger) -> None:
                 r.bucket == BudgetBucket.STRUCTURED_REPAIR for r in records
             ),
             **({"prior_focus_authorizations": sum(r.bucket == BudgetBucket.FOCUS_RESPONSE for r in records)}
-               if journal.state["identity"].get("workflow_version") == FOCUS_WORKFLOW_VERSION else {}),
+               if journal.state["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else {}),
         )
         journal.put(SDK_OBSERVATION_KEY, marker.model_dump(mode="json", exclude_none=True))

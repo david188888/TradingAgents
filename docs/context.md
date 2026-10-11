@@ -11,7 +11,7 @@ not an execution or account-management product.
 - Individual researchers and engineers running the local Web workbench.
 - Developers extending data providers, graph roles, evidence contracts, and
   local observability.
-- Readers reviewing a company-research or holding-review artifact with its
+- Readers reviewing a company-research or historical holding-review artifact with its
   reported evidence, uncertainty, and data-source degradation.
 
 ## Goals
@@ -20,19 +20,18 @@ not an execution or account-management product.
   specialist hypotheses, independent challenge and code-owned evidence checks.
 - Make evidence provenance, coverage limitations, and persisted artifacts
   available to local readers rather than hiding provider failures.
-- Support Web company, catalyst and holding research, plus batch company research.
-  Holding review requires explicit user-provided facts.
+- Support one company investment research workflow and batch company research.
+  Preserve historical catalyst and holding records for reading/recovery.
 - Keep domain execution independent of the Web adapter and retained compatibility consumers.
 
 ## Entry Surfaces
 
 `tradingagents web --port 8765 --open` starts the maintained local workbench.
-New single and batch runs use `evidence_v1`; old profiles are read/resume only.
+New single and batch runs use `evidence_v1` / `evidence-production-v7`; old profiles are read/resume only.
 CLI analysis is outside continued maintenance. The FastAPI/SSE adapter serves
 its bundled frontend on loopback only. The native kernel freezes evidence,
-creates isolated hypotheses, challenges and bounded conditions, then synthesizes
-one saved research record consumed by both Reader and Markdown. V6 uses the
-mode-owned objective for this independent baseline; optional user focus is
+creates isolated hypotheses, challenges and bounded conditions, then collects one targeted reply per challenged specialist and synthesizes
+one saved research record consumed by both Reader and Markdown. V7 judges company investment attractiveness across four dimensions; optional user focus is
 answered afterward from saved evidence and cannot change the baseline.
 
 ## Non-Goals

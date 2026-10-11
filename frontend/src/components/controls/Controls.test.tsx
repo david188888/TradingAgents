@@ -178,7 +178,8 @@ describe("Controls", () => {
     expect(screen.getByLabelText("股票代码")).toBeInTheDocument();
     expect(screen.getByLabelText("分析日期")).toBeInTheDocument();
     expect(screen.queryByLabelText("研究深度")).toBeNull();
-    expect(screen.getByLabelText("研究模式")).toBeInTheDocument();
+    expect(screen.queryByLabelText("研究模式")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("持仓数量")).not.toBeInTheDocument();
     expect(screen.getByLabelText("LLM Provider")).toBeInTheDocument();
     expect(screen.getByLabelText("专项与挑战模型")).toBeInTheDocument();
     expect(screen.getByLabelText("综合模型")).toBeInTheDocument();

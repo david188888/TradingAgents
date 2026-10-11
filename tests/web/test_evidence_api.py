@@ -57,8 +57,8 @@ def factory(tmp_path, monkeypatch):
     return build
 
 
-@pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])
-def test_three_native_modes_forward_independent_policy_and_trimmed_question(factory, mode):
+def test_company_mode_forwards_independent_policy_and_trimmed_question(factory):
+    mode = "company_research"
     client, manager = factory()
     payload = {**BODY, "mode": mode, "research_question": "  哪些证据会改变判断？  "}
     if mode == "holding_review":
@@ -80,8 +80,8 @@ def test_three_native_modes_forward_independent_policy_and_trimmed_question(fact
 
 
 @pytest.mark.parametrize("changes,code", [
-    ({"mode": "holding_review"}, "holding_required"),
-    ({"mode": "catalyst_research", "holding": HOLDING}, "holding_not_allowed"),
+    ({"mode": "holding_review"}, "unified_research_mode_required"),
+    ({"mode": "catalyst_research", "holding": HOLDING}, "unified_research_mode_required"),
     ({"mode": "company_research", "holding": HOLDING}, "holding_not_allowed"),
     ({"ticker": "AAPL"}, "evidence_market_unsupported"),
     ({"ticker": "510300.SS"}, "evidence_market_unsupported"),
@@ -92,7 +92,7 @@ def test_three_native_modes_forward_independent_policy_and_trimmed_question(fact
     ({"research_question": "a" * 401}, "validation_error"),
     ({"evidence_policy": {"forward_window_max_calendar_days": 84}}, "validation_error"),
     ({"evidence_policy": {"price_history_trading_days": 200}}, "validation_error"),
-    ({"mode": "holding_review", "holding": {**HOLDING, "ticker": "000001.SZ"}}, "holding_ticker_mismatch"),
+    ({"mode": "holding_review", "holding": {**HOLDING, "ticker": "000001.SZ"}}, "unified_research_mode_required"),
 ])
 def test_rejected_native_requests_never_enqueue(factory, changes, code):
     client, manager = factory()
@@ -159,13 +159,14 @@ def test_native_checkpoint_is_independent_of_classic_checkpointer(factory):
     assert response.json()["detail"]["code"] == "research_profile_retired"
 
 
-def test_default_native_params_and_inferred_holding_mode(factory):
+def test_omitted_mode_with_holding_never_infers_holding_mode(factory):
     client, manager = factory()
     response = client.post("/api/runs", json={**BODY, "selected_analysts": list(ANALYST_WIRE_KEYS),
         "research_depth": 1, "horizon": "medium", "holding": HOLDING,
         "evidence_policy": NativeEvidencePolicyV1().as_identity()})
-    assert response.status_code == 201, response.text
-    assert manager.requests[0].mode == "holding_review"
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "holding_not_allowed"
+    assert manager.requests == []
 
 
 def test_omitted_profile_uses_native_web_default(factory):
@@ -238,18 +239,19 @@ def test_native_thesis_validation_precedes_probe_and_enqueue(factory, thesis):
         "holding": {**HOLDING, "original_thesis": thesis}})
     assert response.status_code == 422, response.text
     detail = response.json()["detail"]
-    assert detail["code"] == "holding_original_thesis_invalid"
-    assert detail["fields"] == ["holding.original_thesis"]
+    assert detail["code"] == "unified_research_mode_required"
+    assert detail["fields"] == ["mode"]
     assert probes == [] and manager.requests == [] and manager.store.list_runs() == []
 
 
 @pytest.mark.parametrize("thesis", [None, "", "x" * 4000])
-def test_native_thesis_missing_or_at_size_boundary_remains_accepted(factory, thesis):
+def test_old_mode_with_valid_thesis_is_still_rejected(factory, thesis):
     client, manager = factory()
     response = client.post("/api/runs", json={**BODY, "mode": "holding_review",
         "holding": {**HOLDING, "original_thesis": thesis}})
-    assert response.status_code == 201, response.text
-    assert manager.requests[0].holding_context.original_thesis == (thesis or None)
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "unified_research_mode_required"
+    assert manager.requests == []
 
 
 @pytest.mark.parametrize("thesis", ["x" * 4001, 12])

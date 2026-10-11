@@ -1,9 +1,11 @@
 import type { AgentKey, ObservedCountDTO, OutputAvailability } from "../api/contracts";
-export const AGENT_LABELS: Record<AgentKey, string> = { evidence: "证据冻结", operating_quality: "经营研究", event_context: "事件研究", market_context: "市场研究", challenge: "独立挑战", synthesis: "研究综合", code_checks: "代码核查与发布", focus_response: "关注点回应" };
+export const AGENT_LABELS: Record<AgentKey, string> = { evidence: "证据冻结", operating_quality: "经营研究", event_context: "事件研究", market_context: "市场研究", challenge: "独立挑战", synthesis: "研究综合", code_checks: "代码核查与发布", response_operating_quality: "经营与估值回应", response_event_context: "事件回应", response_market_context: "市场回应", focus_response: "关注点回应" };
 export const DIMENSION_LABELS: Record<string, string> = { operating_quality: "经营质量", valuation: "估值定位", market_context: "市场背景", catalyst_delivery: "催化兑现", holding_thesis: "原持仓假设" };
 export const STATUS_LABELS: Record<string, string> = { pending: "等待", running: "执行中", completed: "已完成", failed: "失败", cancelled: "已取消", interrupted: "已中断", skipped: "已跳过", not_reached: "未到达", not_recorded: "未记录", not_applicable: "代码工作" };
 export function outputLabel(value: OutputAvailability, reason: string | null): string {
   if (reason === "publication_pending" && value === "not_recorded") return "等待执行或公开产物发布";
+  if (reason === "no_targeted_challenges_not_called") return "没有分配给本专项的质疑，未调用回应";
+  if (reason === "native_response_unavailable") return "专项回应未能取得有效结果";
   if (reason === "no_hypotheses_not_called") return "没有待挑战假设，本环节未调用";
   if (reason === "no_qualified_facts_not_called") return "没有本专项的合格输入事实，本环节未调用";
   return { available: "已发布，可回顾", pending_publication: "提议已保存，等待发布校验", not_recorded: "原提议未记录", unavailable: "未通过产物读取校验", unsupported: "历史版本暂不支持回顾", not_applicable: "不适用" }[value];
@@ -26,7 +28,13 @@ export const TERMS: Record<string, string> = {
 };
 
 export const AGENT_PURPOSE: Record<AgentKey, string> = {
- evidence:"保存符合时间与来源要求的事实，计算固定证据子问题。",operating_quality:"从经营与财务证据提出假设、成立条件和替代解释。",event_context:"判断公告与事件可能带来什么变化，以及兑现条件。",market_context:"解释历史行情和量化背景，提出待核查假设。",challenge:"检查假设的证据缺口、替代解释及可检验条件。",synthesis:"回答研究问题，选择重点依据、主要疑点和下一步。",code_checks:"核对固定证据子问题和可执行条件，约束最终发布范围。",focus_response:"独立基础研究保存后，依据已有证据补充回应用户关注点。"
+ evidence:"保存符合时间与来源要求的事实，计算固定证据子问题。",operating_quality:"从经营与财务证据提出假设、成立条件和替代解释。",event_context:"判断公告与事件可能带来什么变化，以及兑现条件。",market_context:"解释历史行情和量化背景，提出待核查假设。",challenge:"检查假设的证据缺口、替代解释及可检验条件。",synthesis:"回答研究问题，选择重点依据、主要疑点和下一步。",code_checks:"核对固定证据子问题和可执行条件，约束最终发布范围。",response_operating_quality:"回应经营与估值假设受到的质疑。",response_event_context:"回应事件假设受到的质疑。",response_market_context:"回应市场假设受到的质疑。",focus_response:"独立基础研究保存后，依据已有证据补充回应用户关注点。"
 };
 
-export const AGENT_PRODUCTS: Record<AgentKey, string> = { evidence:"经过来源与时间资格检查的事实、保存来源及固定证据检查。", operating_quality:"经营假设、支撑事实、必要与推翻条件、替代解释及本专项待查项。",event_context:"事件假设、兑现与失效条件、替代解释及本专项待查项。",market_context:"市场假设、成立与失效条件、替代解释及本专项待查项。",challenge:"针对现有假设的挑战、缺口和核查办法；可以合法返回零挑战。",synthesis:"对研究问题的回答、全部维度、重点依据、主要疑点及完整下一步。",code_checks:"固定证据子问题、额外条件验证与最终发布资格。",focus_response:"补充回应、证据引用、可回答范围与限制；不参与基础综合。" };
+export const AGENT_PRODUCTS: Record<AgentKey, string> = { evidence:"经过来源与时间资格检查的事实、保存来源及固定证据检查。", operating_quality:"经营假设、支撑事实、必要与推翻条件、替代解释及本专项待查项。",event_context:"事件假设、兑现与失效条件、替代解释及本专项待查项。",market_context:"市场假设、成立与失效条件、替代解释及本专项待查项。",challenge:"针对现有假设的挑战、缺口和核查办法；可以合法返回零挑战。",synthesis:"对研究问题的回答、全部维度、重点依据、主要疑点及完整下一步。",code_checks:"固定证据子问题、额外条件验证与最终发布资格。",response_operating_quality:"针对已分配质疑的立场、限定依据与剩余未知。",response_event_context:"针对已分配质疑的立场、限定依据与剩余未知。",response_market_context:"针对已分配质疑的立场、限定依据与剩余未知。",focus_response:"补充回应、证据引用、可回答范围与限制；不参与基础综合。" };
+
+export function dimensionLabel(dimension: string, unified=false): string {
+  return unified && dimension === "catalyst_delivery" ? "事件影响与兑现" : DIMENSION_LABELS[dimension] ?? dimension;
+}
+export const STANCE_LABELS = {favorable:"偏有吸引力",neutral:"中性",unfavorable:"偏缺乏吸引力",insufficient_evidence:"证据不足"};
+export const DISPOSITION_LABELS = {maintained:"维持",revised:"修正",withdrawn:"撤回",unanswerable:"无法回答"};

@@ -67,19 +67,24 @@ for (const viewport of [{width:1440,height:900}, {width:1280,height:800}, {width
   });
 }
 
-for (const mode of ["catalyst_research","holding_review"]) {
-  test(`native scope ${mode}`, async ({page})=>{
-    await page.goto("/");
-    await page.getByLabel("股票代码").fill("600803");
-    await page.getByLabel("分析日期").fill("2026-09-30");
-    await page.getByLabel("研究模式").selectOption(mode);
-    if(mode==="holding_review") {
-      await page.getByLabel("持仓数量").fill("100");
-      await page.getByLabel("平均成本（每单位）").fill("20");
-    }
-    await page.getByRole("button",{name:"开始分析",exact:true}).click();
-    await expect(page.locator(".question-reader")).toBeVisible({timeout:20000});
-    if(mode==="catalyst_research") await expect(page.getByText(/展望 84 个日历日/)).toBeVisible();
-    else { await page.getByRole("button",{name:"完整记录",exact:true}).click(); await expect(page.getByText("原持仓假设 · 待核查")).toHaveCount(1); }
-  });
-}
+test("one company workflow shows investment reasons and public falsifiers without a mode chooser", async ({page})=>{
+  await page.goto("/");
+  await expect(page.getByLabel("研究模式")).toHaveCount(0);
+  await expect(page.getByLabel("持仓数量")).toHaveCount(0);
+  await page.getByLabel("股票代码").fill("600803");
+  await page.getByLabel("分析日期").fill("2026-09-30");
+  await page.getByRole("button",{name:"开始分析",exact:true}).click();
+  await expect(page.locator(".question-reader")).toBeVisible({timeout:20000});
+  await expect(page.getByRole("region",{name:"投资判断依据"})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"哪些条件会改变判断"})).toBeVisible();
+  await expect(page.getByRole("heading",{name:/事件影响与兑现/})).toBeVisible();
+  await expect(page.getByRole("region",{name:"一轮质疑与专项回应"})).toBeVisible();
+  await expect(page.getByText(/展望 84 个日历日/)).toHaveCount(0);
+  await page.getByRole("button",{name:"研究过程",exact:true}).click();
+  await expect(page.getByRole("heading",{name:/经营与估值回应/})).toBeVisible();
+  await expect(page.getByText("没有分配给本专项的质疑，未调用回应")).toHaveCount(3);
+  await page.getByRole("button",{name:"研究报告",exact:true}).click();
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole("region",{name:"投资判断依据"})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

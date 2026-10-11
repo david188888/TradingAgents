@@ -11,6 +11,7 @@ from tradingagents.agents.schemas._native_stage import (
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
+    SynthesisProposalV3,
 )
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
@@ -18,6 +19,10 @@ from tradingagents.research.native_versions import (
     BASE_QUESTIONS,
     FOCUS_KERNEL_VERSION,
     FOCUS_WORKFLOW_VERSION,
+    RESPONSE_ROLES,
+    UNIFIED_KERNEL_VERSION,
+    UNIFIED_QUESTION,
+    UNIFIED_WORKFLOW_VERSION,
 )
 from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.native_observation import SDK_OBSERVATION_KEY, NativeSDKObservationV1
@@ -42,6 +47,7 @@ VERSIONS = {
     "evidence-production-v4": "native-research-kernel-v3",
     "evidence-production-v5": "native-research-kernel-v4",
     FOCUS_WORKFLOW_VERSION: FOCUS_KERNEL_VERSION,
+    UNIFIED_WORKFLOW_VERSION: UNIFIED_KERNEL_VERSION,
 }
 ROLE_INFO = {
     "evidence": (
@@ -82,6 +88,10 @@ ROLE_INFO = {
     "focus_response": ("关注点回应", "在独立研究保存之后，依据已有证据补充回应用户关注点。",
                        "已保存的基础研究与用户关注点；不参与基础专项、挑战或综合。"),
 }
+for _key in RESPONSE_ROLES:
+    ROLE_INFO[_key] = ({"response_operating_quality": "经营与估值回应", "response_event_context": "事件回应", "response_market_context": "市场回应"}[_key],
+        "逐条回应独立挑战，修正或撤回观点并保留未知项。", "自己的冻结事实、定向挑战和已保存核查；只回应一次。")
+
 SAFE_FAILURES = {
     "document_parser_not_installed",
     "source_transport_unavailable",
@@ -159,7 +169,7 @@ def native_counts(checkpoint, *, role=None):
         )
 
     main, repairs = sdk(flags), sdk(repair)
-    has_focus = checkpoint["identity"].get("workflow_version") == FOCUS_WORKFLOW_VERSION
+    has_focus = checkpoint["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
     focus_flags = int(checkpoint.get("native.model.focus_response.dispatched") is True) if role in {None, "focus_response"} else 0
     focus = count(focus_flags if focus_coverage or focus_flags else None,
                   complete="complete" if focus_coverage else "known_lower_bound" if focus_flags else "not_recorded",
@@ -237,7 +247,7 @@ def _context(store, run_id, through=None):
         if published["state"] != "ready":
             return Context(snapshot, sequence, events, cp, None, None, "publication_pending", store)
         record = ResearchRecordV1.model_validate(published["record"])
-        if version == FOCUS_WORKFLOW_VERSION and record.assessment.research_question != BASE_QUESTIONS[record.mode]:
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and record.assessment.research_question != (UNIFIED_QUESTION if version == UNIFIED_WORKFLOW_VERSION else BASE_QUESTIONS[record.mode]):
             raise ValueError("baseline_objective")
         seed = ResearchRecordV1.model_validate(cp["native_seed"])
         native_input = cp["native_input"]
@@ -262,6 +272,7 @@ def _context(store, run_id, through=None):
             raise ValueError("seed")
         if (
             seed.assessment
+            or seed.dialogue is not None
             or seed.hypotheses
             or seed.challenges
             or seed.verifications
@@ -288,18 +299,31 @@ def _proposal(ctx, role):
     saved = cp["results"].get("native." + role)
     if saved is None:
         return None, (), ()
+    from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
     schema = (
+        ResponsesProposalV1 if role in RESPONSE_ROLES else
         SpecialistProposalV1
         if role in {"operating_quality", "event_context", "market_context"}
-        else (ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION} else ChallengesProposalV1)
+        else (ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else ChallengesProposalV1)
         if role == "challenge"
-        else (SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION} else SynthesisProposalV1)
+        else (SynthesisProposalV3 if version == UNIFIED_WORKFLOW_VERSION else SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else SynthesisProposalV1)
     )
     proposal = schema.model_validate(saved["proposal"])
     claims = {c.claim_id: c for c in record.claims}
     hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
     cids, chids = [], []
-    if isinstance(proposal, SpecialistProposalV1):
+    if isinstance(proposal, ResponsesProposalV1):
+        from tradingagents.research.unified_dialogue import validate_response_proposal
+        specialist = role.removeprefix("response_")
+        saved_replies = [r for r in record.dialogue.responses if r.role == specialist]
+        assignments = {r.challenge_id: r.hypothesis_id for r in saved_replies}
+        validate_response_proposal(record, specialist, proposal, assignments)
+        if tuple(r.model_dump() for r in proposal.responses) != tuple(
+            {k: v for k, v in r.model_dump().items() if k not in {"response_id", "role", "status", "reason_code"}} for r in saved_replies):
+            raise ValueError("reply_binding")
+        cids.extend(f for r in saved_replies for f in r.supporting_fact_ids)
+        chids.extend(assignments)
+    elif isinstance(proposal, SpecialistProposalV1):
         allowed = {f.claim_id for f in saved_fact_views(seed, version)[role]}
         for index, item in enumerate(proposal.hypotheses):
             hid = "h." + canonical_sha256(
@@ -395,7 +419,7 @@ def _proposal(ctx, role):
                 != item.hypothesis_id
             ):
                 raise ValueError("challenge_condition")
-            if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION}:
+            if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
                 binding = next(b for b in record.challenge_bindings if b.challenge_id == cid)
                 if (binding.check_id, binding.observed_risk, binding.observation_date) != (
                     item.check_id,
@@ -408,7 +432,15 @@ def _proposal(ctx, role):
             raise ValueError("challenge_coverage_binding")
     else:
         assessment = record.assessment
-        if (proposal.judgement, proposal.next_check, proposal.key_claim_ids) != (
+        expected_judgement = proposal.judgement
+        if version == UNIFIED_WORKFLOW_VERSION:
+            from tradingagents.research.unified_synthesis import investment_fields
+            extra = investment_fields(record, proposal, assessment.dimensions)
+            if extra.pop("force_insufficient", False):
+                expected_judgement = "关键经营或估值依据不足，暂不能形成完整投资吸引力判断。"
+            if any(getattr(assessment, key) != value for key, value in extra.items()):
+                raise ValueError("investment_binding")
+        if (expected_judgement, proposal.next_check, proposal.key_claim_ids) != (
             assessment.judgement,
             assessment.next_check,
             assessment.key_claim_ids,
@@ -423,7 +455,7 @@ def _proposal(ctx, role):
         if primary != assessment.primary_challenge_id:
             raise ValueError("primary_binding")
         if (
-            version not in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION}
+            version not in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
             and proposal.challenge_assessments != assessment.challenge_assessments
         ):
             raise ValueError("assessment_binding")
@@ -448,6 +480,8 @@ def _agent(ctx, role):
         "origin": origin,
         "input_description": ROLE_INFO[role][2],
     }
+    if role in RESPONSE_ROLES and (ctx.checkpoint is None or ctx.checkpoint["identity"].get("workflow_version") != UNIFIED_WORKFLOW_VERSION):
+        return ReaderAgentDTO(**base, availability="not_applicable", reason_code="workflow_has_no_reply_stage")
     if role == "focus_response":
         focus = project_reader_focus(ctx.store, ctx.snapshot.run_id, through=ctx.sequence)
         response = focus.get("response")
@@ -485,6 +519,10 @@ def _agent(ctx, role):
     try:
         proposal, cids, chids = _proposal(ctx, role)
         if proposal is None:
+            if role in RESPONSE_ROLES:
+                replies = [r for r in ctx.record.dialogue.responses if "response_" + r.role == role]
+                return ReaderAgentDTO(**base, availability="unavailable" if replies else "not_applicable",
+                                      reason_code="native_response_unavailable" if replies else "no_targeted_challenges_not_called")
             if (
                 role in {"operating_quality", "event_context", "market_context"}
                 and not saved_fact_views(ctx.seed, ctx.checkpoint["identity"]["workflow_version"])[
@@ -569,8 +607,12 @@ def _process(ctx):
             statuses[event.actor_id] = event.payload["new_status"]
     roles, origins, agents = [], [], {}
     if profile == "evidence_v1":
-        for key in ROLE_INFO:
-            if key == "focus_response" and (cp is None or cp["identity"].get("workflow_version") != FOCUS_WORKFLOW_VERSION
+        keys = ("evidence", "operating_quality", "event_context", "market_context", "challenge", "code_checks",
+                *RESPONSE_ROLES, "synthesis", "focus_response") if cp and cp["identity"].get("workflow_version") == UNIFIED_WORKFLOW_VERSION else tuple(ROLE_INFO)
+        for key in keys:
+            if key in RESPONSE_ROLES and (cp is None or cp["identity"].get("workflow_version") != UNIFIED_WORKFLOW_VERSION):
+                continue
+            if key == "focus_response" and (cp is None or cp["identity"].get("workflow_version") not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
                                              or not metadata.get("research_question")):
                 continue
             agent = _agent(ctx, key)
@@ -592,6 +634,8 @@ def _process(ctx):
                     if agent.availability != "available"
                     else len(agent.claim_ids)
                     if key in {"evidence", "operating_quality", "event_context", "market_context"}
+                    else len(agent.proposal.responses)
+                    if key in RESPONSE_ROLES
                     else len(agent.challenge_ids)
                     if key == "challenge"
                     else 1
@@ -650,7 +694,7 @@ def _process(ctx):
         if cp
         else "unavailable",
         reason_code=ctx.reason,
-        question_origin="default" if cp and cp["identity"].get("workflow_version") == FOCUS_WORKFLOW_VERSION
+        question_origin="default" if cp and cp["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
         else ("user" if metadata["research_question"] is not None else "default")
         if "research_question" in metadata
         else "not_recorded",

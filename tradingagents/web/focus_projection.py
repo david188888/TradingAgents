@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from tradingagents.agents.schemas._research_focus import ResearchFocusResponseV1
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
-from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION
 from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.focus_artifacts import (
     read_focus_artifact,
@@ -46,7 +46,7 @@ def project_reader_focus(store, run_id, *, through=None):
         events = store.read_events(run_id, through=sequence)
         version = cp["identity"].get("workflow_version") if cp else snapshot.metadata.get("native_workflow_version")
         base["workflow_version"] = version
-        if version != FOCUS_WORKFLOW_VERSION:
+        if version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
             if version is not None and version not in {f"evidence-production-v{i}" for i in range(1, 6)}:
                 return result("unavailable", "workflow_unsupported")
             return result("not_applicable", "legacy_question_semantics")

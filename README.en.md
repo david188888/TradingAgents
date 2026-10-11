@@ -4,16 +4,16 @@
 
 A local multi-agent research workbench for China A-shares, derived from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). It turns company profiles, disclosures, financials and prices into reviewable research records, helping researchers identify **key evidence, the main doubts and what to verify next**.
 
-Supports company research, catalyst research, holding review and batch company research. The Web workbench is the maintained entry. It does not generate orders or target positions, or provide investment advice.
+New studies use one company investment research workflow, combining operations, current valuation, events and market risk into a stance, reasons, counterevidence and change conditions. Batch company research is supported; historical catalyst and holding records remain readable and resumable. The Web workbench is the maintained entry. It does not generate orders or target positions, or provide investment advice.
 
 [![Watch the 24-second TradingAgents demo](https://david188888.github.io/images/tradingagents-demo-poster-20261008.jpg)](https://david188888.github.io/videos/tradingagents-demo-20261008.mp4)
 
-24-second demo with English narration and captions, showing a saved historical research sample (2026-10-06) in the current Reader. Click the poster to play.
+24-second demo with English narration and captions, showing a saved historical research sample (2026-10-06) in the historical Reader. Click the poster to play.
 
 ## Project highlights
 
 - **A-share evidence chain**: combines public company information, official disclosures, financials and prices while preserving sources, timestamps and coverage limits.
-- **Purposeful Agent roles**: operating, event and market specialists develop isolated hypotheses for challenge and synthesis; code owns evidence admission, reference validation and deterministic calculations.
+- **Purposeful Agent roles**: operating, event and market specialists develop isolated hypotheses followed by one challenge round, actual checks, targeted specialist replies and synthesis; code owns evidence admission, reference validation and deterministic calculations.
 - **Traceable research reading**: follow judgments back to evidence, doubts and Agent outputs. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
 
 ## Overall architecture and Agent design
@@ -30,7 +30,8 @@ flowchart LR
 | --- | --- |
 | Operating, event and market specialist Agents | Propose hypotheses and invalidation conditions from their own evidence views, without reading other specialists' drafts. |
 | Independent challenge Agent | Identify counterevidence, evidence gaps and conditions to check. |
-| Synthesis Agent | Combine evidence and challenges into dimension-level judgments, key doubts and next steps. |
+| Challenged specialist Agents | Reply once from bounded saved facts, maintaining, revising, withdrawing or admitting they cannot answer. |
+| Synthesis Agent | Combine evidence, counterevidence and replies into an investment stance, reasons, falsifiers and four-dimensional judgments. |
 | Code host | Control source admission and execution boundaries, check computable conditions, validate and persist results. |
 
 Baseline research completes independently and is saved before an optional response to the user's focus; that response cannot rewrite baseline conclusions. Execution, recovery and module boundaries are detailed in the [architecture](ARCHITECTURE.md).
