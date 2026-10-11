@@ -10,6 +10,37 @@
 `official_financial_cells_ambiguous:<field>`，仍可保留其它合格表中的数值。
 这不代表官方披露矛盾；不同合格表真的不一致时仍保留财务冲突校验。
 
+## 安装与通达信边界
+
+本地复用已有的 `tradingagents` Conda 环境：
+
+```bash
+conda activate tradingagents
+python -m pip install -e ".[china,web]" --index-url https://pypi.org/simple
+python -m pip check
+tradingagents web --port 8765 --open
+```
+
+仅在该环境不存在时创建 `conda create -n tradingagents python=3.13`，无需 venv。
+`china` 保留 PDF、AKShare、baostock、Tushare 及表格解析依赖，但不安装 mootdx：
+PyPI 的 mootdx 0.11.7 要求 `httpx>=0.25,<0.26`，与 Web 的
+`httpx>=0.28,<1` 及模型 SDK 要求不相容；它还要求 `tenacity<9`，
+可能与现有模型库冲突。不要用 `--no-deps` 强行共装。
+
+从旧安装升级时，移出 extra 不会自动卸载已安装的 mootdx。
+若 `python -m pip check` 明确列出它的 httpx/tenacity 冲突，在当前
+`tradingagents` 环境运行 `python -m pip uninstall mootdx`，再重装上述组合
+并检查依赖。只移除冲突 SDK，保留其它包、研究记录与适配器。
+
+通达信适配器和既有路由保留；已经独立管理 mootdx 的兼容环境仍可调用。
+SDK 缺失或导入失败时返回带来源的 `ChinaDataUnavailableError`，不代表没有行情、
+财务或 F10 信息。默认新 Web 研究使用腾讯行情与新浪/官方披露等既有来源；
+通达信 K 线、财务快照及 F10 补充能力在默认安装中不可用。
+
+依赖验证应包含完整解析，而非仅构建元数据：
+`python -m pip install --dry-run --ignore-installed -e ".[china,web]" --index-url https://pypi.org/simple`。
+清华等镜像在当前网络返回 403 时，切换官方源只作用于该命令，不必改全局配置。
+
 `evidence_v1` 使用独立的有界多源路由：东方财富/新浪身份、新浪三表、深交所日历、腾讯原始日线与新浪日期化因子优先，Tushare 备源。三种研究模式共用此路由；classic/catalyst 的供应商设置保持原语义。新浪字段保留合并范围、币种、实际披露日期及更新时间，按元值准入，不沿用旧文本适配器的亿元换算；不同供应商不合并来源家族。深交所日历只准入深市标的；历史因子无归档版本仍不可用。具体候选、配置与恢复边界见 [native 来源政策](evidence-research.md#evidence-and-workflow)。
 
 | 能力 | 路由方法 | 当前来源 | 输入范围 |

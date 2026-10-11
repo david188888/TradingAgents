@@ -38,11 +38,13 @@ inspect its canonical code before changing behavior. New Web research uses
 
 ## Setup And Commands
 
-Python 3.10 or newer is required. A contributor install with development
-tooling is:
+Python 3.10 or newer is required. For local work, reuse the existing Conda
+environment named `tradingagents`; do not create a venv unless the user requests
+one. A contributor install with development tooling is:
 
 ```bash
-pip install -e ".[china,web,dev]"
+conda activate tradingagents
+python -m pip install -e ".[china,web,dev]" --index-url https://pypi.org/simple
 ```
 
 Baseline contributor checks are:

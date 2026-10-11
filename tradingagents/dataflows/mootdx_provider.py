@@ -177,7 +177,14 @@ def tdx_client(market: str = "std", check: str = _TDX_CHECK_BARS) -> Any:
             f"{_tdx_breaker_remaining(check):.0f}s. tushare/akshare fallback applies."
         )
 
-    from mootdx.quotes import Quotes  # optional dependency, lazy import
+    try:
+        from mootdx.quotes import Quotes  # optional dependency, lazy import
+    except ImportError as exc:
+        raise ChinaDataUnavailableError(
+            "mootdx/TDX SDK unavailable; it is not installed by the china extra "
+            "because its httpx requirements conflict with Web/model SDKs. "
+            "Use the configured fallback sources."
+        ) from exc
 
     def _adopt(client: Any) -> bool:
         if not _validate_tdx_client(client, market, check):

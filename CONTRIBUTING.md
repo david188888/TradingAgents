@@ -5,9 +5,10 @@ TradingAgents is a Python 3.10+ project with a React/TypeScript workbench. Contr
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[china,web,dev]"
+# Reuse the existing environment; create it only if absent:
+# conda create -n tradingagents python=3.13
+conda activate tradingagents
+python -m pip install -e ".[china,web,dev]" --index-url https://pypi.org/simple
 npm --prefix frontend ci
 ```
 
