@@ -2,6 +2,13 @@
 
 Status: Current
 
+## ChatGPT subscription
+
+The Web `chatgpt` provider uses official SIWC OAuth and streamed Responses with
+account-specific dynamic models. It has no API-key fallback and does not send
+DeepSeek task-effort or sampling parameters. See [subscription configuration](chatgpt-subscription.md)
+for connection, quota, failure and credential-storage behavior.
+
 ## Official DeepSeek API
 
 The `deepseek` provider uses Chat Completions at `https://api.deepseek.com`
@@ -41,6 +48,12 @@ remain necessary. See [official thinking controls](https://api-docs.deepseek.com
 and [Chat Completions restrictions](https://api-docs.deepseek.com/api/create-chat-completion/).
 
 ## Optional task overrides
+
+New V6 baseline calls use adapter-owned transient retries, with waits of 2, 5,
+and 10 seconds and shared run ceilings of three retries/twelve model attempts.
+SDK automatic retries remain disabled. Permanent request errors and invalid
+structured outputs use separate failure/repair paths. See
+[retry accounting and recovery](observability-replay.md#原生模型有限网络重试).
 
 `deepseek_task_efforts` is an optional mapping in effective configuration.
 Each entry overrides the global effort for one actual call task. Missing entries

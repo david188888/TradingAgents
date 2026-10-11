@@ -21,6 +21,7 @@ rules here in focused documents rather than duplicating them in the README.
 
 `Status: Current` — 描述当前受支持的产品与架构；行为变化时必须对照实现校验。
 
+- [ChatGPT subscription configuration](operations/chatgpt-subscription.md): official OAuth, dynamic account catalogs, usage limits and local credential ownership.
 - [Product context](context.md): users, goals, constraints, and explicit non-goals.
 - [Research Reader architecture](architecture/research-reader.md): current typed research publication and read-only projections.
 - [Repository architecture](../ARCHITECTURE.md): system-wide dependency flow and module ownership.
@@ -69,6 +70,8 @@ These are dated delivery and verification records, not current-state contracts.
 Later workflows can supersede their UI, question or role semantics; follow the
 current architecture, operations and contract pages for supported behavior.
 
+- [Subscription, retry and Reader closeout](reviews/2026-10-11-subscription-retry-acceptance.md): combined local regression, official subscription boundaries, request accounting, credential-test isolation and remaining environment/research limits.
+
 - [v3.1.0 release notes](reviews/2026-10-07-v3.1-release-notes.md): cumulative independent research, evidence Reader, bounded checks, DeepSeek default and Tencent stock-volume correction since v3.0.0.
 - [Independent research and focus-response acceptance](reviews/2026-10-07-independent-research-focus-acceptance.md): local V6 information-flow isolation, bounded supplemental response, recovery/publication, Reader and offline/browser checks; original 002130 files retained.
 - [a-stock-data v3.10.1 acceptance](reviews/2026-10-07-a-stock-data-v3101-acceptance.md): local Tencent stock volume-unit correction and regression evidence, plus the separately authorized Proma fixed-tag upgrade and rollback record.
@@ -80,6 +83,8 @@ current architecture, operations and contract pages for supported behavior.
 ## Dated Investigations
 
 These record inspected evidence and recommendations, not delivered runtime changes.
+
+- [600418 investigation and bounded recovery](reviews/2026-10-11-600418-research-investigation.md): historical model failure, PDF dependency/cell parsing repair, isolated reproduction, retry accounting and limits that remain unresolved.
 
 - [a-stock-data v3.10.1 review](reviews/2026-10-07-a-stock-data-v3101-review.md) and [Proma skill review](reviews/2026-10-07-proma-a-stock-data-v3101-review.md): pinned upstream changes, confirmed Tencent volume-label defect, pre-upgrade Proma version/dirty state, and proposed update/validation scope; delivery evidence is in the acceptance record above.
 - [Low-cost evidence investigation — 600803](reviews/2026-10-05-low-cost-evidence-investigation.md): actual official PDFs, public-source probes, current selection/parser gaps and the approved minimum-evidence scope.
@@ -96,6 +101,9 @@ These are execution proposals, not descriptions of current runtime behavior.
 ## Historical / Archive
 
 `Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
+
+- [ChatGPT subscription design](superpowers/specs/2026-10-10-chatgpt-subscription-design.md) and [implementation record](superpowers/plans/2026-10-11-chatgpt-subscription-implementation.md): approved OAuth/catalog/Responses scope and dated offline, browser and minimal real-call evidence; current behavior is in subscription operations.
+- [Native retry and official PDF recovery design](superpowers/specs/2026-10-11-native-model-retry-design.md): implemented request accounting and parsing scope, with dated evidence in the 600418 investigation.
 
 - [Independent research and focus-response design](superpowers/specs/2026-10-07-independent-research-and-focus-response-design.md) and [implementation plan](superpowers/plans/2026-10-07-independent-research-and-focus-response-implementation.md): approved V6 separation and local implementation history; current behavior is described in Web operations and the research-record contract.
 - [Question-first dual-column Reader design](superpowers/specs/2026-10-06-question-first-reader-design.md) and [completed implementation plan](superpowers/plans/2026-10-06-question-first-reader-implementation.md): frozen approved scope and implementation history, retained at their original paths for review. [B2 visual direction](superpowers/prototypes/2026-10-06-question-first-reader-b-v2.html), [contribution preview](superpowers/prototypes/2026-10-06-question-first-reader-b-v3.html) and [approved B4 Agent review](superpowers/prototypes/2026-10-06-question-first-reader-b-v4.html) record the design decisions; they are prototypes, not live results. Current behavior belongs in Reader architecture/operations, with verification in the dated implementation review above.

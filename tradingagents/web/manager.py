@@ -121,11 +121,13 @@ class SingleRunManager:
         startup_reconciler: StartupReconciler | None = None,
         request_resolver: RequestResolver | None = None,
         resume_preflight: ResumePreflight | None = None,
+        chatgpt_auth=None,
     ) -> None:
         self.store = store
         self.broker = broker or EventBroker(store)
         self._uses_default_runner_factory = runner_factory is None
-        self.runner_factory = runner_factory or _default_runner_factory
+        self.chatgpt_auth = chatgpt_auth
+        self.runner_factory = runner_factory or self._runner_factory
         self.report_writer = report_writer or ReportArtifactWriter(store)
         self.checkpoint_guard_factory = (
             checkpoint_guard_factory or _default_checkpoint_guard_factory
@@ -143,6 +145,9 @@ class SingleRunManager:
             on_launch_failure=self._finish_failure,
         )
         self._requests: dict[str, AnalysisRequest] = {}
+
+    def _runner_factory(self, request, observer):
+        return _default_runner_factory(request, observer, chatgpt_auth=self.chatgpt_auth)
 
     @property
     def active_run_id(self) -> str | None:
@@ -1419,10 +1424,11 @@ def _endpoint_from_identity(value: Mapping[str, Any]) -> str | None:
 def _default_runner_factory(
     request: AnalysisRequest,
     observer: DurableRunObserver,
+    *, chatgpt_auth=None,
 ) -> ManagedRunner:
     if request.research_profile == "evidence_v1":
         from tradingagents.execution.native_runner import NativeRunner
-        return NativeRunner(observer)
+        return NativeRunner(observer, chatgpt_auth=chatgpt_auth) if request.effective_config.get("llm_provider") == "chatgpt" else NativeRunner(observer)
     if request.research_profile == "catalyst_v1":
         from tradingagents.execution.catalyst_runner import CatalystRunner
         return CatalystRunner(observer)

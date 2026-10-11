@@ -222,12 +222,21 @@ def create_app(
     checkpoint_available: bool = True,
     recover_startup: bool = True,
     connectivity_check: Callable[[str], None] | None = None,
+    chatgpt_auth=None,
 ) -> FastAPI:
     """Compose the HTTP layer without importing it from legacy CLI paths.
 
     ``connectivity_check`` is injected so tests can avoid a real Yahoo probe;
     production wires it to :func:`tradingagents.web.connectivity.check_yfinance_reachable`.
     """
+    from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
+    from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+    from tradingagents.web.chatgpt_routes import install_chatgpt_routes
+
+    manager_auth = getattr(manager, "chatgpt_auth", None)
+    if manager_auth is not None and chatgpt_auth is not None and manager_auth is not chatgpt_auth:
+        raise ValueError("manager and Web must use the same ChatGPT authentication service")
+    selected_auth = chatgpt_auth or manager_auth or ChatGPTAuth()
     if manager is not None:
         # Reuse the manager's broker so worker persist (manager.broker) and
         # SSE subscribe (app.state.broker) share one _subscribers registry.
@@ -240,12 +249,13 @@ def create_app(
                 "a mismatch silently drops all live SSE events"
             )
         selected_manager = manager
+        selected_manager.chatgpt_auth = selected_auth
         selected_store = store or getattr(manager, "store", None) or RunStore()
         selected_broker = broker or manager_broker or EventBroker(selected_store)
     else:
         selected_store = store or RunStore()
         selected_broker = broker or EventBroker(selected_store)
-        selected_manager = SingleRunManager(selected_store, selected_broker)
+        selected_manager = SingleRunManager(selected_store, selected_broker, chatgpt_auth=selected_auth)
     selected_environment = os.environ if environment is None else environment
     if connectivity_check is None:
         from .connectivity import check_yfinance_reachable
@@ -260,6 +270,7 @@ def create_app(
             if callable(recover):
                 application.state.recovered_runs = recover()
         yield
+        selected_auth.close()
 
     app = FastAPI(
         title="TradingAgents Local Workbench",
@@ -274,6 +285,13 @@ def create_app(
     app.state.environment = selected_environment
     app.state.checkpoint_available = checkpoint_available
     app.state.static_dir = assets_root
+    app.state.chatgpt_auth = selected_auth
+    install_chatgpt_routes(app, selected_auth)
+
+    @app.exception_handler(ChatGPTError)
+    async def handle_chatgpt_error(_request: Request, exc):
+        d = exc.diagnostic
+        return _error_response(d.upstream_status or 422, d.category, d.safe_message)
 
     @app.middleware("http")
     async def add_response_headers(request: Request, call_next):
@@ -285,6 +303,8 @@ def create_app(
         # content-hashed build assets under /assets are safe to cache for a
         # year because their URLs change on every rebuild.
         path = request.url.path
+        if path.startswith("/api/chatgpt/"):
+            response.headers["Cache-Control"] = "no-store"
         if path.startswith("/assets/"):
             if response.status_code in (200, 206, 304):
                 response.headers["Cache-Control"] = (
@@ -387,6 +407,7 @@ def create_app(
         return _configuration_payload(
             selected_environment,
             checkpoint_available=checkpoint_available,
+            chatgpt_auth=selected_auth,
         )
 
     @app.post("/api/batches/validate")
@@ -431,6 +452,7 @@ def create_app(
                 mode="company_research",
                 horizon=config.horizon,
                 llm_provider=config.llm_provider,
+                chatgpt_account_ref=config.chatgpt_account_ref,
                 quick_think_llm=config.quick_think_llm,
                 deep_think_llm=config.deep_think_llm,
                 output_language=config.output_language,
@@ -440,11 +462,13 @@ def create_app(
                 research_question=config.research_question,
                 evidence_policy=config.evidence_policy,
             )
-            request_model, _ = _analysis_request(
+            request_model, item_keys = _analysis_request(
                 request_body,
                 selected_environment,
                 checkpoint_available=checkpoint_available,
+                chatgpt_auth=selected_auth,
             )
+            configured_keys.update(item_keys)
             connectivity_check(canonical)
             prepared.append(
                 (
@@ -520,6 +544,7 @@ def create_app(
             body,
             selected_environment,
             checkpoint_available=checkpoint_available,
+            chatgpt_auth=selected_auth,
         )
         connectivity_check(request_model.ticker)
         return selected_manager.start(
@@ -875,20 +900,30 @@ def _analysis_request(
     environment: Mapping[str, str],
     *,
     checkpoint_available: bool,
+    chatgpt_auth=None,
 ) -> tuple[AnalysisRequest, dict[str, bool]]:
     _require_native_creation(body.research_profile)
     provider = body.llm_provider.lower()
-    if provider not in PROVIDER_API_KEY_ENV:
+    if provider not in PROVIDER_API_KEY_ENV and provider != "chatgpt":
         raise ApiBoundaryError(
             422,
             "unsupported_provider",
             "The selected LLM provider is not supported.",
             fields=("llm_provider",),
         )
-    _validate_model(provider, body.quick_think_llm, "quick_think_llm", "quick")
-    _validate_model(provider, body.deep_think_llm, "deep_think_llm", "deep")
+    if provider == "chatgpt":
+        from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+        if chatgpt_auth is None:
+            raise ChatGPTError("not_signed_in")
+        chatgpt_auth.access(body.chatgpt_account_ref, for_inference=True)
+        available = {item["id"] for item in chatgpt_auth.models(body.chatgpt_account_ref)["models"]}
+        if not {body.quick_think_llm, body.deep_think_llm} <= available:
+            raise ChatGPTError("model_not_available")
+    else:
+        _validate_model(provider, body.quick_think_llm, "quick_think_llm", "quick")
+        _validate_model(provider, body.deep_think_llm, "deep_think_llm", "deep")
 
-    if not _provider_configured(provider, environment):
+    if provider != "chatgpt" and not _provider_configured(provider, environment):
         raise ApiBoundaryError(
             422,
             "missing_configuration",
@@ -929,7 +964,12 @@ def _analysis_request(
         "max_debate_rounds": body.research_depth,
         "max_risk_discuss_rounds": body.research_depth,
     }
+    if provider == "chatgpt":
+        effective_config["chatgpt_account_ref"] = body.chatgpt_account_ref
+        effective_config["backend_url"] = None
     configured_keys = _configured_keys(environment)
+    if provider == "chatgpt":
+        configured_keys["chatgpt"] = True
     if body.research_profile == "evidence_v1" and body.holding is not None:
         thesis = body.holding.original_thesis
         if thesis is not None and (not isinstance(thesis, str) or len(thesis) > 4000):
@@ -1396,6 +1436,7 @@ def _configuration_payload(
     environment: Mapping[str, str],
     *,
     checkpoint_available: bool,
+    chatgpt_auth=None,
 ) -> dict[str, Any]:
     configured = _configured_keys(environment)
     presets = load_preset_catalog()
@@ -1422,6 +1463,12 @@ def _configuration_payload(
                 ),
             }
         )
+    if chatgpt_auth is not None:
+        accounts = chatgpt_auth.status()
+        active = next((a for a in accounts["accounts"] if a["account_ref"] == accounts["active_account_ref"]), None)
+        configured["chatgpt"] = bool(active and active["plan_enabled"])
+        providers.append({"id": "chatgpt", "configured": configured["chatgpt"], "requires_api_key": False,
+                          "authentication": "oauth", "models": {"quick": [], "deep": []}, "custom_model_allowed": False})
     return {
         "providers": providers,
         "configured_keys": configured,

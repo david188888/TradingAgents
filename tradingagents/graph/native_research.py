@@ -93,7 +93,11 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
         ledger.settle(token, ok=False, detail="native_stage_invalid_or_unavailable")
         return None
     ledger.record_result(logical, {"proposal": proposal.model_dump(mode="json")})
-    ledger.settle(token, ok=True, detail="native_stage_validated")
+    usage = ledger.journal.state.get("native.model_usage", {}).get(stage, {})
+    measured = all(type(usage.get(k)) is int and usage[k] >= 0 for k in ("input_tokens", "output_tokens"))
+    ledger.settle(token, ok=True, detail="native_stage_validated", usage_available=measured,
+                  input_tokens=usage.get("input_tokens") if measured else None,
+                  output_tokens=usage.get("output_tokens") if measured else None)
     return proposal
 
 

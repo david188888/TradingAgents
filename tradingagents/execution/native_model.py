@@ -1,8 +1,8 @@
 """SDK-only structured proposals for the shared native research kernel.
 
 The kernel owns the dispatched MAIN reservation. This adapter acquires one
-global model slot per actual SDK request and owns only the optional repair
-reservation. It never fetches data or retries an uncertain network request.
+global model slot per actual SDK request and owns optional repair and bounded
+transient retry reservations. It never replays an unknown historical request.
 """
 
 from __future__ import annotations
@@ -30,9 +30,12 @@ from tradingagents.execution.budget import (
     BudgetExhausted,
     BudgetLimitHit,
 )
+from tradingagents.execution.native_model_diagnostics import safe_model_diagnostic
+from tradingagents.execution.native_retry import MODEL_RETRY_POLICY, transient_model_error
 from tradingagents.graph.catalyst_workflow import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
+from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
@@ -66,6 +69,10 @@ class NativeModelCancelled(NativeModelUnavailable):
     pass
 
 
+class _TransientModelRequest(NativeModelUnavailable):
+    pass
+
+
 class NativeFocusInvalid(NativeModelUnavailable):
     pass
 
@@ -84,7 +91,7 @@ class NativeModelCaller:
 
     def __init__(self, *, effective_config: Mapping[str, Any], run_id: str,
                  ledger: DurableBudgetLedger, cancelled: Callable[[], bool],
-                 deadline: Callable[[], float]):
+                 deadline: Callable[[], float], chatgpt_auth=None):
         if (not isinstance(ledger, DurableBudgetLedger) or ledger.run_id != run_id
                 or ledger.journal.ledger is not ledger):
             raise ValueError("native model caller requires the run's durable ledger")
@@ -94,12 +101,17 @@ class NativeModelCaller:
         task_effort_overrides(self.config)
         self.run_id, self.ledger = run_id, ledger
         self.cancelled, self.deadline = cancelled, deadline
+        self.chatgpt_auth = chatgpt_auth
         from tradingagents.runtime.native_observation import establish_sdk_observation
 
         establish_sdk_observation(ledger)
         self.schemas = dict(STAGE_SCHEMAS)
         self.instructions = dict(STAGE_INSTRUCTIONS)
         version = ledger.journal.state.get("identity", {}).get("workflow_version")
+        retry_policy = ledger.journal.state.get("identity", {}).get("model_retry_policy")
+        if retry_policy is not None and retry_policy != MODEL_RETRY_POLICY:
+            raise CatalystCheckpointConflict("native model retry policy mismatch")
+        self.retry_enabled = retry_policy == MODEL_RETRY_POLICY
         if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION}:
             self.schemas.update(challenge=ChallengesProposalV2, synthesis=SynthesisProposalV2)
             self.instructions["challenge"] += " Select only the closed check IDs/observed risk. Economic questions remain unresolved even when a local evidence check passes."
@@ -172,7 +184,7 @@ class NativeModelCaller:
             + "Schema:\n" + schema + "\nSaved research context:\n" + payload
         )
 
-    def _parse(self, stage: str, response: Any, context: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def _parse(self, stage: str, response: Any, context: Mapping[str, Any] | None = None, *, phase: str = "main") -> dict[str, Any]:
         try:
             content = normalize_content(response).content
             value = json.loads(content, object_pairs_hook=_unique_object)
@@ -206,7 +218,8 @@ class NativeModelCaller:
                 if {c.challenge_id for c in proposal.challenge_assessments} != challenges:
                     raise ValueError("synthesis challenge coverage invalid")
             return proposal.model_dump(mode="json")
-        except Exception:
+        except Exception as exc:
+            self._record_safe_diagnostic(stage, phase, "response_invalid", exc, response=response)
             if stage == "focus_response":
                 raise NativeFocusInvalid("native focus response invalid") from None
             raise NativeModelUnavailable("native model response invalid") from None
@@ -224,7 +237,70 @@ class NativeModelCaller:
         except Exception:
             raise CatalystCheckpointConflict("native model cache invalid") from None
 
-    def _invoke(self, stage: str, prompt: str, dispatch: Callable[[], None]) -> Any:
+    def _wait_for_retry(self, seconds: float) -> None:
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            remaining = self._ensure_active()
+            time.sleep(min(0.1, remaining, max(0, end - time.monotonic())))
+        self._ensure_active()
+
+    def _invoke(self, stage: str, prompt: str, dispatch: Callable[[], None], *, usage_key: str | None = None) -> Any:
+        phase = "repair" if usage_key else "main"
+        try:
+            return self._invoke_once(stage, prompt, dispatch, usage_key=usage_key, phase=phase)
+        except _TransientModelRequest:
+            if not self.retry_enabled or stage == "focus_response":
+                raise
+        for index, delay in enumerate(MODEL_RETRY_POLICY["delays_seconds"], start=1):
+            self._ensure_active()
+            logical = f"native.{stage}.{phase}.retry.{index}"
+            token = self.ledger.reserve(BudgetBucket.NETWORK_RETRY,
+                stage="native." + stage, logical_call_id=logical)
+            if isinstance(token, BudgetLimitHit):
+                self._record_safe_diagnostic(stage, phase, "budget_refused", BudgetExhausted(token))
+                raise BudgetExhausted(token)
+            key = f"native.model.{stage}.{phase}.retry.{index}.dispatched"
+
+            def authorize(reservation=token, flag=key):
+                with self.ledger.journal.lock:
+                    if self.ledger.journal.state.get(flag):
+                        raise CatalystCheckpointConflict("native retry dispatch cannot be repeated")
+                    self.ledger.mark_dispatched(reservation)
+                    self.ledger.journal.put(flag, True)
+
+            try:
+                self._wait_for_retry(delay)
+                response = self._invoke_once(stage, prompt, authorize,
+                    usage_key=f"{stage}.{phase}.retry.{index}", phase=phase)
+            except Exception as exc:
+                if self.ledger.journal.failed:
+                    raise
+                dispatched = any(r.attempt_id == token.attempt_id and r.dispatched_at is not None
+                                 for r in self.ledger.records())
+                if dispatched:
+                    self.ledger.settle(token, ok=False, usage_available=False, detail="native_retry_failed")
+                else:
+                    self.ledger.release(token, reason="native_retry_not_dispatched")
+                if isinstance(exc, _TransientModelRequest) and index < MODEL_RETRY_POLICY["per_call_retries"]:
+                    continue
+                raise
+            usage = self.ledger.journal.state.get("native.model_usage", {}).get(
+                f"{stage}.{phase}.retry.{index}", {})
+            measured = all(type(usage.get(k)) is int and usage[k] >= 0
+                           for k in ("input_tokens", "output_tokens"))
+            self.ledger.settle(token, ok=True, usage_available=measured,
+                input_tokens=usage["input_tokens"] if measured else None,
+                output_tokens=usage["output_tokens"] if measured else None,
+                detail="native_retry_response_received")
+            if self.config["llm_provider"] == "chatgpt":
+                with self.ledger.journal.lock:
+                    failures = dict(self.ledger.journal.state.get("native.model_failures", {}))
+                    failures.pop(stage, None)
+                    self.ledger.journal.put("native.model_failures", failures)
+            return response
+        raise NativeModelUnavailable("native model retries exhausted")
+
+    def _invoke_once(self, stage: str, prompt: str, dispatch: Callable[[], None], *, usage_key: str | None = None, phase: str = "main") -> Any:
         self._ensure_active()
         slots = global_model_slots()
         while not slots.acquire(timeout=min(0.1, self._ensure_active())):
@@ -234,25 +310,75 @@ class NativeModelCaller:
             try:
                 kwargs = provider_llm_kwargs(self.config, task="native." + stage)
                 kwargs.update(max_retries=0, timeout=remaining)
+                if self.config["llm_provider"] == "chatgpt":
+                    if self.chatgpt_auth is None:
+                        raise ChatGPTError("not_signed_in")
+                    kwargs.update(auth=self.chatgpt_auth, account_ref=self.config.get("chatgpt_account_ref"),
+                                  cancelled=self.cancelled, deadline=self.deadline, before_request=dispatch)
                 client = create_llm_client(
                     provider=self.config["llm_provider"],
                     model=self.config["deep_think_llm"] if stage == "synthesis" else self.config["quick_think_llm"],
                     base_url=self.config.get("backend_url"), **kwargs,
                 )
-            except Exception:
+            except ChatGPTError as exc:
+                self._record_failure(stage, exc)
+                raise NativeModelUnavailable(exc.diagnostic.safe_message) from None
+            except Exception as exc:
+                self._record_safe_diagnostic(stage, phase, "configuration_unavailable", exc,
+                    attempt_key=usage_key or stage)
                 raise NativeModelUnavailable("native model configuration unavailable") from None
             self._ensure_active()
             # Durable authorization precedes invoke; a crash afterwards is
             # conservatively consumed and cannot authorize a new request.
-            dispatch()
+            if self.config["llm_provider"] != "chatgpt":
+                dispatch()
             try:
                 response = client.get_llm().invoke(prompt)
-            except Exception:
+            except ChatGPTError as exc:
+                self._record_failure(stage, exc)
+                if transient_model_error(exc):
+                    self._record_safe_diagnostic(stage, phase, "request_failed", exc,
+                        attempt_key=usage_key or stage)
+                    raise _TransientModelRequest("native model transient request failed") from None
+                raise NativeModelUnavailable(exc.diagnostic.safe_message) from None
+            except Exception as exc:
+                self._record_safe_diagnostic(stage, phase, "request_failed", exc,
+                    attempt_key=usage_key or stage)
+                if transient_model_error(exc):
+                    raise _TransientModelRequest("native model transient request failed") from None
                 raise NativeModelUnavailable("native model request failed") from None
+            usage = getattr(response, "usage_metadata", None)
+            if isinstance(usage, dict) and all(type(usage.get(k)) is int and usage[k] >= 0 for k in ("input_tokens", "output_tokens")):
+                with self.ledger.journal.lock:
+                    self.ledger.journal.put("native.model_usage", {
+                        **self.ledger.journal.state.get("native.model_usage", {}), (usage_key or stage): usage,
+                    })
             self._ensure_active()
             return response
         finally:
             slots.release()
+
+    def _record_failure(self, stage: str, exc: ChatGPTError) -> None:
+        diagnostic = exc.diagnostic.model_copy(update={"stage": stage}).model_dump(mode="json")
+        with self.ledger.journal.lock:
+            self.ledger.journal.put("native.model_failures", {
+                **self.ledger.journal.state.get("native.model_failures", {}), stage: diagnostic,
+            })
+
+    def _record_safe_diagnostic(self, stage, phase, category, exc, *, response=None, attempt_key=None):
+        diagnostic = safe_model_diagnostic(stage, phase, category, exc,
+            schema=self.schemas[stage], response=response)
+        journal = self.ledger.journal
+        with journal.lock:
+            if journal.failed:
+                raise CatalystCheckpointConflict("native diagnostic persistence failed")
+            journal.put("native.model_diagnostics", {
+                **journal.state.get("native.model_diagnostics", {}), stage + "." + phase: diagnostic,
+            })
+            if attempt_key is not None:
+                journal.put("native.model_attempt_diagnostics", {
+                    **journal.state.get("native.model_attempt_diagnostics", {}), attempt_key: diagnostic,
+                })
 
     def _dispatch_main(self, stage: str) -> None:
         key = "native.model." + stage + ".dispatched"
@@ -332,10 +458,11 @@ class NativeModelCaller:
             raise NativeModelUnavailable("native model repair unavailable; dispatch cannot be repeated")
         token = self.ledger.reserve(BudgetBucket.STRUCTURED_REPAIR, stage="native." + stage, logical_call_id=logical)
         if isinstance(token, BudgetLimitHit):
+            self._record_safe_diagnostic(stage, "repair", "budget_refused", BudgetExhausted(token))
             raise BudgetExhausted(token)
         try:
-            response = self._invoke(stage, prompt, lambda: self.ledger.mark_dispatched(token))
-            value = self._parse(stage, response, context)
+            response = self._invoke(stage, prompt, lambda: self.ledger.mark_dispatched(token), usage_key=stage + ".repair")
+            value = self._parse(stage, response, context, phase="repair")
         except Exception:
             if self.ledger.journal.failed:
                 raise
@@ -347,7 +474,9 @@ class NativeModelCaller:
                 self.ledger.release(token, reason="native_repair_not_dispatched")
             raise
         self.ledger.record_result(logical, {"prompt_sha256": digest, "proposal": value})
-        usage = getattr(response, "usage_metadata", None)
+        # If a retry returned the response, its reservation already owns the
+        # measured tokens; the original repair request remains unmeasured.
+        usage = self.ledger.journal.state.get("native.model_usage", {}).get(stage + ".repair")
         measured = (isinstance(usage, dict) and all(
             isinstance(usage.get(key), int) and not isinstance(usage[key], bool) and usage[key] >= 0
             for key in ("input_tokens", "output_tokens")))

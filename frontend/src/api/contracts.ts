@@ -235,6 +235,7 @@ export interface ProviderDTO {
   requires_api_key: boolean;
   models: ProviderModelOptionsDTO;
   custom_model_allowed: boolean;
+  authentication?: "oauth";
 }
 
 export interface AnalystOptionDTO {
@@ -333,6 +334,7 @@ export interface RunCreateRequestDTO {
   mode?: ResearchMode;
   horizon?: ResearchHorizon;
   llm_provider: string;
+  chatgpt_account_ref?: string;
   quick_think_llm: string;
   deep_think_llm: string;
   output_language: string;
@@ -2270,6 +2272,12 @@ export interface ReaderProcessDTO {
   availability: "ready" | "partial" | "unavailable" | "not_applicable"; reason_code: string | null;
   question_origin: "user" | "default" | "not_recorded"; primary_selection: "synthesis" | "code" | "not_recorded";
   counts: NativeCountsDTO; roles: ReaderRoleDTO[]; claim_origins: Array<{claim_id: string; role_key: AgentKey}>; source_failures: string[];
+  model_failures?: ModelFailureDiagnosticDTO[];
+}
+export interface ModelFailureDiagnosticDTO {
+  stage: string; category: string; upstream_status: number | null; upstream_code: string | null;
+  request_id: string | null; safe_message: string;
+  action: "sign_in" | "manage_usage" | "refresh_models" | "retry_later" | "check_permissions" | "check_capability" | "cancelled";
 }
 export interface SpecialistProposalDTO { hypotheses: Array<{ statement: string; supporting_fact_ids: string[]; conditions: Array<{condition_role: "necessary" | "invalidation"; text: string; check: VerificationConditionDTO | null}>; alternative_explanation: string }>; unknowns: string[] }
 export interface NumericPredicateDTO { operator: "lt" | "le" | "eq" | "ge" | "gt"; threshold: string; unit: string }

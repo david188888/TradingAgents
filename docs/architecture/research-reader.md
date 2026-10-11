@@ -96,6 +96,9 @@ first screen. Original proposals and code-owned final handling are separate.
 The frontend process hook follows SSE sequence/role changes, coalesces reads,
 pauses hidden polling, uses bounded retries, and stops after terminal convergence.
 Role bodies are fetched only for the selected role, with run/role/sequence guards.
+In-progress stage links scroll the selected review into view and move focus to
+it; closing the review returns focus to the originating stage link. Saved but
+unpublished bodies retain their publication-pending status.
 Entity links preserve the return reading position and highlight the exact output;
 drawer focus and Escape use the shared modal focus boundary.
 

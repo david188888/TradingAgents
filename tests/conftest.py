@@ -38,6 +38,19 @@ def _dummy_api_keys(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_chatgpt_credentials(monkeypatch, tmp_path):
+    """Default Web clients must never read or chmod a contributor's accounts."""
+    from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
+
+    original = ChatGPTAuth.__init__
+
+    def initialize(self, root=None, **kwargs):
+        original(self, tmp_path / "chatgpt-auth" if root is None else root, **kwargs)
+
+    monkeypatch.setattr(ChatGPTAuth, "__init__", initialize)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_config():
     """Reset the global dataflows config before and after each test.
 

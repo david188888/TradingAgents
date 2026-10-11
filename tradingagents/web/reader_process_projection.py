@@ -136,6 +136,20 @@ def native_counts(checkpoint, *, role=None):
         else 0
     )
     repair = sum(r["bucket"] == "structured_repair" for r in scoped) if known_workflow else 0
+    from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
+
+    policy_recorded = checkpoint["identity"].get("model_retry_policy") == MODEL_RETRY_POLICY
+    retry_rows = [r for r in scoped if r["bucket"] == "network_retry"]
+    if retry_rows and (not policy_recorded or any(
+            checkpoint.get(r["logical_call_id"].replace("native.", "native.model.", 1) + ".dispatched") is not True
+            for r in retry_rows)):
+        coverage = False
+    if known_workflow and policy_recorded:
+        roles = (role,) if role in MODEL_ROLES else () if role else MODEL_ROLES
+        flags += sum(checkpoint.get(f"native.model.{key}.main.retry.{index}.dispatched") is True
+                     for key in roles for index in range(1, 4))
+        repair += sum(checkpoint.get(f"native.model.{key}.repair.retry.{index}.dispatched") is True
+                      for key in roles for index in range(1, 4))
 
     def sdk(value):
         return count(
@@ -645,6 +659,7 @@ def _process(ctx):
         roles=tuple(roles),
         claim_origins=tuple(origins),
         source_failures=tuple(sorted(failures)),
+        model_failures=tuple((cp or {}).get("native.model_failures", {}).values()),
     )
 
 

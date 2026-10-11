@@ -98,6 +98,7 @@ class RunCreateRequest(BaseModel):
     mode: Literal["company_research", "catalyst_research", "holding_review"] | None = None
     horizon: Literal["short", "medium", "long"] = "medium"
     llm_provider: str = Field(min_length=1, max_length=64)
+    chatgpt_account_ref: str | None = Field(default=None, pattern=r"^cg_[0-9a-f]{32}$")
     quick_think_llm: str = Field(min_length=1, max_length=256)
     deep_think_llm: str = Field(min_length=1, max_length=256)
     output_language: str = "English"
@@ -118,7 +119,15 @@ class RunCreateRequest(BaseModel):
         value = handler(self)
         if self.evidence_policy is None:
             value.pop("evidence_policy", None)
+        if self.chatgpt_account_ref is None:
+            value.pop("chatgpt_account_ref", None)
         return value
+
+    @model_validator(mode="after")
+    def validate_chatgpt_account(self):
+        if (self.llm_provider.lower() == "chatgpt") != (self.chatgpt_account_ref is not None):
+            raise ValueError("chatgpt_account_ref is required only for ChatGPT subscription")
+        return self
 
     @model_validator(mode="after")
     def validate_question_profile(self) -> RunCreateRequest:
@@ -191,6 +200,7 @@ class BatchRunConfigRequest(BaseModel):
     research_depth: Literal[1, 3, 5] = 1
     horizon: Literal["short", "medium", "long"] = "medium"
     llm_provider: str = Field(min_length=1, max_length=64)
+    chatgpt_account_ref: str | None = Field(default=None, pattern=r"^cg_[0-9a-f]{32}$")
     quick_think_llm: str = Field(min_length=1, max_length=256)
     deep_think_llm: str = Field(min_length=1, max_length=256)
     output_language: str = "English"
@@ -199,6 +209,19 @@ class BatchRunConfigRequest(BaseModel):
     research_profile: ResearchProfile = "evidence_v1"
     research_question: str | None = Field(default=None, max_length=400)
     evidence_policy: NativeEvidencePolicyV1 | None = None
+
+    @model_validator(mode="after")
+    def validate_chatgpt_account(self):
+        if (self.llm_provider.lower() == "chatgpt") != (self.chatgpt_account_ref is not None):
+            raise ValueError("chatgpt_account_ref is required only for ChatGPT subscription")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_fields(self, handler):
+        value = handler(self)
+        if self.chatgpt_account_ref is None:
+            value.pop("chatgpt_account_ref", None)
+        return value
 
     @field_validator("analysis_date")
     @classmethod
