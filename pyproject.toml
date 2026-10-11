@@ -38,7 +38,8 @@ china = [
     "pypdf>=5,<7",
     "akshare>=1.16.0",
     "baostock>=0.8.8",
-    "mootdx>=0.11.0",
+    # mootdx 0.11.x requires httpx<0.26, incompatible with the Web/model SDKs.
+    # Keep the adapter for compatible legacy installations, without default SDK installation.
     "tushare>=1.4.0",
     # Official-source readers are spreadsheets, not JSON: the Shenzhen exchange
     # margin-trading file and the Shenwan industry-classification history are

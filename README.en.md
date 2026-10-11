@@ -43,15 +43,18 @@ Requires Python 3.10+. Use an API key for your chosen model provider, or authori
 ```bash
 git clone https://github.com/david188888/TradingAgents.git
 cd TradingAgents
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[china,web]"
+# Reuse the existing tradingagents Conda environment.
+# Only if it does not exist yet: conda create -n tradingagents python=3.13
+conda activate tradingagents
+python -m pip install -e ".[china,web]" --index-url https://pypi.org/simple
 
 cp .env.example .env
 # Set DEEPSEEK_API_KEY in .env, or choose ChatGPT subscription and sign in after startup.
 
 tradingagents web --port 8765 --open
 ```
+
+The install command explicitly uses official PyPI to avoid mirror access failures. The default A-share installation excludes mootdx because its dependencies conflict with Web; see [A-share data capabilities](docs/operations/a-share-data-capabilities.md) for existing-environment repair and TDX supplements.
 
 After subscription sign-in, model choices follow the account’s official catalog; permissions and limits are confirmed by the official service. See [ChatGPT subscription configuration](docs/operations/chatgpt-subscription.md).
 

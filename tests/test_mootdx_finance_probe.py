@@ -81,6 +81,24 @@ def _reset():
     mootdx_provider._reset_tdx_client_cache()
 
 
+@pytest.mark.parametrize("capability", ["bars", "finance", "f10"])
+def test_missing_sdk_is_typed_unavailable_without_network_probe(monkeypatch, capability):
+    monkeypatch.setitem(sys.modules, "mootdx", None)
+    monkeypatch.delitem(sys.modules, "mootdx.quotes", raising=False)
+
+    def unexpected_probe(*args, **kwargs):
+        pytest.fail("A missing optional SDK must not trigger a network probe")
+
+    monkeypatch.setattr(mootdx_provider.socket, "create_connection", unexpected_probe)
+    with pytest.raises(ChinaDataUnavailableError, match="mootdx/TDX SDK unavailable"):
+        if capability == "bars":
+            mootdx_provider.get_stock_mootdx_df("000001.SZ", "2026-09-01", "2026-09-30")
+        elif capability == "finance":
+            mootdx_provider.get_fundamentals_mootdx("000001.SZ", "2026-09-30")
+        else:
+            mootdx_provider.get_a_share_f10("000001.SZ")
+
+
 def test_finance_probe_succeeds_while_the_quote_probe_fails(monkeypatch):
     """The whole point of #52: dead bars must not condemn finance/F10."""
     client = _SplitClient(bars_empty=True, finance_ok=True)

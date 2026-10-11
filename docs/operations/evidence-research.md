@@ -3,8 +3,9 @@
 Status: Current
 
 `evidence_v1` is the default and only new Web research workflow. The form
-supports A-share company, catalyst and holding research; batch uses the same
-company workflow. `NativeRunner` owns execution. CLI analysis is outside
+supports A-share company research; batch uses the same company workflow.
+Historical catalyst and holding runs retain saved reading and recovery.
+`NativeRunner` owns execution. CLI analysis is outside
 continued maintenance; `tradingagents web` remains the supported launcher.
 
 ## Start Web research
@@ -12,8 +13,13 @@ continued maintenance; `tradingagents web` remains the supported launcher.
 Keep model/data credentials in ignored local configuration and start:
 
 ```bash
+conda activate tradingagents
 tradingagents web --port 8765 --open
 ```
+
+Reuse the existing Conda environment. Installation and dependency repair are
+described in the [quick start](../../README.en.md#quick-start) and
+[A-share installation boundaries](a-share-data-capabilities.md#安装与通达信边界).
 
 `GET /api/config` reports native support and the native Web default. Creation
 is enabled unless explicitly disabled by `TRADINGAGENTS_EVIDENCE_ENABLED=false`

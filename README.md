@@ -43,15 +43,18 @@ flowchart LR
 ```bash
 git clone https://github.com/david188888/TradingAgents.git
 cd TradingAgents
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[china,web]"
+# 已有 tradingagents Conda 环境时直接复用。
+# 仅首次且环境不存在时：conda create -n tradingagents python=3.13
+conda activate tradingagents
+python -m pip install -e ".[china,web]" --index-url https://pypi.org/simple
 
 cp .env.example .env
 # 在 .env 中填写 DEEPSEEK_API_KEY；也可启动后选择 ChatGPT 订阅并登录。
 
 tradingagents web --port 8765 --open
 ```
+
+安装命令显式使用官方 PyPI，避免镜像访问异常。默认 A 股安装不包含与 Web 依赖冲突的 mootdx；既有环境修复与通达信补充能力见 [A 股数据能力](docs/operations/a-share-data-capabilities.md)。
 
 订阅登录后，模型列表随账户官方目录更新；权限和额度由官方服务确认。详见 [ChatGPT 订阅配置](docs/operations/chatgpt-subscription.md)。
 
