@@ -62,6 +62,10 @@ class PipelineCaller:
             return {"challenges": [{"hypothesis_id": condition["hypothesis_id"], "condition_id": condition_id,
                 "statement": "收入门槛不能证明经营改善可持续。", "severity": "critical",
                 "risk_type": "operations", "proposed_test": "核对收入门槛，并补充后续经营兑现证据。"}]}
+        if stage.startswith("response_"):
+            return {"responses": [{"challenge_id":cid,"hypothesis_id":hid,"disposition":"maintained",
+                "rationale":"局部收入条件不足以证明持续性。","supporting_fact_ids":context["allowed_facts_by_challenge"][cid][:1]}
+                for cid,hid in context["assigned"].items()]}
         if stage == "focus_response":
             fact = next(c for c in context["record"]["claims"] if c["kind"] == "fact" and "income.revenue" in c["statement"])
             return {"answer": "已有经营证据仅能部分回应，仍需细分业务披露。", "answerability": "partial",
@@ -81,11 +85,15 @@ class PipelineCaller:
             dimensions.append({"dimension": name, "status": ceiling, "judgement": "证据支持条件性研究，仍需补齐核查。",
                 "claim_ids": [dimension_claims[name]["claim_id"]] if ceiling != "unresolved" else [],
                 "limitations": [reason] if ceiling == "unresolved" else []})
-        return {"judgement": "值得继续核查经营兑现；收入条件核查仍不足以证明持续性。",
+        result = {"judgement": "值得继续核查经营兑现；收入条件核查仍不足以证明持续性。",
             "dimensions": dimensions, "key_claim_ids": [financial["claim_id"], event["claim_id"], market["claim_id"]],
             "primary_challenge_id": record["challenges"][0]["challenge_id"], "next_check": "补充公告正文与下一期经营兑现。",
             "challenge_assessments": [{"challenge_id": item["challenge_id"],
                 "rationale": "局部条件核查没有解决整体经济假设。"} for item in record["challenges"]]}
+        if record.get("dialogue") is not None:
+            result.update(investment_stance="insufficient_evidence", supporting_arguments=[], opposing_arguments=[],
+                adjudications=[{"challenge_id":r["challenge_id"],"response_id":r["response_id"],"disposition":r["disposition"],"rationale":"保留经济疑问。"} for r in record["dialogue"]["responses"]])
+        return result
 
 
 @pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])

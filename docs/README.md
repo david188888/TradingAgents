@@ -1,5 +1,7 @@
 # Documentation Index
 
+Current new-study contract: [Unified company investment research (V7)](contracts/unified-company-research.md).
+
 - **Status: Current** — 本文档是 `docs/` 的唯一导航入口。其它页面若要声明“当前行为”，都必须通过本文档被找到。
 - **即时事实源是代码与 passing tests**：Markdown 只解释边界、ownership 和语义。当 prose 与实现不一致时，以代码和测试为准，并在同一改动中修复对应文档。
 - 历史计划、设计与评审**不是“已经实现”的证据**：只有标注 `Status: Current` 的页面才能作为当前实现事实使用。
@@ -101,6 +103,8 @@ These are execution proposals, not descriptions of current runtime behavior.
 - [Unified Reader prototype](superpowers/prototypes/2026-09-30-unified-research-reader.html), [sample metric generator](superpowers/prototypes/reader_sample_metrics.py), [sample metrics](superpowers/prototypes/reader_sample_metrics.json), and [catalyst layout prototype](superpowers/specs/2026-09-28-catalyst-research-layout.html): retained synthetic design material, not live research or runtime contracts.
 
 ## Historical / Archive
+
+- [Unified company research design](superpowers/specs/2026-10-11-unified-company-research-design.md) and [local implementation record](superpowers/plans/2026-10-11-unified-company-research-implementation.md): approved V7 scope and dated offline/browser validation; current behavior belongs in the [unified research contract](contracts/unified-company-research.md).
 
 `Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
 

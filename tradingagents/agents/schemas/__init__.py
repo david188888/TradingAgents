@@ -74,6 +74,8 @@ from ._research_assessment import (  # noqa: F401 - facade re-export
     ChallengeAssessmentV1,
     DimensionAssessmentV1,
     ResearchAssessmentV1,
+    ResearchAssessmentV2,
+    ResearchAssessmentV3,
 )
 from ._research_case import (  # noqa: F401 - facade re-export
     AnalystCard,
@@ -96,6 +98,15 @@ from ._research_case_draft import (
     ReviewItemDraft,
     ScenarioDraft,
     render_learning_case_draft,
+)
+from ._research_dialogue import (  # noqa: F401 - facade re-export
+    ChallengeAdjudicationV1,
+    HypothesisOriginV1,
+    InvestmentArgumentV1,
+    JudgementConditionV1,
+    ResearchDialogueV1,
+    ResearchResponseV1,
+    ResponsesProposalV1,
 )
 from ._research_focus import (  # noqa: F401 - facade re-export
     FOCUS_RESPONSE_CONTRACT,

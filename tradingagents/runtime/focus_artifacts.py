@@ -12,7 +12,7 @@ from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
 from tradingagents.observability.canonical import canonical_sha256 as config_sha256
 from tradingagents.research.focus_context import focus_context, focus_identity
-from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION
 from tradingagents.runtime.catalyst_checkpoint import CHECKPOINT_KIND
 
 FOCUS_PUBLIC_TASK = "native.focus.final"
@@ -30,7 +30,7 @@ def read_focus_publication_failure(store, run_id, record, checkpoint, events):
     identity = checkpoint["identity"]
     expected = focus_identity(focus_context(record, candidate.focus, str(identity["config"].get("output_language", "Chinese"))),
                               config_sha256(identity["config"]))
-    if (identity.get("workflow_version") != FOCUS_WORKFLOW_VERSION
+    if (identity.get("workflow_version") not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
             or identity.get("research_question") != candidate.focus
             or store.read_snapshot(run_id).metadata.get("research_question") != candidate.focus
             or checkpoint.get("native_focus_input") != expected
@@ -61,7 +61,7 @@ def read_focus_artifact(store, run_id, record, checkpoint, events):
     response = ResearchFocusResponseV1.model_validate_json(checked(event))
     validate_focus_response(record, response)
     identity = checkpoint["identity"]
-    if identity.get("workflow_version") != FOCUS_WORKFLOW_VERSION or identity.get("research_question") != response.focus:
+    if identity.get("workflow_version") not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} or identity.get("research_question") != response.focus:
         raise ValueError("focus request binding mismatch")
     snapshot = store.read_snapshot(run_id)
     if snapshot.metadata.get("research_question") != response.focus:

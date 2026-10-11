@@ -117,7 +117,9 @@ class NativeFixtureCaller:
                 dimensions.append({"dimension": dimension, "status": ceiling if refs else "unresolved",
                     "judgement": "固定测试输入，非真实研究结论。", "claim_ids": refs,
                     "limitations": [] if refs else [reason]})
-            return {"judgement": "固定测试证据用于验证网页、引用和确定性估值接线。", "dimensions":dimensions,
+            return {"investment_stance": "neutral",
+                "supporting_arguments": [{"rationale": "固定测试：经营字段提供有限依据。", "claim_ids": context["dimension_claim_ids"]["operating_quality"][:1]}],
+                "judgement": "固定测试证据用于验证网页、引用和确定性估值接线。", "dimensions":dimensions,
                 "key_claim_ids": context["dimension_claim_ids"]["operating_quality"][:1],
                 "next_check": "本页全部为 synthetic fixture；需独立验证真实来源。"}
         return {"challenges":[]} if stage == "challenge" else {"hypotheses":[]}

@@ -60,14 +60,13 @@ causality. The canonical boundaries are in `agents/schemas/` and `research/`;
 see the [contract index](docs/contracts/README.md) for producers and consumers.
 
 New Web single and batch requests default to `evidence_v1` and route to
-`execution/native_runner.py:NativeRunner`. The React creation form offers company,
-catalyst (84 calendar days), and holding scopes with a saved optional supplementary focus.
+`execution/native_runner.py:NativeRunner`. The React creation form offers one company investment research workflow, with an optional supplementary focus. Historical catalyst/holding modes remain read/resume only; fresh creation/retry of those modes returns 422.
 Roles and challenge count are code-owned. Old-profile creation and retry return
 410; legacy read/resume stays available. `TRADINGAGENTS_EVIDENCE_ENABLED=false`
 disables fresh native work without disabling reads or existing recovery.
 
 The `evidence-policy-v1` fixes source windows separately from outlook and runtime
-horizon policy. New workflow `evidence-production-v6` retains V5 collection through
+horizon policy. New workflow `evidence-production-v7` retains V5 collection through
 `dataflows/minimum_sources.py:MinimumEvidenceSources`, an isolated extension of
 the native collector. `disclosure_documents_v2.py` admits bounded official
 reports/summary/operating notices and explicit numeric rows; supplementary
@@ -80,8 +79,7 @@ relabel a successful data check as resolved economics. V5 introduced these
 checks without an extra model stage. V6 freezes the independent baseline first,
 then optionally answers the user focus once through `execution/native_focus.py`.
 The collector and core kernel never receive that focus. `research/native_versions.py`
-owns the V6 mode objectives, kernel identity and frozen focus-budget policy; old
-V1窶天5 prompt, role and budget semantics remain versioned.
+owns V6 frozen mode objectives and V7 investment objective/kernel/budget identity. V7 adds one bounded targeted reply per challenged specialist before synthesis, a versioned dialogue and V3 investment assessment. Old V1窶天6 prompts, roles, budgets and report semantics remain versioned. See the [unified research contract](docs/contracts/unified-company-research.md).
 
 Workflow `evidence-production-v4` uses `dataflows/native_valuation.py:ValuationSources`,
 which extends the v3 bounded disclosures collector with qualified valuation
@@ -215,7 +213,7 @@ classic checkpoint toggle. Unknown dispatched calls remain spent and are not
 automatically repeated. Persisted adapter responses can recover the gap before
 the kernel's MAIN result without another model call.
 
-Fresh V6 identities freeze `execution/native_retry.py`'s model retry policy.
+Fresh V7 identities freeze `execution/native_retry.py`'s model retry policy.
 The adapter permits three transient retries per call with 2/5/10-second waits,
 bounded by the existing shared three-retry/twelve-attempt ledger limits. Repair
 retries retain their origin and each SDK request owns its usage exactly once;
@@ -226,7 +224,7 @@ See [retry accounting](docs/operations/observability-replay.md#蜴溽函讓｡蝙区怏髯
 Native publication requires an assessed `research-record-v1` and its durable
 authorization barrier; failure cannot complete the run or fall back to a case.
 Markdown and the single native Reader consume that same record. The desktop
-V6 Reader starts with the independent scope and judgement, then key claims, primary
+V7 Reader starts with the independent scope, investment stance, referenced support/counterevidence and original falsifiers, then key claims, primary
 challenge and proposed next check, executed checks, valuation and quantitative
 context. Linked facts, source content and fixed concept explanations appear in
 a side panel or narrow-container drawer. Evidence, process, Agent outputs and
@@ -242,7 +240,7 @@ recovery. Cancellation or global persistence corruption still fails the run.
 `web/reader_process_projection.py` captures an event-sequence boundary, validates
 the native workflow/input/output/seed identities and maps proposals to their
 published IDs. `web/native_reader_versions.py` freezes read qualification for
-the supported saved V1窶天6 workflows; unknown versions or failed bindings degrade
+the supported saved V1窶天7 workflows; unknown versions or failed bindings degrade
 without exposing unqualified proposals. The process endpoint reads summary
 metadata; the selected-role endpoint returns only closed research schema fields,
 never prompts, adapter responses or checkpoint envelopes. Both are read-only.
@@ -253,12 +251,12 @@ coverage is nullable or a lower bound. This marker does not change recovery
 identity, prompts, role selection or the research record. The separate
 `/reader/focus` projection validates committed supplemental bytes and their
 checkpoint barrier at the selected sequence; it never serves a saved candidate.
-V6 focus has one dedicated model bucket within the unchanged twelve total
+V6 and V7 focus have one dedicated model bucket within the unchanged twelve total
 attempts. It has no repair, retry or tool access and uses remaining active time;
 optional timeout allows publication of the already-completed baseline.
 
 Completion, readability, completeness and quality remain separate. Missing
-valuation or original-thesis inputs constrain their own dimensions, and a
+valuation constrains investment stance; historical original-thesis inputs constrain holding review, and a
 successful condition check cannot close an economic challenge. Web creation
 already defaults to native research; paid accuracy evaluation remains a separate
 acceptance task. See [Web research operations](docs/operations/evidence-research.md) and

@@ -87,6 +87,8 @@ def publish_native_record(
             raise NativePublicationError("native publication requires a native assessment")
         if not callable(publication_authorizer):
             raise NativePublicationError("native publication requires a lifecycle authorizer")
+        from tradingagents.research.native_versions import validate_assessment_version
+        validate_assessment_version(record, journal.state["identity"].get("workflow_version"))
         candidate = record.model_dump(mode="json")
         digest = _digest(candidate)
         with journal.lock:

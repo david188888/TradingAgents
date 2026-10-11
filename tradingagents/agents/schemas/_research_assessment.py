@@ -5,6 +5,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ._evidence_checks import ChallengeAssessmentV2
+from ._research_dialogue import (
+    ChallengeAdjudicationV1,
+    InvestmentArgumentV1,
+    JudgementConditionV1,
+)
 
 DIMENSIONS_BY_MODE = {
     "company_research": ("operating_quality", "valuation", "market_context"),
@@ -53,3 +58,17 @@ class ResearchAssessmentV1(_AssessmentModel):
 class ResearchAssessmentV2(ResearchAssessmentV1):
     schema_version: Literal["research-assessment-v2"] = "research-assessment-v2"
     challenge_assessments: tuple[ChallengeAssessmentV2, ...] = ()
+
+
+class ResearchAssessmentV3(ResearchAssessmentV2):
+    schema_version: Literal["research-assessment-v3"] = "research-assessment-v3"
+    investment_stance: Literal["favorable", "neutral", "unfavorable", "insufficient_evidence"]
+    supporting_arguments: tuple["InvestmentArgumentV1", ...] = Field(default=(), max_length=3)
+    opposing_arguments: tuple["InvestmentArgumentV1", ...] = Field(default=(), max_length=3)
+    change_conditions: tuple["JudgementConditionV1", ...] = Field(default=(), max_length=3)
+    adjudications: tuple["ChallengeAdjudicationV1", ...] = Field(default=(), max_length=3)
+
+
+
+
+ResearchAssessmentV3.model_rebuild()

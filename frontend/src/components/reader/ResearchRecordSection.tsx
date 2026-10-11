@@ -117,20 +117,20 @@ function NativeAssessment({ record, onInspect }: { record: ResearchRecordV1DTO; 
     <p className="record-judgement">{assessment.judgement}</p>
     {assessment.quality === "LOW_CONFIDENCE" || assessment.completeness === "partial" ? <p role="status">证据受限：本次判断为部分研究，需继续核查。</p> : null}
     <div className="record-limits" aria-label="本次研究缺口">
-      {assessment.dimensions.filter(d => d.status === "unresolved").map(d => <span key={d.dimension}>{DIMENSION_LABELS[d.dimension]}待核查</span>)}
+      {assessment.dimensions.filter(d => d.status === "unresolved").map(d => <span key={d.dimension}>{assessment.schema_version === "research-assessment-v3" && d.dimension === "catalyst_delivery" ? "事件影响与兑现" : DIMENSION_LABELS[d.dimension]}待核查</span>)}
       {record.limitations.filter(l => l.startsWith("native_stage_unavailable:")).map(l => <span key={l}>部分专项未形成合格输出</span>)}
     </div>
     <h4>主要风险与疑点</h4>
     <p>{primaryChallenge?.statement ?? (record.challenges.length > 0 ? "挑战条目尚未确定主次，请查看完整记录。" : "本次未形成挑战条目；不代表不存在风险。")}</p>
-    {primaryChallenge ? <p className="record-meta">{primaryChallenge.severity === "critical" ? "关键挑战" : "挑战"} · {primaryAssessment ? OUTCOME_LABELS[primaryAssessment.outcome] : "尚未解决"}{assessment.schema_version === "research-assessment-v2" ? " · 经济判断仍待核查" : ""}{primaryAssessment ? `：${primaryAssessment.rationale}` : ""}</p> : null}
-    {criticalChallenges.length > 0 ? <p className="record-meta">共 {criticalChallenges.length} 项关键{assessment.schema_version === "research-assessment-v2" ? "经济问题仍待核查" : "挑战尚未解决"}，完整条目见下方验证记录。</p> : null}
+    {primaryChallenge ? <p className="record-meta">{primaryChallenge.severity === "critical" ? "关键挑战" : "挑战"} · {primaryAssessment ? OUTCOME_LABELS[primaryAssessment.outcome] : "尚未解决"}{assessment.schema_version !== "research-assessment-v1" ? " · 经济判断仍待核查" : ""}{primaryAssessment ? `：${primaryAssessment.rationale}` : ""}</p> : null}
+    {criticalChallenges.length > 0 ? <p className="record-meta">共 {criticalChallenges.length} 项关键{assessment.schema_version !== "research-assessment-v1" ? "经济问题仍待核查" : "挑战尚未解决"}，完整条目见下方验证记录。</p> : null}
     <h4>关键依据</h4>
     {assessment.key_claim_ids.slice(0, 3).map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} onInspect={onInspect} />)}
     {assessment.key_claim_ids.length === 0 ? <p>当前没有可展示的重点依据。</p> : null}
 
     <details><summary>分项判断与覆盖限制</summary>
       {assessment.dimensions.map((dimension) => <section key={dimension.dimension}>
-        <h4>{DIMENSION_LABELS[dimension.dimension]} · {ASSESSMENT_STATUS_LABELS[dimension.status]}</h4>
+        <h4>{assessment.schema_version === "research-assessment-v3" && dimension.dimension === "catalyst_delivery" ? "事件影响与兑现" : DIMENSION_LABELS[dimension.dimension]} · {ASSESSMENT_STATUS_LABELS[dimension.status]}</h4>
         <p>{dimension.judgement}</p>
         {dimension.claim_ids.map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} onInspect={onInspect} />)}
         {dimension.challenge_ids.map((challengeId) => <p key={challengeId}>未解决挑战：{record.challenges.find((item) => item.challenge_id === challengeId)?.statement}</p>)}
@@ -215,7 +215,7 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
       </article>)}
       {record.challenges.map((challenge) => <article key={challenge.challenge_id}>
         <h4>挑战</h4><p>{challenge.statement}</p><p>拟核查：{challenge.proposed_test}</p>
-        {record.assessment?.schema_version === "research-assessment-v2" ? record.assessment.challenge_assessments.filter(item => item.challenge_id === challenge.challenge_id).map(item => <LocalChallengeResult key={item.challenge_id} item={item} />) : null}
+        {record.assessment && record.assessment.schema_version !== "research-assessment-v1" ? record.assessment.challenge_assessments.filter(item => item.challenge_id === challenge.challenge_id).map(item => <LocalChallengeResult key={item.challenge_id} item={item} />) : null}
       </article>)}
       {record.verifications.map((verification) => <article key={verification.verification_id}>
         <h4>{verification.scope === "predicate_only" ? "条件核查" : "验证执行"} · {VERIFICATION_LABELS[verification.status]}</h4>

@@ -375,6 +375,7 @@ export function WorkbenchLayout(): JSX.Element {
             <NativeResearchPage
               key={run_id}
               streamStatus={stream.status}
+              mode={selectedViewRun?.mode ?? (researchRecord.response?.state === "ready" ? researchRecord.response.record.mode : "company_research")}
               runId={run_id}
               ticker={selectedViewRun?.ticker ?? selectedState?.meta.ticker ?? ""}
               status={selectedViewRun?.status ?? selectedState?.meta.status ?? "created"}

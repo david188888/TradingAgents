@@ -22,6 +22,7 @@ from pydantic import (
     model_validator,
 )
 
+from tradingagents.research.native_versions import assessment_dimensions
 from tradingagents.research.valuation import (
     ValuationAssessmentV1,
     ValuationInputsV1,
@@ -29,7 +30,8 @@ from tradingagents.research.valuation import (
 )
 
 from ._evidence_checks import ChallengeCheckBindingV1, EvidenceChecksV1
-from ._research_assessment import DIMENSIONS_BY_MODE, ResearchAssessmentV1, ResearchAssessmentV2
+from ._research_assessment import ResearchAssessmentV1, ResearchAssessmentV2, ResearchAssessmentV3
+from ._research_dialogue import ResearchDialogueV1, validate_dialogue
 from ._verification_plan import canonical_sha256
 
 RESEARCH_RECORD_CONTRACT = "research-record-v1"
@@ -247,10 +249,11 @@ class ResearchRecordV1(_RecordModel):
     challenges: tuple[ResearchChallengeV1, ...] = ()
     verifications: tuple[VerificationRecordV1, ...] = ()
     metrics: tuple[QuantitativeMetricV1, ...] = ()
-    assessment: Annotated[ResearchAssessmentV1 | ResearchAssessmentV2, Field(discriminator="schema_version")] | None = None
+    assessment: Annotated[ResearchAssessmentV1 | ResearchAssessmentV2 | ResearchAssessmentV3, Field(discriminator="schema_version")] | None = None
     valuation: NativeValuationV1 | None = None
     evidence_checks: EvidenceChecksV1 | None = None
     challenge_bindings: tuple[ChallengeCheckBindingV1, ...] | None = None
+    dialogue: ResearchDialogueV1 | None = None
     limitations: tuple[str, ...] = ()
 
     @field_validator("assessment", mode="before")
@@ -273,6 +276,8 @@ class ResearchRecordV1(_RecordModel):
             value.pop("evidence_checks", None)
         if self.challenge_bindings is None:
             value.pop("challenge_bindings", None)
+        if self.dialogue is None:
+            value.pop("dialogue", None)
         return value
 
     @model_validator(mode="after")
@@ -383,7 +388,7 @@ class ResearchRecordV1(_RecordModel):
             assessment = self.assessment
             if self.construction != "native" or assessment.input_snapshot_id != self.snapshots[-1].snapshot_id:
                 raise ValueError("assessment requires the native final snapshot")
-            if tuple(item.dimension for item in assessment.dimensions) != DIMENSIONS_BY_MODE[self.mode]:
+            if tuple(item.dimension for item in assessment.dimensions) != assessment_dimensions(self.mode, assessment.schema_version):
                 raise ValueError("native mode dimensions are missing, duplicated or reordered")
             refs(assessment.key_claim_ids, {key for key, item in claims.items() if item.kind != "unknown"})
             if assessment.primary_challenge_id is not None and assessment.primary_challenge_id not in challenges:
@@ -410,4 +415,10 @@ class ResearchRecordV1(_RecordModel):
             if assessment.quality == "PASS" and (assessment.completeness != "complete" or challenges
                 or any(item.status == "unresolved" for item in assessment.dimensions)):
                 raise ValueError("partial or challenged native research is LOW_CONFIDENCE")
+        validate_dialogue(self)
+        if isinstance(self.assessment, ResearchAssessmentV3):
+            from tradingagents.research.unified_assessment import validate_unified_assessment
+            validate_unified_assessment(self)
+        elif self.dialogue is not None and self.assessment is not None:
+            raise ValueError("dialogue requires V3 assessment")
         return self

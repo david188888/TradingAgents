@@ -1,5 +1,5 @@
 import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
-import { AGENT_LABELS, countLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
+import { AGENT_LABELS, countLabel, DISPOSITION_LABELS, dimensionLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 import { CHECK_LABELS, LocalChallengeResult, LocalEvidenceChecks, claimText } from "./ResearchRecordSection";
 import type { EvidenceSelection } from "./ReaderEvidence";
 import { FocusAnswer } from "./FocusResponse";
@@ -15,7 +15,7 @@ export function ReaderAgentOutput({ role, process, output, error, record, entity
     return r ? <footer className="qr-actions"><span className="qr-meta">{r.in_record ? "进入完整记录" : "未进入记录"}{r.is_key ? kind === "challenge" && process?.primary_selection === "code" ? " · 代码置顶主要疑点" : " · 综合选为重点" : " · 未列为首页重点"}{r.dimensions.length ? ` · ${r.dimensions.map(d => DIMENSION_LABELS[d] ?? d).join("、")}引用` : ""}{r.challenge_ids.length ? ` · 关联 ${r.challenge_ids.length} 条挑战` : ""}</span><button onClick={() => onLocate({kind, id})}>定位最终记录 →</button></footer> : null;
   };
   return <section className="qr-agent-review" aria-label="Agent 产物回顾">
-    <div className="qr-agent-tabs" aria-label="选择角色">{Object.entries(AGENT_LABELS).filter(([key])=>key !== "focus_response" || process?.roles.some(r=>r.role_key === key)).map(([key, label]) => <button key={key} aria-pressed={role === key} onClick={() => onRole(key as AgentKey)}>{label}{key === "evidence" || key === "code_checks" ? " · 代码" : ""}</button>)}</div>
+    <div className="qr-agent-tabs" aria-label="选择角色">{Object.entries(AGENT_LABELS).filter(([key])=>!(key === "focus_response" || key.startsWith("response_")) || process?.roles.some(r=>r.role_key === key)).map(([key, label]) => <button key={key} aria-pressed={role === key} onClick={() => onRole(key as AgentKey)}>{label}{key === "evidence" || key === "code_checks" ? " · 代码" : ""}</button>)}</div>
     <header><span className="qr-eyebrow">{meta?.origin === "code" ? "代码环节" : "Agent 保存产物"}</span><h2>{AGENT_LABELS[role]}</h2><p>{meta?.purpose}</p><p className="qr-meta">{STATUS_LABELS[meta?.status ?? ""] ?? "状态未记录"} · {meta ? outputLabel(meta.output_availability, meta.reason_code) : "正在读取保存状态"}</p></header>
     <div className="qr-method-note"><h3>使用了什么输入</h3><p>{output?.input_description ?? "等待读取已保存的输入范围说明。"}</p><p className="qr-meta">这里只展示研究字段，不包含模型对话、提示词或内部思考。</p></div>
     {error ? <p role="status">产物暂时无法读取。<button onClick={onRetry}>重试读取</button></p> : !output ? <p aria-busy="true">正在读取所选角色的保存产物…</p> : output.availability !== "available" ? <p role="status">{outputLabel(output.availability, output.reason_code)}。最终报告仍可按原保存记录阅读。</p> : <>
@@ -44,12 +44,13 @@ export function ReaderAgentOutput({ role, process, output, error, record, entity
           {c.condition_id ? <details><summary>绑定的条件与研究字段</summary><pre>{JSON.stringify(c, null, 2)}</pre></details> : null}
           {relation(id,"challenge")}
           <button onClick={() => onInspect({kind:"challenge",id})}>核对目标假设的依据 →</button>
-          {record?.assessment?.schema_version === "research-assessment-v2" ? record.assessment.challenge_assessments.filter(a => a.challenge_id === id).map(a => <details key={a.challenge_id}><summary>最终代码核查结果 · 另列来源</summary><LocalChallengeResult item={a}/></details>) : null}
+          {record?.assessment && record.assessment.schema_version !== "research-assessment-v1" ? record.assessment.challenge_assessments.filter(a => a.challenge_id === id).map(a => <details key={a.challenge_id}><summary>最终代码核查结果 · 另列来源</summary><LocalChallengeResult item={a}/></details>) : null}
         </article>; })}
       </> : null}
+      {p && "responses" in p ? <><h3>针对质疑的专项回应</h3>{p.responses.map(r=><article className="qr-output-card" key={r.challenge_id}><h4>{DISPOSITION_LABELS[r.disposition]}</h4><p>{record?.challenges.find(c=>c.challenge_id===r.challenge_id)?.statement}</p><p>{r.rationale}</p>{r.supporting_fact_ids.map(id=><button key={id} onClick={e=>onInspect({kind:"claim",id},e.currentTarget)}>{claimText(record?.claims.find(c=>c.claim_id===id)?.statement ?? id)} →</button>)}{r.remaining_unknowns.map((u,i)=><p key={i}>{u}</p>)}<button onClick={()=>onLocate({kind:"challenge",id:r.challenge_id})}>定位最终质疑与裁决 →</button></article>)}</> : null}
       {p && "judgement" in p ? <>
         <article className="qr-output-card"><h3>原回答</h3><p>{p.judgement}</p><h3>完整下一步</h3><p>{p.next_check}</p></article>
-        <h3>原分项判断</h3>{p.dimensions.map(d => <article className="qr-output-card" key={d.dimension}><h4>{DIMENSION_LABELS[d.dimension]}</h4><p>{d.judgement}</p><p className="qr-meta">提议状态：{d.status === "unresolved" ? "待核查" : d.status === "conditional" ? "有条件判断" : "提议有支持"}</p>{d.claim_ids.map(id => <button key={id} onClick={() => onInspect({kind:"claim",id})}>{claimText(record?.claims.find(c => c.claim_id === id)?.statement ?? id)}</button>)}<details><summary>维度研究字段</summary><pre>{JSON.stringify(d,null,2)}</pre></details></article>)}
+        <h3>原分项判断</h3>{p.dimensions.map(d => <article className="qr-output-card" key={d.dimension}><h4>{dimensionLabel(d.dimension,record?.assessment?.schema_version === "research-assessment-v3")}</h4><p>{d.judgement}</p><p className="qr-meta">提议状态：{d.status === "unresolved" ? "待核查" : d.status === "conditional" ? "有条件判断" : "提议有支持"}</p>{d.claim_ids.map(id => <button key={id} onClick={() => onInspect({kind:"claim",id})}>{claimText(record?.claims.find(c => c.claim_id === id)?.statement ?? id)}</button>)}<details><summary>维度研究字段</summary><pre>{JSON.stringify(d,null,2)}</pre></details></article>)}
         <h3>重点依据的选择</h3>{p.key_claim_ids.map(id => <article key={id}><p>{record?.claims.find(c => c.claim_id === id)?.statement}</p>{relation(id,"claim")}</article>)}
         <h3>主要疑点的选择</h3><p>{record?.challenges.find(c => c.challenge_id === p.primary_challenge_id)?.statement ?? "原提议未选择主要疑点"}</p>
         <p className="qr-meta">{process?.primary_selection === "code" ? "最终主要疑点由代码关键级别规则置顶，与本提议不同。" : "原提议与最终主要疑点一致；仍受发布规则约束。"}</p>

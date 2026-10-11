@@ -23,6 +23,7 @@ from tradingagents.agents.schemas._native_stage import (
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
+    SynthesisProposalV3,
 )
 from tradingagents.execution.budget import (
     AttemptPhase,
@@ -38,7 +39,11 @@ from tradingagents.llm_clients.base_client import normalize_content
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 from tradingagents.llm_clients.task_effort import task_effort_overrides
-from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+from tradingagents.research.native_versions import (
+    FOCUS_WORKFLOW_VERSION,
+    RESPONSE_ROLES,
+    UNIFIED_WORKFLOW_VERSION,
+)
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
     DurableBudgetLedger,
@@ -112,11 +117,11 @@ class NativeModelCaller:
         if retry_policy is not None and retry_policy != MODEL_RETRY_POLICY:
             raise CatalystCheckpointConflict("native model retry policy mismatch")
         self.retry_enabled = retry_policy == MODEL_RETRY_POLICY
-        if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION}:
+        if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
             self.schemas.update(challenge=ChallengesProposalV2, synthesis=SynthesisProposalV2)
             self.instructions["challenge"] += " Select only the closed check IDs/observed risk. Economic questions remain unresolved even when a local evidence check passes."
             self.instructions["synthesis"] += " Refer to host-computed local_check_assessments and their exact scope; do not invent resolved outcomes or require optional data for a supported local statement."
-        if version == FOCUS_WORKFLOW_VERSION:
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
             from tradingagents.agents.schemas._research_focus import FocusProposalV1
             self.schemas["focus_response"] = FocusProposalV1
             self.instructions["focus_response"] = (
@@ -132,6 +137,13 @@ class NativeModelCaller:
                     "within this role's scope. Select findings by evidential importance, not a presumed "
                     "user theme. Missing inputs limit their own dimensions, not the entire company."
                 )
+
+        if version == UNIFIED_WORKFLOW_VERSION:
+            from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
+            self.schemas["synthesis"] = SynthesisProposalV3
+            for stage in RESPONSE_ROLES:
+                self.schemas[stage] = ResponsesProposalV1
+                self.instructions[stage] = "Reply once to every assigned challenge. Use only supplied qualified facts and bound checks. Maintain, revise, withdraw or admit uncertainty. Never create facts or resolve economic risk by assertion."
 
     def _remaining(self) -> float:
         try:
@@ -201,6 +213,20 @@ class NativeModelCaller:
                 for hypothesis in proposal.hypotheses:
                     if not set(hypothesis.supporting_fact_ids) <= allowed:
                         raise ValueError("specialist reference outside supplied facts")
+            if context is not None and stage.startswith("response_"):
+                supplied = {r.challenge_id: r for r in proposal.responses}
+                if len(supplied) != len(proposal.responses) or supplied.keys() != context["assigned"].keys():
+                    raise ValueError("reply challenge coverage invalid")
+                bindings = {b["challenge_id"]: b["check_id"] for b in context["local_checks"]}
+                for cid, reply in supplied.items():
+                    if reply.hypothesis_id != context["assigned"][cid] or not set(reply.supporting_fact_ids) <= set(context["allowed_facts_by_challenge"][cid]):
+                        raise ValueError("reply reference outside supplied scope")
+                    if (len(set(reply.check_ids)) != len(reply.check_ids)
+                            or len(set(reply.supporting_fact_ids)) != len(reply.supporting_fact_ids)
+                            or not set(reply.check_ids) <= ({bindings[cid]} - {None})):
+                        raise ValueError("reply check not bound")
+                    if reply.disposition in {"maintained", "revised"} and not reply.supporting_fact_ids:
+                        raise ValueError("reply requires facts")
             if context is not None and stage == "synthesis" and "dimension_claim_ids" in context:
                 from tradingagents.agents.schemas._research_record import ResearchRecordV1
                 from tradingagents.research.native_policy import gate_dimensions
@@ -208,7 +234,18 @@ class NativeModelCaller:
                 for dimension in proposal.dimensions:
                     if not set(dimension.claim_ids) <= set(context["dimension_claim_ids"].get(dimension.dimension, [])):
                         raise ValueError("synthesis dimension references outside allowed claims")
-                gate_dimensions(record, proposal.dimensions, scoped=True, valuation=True)
+                gated = gate_dimensions(record, proposal.dimensions, scoped=True, valuation=True)
+                if isinstance(proposal, SynthesisProposalV3):
+                    from tradingagents.research.minimum_evidence import challenge_assessments
+                    from tradingagents.research.unified_synthesis import investment_fields
+                    fields = investment_fields(record, proposal, gated)
+                    fields.pop("force_insufficient", None)
+                    assessment = {**proposal.model_dump(mode="json"), **fields,
+                        "schema_version": "research-assessment-v3", "input_snapshot_id": record.snapshots[-1].snapshot_id,
+                        "research_question": context["question"], "dimensions": [d.model_dump(mode="json") for d in gated],
+                        "challenge_assessments": [a.model_dump(mode="json") for a in challenge_assessments(record)],
+                        "completeness": "partial", "quality": "LOW_CONFIDENCE"}
+                    ResearchRecordV1.model_validate({**record.model_dump(mode="json"), "assessment": assessment})
                 claims = {c.claim_id for c in record.claims if c.kind != "unknown"}
                 challenges = {c.challenge_id for c in record.challenges}
                 if not set(proposal.key_claim_ids) <= claims:
@@ -308,7 +345,7 @@ class NativeModelCaller:
         try:
             remaining = self._ensure_active()
             try:
-                kwargs = provider_llm_kwargs(self.config, task="native." + stage)
+                kwargs = provider_llm_kwargs(self.config, task="native." + stage.removeprefix("response_"))
                 kwargs.update(max_retries=0, timeout=remaining)
                 if self.config["llm_provider"] == "chatgpt":
                     if self.chatgpt_auth is None:

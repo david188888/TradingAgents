@@ -10,7 +10,7 @@ New `evidence_v1` studies publish a mandatory `research-record-v1`, without a
 paired classic case or research package. For those studies, use
 `GET /api/runs/{run_id}/reader/record` and its explicit availability state;
 `/reader/process` and `/reader/agents/{role_key}` expose qualified saved proposals.
-V6 `/reader/focus` reads a separate optional supplement, which cannot change the
+V6/V7 `/reader/focus` reads a separate optional supplement, which cannot change the
 baseline. Missing `/reader/package` is not a native execution failure. The
 package-hashing and bundled Skill procedure below applies only when an actual
 `research-package-v1` exists; do not synthesize a package from Reader prose.

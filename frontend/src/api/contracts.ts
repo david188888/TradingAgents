@@ -150,6 +150,31 @@ export interface ResearchAssessmentV2DTO extends Omit<ResearchAssessmentV1DTO, "
   schema_version: "research-assessment-v2";
   challenge_assessments: ChallengeAssessmentV2DTO[];
 }
+// Canonical: agents/schemas/_research_dialogue.py and _research_assessment.py.
+export type ResearchDisposition = "maintained" | "revised" | "withdrawn" | "unanswerable";
+export interface ResearchResponseProposalDTO {
+  challenge_id: string; hypothesis_id: string; disposition: ResearchDisposition; rationale: string;
+  supporting_fact_ids: string[]; check_ids: EvidenceCheckId[]; remaining_unknowns: string[];
+}
+export interface ResearchResponseDTO extends ResearchResponseProposalDTO {
+  response_id: string; role: "operating_quality" | "event_context" | "market_context";
+  status: "available" | "unavailable"; reason_code: string | null;
+}
+export interface ResearchDialogueV1DTO {
+  schema_version: "research-dialogue-v1"; input_snapshot_id: string;
+  origins: Array<{hypothesis_id: string; role: "operating_quality" | "event_context" | "market_context"}>;
+  responses: ResearchResponseDTO[];
+}
+export interface InvestmentFieldsDTO {
+  investment_stance: "favorable" | "neutral" | "unfavorable" | "insufficient_evidence";
+  supporting_arguments: Array<{rationale: string; claim_ids: string[]; response_ids: string[]}>;
+  opposing_arguments: Array<{rationale: string; claim_ids: string[]; response_ids: string[]}>;
+  change_conditions: Array<{hypothesis_id: string; invalidation_index: number; text: string}>;
+  adjudications: Array<{challenge_id: string; response_id: string; disposition: ResearchDisposition; rationale: string}>;
+}
+export interface ResearchAssessmentV3DTO extends Omit<ResearchAssessmentV2DTO, "schema_version">, InvestmentFieldsDTO {
+  schema_version: "research-assessment-v3";
+}
 export interface EvidenceChecksV1DTO {
   schema_version: "evidence-checks-v1"; calculation_version: "minimum-evidence-v1";
   run_id: string; ticker: string; analysis_date: string; input_snapshot_id: string;
@@ -194,7 +219,8 @@ export interface ResearchRecordV1DTO {
   challenges: Array<{ challenge_id: string; target_claim_ids: string[]; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; evidence_ids: string[]; proposed_test: string; reported_disposition: string | null }>;
   verifications: Array<{ verification_id: string; challenge_id: string; input_snapshot_id: string; output_snapshot_id: string; method: "source_check" | "vendor_lookup" | "calculation"; status: "supports" | "contradicts" | "inconclusive" | "unavailable"; evidence_ids: string[]; executed_at: string; result: string; scope?: "unspecified" | "predicate_only"; hypothesis_id?: string | null; plan_sha256?: string | null; condition_role?: "necessary" | "invalidation" | null; condition_text?: string | null }>;
   metrics: QuantitativeMetricV1DTO[];
-  assessment?: ResearchAssessmentV1DTO | ResearchAssessmentV2DTO | null;
+  assessment?: ResearchAssessmentV1DTO | ResearchAssessmentV2DTO | ResearchAssessmentV3DTO | null;
+  dialogue?: ResearchDialogueV1DTO | null;
   valuation?: NativeValuationV1DTO | null;
   evidence_checks?: EvidenceChecksV1DTO | null;
   challenge_bindings?: Array<{ challenge_id: string; check_id: EvidenceCheckId | null; observed_risk: "cash_conversion.cfo_yoy_decline" | null; observation_date: string | null }> | null;
@@ -749,6 +775,7 @@ export type ApiErrorCode =
   | "ref_not_found"
   | "ref_target_missing"
   | "research_package_unavailable"
+  | "unified_research_mode_required"
   | "research_profile_retired"
   | "resume_conflict"
   | "run_active"
@@ -2257,7 +2284,7 @@ export interface CatalystLegacyRecordDTO {
 }
 
 // Canonical: web/reader_process_models.py; proposals: agents/schemas/_native_stage.py.
-export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks" | "focus_response";
+export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks" | "focus_response" | "response_operating_quality" | "response_event_context" | "response_market_context";
 export type OutputAvailability = "available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
 export interface ObservedCountDTO { value: number | null; completeness: "complete" | "known_lower_bound" | "not_recorded" | "unavailable"; basis: string }
 export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO; focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null }
@@ -2285,9 +2312,11 @@ export interface FinancialOperandDTO { evidence_id: string; table: "income" | "b
 export type VerificationConditionDTO = { kind: "financial"; operation: "value" | "difference" | "growth"; current: FinancialOperandDTO; base: FinancialOperandDTO | null; predicate: NumericPredicateDTO } | { kind: "metric"; metric_id: string; predicate: NumericPredicateDTO };
 export interface ChallengesProposalDTO { challenges: Array<{ hypothesis_id: string; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; proposed_test: string; condition_id: string | null; check_id?: EvidenceCheckId | null; observed_risk?: "cash_conversion.cfo_yoy_decline" | null; observation_date?: string | null }> }
 export interface SynthesisProposalDTO { judgement: string; dimensions: DimensionAssessmentV1DTO[]; key_claim_ids: string[]; primary_challenge_id: string | null; next_check: string; challenge_assessments: Array<{ challenge_id: string; outcome: "unresolved"; rationale: string }> }
+export interface SynthesisProposalV3DTO extends SynthesisProposalDTO, InvestmentFieldsDTO {}
+export interface ResponsesProposalDTO { responses: ResearchResponseProposalDTO[] }
 export interface ReaderAgentDTO {
   schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;
-  proposal: SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalDTO | FocusProposalDTO | null;
+  proposal: SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalDTO | SynthesisProposalV3DTO | ResponsesProposalDTO | FocusProposalDTO | null;
   relations: Array<{entity_id: string; kind: "claim" | "challenge"; in_record: boolean; is_key: boolean; dimensions: string[]; challenge_ids: string[]}>;
   claim_ids: string[]; input_fact_ids: string[]; challenge_ids: string[]; code_sections: Array<"facts" | "sources" | "checks" | "verifications" | "publication">;
 }

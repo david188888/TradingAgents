@@ -1,0 +1,377 @@
+{
+  "schema_version": "research-record-v1",
+  "run_id": "run_20261011T090445415088Z_9b44c860",
+  "ticker": "600803",
+  "mode": "company_research",
+  "analysis_date": "2026-10-05",
+  "construction": "native",
+  "source_case_contract": null,
+  "source_case_sha256": null,
+  "snapshots": [
+    {
+      "version": 0,
+      "snapshot_id": "v0.751aa2f7c781c2e03f97d844f5d6d2232e79922e8d926d088a3c5d50afe89cd3",
+      "parent_snapshot_id": null,
+      "evidence_ids": [
+        "e.d951801b1028143ba",
+        "e.d2585e2769a4e43a4",
+        "e.df6f903fba44e6af5",
+        "e.d0943e69ed386a207"
+      ],
+      "content_sha256": "751aa2f7c781c2e03f97d844f5d6d2232e79922e8d926d088a3c5d50afe89cd3"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "e.d951801b1028143ba",
+      "source_name": "tushare.stock_basic",
+      "source_kind": "vendor",
+      "source_family_id": "tushare.stock_basic:951801b1028143ba4b960ff2e922aca0e4f32e1e22178c823ab826c189541be5",
+      "availability": "available",
+      "public_url": null,
+      "published_at": null,
+      "usable_as_of": "2026-09-30T08:30:00Z",
+      "captured_at": "2026-09-30T08:30:00Z",
+      "content": {
+        "kind": "source_fields",
+        "text": "{\n  \"list_date\": \"19940103\",\n  \"ts_code\": \"600803.SH\"\n}",
+        "locator_label": "证券身份字段",
+        "content_sha256": "26c140ffdb760151323034d20044ffb67fdf92980a2bfd2820a72ba49b9af8f5",
+        "truncated": false
+      },
+      "limitations": [
+        "source_fields_are_not_full_document_text"
+      ]
+    },
+    {
+      "evidence_id": "e.d2585e2769a4e43a4",
+      "source_name": "tencent.valuation_snapshot",
+      "source_kind": "vendor",
+      "source_family_id": "tencent.valuation_snapshot:2585e2769a4e43a441c0846085d8cf9403e9c3b68b5e7cc3a893584c6fa95714",
+      "availability": "unavailable",
+      "public_url": null,
+      "published_at": null,
+      "usable_as_of": "2026-09-30T08:30:00Z",
+      "captured_at": "2026-09-30T08:30:00Z",
+      "content": {
+        "kind": "source_fields",
+        "text": "{\"as_of\":\"2026-09-30\",\"currency\":\"CNY\",\"name\":\"新奥股份\",\"pb\":2.0,\"pe_ttm\":12.0,\"price\":20.0,\"quote_timestamp\":\"2026-09-30T16:14:55+08:00\",\"total_market_cap_yi\":100.0,\"ts_code\":\"600803.SH\"}",
+        "locator_label": "已保存估值字段；历史序列为本次取数的回溯数据，非历史档案时点证明",
+        "content_sha256": "d2d5bb1a5e49322bb6f5c59d29e96dcbedb93c7cb9da0d3de0dd9bfbc547487a",
+        "truncated": false
+      },
+      "limitations": [
+        "source_fields_are_not_full_document_text",
+        "valuation_historical_vintage_unverified"
+      ]
+    },
+    {
+      "evidence_id": "e.df6f903fba44e6af5",
+      "source_name": "tushare.valuation_history",
+      "source_kind": "vendor",
+      "source_family_id": "tushare.valuation_history:f6f903fba44e6af50ba75f5aa40bb4c06b2a08c65d6bb51c643bc8971e950e7c",
+      "availability": "unavailable",
+      "public_url": null,
+      "published_at": null,
+      "usable_as_of": "2026-09-30T08:30:00Z",
+      "captured_at": "2026-09-30T08:30:00Z",
+      "content": {
+        "kind": "source_fields",
+        "text": "{\"as_of\":\"2026-09-30\",\"capture_scope\":\"current_cutoff_retrospective_history\",\"rows_sha256\":\"6ade41fce0fee119356b0bf3faf0e4fbaa012c52dd5b6b48f43d7b7dc72707bb\",\"sample_size\":131,\"selected_rows\":[{\"date\":\"2026-09-28\",\"pb\":1.0,\"pe_ttm\":10.0},{\"date\":\"2026-09-29\",\"pb\":1.1,\"pe_ttm\":11.0},{\"date\":\"2026-09-30\",\"pb\":1.2,\"pe_ttm\":12.0}],\"ts_code\":\"600803.SH\",\"window_start\":\"2026-04-01\"}",
+        "locator_label": "已保存估值字段；历史序列为本次取数的回溯数据，非历史档案时点证明",
+        "content_sha256": "a70d0c16abfc1b1b4ea9b947de8ca6dd26f185bb1c28cbd75254722d04c69762",
+        "truncated": false
+      },
+      "limitations": [
+        "source_fields_are_not_full_document_text",
+        "valuation_historical_vintage_unverified"
+      ]
+    },
+    {
+      "evidence_id": "e.d0943e69ed386a207",
+      "source_name": "tushare.financial_statements",
+      "source_kind": "vendor",
+      "source_family_id": "tushare.financial_statements:0943e69ed386a207328b5bb3ca245ad2a55054791bc9ac92780556bbd17bbc38",
+      "availability": "available",
+      "public_url": null,
+      "published_at": null,
+      "usable_as_of": "2026-09-30T08:30:00Z",
+      "captured_at": "2026-09-30T08:30:00Z",
+      "content": {
+        "kind": "source_fields",
+        "text": "{\"income\":[{\"ann_date\":\"20260331\",\"end_date\":\"20251231\",\"n_income_attr_p\":\"800000000\"}]}",
+        "locator_label": "已保存各表最多八期合并财务字段；金额 CNY，日期为披露/报告日期",
+        "content_sha256": "2ca78badd31c9b40ae7ef79805ece1c2ed90085ee5269989f04fbd92fe048759",
+        "truncated": false
+      },
+      "limitations": [
+        "source_fields_are_not_full_document_text"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "f.302441a575161317705ab598d01f4980",
+      "kind": "fact",
+      "statement": "合并财务字段：报告期 2025-12-31，income.n_income_attr_p = 800000000 CNY。",
+      "evidence_ids": [
+        "e.d0943e69ed386a207"
+      ],
+      "supporting_fact_ids": [],
+      "limitations": [
+        "source_fields_are_not_full_document_text",
+        "source_field:income[end_date=2025-12-31].n_income_attr_p",
+        "native_dimension:operating_quality"
+      ]
+    },
+    {
+      "claim_id": "i.395011ea70ebf3e4684ddaf851e1f92150d9fcaa81582455eff7a18d3f281970",
+      "kind": "inference",
+      "statement": "经营改善仍有条件",
+      "evidence_ids": [
+        "e.d0943e69ed386a207"
+      ],
+      "supporting_fact_ids": [
+        "f.302441a575161317705ab598d01f4980"
+      ],
+      "limitations": []
+    }
+  ],
+  "hypotheses": [
+    {
+      "hypothesis_id": "h.395011ea70ebf3e4684ddaf851e1f92150d9fcaa81582455eff7a18d3f281970",
+      "claim_id": "i.395011ea70ebf3e4684ddaf851e1f92150d9fcaa81582455eff7a18d3f281970",
+      "input_snapshot_id": "v0.751aa2f7c781c2e03f97d844f5d6d2232e79922e8d926d088a3c5d50afe89cd3",
+      "origin": "hypothesis_stage",
+      "assumptions": [],
+      "invalidation_conditions": [
+        "下一期收入持续下降"
+      ],
+      "limitations": [
+        "alternative_explanation:一次性贡献"
+      ]
+    }
+  ],
+  "challenges": [
+    {
+      "challenge_id": "c.b2321840f95f6eef1537f75e9b30f51d1316e5378e4e08df4f3aea5322c1f67c",
+      "target_claim_ids": [
+        "i.395011ea70ebf3e4684ddaf851e1f92150d9fcaa81582455eff7a18d3f281970"
+      ],
+      "statement": "持续性不足",
+      "severity": "critical",
+      "risk_type": "operations",
+      "evidence_ids": [],
+      "proposed_test": "下一期财报复核",
+      "reported_disposition": null
+    }
+  ],
+  "verifications": [],
+  "metrics": [],
+  "assessment": {
+    "schema_version": "research-assessment-v3",
+    "input_snapshot_id": "v0.751aa2f7c781c2e03f97d844f5d6d2232e79922e8d926d088a3c5d50afe89cd3",
+    "research_question": "截至分析时点，结合公司经营、当前估值、事件与市场风险，这家公司是否具有投资吸引力，为什么，哪些反证和条件会改变判断？",
+    "judgement": "关键经营或估值依据不足，暂不能形成完整投资吸引力判断。",
+    "dimensions": [
+      {
+        "dimension": "operating_quality",
+        "status": "conditional",
+        "judgement": "有条件的判断",
+        "claim_ids": [
+          "f.302441a575161317705ab598d01f4980"
+        ],
+        "challenge_ids": [
+          "c.b2321840f95f6eef1537f75e9b30f51d1316e5378e4e08df4f3aea5322c1f67c"
+        ],
+        "limitations": [
+          "范围有限",
+          "unresolved_challenge_dependency"
+        ]
+      },
+      {
+        "dimension": "valuation",
+        "status": "unresolved",
+        "judgement": "合格资料或对应支撑依据不足，暂不能形成此项判断。",
+        "claim_ids": [],
+        "challenge_ids": [],
+        "limitations": [
+          "qualified_valuation_inputs_missing",
+          "范围有限"
+        ]
+      },
+      {
+        "dimension": "catalyst_delivery",
+        "status": "unresolved",
+        "judgement": "合格资料或对应支撑依据不足，暂不能形成此项判断。",
+        "claim_ids": [],
+        "challenge_ids": [],
+        "limitations": [
+          "qualified_event_evidence_missing",
+          "范围有限"
+        ]
+      },
+      {
+        "dimension": "market_context",
+        "status": "unresolved",
+        "judgement": "合格资料或对应支撑依据不足，暂不能形成此项判断。",
+        "claim_ids": [],
+        "challenge_ids": [],
+        "limitations": [
+          "qualified_market_metrics_missing",
+          "范围有限"
+        ]
+      }
+    ],
+    "key_claim_ids": [],
+    "primary_challenge_id": "c.b2321840f95f6eef1537f75e9b30f51d1316e5378e4e08df4f3aea5322c1f67c",
+    "next_check": "下一期经营披露",
+    "challenge_assessments": [
+      {
+        "challenge_id": "c.b2321840f95f6eef1537f75e9b30f51d1316e5378e4e08df4f3aea5322c1f67c",
+        "outcome": "unresolved",
+        "economic_outcome": "unresolved",
+        "question_scope": null,
+        "answered_question": null,
+        "check_id": null,
+        "rationale": "所需证据不足或问题超出已执行检查的范围；经济判断仍未解决。",
+        "evidence_ids": [],
+        "observed_risk": null,
+        "observation_date": null,
+        "observations": [],
+        "limitations": [
+          "economic_question_exceeds_closed_check_scope",
+          "economic_parent_remains_unresolved"
+        ]
+      }
+    ],
+    "completeness": "partial",
+    "quality": "LOW_CONFIDENCE",
+    "forward_window_calendar_days": null,
+    "limitations": [
+      "native_valuation_policy_v1"
+    ],
+    "investment_stance": "insufficient_evidence",
+    "supporting_arguments": [],
+    "opposing_arguments": [
+      {
+        "rationale": "经营仍有待核查",
+        "claim_ids": [
+          "f.302441a575161317705ab598d01f4980"
+        ],
+        "response_ids": []
+      }
+    ],
+    "change_conditions": [
+      {
+        "hypothesis_id": "h.395011ea70ebf3e4684ddaf851e1f92150d9fcaa81582455eff7a18d3f281970",
+        "invalidation_index": 0,
+        "text": "下一期收入持续下降"
+      }
+    ],
+    "adjudications": [
+      {
+        "challenge_id": "c.b2321840f95f6eef1537f75e9b30f51d1316e5378e4e08df4f3aea5322c1f67c",
+        "response_id": "response.9c582ec4874ac7cbfe66818bb54c365459e696fb9b74c59c28686e8992dd0d72",
+        "disposition": "withdrawn",
+        "rationale": "保留该分歧，不把回复当作验证"
+      }
+    ]
+  },
+  "evidence_checks": {
+    "schema_version": "evidence-checks-v1",
+    "calculation_version": "minimum-evidence-v1",
+    "run_id": "run_20261011T090445415088Z_9b44c860",
+    "ticker": "600803",
+    "analysis_date": "2026-10-05",
+    "input_snapshot_id": "v0.751aa2f7c781c2e03f97d844f5d6d2232e79922e8d926d088a3c5d50afe89cd3",
+    "input_evidence_ids": [
+      "e.d951801b1028143ba",
+      "e.d2585e2769a4e43a4",
+      "e.df6f903fba44e6af5",
+      "e.d0943e69ed386a207"
+    ],
+    "input_sha256": "bf2daaf695870802f9b9f9678676421c2c9b5351cf1a556e39f20165d36df594",
+    "checks": [
+      {
+        "check_id": "operating_disclosures",
+        "question_scope": "operating_disclosures.current_period_coverage",
+        "question": "当前报告期的经营判断是否有正式财务与定量运营披露支撑？",
+        "status": "unavailable",
+        "satisfied": [],
+        "missing": [
+          "official_current_period"
+        ],
+        "evidence_ids": [],
+        "observations": [],
+        "limitations": []
+      },
+      {
+        "check_id": "cash_conversion",
+        "question_scope": "cash_conversion.reported_bridge",
+        "question": "当前及上年同期间的净利润到经营现金流桥是否完整、可核对？",
+        "status": "unavailable",
+        "satisfied": [],
+        "missing": [
+          "official_current_period"
+        ],
+        "evidence_ids": [],
+        "observations": [],
+        "limitations": []
+      },
+      {
+        "check_id": "valuation_context",
+        "question_scope": "valuation_context.supplementary_positioning",
+        "question": "当前估值定位是否有同日同行样本或带日期的机构预测作为补充？",
+        "status": "unavailable",
+        "satisfied": [],
+        "missing": [
+          "qualified_target_snapshot"
+        ],
+        "evidence_ids": [],
+        "observations": [],
+        "limitations": [
+          "historical_positioning_can_still_be_described"
+        ]
+      }
+    ]
+  },
+  "challenge_bindings": [
+    {
+      "challenge_id": "c.b2321840f95f6eef1537f75e9b30f51d1316e5378e4e08df4f3aea5322c1f67c",
+      "check_id": null,
+      "observed_risk": null,
+      "observation_date": null
+    }
+  ],
+  "dialogue": {
+    "schema_version": "research-dialogue-v1",
+    "input_snapshot_id": "v0.751aa2f7c781c2e03f97d844f5d6d2232e79922e8d926d088a3c5d50afe89cd3",
+    "origins": [
+      {
+        "hypothesis_id": "h.395011ea70ebf3e4684ddaf851e1f92150d9fcaa81582455eff7a18d3f281970",
+        "role": "operating_quality"
+      }
+    ],
+    "responses": [
+      {
+        "challenge_id": "c.b2321840f95f6eef1537f75e9b30f51d1316e5378e4e08df4f3aea5322c1f67c",
+        "hypothesis_id": "h.395011ea70ebf3e4684ddaf851e1f92150d9fcaa81582455eff7a18d3f281970",
+        "disposition": "withdrawn",
+        "rationale": "承认尚有不确定性",
+        "supporting_fact_ids": [
+          "f.302441a575161317705ab598d01f4980"
+        ],
+        "check_ids": [],
+        "remaining_unknowns": [],
+        "response_id": "response.9c582ec4874ac7cbfe66818bb54c365459e696fb9b74c59c28686e8992dd0d72",
+        "role": "operating_quality",
+        "status": "available",
+        "reason_code": null
+      }
+    ]
+  },
+  "limitations": [
+    "native_valuation_policy_v1"
+  ]
+}

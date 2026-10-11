@@ -16,12 +16,14 @@ from tradingagents.agents.schemas._native_stage import (
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
+    SynthesisProposalV3,
 )
 from tradingagents.agents.schemas._research_assessment import (
     ChallengeAssessmentV1,
     DimensionAssessmentV1,
     ResearchAssessmentV1,
     ResearchAssessmentV2,
+    ResearchAssessmentV3,
 )
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import VerificationPlanV1, canonical_sha256
@@ -36,7 +38,12 @@ from tradingagents.research.native_policy import (
     gate_dimensions,
     global_coverage,
 )
-from tradingagents.research.native_versions import BASE_QUESTIONS, FOCUS_KERNEL_VERSION
+from tradingagents.research.native_versions import (
+    BASE_QUESTIONS,
+    FOCUS_KERNEL_VERSION,
+    UNIFIED_KERNEL_VERSION,
+    UNIFIED_QUESTION,
+)
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
     DurableBudgetLedger,
@@ -130,7 +137,7 @@ def load_native_seed(ledger: DurableBudgetLedger) -> ResearchRecordV1 | None:
                 and identity.get("seed_sha256") != canonical_sha256(record)):
             raise CatalystCheckpointConflict("native seed identity mismatch")
         if (record.construction != "native" or len(record.snapshots) != 1 or record.hypotheses
-                or record.challenges or record.verifications or record.assessment
+                or record.challenges or record.verifications or record.assessment or record.dialogue is not None
                 or any(claim.kind != "fact" for claim in record.claims)):
             raise CatalystCheckpointConflict("native seed is not a facts-only V0")
         return record
@@ -140,10 +147,10 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                         ledger: DurableBudgetLedger, research_question: str | None = None,
                         cancelled: Callable[[], bool] = lambda: False,
                         concurrency: int = 2, scoped: bool = False, valuation: bool = False,
-                        minimum: bool = False, independent: bool = False) -> ResearchRecordV1:
+                        minimum: bool = False, independent: bool = False, unified: bool = False) -> ResearchRecordV1:
     seed = ResearchRecordV1.model_validate_json(seed.model_dump_json())
     if (seed.construction != "native" or len(seed.snapshots) != 1 or seed.hypotheses
-            or seed.challenges or seed.verifications or seed.assessment
+            or seed.challenges or seed.verifications or seed.assessment or seed.dialogue is not None
             or any(claim.kind != "fact" for claim in seed.claims)):
         raise ValueError("native workflow requires a facts-only V0")
     if (not isinstance(ledger, DurableBudgetLedger) or ledger.run_id != seed.run_id
@@ -157,10 +164,14 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if any(sources[key].availability != "available" or sources[key].content is None
            or sources[key].usable_as_of is None for fact in seed.claims for key in fact.evidence_ids):
         raise ValueError("native facts require qualified saved source content")
-    question = BASE_QUESTIONS[seed.mode] if independent else research_question if research_question is not None else QUESTIONS[seed.mode]
+    if unified and not all((minimum, independent, valuation, scoped)):
+        raise ValueError("unified workflow requires its frozen evidence policies")
+    if unified and seed.mode != "company_research":
+        raise ValueError("unified research supports company only")
+    question = UNIFIED_QUESTION if unified else BASE_QUESTIONS[seed.mode] if independent else research_question if research_question is not None else QUESTIONS[seed.mode]
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 400:
         raise ValueError("research question must contain 1..400 characters")
-    identity = {"workflow_version": FOCUS_KERNEL_VERSION if independent else "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
+    identity = {"workflow_version": UNIFIED_KERNEL_VERSION if unified else FOCUS_KERNEL_VERSION if independent else "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
     _bound_put(ledger.journal, "native_seed", seed.model_dump(mode="json"))
     _bound_put(ledger.journal, "native_input", identity)
@@ -206,6 +217,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         proposals = {role: pending[role].result() for role in ROLE_ORDER if role in pending}
     claims = list(seed.model_dump(mode="json")["claims"])
     hypotheses, conditions, limits = [], {}, list(seed.limitations)
+    origins = {}
     facts_by_id = {item.claim_id: item for item in seed.claims}
     for role in ROLE_ORDER:
         proposal = proposals.get(role)
@@ -219,6 +231,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                 raise ValueError("specialist hypothesis references facts outside its view")
             hid = "h." + canonical_sha256({"input": identity, "role": role, "index": index,
                                            "proposal": item.model_dump(mode="json")})
+            origins[hid] = role
             cid = "i." + hid[2:]
             evidence_ids = tuple(dict.fromkeys(key for fact_id in item.supporting_fact_ids
                                 for key in facts_by_id[fact_id].evidence_ids))
@@ -292,6 +305,12 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         "tasks": tasks}))
     execution = execute_verification(current, plan, ledger=ledger, cancelled=cancelled)
     current = execution.record
+    if unified:
+        from tradingagents.research.unified_dialogue import run_responses
+        _bound_put(ledger.journal, "native_origins", origins)
+        dialogue = run_responses(current, origins, question, call=_call, caller=caller,
+            ledger=ledger, cancelled=cancelled, concurrency=concurrency)
+        current = _validated(current, dialogue=dialogue.model_dump(mode="json"))
     synthesis_context = {"mode": seed.mode, "question": question,
         "record": current.model_dump(mode="json"), "verification": execution.model_dump(mode="json"),
         "dimension_policy": dimension_policy(current, scoped=scoped, valuation=valuation),
@@ -308,8 +327,15 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         )
         synthesis_context["local_check_assessments"] = [a.model_dump(mode="json") for a in local_assessments(current)]
         synthesis_context["local_check_instruction"] = "引用已保存的局部核查结果和回答范围；经济母问题仍未解决。schema中的challenge_assessments保留unresolved提议，最终局部outcome由代码生成，不得自行宣称风险已消除。"
+    if unified:
+        from tradingagents.research.unified_assessment import stance_ceiling
+        synthesis_context["unified_instruction"] = "回答投资吸引力，逐条裁决所有挑战并绑定对应回应ID。修正/撤回的原推断禁止作为肯定性支撑；修正理由须引用回应及其事实。缺经营/估值用insufficient_evidence；critical未解决或无估值锚点不得favorable。改变判断条件引用hypothesis_id与原失效条件文本/索引。裁决不能改变代码局部outcome。"
+        synthesis_context["stance_ceiling"] = stance_ceiling(current, tuple(
+            DimensionAssessmentV1(dimension=name, status=status, judgement=reason,
+                claim_ids=tuple(dimension_claim_ids(current)[name]), limitations=(reason,))
+            for name, (status, reason) in dimension_policy(current, scoped=scoped, valuation=valuation).items()))
     synthesis = _call("synthesis", synthesis_context,
-        SynthesisProposalV2 if minimum else SynthesisProposalV1, caller=caller, ledger=ledger, cancelled=cancelled) if seed.claims else None
+        SynthesisProposalV3 if unified else SynthesisProposalV2 if minimum else SynthesisProposalV1, caller=caller, ledger=ledger, cancelled=cancelled) if seed.claims else None
     if synthesis is None:
         limits.append("native_synthesis_unavailable")
         dimensions = tuple(DimensionAssessmentV1(dimension=name, status="unresolved", judgement="证据或综合环节不足。",
@@ -324,17 +350,23 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         critical_ids = {item.challenge_id for item in current.challenges if item.severity == "critical"}
         if critical_ids and primary not in critical_ids:
             primary = next(item.challenge_id for item in current.challenges if item.severity == "critical")
-    complete = (synthesis is not None and not any(item.status == "unresolved" for item in dimensions)
+    complete = (not (unified and any(r.status == "unavailable" for r in current.dialogue.responses)) and synthesis is not None and not any(item.status == "unresolved" for item in dimensions)
                 and not any(item.startswith("native_stage_unavailable:") for item in limits))
     if minimum:
         challenge_assessments = local_assessments(current)
-    assessment = (ResearchAssessmentV2 if minimum else ResearchAssessmentV1)(input_snapshot_id=current.snapshots[-1].snapshot_id,
+    extra = {}
+    if unified:
+        from tradingagents.research.unified_synthesis import investment_fields
+        extra = investment_fields(current, synthesis, dimensions)
+        if extra.pop("force_insufficient", False):
+            judgement = "关键经营或估值依据不足，暂不能形成完整投资吸引力判断。"
+    assessment = (ResearchAssessmentV3 if unified else ResearchAssessmentV2 if minimum else ResearchAssessmentV1)(input_snapshot_id=current.snapshots[-1].snapshot_id,
         research_question=question, judgement=judgement, dimensions=dimensions, key_claim_ids=keys,
         primary_challenge_id=primary, next_check=next_check, challenge_assessments=challenge_assessments,
         completeness="complete" if complete else "partial",
         quality="PASS" if complete and not current.challenges else "LOW_CONFIDENCE",
         forward_window_calendar_days=84 if seed.mode == "catalyst_research" else None,
-        limitations=tuple(dict.fromkeys(limits)))
+        limitations=tuple(dict.fromkeys(limits)), **extra)
     output = _validated(current, assessment=assessment.model_dump(mode="json"), limitations=list(dict.fromkeys(limits)))
     ledger.record_result("native.output", {"identity": identity, "record": output.model_dump(mode="json")})
     return output

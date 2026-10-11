@@ -114,18 +114,26 @@ NATIVE_ROLE_REGISTRY = tuple(
         ("event_context", "Event context"), ("market_context", "Market context"),
         ("challenge", "Evidence challenge"), ("synthesis", "Research synthesis"))
 )
+UNIFIED_RESPONSE_REGISTRY = tuple(RoleDefinition(f"native.response_{key}", f"response_{key}", "native", label, "verified-magnifier")
+    for key, label in (("operating_quality", "Operating reply"), ("event_context", "Event reply"), ("market_context", "Market reply")))
+UNIFIED_ROLE_REGISTRY = (*NATIVE_ROLE_REGISTRY[:-1], *UNIFIED_RESPONSE_REGISTRY, NATIVE_ROLE_REGISTRY[-1])
 FOCUS_ROLE = RoleDefinition("native.focus_response", "focus_response", "native", "Focus response", "verified-magnifier")
 
 
 def roles_for_profile(profile: str = "classic", *, workflow_version=None, focus_requested=False) -> tuple[RoleDefinition, ...]:
     if profile == "evidence_v1":
-        from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION
+        from tradingagents.research.native_versions import (
+            FOCUS_WORKFLOW_VERSION,
+            UNIFIED_WORKFLOW_VERSION,
+        )
+        if workflow_version == UNIFIED_WORKFLOW_VERSION:
+            return (*UNIFIED_ROLE_REGISTRY, FOCUS_ROLE) if focus_requested else UNIFIED_ROLE_REGISTRY
         return (*NATIVE_ROLE_REGISTRY, FOCUS_ROLE) if workflow_version == FOCUS_WORKFLOW_VERSION and focus_requested else NATIVE_ROLE_REGISTRY
     return CATALYST_ROLE_REGISTRY if profile == "catalyst_v1" else ROLE_REGISTRY
 
 
 def role_instance_id(run_id: str, actor_id: str) -> str:
-    if actor_id not in ROLES_BY_ACTOR_ID and actor_id not in {role.actor_id for role in (*CATALYST_ROLE_REGISTRY, *NATIVE_ROLE_REGISTRY, FOCUS_ROLE)}:
+    if actor_id not in ROLES_BY_ACTOR_ID and actor_id not in {role.actor_id for role in (*CATALYST_ROLE_REGISTRY, *NATIVE_ROLE_REGISTRY, *UNIFIED_RESPONSE_REGISTRY, FOCUS_ROLE)}:
         raise KeyError(f"unknown TradingAgents actor_id: {actor_id}")
     if not run_id:
         raise ValueError("run_id is required")

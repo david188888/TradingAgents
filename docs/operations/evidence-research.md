@@ -54,20 +54,21 @@ JSON
 ```
 
 The optional `research_question` field is labelled “补充关注点（可选）” in the
-workbench, trimmed and limited to 400 Unicode code points. V6 saves it in run
+workbench, trimmed and limited to 400 Unicode code points. V6/V7 save it in run
 identity but excludes it from the collector, specialists, challenge, verification
-selection and synthesis. Those stages always use the mode's code-owned objective.
+selection and synthesis. V7 uses the code-owned company investment objective; V6 preserves its original mode objectives.
 After the baseline is durable, a separate response interprets the focus using
 saved evidence. It consumes at most one focus attempt within the existing total
 budget; leaving it blank makes no supplemental call. Batch research applies the
 same focus independently after each company's baseline. See the
 [supplement and recovery contract](#v6-independent-baseline-and-supplementary-focus).
 
-| Mode | Independent baseline objective |
-| --- | --- |
-| Company | 公司经营质量、估值定位与市场风险如何，哪些重要事件和证据可能改变判断，哪些关键问题尚未确定？ |
-| Catalyst | 未来84天哪些催化可能改变判断，经营基础、兑现与失效条件、市场背景和关键缺口是什么？ |
-| Holding | 原持仓假设受到哪些新证据支持或挑战，经营、估值与市场风险如何，哪些条件需要重新核查？ |
+New creation supports one company scope: operating quality, current valuation,
+events and market risk feed an investment stance, reasons, counterevidence and
+original falsifiers. There is no outlook or debate-round selector. Explicit old
+modes return `unified_research_mode_required` (422); holding input never implicitly
+selects holding review. Historical mode-specific objectives remain frozen for
+read/recovery. See the [V7 contract](../contracts/unified-company-research.md).
 
 For example, “利润增长是否转化为经营现金流，哪些证据支持或反驳？” requests a
 supplementary interpretation of the saved baseline. It is not a fact or a data
@@ -149,7 +150,7 @@ suppresses further Tushare attempts in that run; public sources remain eligible.
 All attempts share the existing capability/HTTP ceilings and active deadline.
 Cancellation, budget exhaustion and checkpoint conflicts stop execution.
 
-The V5 collector (retained by current V6) adds the bounded minimum-evidence collector
+The V5 collector (retained by current V7) adds the bounded minimum-evidence collector
 and code-owned local checks described below. V4 binds valuation inputs and dimension-reference
 validation; v3 binds documents and scoped coverage. Original v1–v4 checkpoints
 recover with their original collectors and kernel/prompt inputs when V0 is
@@ -238,7 +239,7 @@ dimension with usable inputs is not labelled as missing those same inputs.
 
 The synthesis follows code-owned dimensions and evidence ceilings. Unavailable
 valuation inputs constrain valuation; missing qualified prices constrain market
-context. Announcement titles do not establish delivery. V4–V6 can supply
+context. Announcement titles do not establish delivery. V4–V7 can supply
 qualified valuation inputs through the saved snapshot/history chain below.
 Missing or unqualified inputs leave that dimension unresolved and the assessment
 partial. Risk/ATR statistics cannot substitute for valuation inputs.
@@ -254,8 +255,8 @@ retain their source-partition checks.
 
 ## Budget, cancellation and recovery
 
-The native flow reuses the existing durable ledger and its hard limits: five
-main model calls, at most one V6 supplemental focus call, two structured repairs across the run with at most one per
+The native flow reuses the existing durable ledger and its hard limits: eight
+main V7 model calls (V6 retains five), at most one V6/V7 supplemental focus call, two structured repairs across the run with at most one per
 stage, and twelve model attempts in total. Data calls retain the existing
 twenty-four capability and sixty-four HTTP-attempt ceilings. One bounded
 verification round covers at most three supplementary capabilities. This
@@ -287,7 +288,7 @@ record, without a second summary model.
 `GET /api/runs/{id}/reader/record` reads the committed `research-record-v1`.
 Native records require their assessment and no paired legacy case. The
 workbench routes an explicitly native run to this record as its single main
-Reader. The V6 desktop first screen shows the independent research scope and
+Reader. The V7 desktop first screen shows the independent research scope and
 judgement, then key
 claims, primary doubt and suggested next check, executed evidence checks,
 valuation and historical quantitative context. Click “核对依据” to read bound
@@ -308,12 +309,12 @@ verification results, including material omitted from the first screen.
 
 `GET /api/runs/{id}/reader/process` captures a saved sequence; the fixed-role
 `GET /api/runs/{id}/reader/agents/{role_key}?source_sequence=...` reads that boundary.
-V1–V6 outputs require version-specific identity and qualification checks.
+V1–V7 outputs require version-specific identity and qualification checks.
 Unknown versions, missing/corrupt bindings and unpublished proposals have explicit
 states, never inferred authorship or backfilled output.
 
 The terminal “技术诊断与执行记录” entry is for execution troubleshooting, not
-reading the report. V6 has six baseline runtime roles and one additional focus role only when
+reading the report. V7 has nine baseline runtime roles including three conditional reply roles, and one additional focus role only when
 requested; code checks stay separate. Old workflows retain their six roles. Main/focus/repair
 budget authorizations and SDK dispatch authorizations are separate; SDK counts
 are exact only with complete observation coverage. Old records can show a known
@@ -343,7 +344,7 @@ See [the shared record contract](../contracts/research-record.md) and
 ## Official document admission
 
 Saved V3 workflows use `DisclosureSources` in all three modes; V4 extends it
-with valuation. New V6 workflows retain V5's document selection and numeric
+with valuation. New V7 workflows retain V5's document selection and numeric
 admission described above. The following selection rules describe V3/V4 recovery.
 The existing CNINFO 90-day announcement list remains distinct from document coverage. When no
 formal annual/interim report occurs in that list, a separate bounded 550-day
@@ -416,7 +417,8 @@ cost and accuracy comparisons remain separate work.
 
 ## V6 independent baseline and supplementary focus
 
-New single and batch studies use `evidence-production-v6` / `native-research-kernel-v5`.
+Historical V6 studies use `evidence-production-v6` / `native-research-kernel-v5`.
+New V7 studies retain the independent post-baseline focus boundary described here.
 The request key `research_question` remains trim-normalized and limited to 400
 Unicode characters, but the Web label is “补充关注点（可选）”. Mode objectives,
 qualified evidence and legitimate original holding thesis determine the baseline.
@@ -446,3 +448,8 @@ is never exposed. Old V1–V5 retain their original question semantics and repor
 bytes. The original 002130.SZ sample is unchanged. V6 Reader/Markdown put the
 supplement after all baseline sections, and focus references never confer
 baseline authorship. Reads never call a model/provider or mutate saved state.
+
+
+## V7 unified company investment research
+
+New single/batch studies use `evidence-production-v7` / `native-research-kernel-v6`. Three specialists, one critic and existing checks are followed by zero to three targeted reply calls and one synthesis. No-target replies are skipped; failed replies are saved as unavailable and require partial/LOW_CONFIDENCE. The eight/one/twelve budget, four-dimensional investment gates, referenced reasons, original change conditions and separate adjudications are defined in the [current contract](../contracts/unified-company-research.md). V1–V6 recovery uses its saved identity without acquiring V7 stages. Reader/Markdown share the saved stance and dialogue; reading never issues research calls.

@@ -65,6 +65,9 @@ def project_research_record(store: Any, run_id: str, *, through: int | None = No
             if (snapshot.metadata or {}).get("research_profile") == "evidence_v1" and (
                     record.construction != "native" or record.assessment is None):
                 raise ValueError("native profile requires its assessed native record")
+            if record.construction == "native":
+                from tradingagents.research.native_versions import validate_assessment_version
+                validate_assessment_version(record, (snapshot.metadata or {}).get("native_workflow_version"))
         except Exception:
             reason = "corrupt"
         else:

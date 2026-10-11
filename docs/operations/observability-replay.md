@@ -56,3 +56,8 @@ Reader 的 `sdk_main` / `sdk_repair` 分别包括对应来源的重试，`sdk_to
 ## 当前范围
 
 系统已提供 `DurableRunObserver.record_scratchpad(...)` 和 `record_cycle(...)`，供执行、上下文压缩与工具限额路径调用。CycleRecord 与 JSONL 均为本机文件系统审计功能；它们不上传，也不替代真实供应商/LLM 端到端评估。评判模型与目标模型隔离、contradiction 一票否决数据集及 source-alignment 投影仍需在对应评估路径接入。
+
+
+## V7 reply observations
+
+The saved workflow selects the native role registry. V7 inserts operating/event/market response roles before synthesis; V1–V6 do not gain these roles. A targeted specialist replies once (multiple assigned challenges share a call); no target makes the role not applicable with zero actual dispatches. Replies use main budget (V7 ceiling eight), optional focus remains separate (one), and all SDK attempts, repairs and retries share twelve. Counts remain authorization counts, not delivery or billing evidence. See [unified company research](../contracts/unified-company-research.md).

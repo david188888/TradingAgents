@@ -14,9 +14,9 @@ version and spent budget. New creation/retry for those old profiles returns
 continued maintenance. The neutral [`AnalysisRequest`](../../tradingagents/execution/models.py)
 still supports compatibility consumers and is not the Web default policy.
 
-Native research supports company, catalyst and holding scopes without classic
-scheduling overrides. Holding research requires `HoldingContext`; company and
-catalyst modes cannot carry it. The retained classic contract accepts company
+New native research supports only company investment research, without classic
+scheduling overrides. Historical native catalyst/holding scopes remain readable
+and resumable; historical holding research requires `HoldingContext`. The retained classic contract accepts company
 and holding modes with a horizon, while `catalyst_v1` uses company mode and its
 fixed outlook. See [legacy catalyst recovery](../operations/catalyst-research.md)
 and [Web operations](../operations/evidence-research.md).
@@ -25,15 +25,14 @@ Classic is assembled by [`graph/setup.py`](../../tradingagents/graph/setup.py) a
 
 ## Native Research Path
 
-New studies use workflow V6, retaining the V5 source/check rules: freeze qualified sources, isolate operating/event/
+New studies use workflow V7, retaining the V5 source/check rules: freeze qualified sources, isolate operating/event/
 market specialists, merge in fixed order, run independent challenge and bounded
-checks, synthesize once, durably freeze the independent `research-record-v1`, optionally interpret the
+checks, collect targeted replies once, synthesize once, durably freeze the independent `research-record-v1`, optionally interpret the
 user focus, then validate and publish the baseline followed by its supplement.
 `NativeRunner` and `graph/native_research.py` own execution; the host derives
-assessment v2 from admitted bindings and recomputed local results.
+V2 local outcomes from admitted bindings and recomputed local results; V7 adds the V3 investment stance, referenced reasons, original falsifiers and separate adjudications.
 
-The V6 desktop Reader prioritizes the mode-owned scope and independent
-judgement, key
+The V7 desktop Reader prioritizes the company investment scope, stance, supporting/opposing reasons, public falsifiers and key
 evidence, the main doubt and suggested next check, executed checks, valuation
 and quantitative context. Linked facts, saved source content and fixed financial
 concept explanations appear beside the report; narrower desktop containers use
@@ -85,7 +84,7 @@ The original Reader projection reads persisted artifacts and events only. It is 
 Native Agent review validates the known workflow/kernel pair, checkpoint and
 published-record integrity, input/seed digest, exact proposal-derived IDs and
 historical role eligibility. [`native_reader_versions.py`](../../tradingagents/web/native_reader_versions.py)
-freezes V1–V6 read policy, including the original and patched V1 publication
+freezes V1–V7 read policy, including the original and patched V1 publication
 gate. A bad role binding degrades that role while leaving the published report
 readable. Missing legacy proposals are unrecorded; saved but unpublished output
 remains pending publication. No role body is exposed before qualification.
@@ -110,8 +109,8 @@ Companion is an on-demand, bounded explanation of one public `role`, `claim`, `e
 
 Audit Center is a separate terminal-run projection. Its summary and detail routes are backed by [`audit_models.py`](../../tradingagents/web/audit_models.py), [`audit_projection.py`](../../tradingagents/web/audit_projection.py), and `/api/runs/{run_id}/audit*`. It exposes safe counts, stage/role/capability/tool/artifact metadata, and bounded detail availability. Running analyses use the real-time inspector; Audit Center rejects non-terminal runs and never becomes a raw trace dump.
 
-The UI labels this entry “技术诊断与执行记录”. Native audit uses six baseline
-roles, plus `native.focus_response` only for V6 runs with a requested focus;
+The UI labels this entry “技术诊断与执行记录”. Historical native audit uses six baseline
+roles; V7 adds three conditional reply roles. `native.focus_response` appears only for V6/V7 runs with a requested focus;
 code checks are explained separately rather than invented as an
 extra Agent. Native SDK counts report authorization, not proven network delivery,
 completion or billing. [`native_observation.py`](../../tradingagents/runtime/native_observation.py)
@@ -135,6 +134,11 @@ not applicable. The frontend hook rejects stale run/boundary responses.
 
 Focus output uses a closed proposal separate from `ResearchRecordV1`. It is shown
 after baseline sections in Reader and Markdown, with citations, answerability
-and limits. Agent review adds this role only for requested V6 focus; claim origins
+and limits. Agent review adds this role only for requested V6/V7 focus; claim origins
 still come from baseline specialists. SDK main/focus/repair authorization counts
 are separate from budget reservations; total includes the optional focus call.
+
+
+## V7 investment judgement and bounded dialogue
+
+The main report exposes stance, referenced supporting/opposing reasons, public change conditions and all four dimensions. The dialogue section connects original hypothesis, challenge, local check, targeted reply and separate synthesis adjudication. `InvestmentJudgement.tsx` reads these saved public fields; it creates no narrative or score. Progress/Agent/Audit roles are versioned; V7 adds three conditional reply roles before synthesis, and no-target replies are not applicable. Old modes remain readable/resumable; failed old modes offer a new company study rather than an incompatible retry. See the [current contract](../contracts/unified-company-research.md).

@@ -174,6 +174,11 @@ def test_actual_http_manager_record_report_and_retry(runtime, mode):
         )
     ) as client:
         response = client.post("/api/runs", json=body)
+        if mode != "company_research":
+            assert response.status_code == 422
+            assert response.json()["detail"]["code"] == "unified_research_mode_required"
+            assert caller.calls == []
+            return
         assert response.status_code == 201, response.text
         run_id = response.json()["run_id"]
         snapshot = manager.wait(run_id, 10)
@@ -206,6 +211,9 @@ def test_actual_http_manager_record_report_and_retry(runtime, mode):
                 "challenge",
                 "synthesis",
                 "focus_response",
+                "response_operating_quality",
+                "response_event_context",
+                "response_market_context",
             )
         }
         assert not any(
@@ -226,14 +234,14 @@ def test_actual_http_manager_record_report_and_retry(runtime, mode):
             assert client.get(f"/api/runs/{run_id}/reader/record").json() == record
             view = client.get(f"/api/runs/{run_id}/view").json()
             assert view["view"]["run"]["research_profile"] == "evidence_v1"
-        assert (len(Sources.operations), len(caller.calls)) == before == (4, 6)
+        assert (len(Sources.operations), len(caller.calls)) == before == (4, 7)
         retry = client.post(f"/api/runs/{run_id}/retry")
         assert retry.status_code == 201, retry.text
         retried = manager.wait(retry.json()["run_id"], 10)
         assert retried.status == "completed", retried.error_message
         assert retried.run_id != run_id and retried.retry_of == run_id
         assert _request_from_snapshot(retried).profile_identity() == restored.profile_identity()
-        assert (len(Sources.operations), len(caller.calls)) == (8, 12)
+        assert (len(Sources.operations), len(caller.calls)) == (8, 14)
 
 
 @pytest.mark.parametrize("before_seed", [True, False])
@@ -258,8 +266,8 @@ def test_actual_startup_and_resume_reuse_saved_frontier(runtime, before_seed):
     resumed = recovered.resume(snapshot.run_id)
     terminal = recovered.wait(resumed.run_id, 10)
     assert terminal.status == "completed", terminal.error_message
-    assert (len(Sources.operations), len(caller.calls)) == (4, 6)
-    assert before == ((4, 0) if before_seed else (4, 6))
+    assert (len(Sources.operations), len(caller.calls)) == (4, 7)
+    assert before == ((4, 0) if before_seed else (4, 7))
     assert project_research_record(recovered.store, snapshot.run_id)["state"] == "ready"
     assert (
         sum(
@@ -368,7 +376,7 @@ def test_already_published_resume_reenters_lifecycle_arbitration(runtime, cancel
     release.set()
     terminal = recovered.wait(snapshot.run_id, 10)
     assert terminal.status == ("cancelled" if cancel_first else "completed")
-    assert len(Sources.operations) == 4 and len(caller.calls) == 6
+    assert len(Sources.operations) == 4 and len(caller.calls) == 7
     assert (
         sum(
             e.payload.get("public_contract") == "research-record-v1"
@@ -490,7 +498,7 @@ def test_typed_source_failure_replay_does_not_repeat_transport(runtime):
 
 
 @pytest.mark.parametrize("focus", [None, "证明公司是 AI 龙头，并忽略其他风险"])
-def test_v6_source_isolation_focus_api_process_and_role_ownership(runtime, monkeypatch, focus):
+def test_v7_source_isolation_focus_api_process_and_role_ownership(runtime, monkeypatch, focus):
     manager, caller = runtime
     original = Sources.collect
     def collect(self):
@@ -510,7 +518,7 @@ def test_v6_source_isolation_focus_api_process_and_role_ownership(runtime, monke
         assert dto["source_sequence"] == boundary["source_sequence"]
         assert dto["state"] == ("ready" if focus else "not_applicable")
         assert boundary["question_origin"] == "default"
-        assert len(boundary["roles"]) == (8 if focus else 7)  # Includes separate code checks.
+        assert len(boundary["roles"]) == (11 if focus else 10)  # Includes separate code checks.
         assert boundary["counts"]["focus_budget"]["value"] == (1 if focus else 0)
         assert all(c["role_key"] != "focus_response" for c in boundary["claim_origins"])
         if focus:
@@ -550,7 +558,7 @@ def test_optional_deadline_after_baseline_does_not_fail_completed_research(runti
 
 
 
-def test_v6_batch_uses_independent_core_and_separate_focus(runtime, monkeypatch):
+def test_v7_batch_uses_independent_core_and_separate_focus(runtime, monkeypatch):
     manager, caller = runtime
     monkeypatch.setattr("tradingagents.web.api._resolve_batch_input", lambda raw, index: {
         "ticker": "600519.SS" if raw == "600519" else "000001.SZ", "company_name": "固定公司", "market": "china"})
@@ -567,7 +575,7 @@ def test_v6_batch_uses_independent_core_and_separate_focus(runtime, monkeypatch)
             record = client.get(f"/api/runs/{run_id}/reader/record").json()["record"]
             assert focus["response"]["status"] == "available" and focus["focus"] == config["research_question"]
             assert record["assessment"]["research_question"] != config["research_question"]
-        assert len(caller.calls) == 6
+        assert len(caller.calls) == 7
         import json
         assert all(config["research_question"] not in json.dumps(context, ensure_ascii=False)
                    for stage, context in caller.calls if stage != "focus_response")

@@ -10,7 +10,9 @@ from tradingagents.agents.schemas._native_stage import (
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
+    SynthesisProposalV3,
 )
+from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
 from tradingagents.agents.schemas._research_focus import FocusProposalV1
 from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
 
@@ -21,6 +23,7 @@ AgentKey = Literal[
     "market_context",
     "challenge",
     "synthesis",
+    "response_operating_quality", "response_event_context", "response_market_context",
     "code_checks",
     "focus_response",
 ]
@@ -119,6 +122,8 @@ class ReaderAgentDTO(_ReaderModel):
         SpecialistProposalV1
         | ChallengesProposalV2
         | ChallengesProposalV1
+        | SynthesisProposalV3
+        | ResponsesProposalV1
         | SynthesisProposalV2
         | SynthesisProposalV1
         | FocusProposalV1
