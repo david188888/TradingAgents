@@ -72,6 +72,8 @@ current architecture, operations and contract pages for supported behavior.
 
 - [Subscription, retry and Reader closeout](reviews/2026-10-11-subscription-retry-acceptance.md): combined local regression, official subscription boundaries, request accounting, credential-test isolation and remaining environment/research limits.
 
+- [v3.2.0 release notes](reviews/2026-10-11-v3.2-release-notes.md): ChatGPT subscription, bounded native retries and diagnostics, conservative official PDF parsing, Reader interaction improvements, and release limits since v3.1.0.
+
 - [v3.1.0 release notes](reviews/2026-10-07-v3.1-release-notes.md): cumulative independent research, evidence Reader, bounded checks, DeepSeek default and Tencent stock-volume correction since v3.0.0.
 - [Independent research and focus-response acceptance](reviews/2026-10-07-independent-research-focus-acceptance.md): local V6 information-flow isolation, bounded supplemental response, recovery/publication, Reader and offline/browser checks; original 002130 files retained.
 - [a-stock-data v3.10.1 acceptance](reviews/2026-10-07-a-stock-data-v3101-acceptance.md): local Tencent stock volume-unit correction and regression evidence, plus the separately authorized Proma fixed-tag upgrade and rollback record.
