@@ -2,7 +2,14 @@ import type { AgentKey, ObservedCountDTO, OutputAvailability } from "../api/cont
 export const AGENT_LABELS: Record<AgentKey, string> = { evidence: "证据冻结", operating_quality: "经营研究", event_context: "事件研究", market_context: "市场研究", challenge: "独立挑战", synthesis: "研究综合", code_checks: "代码核查与发布", response_operating_quality: "经营与估值回应", response_event_context: "事件回应", response_market_context: "市场回应", focus_response: "关注点回应" };
 export const DIMENSION_LABELS: Record<string, string> = { operating_quality: "经营质量", valuation: "估值定位", market_context: "市场背景", catalyst_delivery: "催化兑现", holding_thesis: "原持仓假设" };
 export const STATUS_LABELS: Record<string, string> = { pending: "等待", running: "执行中", completed: "已完成", failed: "失败", cancelled: "已取消", interrupted: "已中断", skipped: "已跳过", not_reached: "未到达", not_recorded: "未记录", not_applicable: "代码工作" };
-export function outputLabel(value: OutputAvailability, reason: string | null): string {
+export function isTerminalRun(status: string): boolean {
+  return ["completed", "failed", "cancelled", "interrupted"].includes(status);
+}
+export function outputLabel(value: OutputAvailability, reason: string | null, runStatus?: string): string {
+  if (isTerminalRun(runStatus ?? "")) {
+    if (value === "pending_publication") return "提议已保存 · 本次未发布";
+    if (reason === "publication_pending" && value === "not_recorded") return "本次未发布公开产物";
+  }
   if (reason === "publication_pending" && value === "not_recorded") return "等待执行或公开产物发布";
   if (reason === "no_targeted_challenges_not_called") return "没有分配给本专项的质疑，未调用回应";
   if (reason === "native_response_unavailable") return "专项回应未能取得有效结果";

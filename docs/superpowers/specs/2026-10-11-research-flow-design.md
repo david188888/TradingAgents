@@ -1,6 +1,8 @@
 # 研究流程总览与相邻详情设计
 
-日期：2026-10-11。状态：用户已确认 A 布局并喜欢 C 视觉；本文待书面审查确认。
+- **Status: Frozen Design** — Do not use this document as evidence of current implementation behavior.
+
+日期：2026-10-11。用户已确认 A 布局与 C 视觉组合，并确认本文继续实施；设计审查已通过。当前实现参见 [Reader 架构](../../architecture/research-reader.md)。
 
 ## 目标与边界
 

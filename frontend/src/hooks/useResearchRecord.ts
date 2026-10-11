@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getResearchRecord } from "../api/client";
 import type { ResearchRecordResponseDTO } from "../api/contracts";
 
@@ -7,10 +7,13 @@ export function useResearchRecord(runId: string | null): {
   response: ResearchRecordResponseDTO | null;
   loading: boolean;
   error: boolean;
+  retry(): void;
 } {
   const [response, setResponse] = useState<ResearchRecordResponseDTO | null>(null);
   const [loading, setLoading] = useState(runId !== null);
   const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt(value => value + 1), []);
   useEffect(() => {
     const controller = new AbortController();
     setResponse(null);
@@ -29,6 +32,6 @@ export function useResearchRecord(runId: string | null): {
       });
     }
     return () => controller.abort();
-  }, [runId]);
-  return { response: response?.run_id === runId ? response : null, loading, error };
+  }, [runId, attempt]);
+  return { response: response?.run_id === runId ? response : null, loading, error, retry };
 }

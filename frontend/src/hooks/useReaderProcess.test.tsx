@@ -52,6 +52,15 @@ const focus = (run="run-a",seq=10): ReaderFocusDTO => ({schema_version:1,run_id:
 const independent = (run="run-a",seq=10): ReaderProcessDTO => ({...process(run,seq),workflow_version:"evidence-production-v6"});
 describe("supplemental read boundaries",()=>{
  beforeEach(()=>vi.clearAllMocks());
+ it("reads V7 focus at the public process boundary and rejects a mismatched version",async()=>{
+  const value={...independent(),workflow_version:"evidence-production-v7"};
+  vi.mocked(getReaderFocus).mockResolvedValueOnce({...focus(),workflow_version:"evidence-production-v7"}).mockResolvedValueOnce(focus());
+  const {result}=renderHook(()=>useReaderFocus("run-a",value));
+  await waitFor(()=>expect(result.current.response?.workflow_version).toBe("evidence-production-v7"));
+  expect(getReaderFocus).toHaveBeenCalledWith("run-a",10,expect.any(AbortSignal));
+  act(()=>result.current.retry());
+  await waitFor(()=>expect(result.current.error).toBe(true));expect(result.current.response).toBeNull();
+ });
  it("does not fetch legacy output and rejects a stale supplement after switching runs",async()=>{
   const old=deferred<ReaderFocusDTO>();vi.mocked(getReaderFocus).mockReturnValueOnce(old.promise).mockResolvedValue(focus("run-b"));
   const {result,rerender}=renderHook(({run,p})=>useReaderFocus(run,p),{initialProps:{run:"run-a",p:process()}});

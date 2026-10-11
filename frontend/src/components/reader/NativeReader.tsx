@@ -3,12 +3,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentKey, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
 import { useReaderAgent, useReaderFocus } from "../../hooks/useReaderProcess";
-import { AGENT_LABELS, countLabel, dimensionLabel, STANCE_LABELS, outputLabel, STATUS_LABELS, TERMS } from "../../domain/readerExplanation";
+import { AGENT_LABELS, countLabel, dimensionLabel, STANCE_LABELS, TERMS } from "../../domain/readerExplanation";
 import { limitationLabel } from "../../domain/researchCoverage";
 import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
 import { claimText, LocalChallengeResult, LocalEvidenceChecks, MetricCard } from "./ResearchRecordSection";
 import { ReaderEvidence, SavedSource, type EvidenceSelection } from "./ReaderEvidence";
 import { ReaderAgentOutput } from "./ReaderAgentOutput";
+import { ResearchFlow } from "./ResearchFlow";
 import { ValuationPositionCard } from "./ValuationPositionCard";
 import { FocusResponse } from "./FocusResponse";
 import "../../styles/nativeReader.css";
@@ -21,6 +22,7 @@ export function NativeReader({ runId, record, process, processError, retryProces
   const assessment = record.assessment!;
   const [view, setView] = useState<View>("report");
   const [role, setRole] = useState<AgentKey>("operating_quality");
+  const [flowRole, setFlowRole] = useState<AgentKey | null>(null);
   const [entity, setEntity] = useState<string | null>(null);
   const [selected, setSelected] = useState<EvidenceSelection | null>(() => assessment.key_claim_ids[0] ? {kind:"claim",id:assessment.key_claim_ids[0]} : null);
   const [term, setTerm] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function NativeReader({ runId, record, process, processError, retryProces
   const root = useRef<HTMLElement>(null), rail = useRef<HTMLElement>(null);
   const returnContext = useRef<{ view: View; y: number; mainY: number; trigger: HTMLElement; triggerText: string; triggerIndex: number } | null>(null);
   const focus = useReturnFocus();
-  const agent = useReaderAgent(runId, view === "agents" ? role : null, process);
+  const agent = useReaderAgent(runId, view === "agents" ? role : view === "process" ? flowRole : null, process);
   const supplemental = useReaderFocus(runId, process);
   const unified = assessment.schema_version === "research-assessment-v3";
   const independent = unified || process?.workflow_version === "evidence-production-v6";
@@ -44,13 +46,13 @@ export function NativeReader({ runId, record, process, processError, retryProces
   const showModal = (trigger: HTMLElement) => { focus.remember(trigger); setModal(true); };
   const select = (value: EvidenceSelection, trigger?: HTMLElement, manual = true) => {
     setSelected(value); setTerm(null); setPinned(manual);
-    if (manual && narrow) {
+    if (manual && (narrow || view === "process")) {
       const active = document.activeElement;
       const returnTarget = trigger ?? (active instanceof HTMLElement ? active : root.current);
       if (returnTarget) showModal(returnTarget);
     }
   };
-  const changeView = (next: View) => { setView(next); setEntity(null); window.scrollTo({top:0,behavior:"instant"}); document.querySelector("main")?.scrollTo({top:0,behavior:"instant"}); };
+  const changeView = (next: View) => { setView(next); setFlowRole(null); setEntity(null); window.scrollTo({top:0,behavior:"instant"}); document.querySelector("main")?.scrollTo({top:0,behavior:"instant"}); };
   const openAgent = (key: AgentKey, id: string | null, trigger: HTMLElement) => {
     const matching = Array.from(root.current?.querySelectorAll<HTMLButtonElement>("button") ?? []).filter(b=>b.textContent === trigger.textContent);
     returnContext.current = {view, y:window.scrollY, mainY:document.querySelector("main")?.scrollTop ?? 0, trigger, triggerText:trigger.textContent ?? "", triggerIndex:matching.indexOf(trigger as HTMLButtonElement)}; setHasReturn(true);
@@ -102,7 +104,7 @@ export function NativeReader({ runId, record, process, processError, retryProces
   return <section className="question-reader" ref={root} aria-label={independent ? "独立研究报告" : "问题优先研究报告"}>
     <nav className="qr-nav" aria-label="报告导航">{([["report","研究报告"],["evidence","证据目录"],["process","研究过程"],["agents","Agent 产物"],["full","完整记录"]] as [View,string][]).map(([key,label]) => <button key={key} aria-current={view === key ? "page" : undefined} onClick={() => changeView(key)}>{label}</button>)}</nav>
     {hasReturn && view !== "report" ? <button className="qr-return" onClick={returnToReading}>← 返回刚才的阅读位置</button> : null}
-    <div className={`qr-reading-grid${narrow ? " qr-narrow" : ""}`}>
+    <div className={`qr-reading-grid${narrow ? " qr-narrow" : ""}${view === "process" ? " qr-flow-reading" : ""}`}>
       <div className="qr-reading-main">
         {view === "report" ? <>
           <header className="qr-question"><span className="qr-eyebrow">{independent ? "本次研究范围" : process?.question_origin === "user" ? "你的研究问题" : "本次研究问题"}</span><h2>{assessment.research_question}</h2><p className="qr-meta">{!independent && process?.workflow_version ? "历史运行：研究问题参与了当时的基础分析。 " : ""}证据截至 {record.analysis_date}{assessment.forward_window_calendar_days ? ` · 展望 ${assessment.forward_window_calendar_days} 个日历日` : ""}</p></header>
@@ -138,10 +140,14 @@ export function NativeReader({ runId, record, process, processError, retryProces
         </> : null}
         {view === "process" ? <section><header className="qr-view-intro"><span className="qr-eyebrow">从证据到回答</span><h2>这份报告是怎样形成的</h2><p>{unified ? "三个专项先独立分析，经一轮质疑和代码核查后，由被质疑专项回应，再形成投资判断。" : "基础研究由一个代码证据环节和五个模型角色完成。"}{hasFocus ? "关注点由另一个模型角色在基础研究保存后回应。" : ""}代码核查另列。</p></header>
           {processError ? <p role="status">过程暂时无法读取。<button onClick={retryProcess}>重试</button></p> : null}
-          {process?.roles.map((r,i) => <article className="qr-process-step" key={r.role_key}><span className="qr-step-index">{String(i+1).padStart(2,"0")}</span><div><h3>{r.label} <span className="qr-tag">{STATUS_LABELS[r.status] ?? "未记录"}</span></h3><p>{r.purpose}</p><p className="qr-meta">{outputLabel(r.output_availability,r.reason_code)}{r.output_count !== null ? ` · ${r.output_count} 项` : ""}</p><button onClick={e=>openAgent(r.role_key,null,e.currentTarget)}>回顾本环节产物 →</button></div></article>)}
+          <ResearchFlow process={process} runStatus="completed" record={record} selectedRole={flowRole} onSelect={setFlowRole} onClose={()=>setFlowRole(null)}>
+            {flowRole ? <ReaderAgentOutput role={flowRole} process={process} output={agent.response} error={agent.error || processError}
+              record={record} runStatus="completed" entity={null} onRole={setFlowRole} onInspect={(v,trigger)=>select(v,trigger)} onLocate={locate}
+              onRetry={()=>{agent.retry();if(processError)retryProcess();}}/> : null}
+          </ResearchFlow>
           <details><summary>调用记录与统计口径</summary>{process ? <><p>主分析预算授权：{countLabel(process.counts.main_budget)}；结构化修复预算授权：{countLabel(process.counts.repair_budget)}</p><p>SDK 主发出授权：{countLabel(process.counts.sdk_main)}；修复发出授权：{countLabel(process.counts.sdk_repair)}；合计：{countLabel(process.counts.sdk_total)}</p>{process.counts.focus_budget ? <p>补充回应预算授权：{countLabel(process.counts.focus_budget)}；SDK 补充发出授权：{countLabel(process.counts.sdk_focus)}</p> : null}<p>数据能力调用：{countLabel(process.counts.data_capability)}；HTTP 尝试：{countLabel(process.counts.data_http)}</p><p className="qr-meta">发出授权不证明供应商接收或计费；重复保存 checkpoint 不重复计数。记录序列 {process.source_sequence}。</p></> : <p>未记录</p>}</details>
         </section> : null}
-        {view === "agents" ? <ReaderAgentOutput role={role} process={process} output={agent.response} error={agent.error || processError} record={record} entity={entity} onRole={r=>{setRole(r);setEntity(null);}} onInspect={(v,trigger)=>select(v,trigger)} onLocate={locate} onRetry={()=>{agent.retry();if(processError)retryProcess();}}/> : null}
+        {view === "agents" ? <ReaderAgentOutput role={role} process={process} output={agent.response} error={agent.error || processError} record={record} runStatus="completed" entity={entity} onRole={r=>{setRole(r);setEntity(null);}} onInspect={(v,trigger)=>select(v,trigger)} onLocate={locate} onRetry={()=>{agent.retry();if(processError)retryProcess();}}/> : null}
         {view === "evidence" ? <section><header className="qr-view-intro"><h2>证据目录</h2><p>按本次保存来源逐项核对；字段来源先看绑定事实，再展开原始数据。</p></header>{record.evidence.map(s=><article className="qr-catalog-card" key={s.evidence_id}><h3>{s.source_name}</h3><p className="qr-meta">{s.usable_as_of ?? "时间资格未验证"} · {s.content?.kind === "excerpt" ? "保存摘录" : s.content ? "保存字段" : "未保存正文"}</p>{inspectButton({kind:"source",id:s.evidence_id},"打开保存内容 →")}</article>)}</section> : null}
         {view === "full" ? <section className="qr-full-record"><header className="qr-view-intro"><h2>完整研究记录</h2><p>保留所有分项判断、假设、挑战、条件、事实与来源；首页未展示的内容仍可追溯。</p></header>
           <h3>全部分项判断</h3>{assessment.dimensions.map(d=><article className="qr-output-card" key={d.dimension}><h4>{dimensionLabel(d.dimension,unified)} · {d.status === "unresolved" ? "待核查" : "有条件判断"}</h4><p>{d.judgement}</p>{d.claim_ids.map(id=><button key={id} onClick={e=>select({kind:"claim",id},e.currentTarget)}>{claimText(record.claims.find(c=>c.claim_id===id)?.statement ?? id)} →</button>)}{d.limitations.map((l,i)=><p className="qr-meta" key={i}>{limitationLabel(l)}</p>)}</article>)}
@@ -156,11 +162,11 @@ export function NativeReader({ runId, record, process, processError, retryProces
           <details><summary>保存的完整公开研究字段</summary><pre>{JSON.stringify(record,null,2)}</pre></details>
         </section> : null}
       </div>
-      {!narrow ? <aside className="qr-evidence-rail" ref={rail} aria-label="相关依据"><header><h2>相关依据</h2><p className="qr-meta">{pinned ? "已固定当前选择" : "随阅读位置切换"}</p><div className="qr-actions"><button onClick={()=>{setPinned(p=>!p);setTerm(null);}}>{pinned ? "恢复跟随" : "固定当前依据"}</button><button onClick={e=>showModal(e.currentTarget)}>放大阅读</button></div></header>{evidence}<footer><button onClick={()=>{if(selected)locate(selected);}}>回到对应完整记录 →</button></footer></aside> : null}
+      {!narrow && view !== "process" ? <aside className="qr-evidence-rail" ref={rail} aria-label="相关依据"><header><h2>相关依据</h2><p className="qr-meta">{pinned ? "已固定当前选择" : "随阅读位置切换"}</p><div className="qr-actions"><button onClick={()=>{setPinned(p=>!p);setTerm(null);}}>{pinned ? "恢复跟随" : "固定当前依据"}</button><button onClick={e=>showModal(e.currentTarget)}>放大阅读</button></div></header>{evidence}<footer><button onClick={()=>{if(selected)locate(selected);}}>回到对应完整记录 →</button></footer></aside> : null}
     </div>
     <button className="qr-evidence-entry" onClick={e=>showModal(e.currentTarget)}>{narrow ? "打开相关依据与概念解释" : "打开当前依据"}</button>
     {modal ? <EvidenceDialog onClose={closeModal}>{evidence}</EvidenceDialog> : null}
-    <div className="qr-terms-footer"><span>常用概念</span>{Object.keys(TERMS).map(t=><button key={t} onClick={e=>{setTerm(t);setPinned(true);if(narrow)showModal(e.currentTarget);}}>{t} ?</button>)}</div>
+    <div className="qr-terms-footer"><span>常用概念</span>{Object.keys(TERMS).map(t=><button key={t} onClick={e=>{setTerm(t);setPinned(true);if(narrow || view === "process")showModal(e.currentTarget);}}>{t} ?</button>)}</div>
   </section>;
 }
 

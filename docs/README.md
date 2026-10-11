@@ -72,8 +72,11 @@ These are dated delivery and verification records, not current-state contracts.
 Later workflows can supersede their UI, question or role semantics; follow the
 current architecture, operations and contract pages for supported behavior.
 
+- [Research flow UI acceptance](reviews/2026-10-11-research-flow-ui-acceptance.md): dependency canvas, adjacent details, terminal publication wording, V6/V7 focus reads, responsive/keyboard/motion/axe validation and preserved failure-repair boundaries.
+
 - [Subscription, retry and Reader closeout](reviews/2026-10-11-subscription-retry-acceptance.md): combined local regression, official subscription boundaries, request accounting, credential-test isolation and remaining environment/research limits.
 
+- [v3.3.0 release notes](reviews/2026-10-11-v3.3-release-notes.md): unified company investment research, one bounded challenge/reply cycle, dependency canvas, adjacent details and truthful terminal publication states.
 - [v3.2.0 release notes](reviews/2026-10-11-v3.2-release-notes.md): ChatGPT subscription, bounded native retries and diagnostics, conservative official PDF parsing, Reader interaction improvements, and release limits since v3.1.0.
 
 - [v3.1.0 release notes](reviews/2026-10-07-v3.1-release-notes.md): cumulative independent research, evidence Reader, bounded checks, DeepSeek default and Tencent stock-volume correction since v3.0.0.
@@ -88,6 +91,8 @@ current architecture, operations and contract pages for supported behavior.
 
 These record inspected evidence and recommendations, not delivered runtime changes.
 
+- [600418 latest failure — hypothesis reference mismatch](reviews/2026-10-11-600418-latest-failure.md): the 19:15 V7 run's proposal merge failure, misleading configuration classification and unpublished Reader behavior; core validation repairs are separate from the UI delivery.
+
 - [600418 investigation and bounded recovery](reviews/2026-10-11-600418-research-investigation.md): historical model failure, PDF dependency/cell parsing repair, isolated reproduction, retry accounting and limits that remain unresolved.
 
 - [a-stock-data v3.10.1 review](reviews/2026-10-07-a-stock-data-v3101-review.md) and [Proma skill review](reviews/2026-10-07-proma-a-stock-data-v3101-review.md): pinned upstream changes, confirmed Tencent volume-label defect, pre-upgrade Proma version/dirty state, and proposed update/validation scope; delivery evidence is in the acceptance record above.
@@ -97,6 +102,8 @@ These record inspected evidence and recommendations, not delivered runtime chang
 ## Proposed Engineering Designs
 
 These are execution proposals, not descriptions of current runtime behavior.
+
+- [Research flow and adjacent detail design](superpowers/specs/2026-10-11-research-flow-design.md) and [execution plan](superpowers/plans/2026-10-11-research-flow-ui.md): approved layout, version and publication boundaries; current UI behavior belongs in the Reader architecture above.
 
 - [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): retained overall goals and remaining quality/readability evaluation criteria. The Web default migration is delivered; current engineering behavior belongs in the operations and contract pages above.
 - [Frozen evaluation criteria](superpowers/plans/eval-table-frozen.md) and [case inputs](superpowers/plans/eval-cases.json): retained classic/catalyst comparison protocol, not completed evaluation results or authorization for new paid calls.

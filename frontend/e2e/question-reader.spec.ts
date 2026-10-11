@@ -8,8 +8,9 @@ test("desktop question, evidence, agent review and diagnostic truth",async({page
  await page.getByLabel("补充关注点（可选）").fill("需要核对哪些经营事实？");
  await page.getByRole("button",{name:"开始分析",exact:true}).click();
  const reader=page.locator(".question-reader");await expect(reader).toBeVisible({timeout:20000});
- await expect(reader.getByRole("heading",{name:"需要核对哪些经营事实？"})).toBeVisible();
- await expect(reader.getByRole("heading",{name:"综合判断",exact:true})).toBeVisible();
+ await expect(reader.getByRole("heading",{name:/截至分析时点.*投资吸引力/})).toBeVisible();
+ await expect(reader.locator(".qr-question h2")).not.toHaveText("需要核对哪些经营事实？");
+ await expect(reader.locator(".qr-answer h3")).toContainText("投资吸引力");
  const supplemental=reader.getByRole("region",{name:"补充关注点回应",exact:true});
  await expect(supplemental.getByText("固定测试补充回应：已有经营数据不能证明 AI 业务关系。",{exact:true})).toBeVisible();
  expect(await reader.evaluate(el=>{const sections=el.querySelectorAll('.qr-report-section');return sections[sections.length-1].id;})).toBe("qr-focus");
@@ -21,8 +22,9 @@ test("desktop question, evidence, agent review and diagnostic truth",async({page
  await reader.getByRole("button",{name:"市场研究",exact:true}).click();await expect(reader.getByRole("status")).toContainText("没有本专项的合格输入事实，本环节未调用");
  await reader.getByRole("button",{name:"独立挑战",exact:true}).click();await expect(reader.getByText("保存的是合法的零挑战提议；不代表不存在风险。")).toBeVisible();
  await reader.getByRole("button",{name:"← 返回刚才的阅读位置",exact:true}).click();await expect(entry).toBeFocused();
- await reader.getByRole("button",{name:"研究过程",exact:true}).click();await expect(reader.locator(".qr-process-step")).toHaveCount(8);
- await expect(reader.getByText("关注点回应",{exact:false})).toBeVisible();
+ await reader.getByRole("button",{name:"研究过程",exact:true}).click();
+ await expect(reader.getByRole("group",{name:"被质疑专项回应",exact:true})).toBeVisible();
+ await expect(reader.getByRole("heading",{name:"关注点回应",exact:true})).toBeVisible();
  await reader.getByText("调用记录与统计口径",{exact:true}).click();await expect(reader.getByText(/SDK 主发出授权：未记录/)).toBeVisible();
  await reader.getByRole("button",{name:"研究报告",exact:true}).click();
  const modalEntry=reader.locator(".qr-evidence-entry");await modalEntry.click();const dialog=page.getByRole("dialog",{name:"依据与概念解释",exact:true});await expect(dialog).toBeVisible();
