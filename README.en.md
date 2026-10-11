@@ -37,7 +37,7 @@ Baseline research completes independently and is saved before an optional respon
 
 ## Quick start
 
-Requires Python 3.10+ and an API key for your chosen model provider. The default model is DeepSeek V4.1 Flash (`deepseek-flash`).
+Requires Python 3.10+. Use an API key for your chosen model provider, or authorize ChatGPT subscription usage through official sign-in. The default model is DeepSeek V4.1 Flash (`deepseek-flash`).
 
 ```bash
 git clone https://github.com/david188888/TradingAgents.git
@@ -47,10 +47,12 @@ source .venv/bin/activate
 pip install -e ".[china,web]"
 
 cp .env.example .env
-# Set DEEPSEEK_API_KEY in .env, or configure another model provider.
+# Set DEEPSEEK_API_KEY in .env, or choose ChatGPT subscription and sign in after startup.
 
 tradingagents web --port 8765 --open
 ```
+
+After subscription sign-in, model choices follow the account’s official catalog; permissions and limits are confirmed by the official service. See [ChatGPT subscription configuration](docs/operations/chatgpt-subscription.md).
 
 Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at runtime. Run records live under `~/.tradingagents/`. Keep credentials in ignored local configuration. Data entitlements and configuration are described in [.env.example](.env.example) and [Web operations](docs/operations/evidence-research.md).
 

@@ -70,5 +70,6 @@
 .native-progress {max-width:1000px;margin:auto;font:16px/1.8 var(--font-sans);}
 .native-progress >header {background:#fffefa;border:1px solid #ddded7;border-left:4px solid #3e5a78;border-radius:0 10px 10px 0;padding:24px;margin-bottom:24px;}
 .native-progress >header h3 {font-size:23px;margin:0 0 12px;}.native-progress .qr-process-step {background:#fffefa;padding:20px;border:1px solid #ddded7;border-radius:8px;margin-bottom:12px;}
+.native-role-review {scroll-margin-top:90px;}
 @container (max-width:650px) { .qr-quant-grid {grid-template-columns:minmax(0,1fr);} .qr-nav {gap:16px;} }
 @media (prefers-reduced-motion:reduce) { .question-reader * {scroll-behavior:auto!important;transition:none!important;} }

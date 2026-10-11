@@ -25,6 +25,11 @@ old catalyst flag is enabled. Legacy history is neither deleted nor rewritten.
 The neutral `AnalysisRequest` and retained CLI defaults remain compatibility
 contracts and must not be mistaken for the Web default.
 
+For ChatGPT subscription usage, select the `chatgpt` provider and complete
+official sign-in. Single and batch requests freeze `chatgpt_account_ref` and
+the account catalog's selected model IDs; credentials remain outside run
+configuration. See [subscription configuration](chatgpt-subscription.md).
+
 Submit one run through `POST /api/runs`. This example contains no credentials;
 replace the cutoff and model IDs with the values for the intended research and
 the configured provider. A historical cutoff can leave price evidence

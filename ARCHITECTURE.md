@@ -28,6 +28,14 @@ participate in saved effective configuration and resume identity. Effort overrid
 do not add model phases or change default effort; see
 [reasoning configuration](docs/operations/llm-reasoning.md).
 
+The Web `chatgpt` provider injects a shared official SIWC authentication service
+into `NativeRunner`/`NativeModelCaller`. `llm_clients/chatgpt_auth.py` owns OAuth,
+protected registrations, refresh rotation and account-specific model catalogs;
+`chatgpt_client.py` owns the fixed streamed Responses route. Runs freeze only a
+non-secret account reference. Credentials live outside run artifacts; safe
+failure diagnostics and measured token usage are checkpointed for projections.
+See [ChatGPT subscription operations](docs/operations/chatgpt-subscription.md).
+
 ## Native Research Architecture
 
 ```text
@@ -206,6 +214,14 @@ profile-specific identity guards; native checkpoints do not depend on the
 classic checkpoint toggle. Unknown dispatched calls remain spent and are not
 automatically repeated. Persisted adapter responses can recover the gap before
 the kernel's MAIN result without another model call.
+
+Fresh V6 identities freeze `execution/native_retry.py`'s model retry policy.
+The adapter permits three transient retries per call with 2/5/10-second waits,
+bounded by the existing shared three-retry/twelve-attempt ledger limits. Repair
+retries retain their origin and each SDK request owns its usage exactly once;
+Reader counts include retry authorizations. Historical identities without this
+policy retain their original behavior, and the optional focus remains one call.
+See [retry accounting](docs/operations/observability-replay.md#原生模型有限网络重试).
 
 Native publication requires an assessed `research-record-v1` and its durable
 authorization barrier; failure cannot complete the run or fall back to a case.

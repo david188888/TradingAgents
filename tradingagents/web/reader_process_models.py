@@ -12,6 +12,7 @@ from tradingagents.agents.schemas._native_stage import (
     SynthesisProposalV2,
 )
 from tradingagents.agents.schemas._research_focus import FocusProposalV1
+from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
 
 AgentKey = Literal[
     "evidence",
@@ -92,6 +93,7 @@ class ReaderProcessDTO(_ReaderModel):
     roles: tuple[ReaderRole, ...] = ()
     claim_origins: tuple[ClaimOrigin, ...] = ()
     source_failures: tuple[str, ...] = ()
+    model_failures: tuple[ModelFailureDiagnostic, ...] = ()
 
 
 class OutputRelation(_ReaderModel):

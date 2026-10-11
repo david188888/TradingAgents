@@ -87,7 +87,7 @@ def _unit(line):
     return match[1] if match and ("人民币" in line or "币种" not in line) else None
 
 
-def financial_rows(pages, period):
+def financial_rows(pages, period, *, gaps=None):
     rows = []
     # Only explicit key-accounting sections or consolidated statements. Parent
     # statements and arbitrary occurrences of the same label are excluded.
@@ -134,8 +134,24 @@ def financial_rows(pages, period):
                 field = "consolidated_net_income"
             if field is None:
                 continue
-            numbers = [m[0] for m in NUMBER.finditer(cells) if not m[0].endswith("%")]
-            values = numbers[-2:] if section.startswith("consolidated") else numbers[:2]
+            matches = list(NUMBER.finditer(cells))
+            # Text extraction can glue adjacent columns: a decimal consumes
+            # digits from the next value, leaving an orphan comma. Admit only
+            # fully delimited cells; never guess a split or manufacture a
+            # conflicting official value from a partial regex match.
+            numeric = [m for m in matches if not m[0].endswith("%")]
+            selected = numeric[-2:] if section.startswith("consolidated") else numeric[:2]
+            # Consolidated statements can prefix values with note references;
+            # key tables can suffix them with “不适用”. Validate the selected
+            # money cells' own boundaries, not those legitimate annotations.
+            if any((m.start() > 0 and not cells[m.start()-1].isspace()
+                    and not m[0].startswith("-")) or
+                   (m.end() < len(cells) and not cells[m.end()].isspace()
+                    and cells[m.end()] != "-") for m in selected):
+                if gaps is not None:
+                    gaps.append("official_financial_cells_ambiguous:" + field)
+                continue
+            values = [m[0] for m in selected]
             if len(values) != 2:
                 continue
             rows.append(_row("financial", field, label, values, page["page"], header_page,
@@ -270,8 +286,9 @@ def parse_pages(pages, row, *, ts_code, cutoff, issuer_name, pdf_sha256):
         if info["kind"] == "operating_notice":
             numeric = operating_notice_rows(pages, period)
         else:
-            numeric = financial_rows(pages, period)
-            bridge, gaps = cash_bridge_rows(pages, period) if info["kind"] == "report" else ([], [])
+            numeric = financial_rows(pages, period, gaps=gaps)
+            bridge, bridge_gaps = cash_bridge_rows(pages, period) if info["kind"] == "report" else ([], [])
+            gaps.extend(bridge_gaps)
             numeric.extend(bridge)
     # Relevant numeric pages have priority; excerpts are bounded separately
     # from the full (bounded) text scan. Never claim complete document coverage.

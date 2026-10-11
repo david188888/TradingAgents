@@ -58,7 +58,9 @@ PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 
 
-def native_identity(request, *, workflow_version=WORKFLOW_VERSION):
+def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True):
+    from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
+
     return {
         **request.profile_identity(),
         "workflow_version": workflow_version,
@@ -69,6 +71,8 @@ def native_identity(request, *, workflow_version=WORKFLOW_VERSION):
         "config": prepare_effective_config(request.effective_config),
         "active_timeout_seconds": request.effective_config.get("evidence_timeout_seconds", 300),
         **({"focus_budget_policy": dict(FOCUS_BUDGET_POLICY)} if workflow_version == FOCUS_WORKFLOW_VERSION else {}),
+        **({"model_retry_policy": deepcopy(MODEL_RETRY_POLICY)}
+           if workflow_version == FOCUS_WORKFLOW_VERSION and model_retry_policy else {}),
     }
 
 
@@ -82,7 +86,8 @@ def validate_native_resume(store, run_id, request):
         raise CatalystCheckpointConflict("native resume profile mismatch")
     state = load_checkpoint(store, run_id)
     version = state["identity"].get("workflow_version") if state is not None else None
-    if version not in {FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version):
+    retry_policy = state is not None and "model_retry_policy" in state["identity"]
+    if version not in {FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -104,13 +109,16 @@ def validate_native_resume(store, run_id, request):
 
 class NativeRunner:
     def __init__(
-        self, observer, *, sources_factory=None, caller_factory=NativeModelCaller
+        self, observer, *, sources_factory=None, caller_factory=NativeModelCaller, chatgpt_auth=None
     ):
         self.observer, self.sources_factory, self.caller_factory = (
             observer,
             sources_factory,
             caller_factory,
         )
+        if chatgpt_auth is not None and caller_factory is NativeModelCaller:
+            from functools import partial
+            self.caller_factory = partial(NativeModelCaller, chatgpt_auth=chatgpt_auth)
 
     def _stage(self, journal, key, status):
         with journal.lock:
@@ -178,7 +186,9 @@ class NativeRunner:
         if resume:
             validate_native_resume(self.observer.store, run_id, request)
         version = load_checkpoint(self.observer.store, run_id)["identity"]["workflow_version"] if resume else WORKFLOW_VERSION
-        journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version), require_existing=resume)
+        retry_policy = not resume or "model_retry_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version,
+            model_retry_policy=retry_policy), require_existing=resume)
         seed = load_native_seed(journal.ledger)
         if seed is None:
             active()

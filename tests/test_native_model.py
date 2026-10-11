@@ -438,3 +438,31 @@ def test_sdk_observation_precedes_main_authorization_and_initialization_failure(
     assert observed.main_budget.value == 1
     assert observed.sdk_main.value == observed.sdk_repair.value == 0
     assert observed.sdk_total.completeness == 'complete'
+
+
+def test_subscription_admission_failure_is_persisted_without_repair(journal, monkeypatch):
+    from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+    main(journal)
+    def rejected(**kwargs):
+        raise ChatGPTError('subscription_sharing_usage_limit_exceeded', status=429, request_id='req_safe')
+    monkeypatch.setattr(adapter, 'create_llm_client', rejected)
+    config = {**CONFIG, 'llm_provider': 'chatgpt', 'backend_url': None, 'chatgpt_account_ref': 'cg_' + 'a' * 32}
+    with pytest.raises(adapter.NativeModelUnavailable):
+        caller(journal, effective_config=config, chatgpt_auth=object())('operating_quality', {'facts': []})
+    failure = journal.state['native.model_failures']['operating_quality']
+    assert failure['action'] == 'manage_usage' and failure['upstream_status'] == 429 and failure['request_id'] == 'req_safe'
+    assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 0
+    assert 'native.model.operating_quality.dispatched' not in journal.state
+
+
+def test_main_and_repair_usage_remain_distinct(journal, monkeypatch):
+    from langchain_core.messages import AIMessage
+    main(journal)
+    messages = iter([
+        AIMessage(content='invalid JSON', usage_metadata={'input_tokens':7, 'output_tokens':3, 'total_tokens':10}),
+        AIMessage(content=json.dumps(valid('operating_quality')), usage_metadata={'input_tokens':11, 'output_tokens':2, 'total_tokens':13}),
+    ])
+    monkeypatch.setattr(adapter, 'create_llm_client', lambda **kwargs: SimpleNamespace(get_llm=lambda: SimpleNamespace(invoke=lambda prompt: next(messages))))
+    caller(journal)('operating_quality', {'facts': []})
+    assert journal.state['native.model_usage']['operating_quality']['input_tokens'] == 7
+    assert journal.state['native.model_usage']['operating_quality.repair']['input_tokens'] == 11

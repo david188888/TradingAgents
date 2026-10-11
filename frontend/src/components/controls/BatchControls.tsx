@@ -1,3 +1,4 @@
+import { ChatGPTControls } from "./ChatGPTControls";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BatchSnapshotDTO, RunCreateRequestDTO } from "../../api/contracts";
 import {
@@ -230,14 +231,16 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
         >
           {cfg.config?.providers.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.id}
-              {p.configured ? " · 已配置" : " · 未配置"}
+              {p.id === "chatgpt" ? "ChatGPT 订阅" : p.id}
+              {p.id === "chatgpt" ? ((cfg.chatgpt.status ? cfg.chatgpt.account?.plan_enabled : p.configured) ? " · 已授权" : " · 待登录") : p.configured ? " · 已配置" : " · 未配置"}
             </option>
           ))}
         </select>
         {cfg.selectedProvider !== null && (
           <div className="key-status">
-            {cfg.selectedProvider.requires_api_key === false ? (
+            {cfg.llm_provider === "chatgpt" ? (
+              <span>{cfg.chatgpt.account?.plan_enabled ? "已授权" : "待登录"}</span>
+            ) : cfg.selectedProvider.requires_api_key === false ? (
               <span className="ok">无需 API Key</span>
             ) : cfg.configured_keys[cfg.llm_provider] === true ? (
               <span className="ok">已配置</span>
@@ -247,6 +250,8 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
           </div>
         )}
       </div>
+      {cfg.llm_provider === "chatgpt" && <ChatGPTControls auth={cfg.chatgpt} />}
+
       <div className="input-group">
         <label htmlFor="batch-quick">专项与挑战模型</label>
         <select
@@ -261,7 +266,7 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
             </option>
           ))}
         </select>
-        {cfg.quick_model_selection === "custom" ? <>
+        {cfg.llm_provider !== "chatgpt" && cfg.quick_model_selection === "custom" ? <>
           <label htmlFor="batch-quick-custom">专项与挑战模型 ID</label>
           <input id="batch-quick-custom" value={cfg.quick_custom_model_id} onChange={event => cfg.setQuickCustomModelId(event.target.value)} type="text" placeholder="填写 Provider 支持的实际模型 ID" />
         </> : null}
@@ -280,7 +285,7 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
             </option>
           ))}
         </select>
-        {cfg.deep_model_selection === "custom" ? <>
+        {cfg.llm_provider !== "chatgpt" && cfg.deep_model_selection === "custom" ? <>
           <label htmlFor="batch-deep-custom">综合模型 ID</label>
           <input id="batch-deep-custom" value={cfg.deep_custom_model_id} onChange={event => cfg.setDeepCustomModelId(event.target.value)} type="text" placeholder="填写 Provider 支持的实际模型 ID" />
         </> : null}

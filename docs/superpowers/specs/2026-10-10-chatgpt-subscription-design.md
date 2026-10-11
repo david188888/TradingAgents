@@ -1,7 +1,17 @@
 # ChatGPT 订阅接入与动态模型选择
 
-Status: Reviewed — 官方直连方向已获用户确认；独立设计审查通过，等待用户书面设计审阅。
+Status: Frozen Design
 Date: 2026-10-10
+
+Do not use this document as evidence of current implementation behavior.
+本设计已实施；官方登录、动态目录及最小真实调用已验证，完整公司研究未验收。
+当前行为见 [订阅配置](../../operations/chatgpt-subscription.md)，
+历史验收见 [实施记录](../plans/2026-10-11-chatgpt-subscription-implementation.md)。
+
+2026-10-11 决策更新：用户明确允许新 V6 基础研究对订阅普通临时 HTTP
+408/429/5xx 使用共享额度内的有限重试，取代下文初版的零透明重试要求。
+额度、权限、协议与未完成流仍不重试；客户端每次 invoke 只发一次请求，
+可选 focus 和历史无策略运行保持原语义。现役边界以订阅运维文档为准。
 
 ## 1. 目标与已确认需求
 
@@ -107,7 +117,7 @@ query 和请求 Authorization 不写 access log；listener 不使用默认 query
 
 ### 4.3 动态模型目录
 
-新增 `chatgpt_catalog.py`，使用所选注册的 access token 请求官方
+在 `chatgpt_auth.py` 中实现独立目录方法，使用所选注册的 access token 请求官方
 `GET /v1/models`。解析 `models` 数组，展示 `visibility == "list"` 的
 全部条目，保留服务端顺序、`display_name` 和精确 `slug`，不按 GPT 前缀、
 版本号或当前静态白名单过滤。quick/deep 两个选择器都使用这份完整列表。

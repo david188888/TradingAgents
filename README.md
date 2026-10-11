@@ -37,7 +37,7 @@ flowchart LR
 
 ## 快速开始
 
-需要 Python 3.10+ 和所选模型供应商的 API Key。默认模型为 DeepSeek V4.1 Flash（`deepseek-flash`）。
+需要 Python 3.10+。模型可使用所选供应商的 API Key，或通过官方登录授权使用 ChatGPT 订阅额度。默认模型为 DeepSeek V4.1 Flash（`deepseek-flash`）。
 
 ```bash
 git clone https://github.com/david188888/TradingAgents.git
@@ -47,10 +47,12 @@ source .venv/bin/activate
 pip install -e ".[china,web]"
 
 cp .env.example .env
-# 在 .env 中填写 DEEPSEEK_API_KEY，或配置其它模型供应商。
+# 在 .env 中填写 DEEPSEEK_API_KEY；也可启动后选择 ChatGPT 订阅并登录。
 
 tradingagents web --port 8765 --open
 ```
+
+订阅登录后，模型列表随账户官方目录更新；权限和额度由官方服务确认。详见 [ChatGPT 订阅配置](docs/operations/chatgpt-subscription.md)。
 
 Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记录保存在 `~/.tradingagents/`。凭据仅放在被 Git 忽略的本地配置中。数据权限与配置见 [.env.example](.env.example) 和 [Web 操作说明](docs/operations/evidence-research.md)。
 
