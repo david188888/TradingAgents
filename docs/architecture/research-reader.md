@@ -95,9 +95,26 @@ first screen. Original proposals and code-owned final handling are separate.
 The frontend process hook follows SSE sequence/role changes, coalesces reads,
 pauses hidden polling, uses bounded retries, and stops after terminal convergence.
 Role bodies are fetched only for the selected role, with run/role/sequence guards.
-In-progress stage links scroll the selected review into view and move focus to
-it; closing the review returns focus to the originating stage link. Saved but
-unpublished bodies retain their publication-pending status.
+Post-baseline focus reads support V6 and V7, retaining workflow and event-boundary
+identity guards; older question semantics do not fetch supplemental output.
+The running/terminal unpublished surface and the published Reader process view
+share `ResearchFlow.tsx`: a dependency overview groups the common evidence and
+independent specialists, then challenge, code checks, versioned replies,
+synthesis and publication, followed by requested focus. It describes input
+dependencies rather than claiming concurrent execution. Code checks and
+publication are two explanatory positions for one role, with shared selection
+and one count. Unknown workflows use a compatibility role list. Counts are read
+only from qualified public DTOs or records, never from hidden checkpoints.
+
+Stage links reveal an adjacent review on wide containers and a review below the
+map on narrow containers, moving focus to it; repeat clicks locate again and
+closing returns focus to the originating link. Only running roles and their
+incoming dependencies animate, and reduced-motion disables those effects.
+Execution completion and public output qualification remain separate. Terminal
+unpublished proposals say they were saved but not published, rather than waiting
+for publication. The UI says no final report only after the record API confirms
+`not_published`; loading and failed reads remain distinct and retryable. Agent
+review claims an existing final report only when it receives a qualified record.
 Entity links preserve the return reading position and highlight the exact output;
 drawer focus and Escape use the shared modal focus boundary.
 

@@ -1,5 +1,8 @@
 /** Native lifecycle over the real HTTP/SSE/store boundary, synthetic 600803 inputs. */
 import { test, expect, type Page } from "@playwright/test";
+import { AGENT_LABELS } from "../src/domain/readerExplanation";
+import type { AgentKey } from "../src/api/contracts";
+import AxeBuilder from "@axe-core/playwright";
 
 const TICKER = "600803.SS";
 
@@ -45,6 +48,44 @@ test("configured secrets remain absent from the completed DOM", async ({ page })
   expect(bodyText).not.toContain("DEEPSEEK_API_KEY");
 });
 
+test("published process keeps adjacent output and evidence navigation usable", async ({ page }) => {
+  await page.setViewportSize({width:1512,height:900});
+  await startRun(page);
+  await page.getByRole("button", {name:"研究过程",exact:true}).click();
+  await expect(page.getByRole("group", {name:"独立专项分工",exact:true})).toBeVisible();
+  await page.getByRole("button", {name:"查看经营研究环节与保存产物",exact:true}).click();
+  const detail=page.getByRole("region", {name:"所选环节详情",exact:true});
+  await expect(detail).toBeFocused();
+  await expect(detail).toContainText("固定测试假设：经营改善仍需验证。");
+  expect((await new AxeBuilder({page}).include('.research-flow').analyze()).violations).toEqual([]);
+  await detail.locator(".qr-fact-link").first().click();
+  const evidence=page.getByRole("dialog", {name:"依据与概念解释",exact:true});
+  await expect(evidence).toBeVisible();
+  await evidence.getByRole("button", {name:"关闭",exact:true}).click();
+  await expect(detail.locator(".qr-fact-link").first()).toBeFocused();
+  await page.locator(".qr-terms-footer button").first().click();
+  await expect(evidence).toBeVisible();
+  await evidence.getByRole("button", {name:"关闭",exact:true}).click();
+  await expect(page.locator('.rf-node[data-active="true"]')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("running motion follows actual state and reduced motion preference", async ({ page }) => {
+  await page.emulateMedia({reducedMotion:"reduce"});
+  await page.goto("/");
+  await page.getByLabel("股票代码").fill(TICKER);
+  await page.getByLabel("分析日期").fill("2026-09-30");
+  await page.getByRole("button", {name:"开始分析",exact:true}).click();
+  const active=page.locator('.rf-node[data-active="true"]').first();
+  await expect(active).toBeVisible();
+  expect(await active.locator('.rf-status').evaluate(el => getComputedStyle(el,"::before").animationName)).toBe("none");
+  await page.emulateMedia({reducedMotion:"no-preference"});
+  await expect.poll(async()=> page.locator('.rf-node[data-active="true"] .rf-status').first().evaluate(el => getComputedStyle(el,"::before").animationName)).toBe("rf-pulse");
+  await page.getByRole("button", {name:"取消研究",exact:true}).click();
+  await expect(page.getByRole("heading", {name:"研究已取消",exact:true})).toBeVisible();
+  await expect(page.locator('.rf-node[data-active="true"], .rf-connector[data-active="true"]')).toHaveCount(0);
+});
+
 test("cancel a running run transitions to cancelled", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("股票代码").fill(TICKER);
@@ -60,7 +101,7 @@ test("cancel a running run transitions to cancelled", async ({ page }) => {
   await expect(page.locator(`.history-item[data-run-id="${snapshot.run_id}"]`)).toContainText("已取消");
 });
 
-for (const viewport of [{ width: 1512, height: 900 }, { width: 1280, height: 650 }]) {
+for (const viewport of [{ width: 1512, height: 900 }, { width: 1280, height: 650 }, { width: 390, height: 844 }]) {
   test(`stage review reveals details and returns focus at ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/");
@@ -71,12 +112,13 @@ for (const viewport of [{ width: 1512, height: 900 }, { width: 1280, height: 650
     // It uses the same stage links as a running analysis, without paid calls.
     await page.getByRole("button", { name: "取消研究", exact: true }).click();
     await expect(page.getByRole("heading", { name: "研究已取消", exact: true })).toBeVisible();
-    const stages = page.locator(".native-progress .qr-process-step");
+    const stages = page.locator(".native-progress .rf-node");
     const detail = page.getByRole("region", { name: "所选环节详情", exact: true });
     for (let i = 0; i < await stages.count(); i++) {
       const stage = stages.nth(i);
-      const label = (await stage.getByRole("heading").innerText()).split(" · ")[0];
-      const entry = stage.getByRole("button", { name: "查看本环节与保存产物 →", exact: true });
+      const key = await stage.getAttribute("data-role") as AgentKey;
+      const label = AGENT_LABELS[key];
+      const entry = stage.getByRole("button", { name: /查看.*环节与保存产物/ });
       await entry.focus();
       await page.keyboard.press("Enter");
       await expect(detail).toBeFocused();
@@ -92,5 +134,8 @@ for (const viewport of [{ width: 1512, height: 900 }, { width: 1280, height: 650
       await expect(entry).toBeInViewport();
       await expect(detail).toHaveCount(0);
     }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.locator('.rf-node[data-active="true"]')).toHaveCount(0);
+    await expect(page.locator('.rf-connector[data-active="true"]')).toHaveCount(0);
   });
 }

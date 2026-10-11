@@ -4,8 +4,8 @@ import { CHECK_LABELS, LocalChallengeResult, LocalEvidenceChecks, claimText } fr
 import type { EvidenceSelection } from "./ReaderEvidence";
 import { FocusAnswer } from "./FocusResponse";
 
-export function ReaderAgentOutput({ role, process, output, error, record, entity, onRole, onInspect, onLocate, onRetry }: {
-  role: AgentKey; process: ReaderProcessDTO | null; output: ReaderAgentDTO | null; error: boolean; record: ResearchRecordV1DTO | null; entity: string | null;
+export function ReaderAgentOutput({ role, process, output, error, record, runStatus, entity, onRole, onInspect, onLocate, onRetry }: {
+  role: AgentKey; process: ReaderProcessDTO | null; output: ReaderAgentDTO | null; error: boolean; record: ResearchRecordV1DTO | null; runStatus?: string; entity: string | null;
   onRole(role: AgentKey): void; onInspect(selection: EvidenceSelection, trigger?: HTMLElement): void; onLocate(selection: EvidenceSelection): void; onRetry(): void;
 }) {
   const meta = process?.roles.find(r => r.role_key === role), p = output?.proposal;
@@ -16,9 +16,9 @@ export function ReaderAgentOutput({ role, process, output, error, record, entity
   };
   return <section className="qr-agent-review" aria-label="Agent 产物回顾">
     <div className="qr-agent-tabs" aria-label="选择角色">{Object.entries(AGENT_LABELS).filter(([key])=>!(key === "focus_response" || key.startsWith("response_")) || process?.roles.some(r=>r.role_key === key)).map(([key, label]) => <button key={key} aria-pressed={role === key} onClick={() => onRole(key as AgentKey)}>{label}{key === "evidence" || key === "code_checks" ? " · 代码" : ""}</button>)}</div>
-    <header><span className="qr-eyebrow">{meta?.origin === "code" ? "代码环节" : "Agent 保存产物"}</span><h2>{AGENT_LABELS[role]}</h2><p>{meta?.purpose}</p><p className="qr-meta">{STATUS_LABELS[meta?.status ?? ""] ?? "状态未记录"} · {meta ? outputLabel(meta.output_availability, meta.reason_code) : "正在读取保存状态"}</p></header>
+    <header><span className="qr-eyebrow">{meta?.origin === "code" ? "代码环节" : "Agent 保存产物"}</span><h2>{AGENT_LABELS[role]}</h2><p>{meta?.purpose}</p><p className="qr-meta">{STATUS_LABELS[meta?.status ?? ""] ?? "状态未记录"} · {meta ? outputLabel(meta.output_availability, meta.reason_code, runStatus) : "正在读取保存状态"}</p></header>
     <div className="qr-method-note"><h3>使用了什么输入</h3><p>{output?.input_description ?? "等待读取已保存的输入范围说明。"}</p><p className="qr-meta">这里只展示研究字段，不包含模型对话、提示词或内部思考。</p></div>
-    {error ? <p role="status">产物暂时无法读取。<button onClick={onRetry}>重试读取</button></p> : !output ? <p aria-busy="true">正在读取所选角色的保存产物…</p> : output.availability !== "available" ? <p role="status">{outputLabel(output.availability, output.reason_code)}。最终报告仍可按原保存记录阅读。</p> : <>
+    {error ? <p role="status">产物暂时无法读取。<button onClick={onRetry}>重试读取</button></p> : !output ? <p aria-busy="true">正在读取所选角色的保存产物…</p> : output.availability !== "available" ? <p role="status">{outputLabel(output.availability, output.reason_code, runStatus)}。{record?.assessment ? "最终报告仍可按原保存记录阅读。" : "当前没有可展示的合格产物正文。"}</p> : <>
       {p && "answer" in p ? <><p className="qr-meta">此回应引用基础研究，不是被引用事实或推断的作者，也不会改写基础综合。</p><FocusAnswer proposal={p} onInspect={onInspect}/></> : null}
       {p && "hypotheses" in p ? <>
         <h3>全部研究假设（{p.hypotheses.length}）</h3>

@@ -39,4 +39,15 @@ describe("useResearchRecord", () => {
     renderHook(() => useResearchRecord(null));
     expect(get).not.toHaveBeenCalled();
   });
+  it("retries a failed read without creating or backfilling research", async () => {
+    get.mockRejectedValueOnce(new Error("network"));
+    get.mockResolvedValueOnce(missing("one"));
+    const { result } = renderHook(() => useResearchRecord("one"));
+    await waitFor(() => expect(result.current.error).toBe(true));
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.response).toEqual(missing("one")));
+    expect(result.current.error).toBe(false);
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get.mock.calls.map(call => call[0])).toEqual(["one", "one"]);
+  });
 });

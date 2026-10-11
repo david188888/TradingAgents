@@ -58,12 +58,12 @@ describe("evidence_v1 owns its single native Reader", () => {
     // An old contract read cannot override the producer profile.
     vi.mocked(useCatalyst).mockReturnValue({ state: { state: "ready" }, loading: false, error: null, kase: null,
       screen: null, stageStatus: null, stageDurations: null, stageCounts: null, uncommittedCandidates: 0 } as unknown as ReturnType<typeof useCatalyst>);
-    vi.mocked(useResearchRecord).mockReturnValue({ response: nativeRecord("company_research"), loading: false, error: false });
+    vi.mocked(useResearchRecord).mockReturnValue({ response: nativeRecord("company_research"), loading: false, error: false, retry: vi.fn() });
     install();
   });
 
   it.each(["company_research", "catalyst_research", "holding_review"] as const)("renders only the native brief and quantitative background for %s", (mode) => {
-    vi.mocked(useResearchRecord).mockReturnValue({ response: nativeRecord(mode), loading: false, error: false });
+    vi.mocked(useResearchRecord).mockReturnValue({ response: nativeRecord(mode), loading: false, error: false, retry: vi.fn() });
     const { container } = render(<WorkbenchLayout />);
     expect(screen.getByText("经营事实可复核，持续性仍待核查。")).toBeVisible();
     expect(screen.getByText("1.2%")).toBeVisible();
@@ -76,12 +76,12 @@ describe("evidence_v1 owns its single native Reader", () => {
   });
 
   it("keeps missing publication unavailable instead of falling back to a case summary", () => {
-    vi.mocked(useResearchRecord).mockReturnValue({ response: { state: "unavailable", schema_version: 1, run_id: RUN_ID, reason_code: "not_published" }, loading: false, error: false });
+    vi.mocked(useResearchRecord).mockReturnValue({ response: { state: "unavailable", schema_version: 1, run_id: RUN_ID, reason_code: "not_published" }, loading: false, error: false, retry: vi.fn() });
     render(<WorkbenchLayout />);
-    expect(screen.getByText("本次没有合格的已发布研究记录。")).toBeVisible();
+    expect(screen.getByText("本次未生成可读最终报告。")).toBeVisible();
     expect(screen.queryByTestId("legacy-reader")).toBeNull();
     expect(screen.queryByTestId("catalyst-reader")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "技术诊断与执行记录" }));
+    fireEvent.click(screen.getByRole("button", { name: /技术诊断与执行记录/ }));
     expect(screen.getByTestId("native-audit")).toBeInTheDocument();
   });
 
@@ -101,17 +101,18 @@ describe("evidence_v1 owns its single native Reader", () => {
 
   it("shows generic native stages while running without final or classic role claims", () => {
     install("running");
-    vi.mocked(useResearchRecord).mockReturnValue({ response: null, loading: false, error: false });
+    vi.mocked(useResearchRecord).mockReturnValue({ response: null, loading: false, error: false, retry: vi.fn() });
     render(<WorkbenchLayout />);
-    expect(screen.getByText("正在把证据整理成可核查的回答")).toBeVisible();
-    expect(screen.getByText("证据冻结 · 已完成")).toBeVisible();
+    expect(screen.getByText("正在形成可核查的研究判断")).toBeVisible();
+    const evidence = screen.getByRole("heading", { name: "证据冻结" }).closest("article")!;
+    expect(evidence).toHaveTextContent("已完成");
     expect(screen.queryByText("多方研究员")).toBeNull();
     expect(screen.queryByRole("region", { name: "问题优先研究报告" })).toBeNull();
     expect(vi.mocked(useResearchRecord).mock.calls.at(-1)?.[0]).toBeNull();
   });
 
   it("never shows an adapted or assessment-free record as a native completed judgement", () => {
-    vi.mocked(useResearchRecord).mockReturnValue({ response: stored, loading: false, error: false });
+    vi.mocked(useResearchRecord).mockReturnValue({ response: stored, loading: false, error: false, retry: vi.fn() });
     render(<WorkbenchLayout />);
     expect(screen.getByText(/未包含原生研究判断/)).toBeVisible();
     expect(screen.queryByRole("region", { name: "问题优先研究报告" })).toBeNull();
