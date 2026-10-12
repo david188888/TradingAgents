@@ -142,8 +142,13 @@ comparisons still require the same exact family. Tencent raw requests include
 the mandatory empty adjustment field. Public adjustment applies Sina's divisor
 to all OHLC and re-anchors to the last settled session, checking the complete
 calendar, current-cutoff capture and input hash. Generic Tencent qfq remains
-unqualified; older cutoffs still need an archived factor vintage. SZSE calendar
-is not borrowed for Shanghai/Beijing securities; those currently use the backup.
+unqualified; older cutoffs still need an archived factor vintage. The exchange
+session calendar is derived first from the SSE composite daily series, whose
+bar dates are the open days; only the dates are read and no index price enters
+evidence. The official SZSE month API and Tushare `trade_cal` remain as ordered
+fallbacks. The SZSE calendar is not borrowed for Shanghai/Beijing securities,
+and because the derived calendar is keyless it no longer depends on a vendor
+with a daily request cap.
 
 Programmatic `effective_config.evidence_source_vendors` can replace any of
 `identity`, `financial`, `calendar`, `price`, `events`, `valuation`, `forecasts`, `peers` with an ordered subset of
@@ -398,11 +403,21 @@ availability never establishes that all economic questions are answered.
 
 V4 adds optional capability `valuation`. A Tencent snapshot requires exact code,
 positive finite price/market cap, at least one positive multiple and a timestamp
-on the last settled exchange session. Shanghai/Beijing still require their own
-qualified calendar via Tushare; the SZSE calendar is not borrowed. Current quote
-and history are admitted only when captured on the requested Shanghai cutoff
-calendar date. Historical cutoff requests keep valuation unavailable without an
-archived vintage.
+on the last settled exchange session. The last settled session comes from the
+derived exchange calendar above, so Shanghai/Beijing no longer need a Tushare
+calendar and the SZSE calendar is still not borrowed. Current quote and history
+are admitted only when captured on the requested Shanghai cutoff calendar date.
+Historical cutoff requests keep valuation unavailable without an archived
+vintage. Identity, calendar and vintage are recorded as separate limitation
+codes, so a blocked run states which condition failed instead of reporting one
+opaque reason.
+
+The `valuation_context` check treats a qualified target snapshot and a dated
+institution forecast as independent inputs: the forecast carries its own
+publication date and is admitted even when no snapshot qualifies, while
+same-session peer comparison still requires the target snapshot to anchor the
+session. A frozen forecast is therefore never discarded because a quote was
+unavailable.
 
 Tushare `daily_basic` history requests at most 1095 calendar days and 1000 rows,
 checks code, dates, duplicates and the last settled session, and shares the

@@ -36,6 +36,12 @@ from tradingagents.research.verification_tools import _financial_operand, _Unava
 
 NEW_SOURCES = frozenset({NUMERIC_SOURCE}) | FORECAST_SOURCES | PEER_SOURCES
 SUPPLEMENTAL_VALUATION_SOURCES = FORECAST_SOURCES | PEER_SOURCES
+# Bumped when a check's decision rule changes. v2 admits a dated institution
+# forecast without a target valuation snapshot: the forecast carries its own
+# publication date, and the snapshot was previously able to discard evidence
+# that had already been collected and frozen. Records written under v1 keep
+# their own outcomes; only new records use this rule.
+CALCULATION_VERSION = "minimum-evidence-v2"
 QUESTIONS = {
     "operating_disclosures": ("operating_disclosures.current_period_coverage", "当前报告期的经营判断是否有正式财务与定量运营披露支撑？"),
     "cash_conversion": ("cash_conversion.reported_bridge", "当前及上年同期间的净利润到经营现金流桥是否完整、可核对？"),
@@ -312,14 +318,22 @@ def _valuation(record):
                 selection = (source, parsed)
             else:
                 peers.append((source, parsed))
-    if target is None:
-        return _check("valuation_context", status="unavailable", missing=("qualified_target_snapshot",), limitations=("historical_positioning_can_still_be_described",))
-    sources, satisfied, missing = [target[0].evidence_id], ["qualified_target_snapshot"], []
+    sources = []
+    satisfied, missing = [], []
     eligible = []
-    if selection:
-        codes = {c.ts_code for c in selection[1].candidates}
-        names = {c.ts_code: c.name for c in selection[1].candidates}
-        eligible = [(s, q) for s, q in peers if q.ts_code in codes and q.name == names[q.ts_code] and q.as_of.isoformat() == target[1]["as_of"] and q.pe_ttm is not None and q.pb is not None]
+    # Same-session peers are anchored to the target snapshot's own session, so
+    # that comparison needs the snapshot. The dated institution forecast does
+    # not: it carries its own publication date and is independently qualified.
+    # A missing snapshot must therefore not discard forecasts already frozen.
+    if target is None:
+        missing.append("qualified_target_snapshot")
+    else:
+        sources.append(target[0].evidence_id)
+        satisfied.append("qualified_target_snapshot")
+        if selection:
+            codes = {c.ts_code for c in selection[1].candidates}
+            names = {c.ts_code: c.name for c in selection[1].candidates}
+            eligible = [(s, q) for s, q in peers if q.ts_code in codes and q.name == names[q.ts_code] and q.as_of.isoformat() == target[1]["as_of"] and q.pe_ttm is not None and q.pb is not None]
     # A duplicate wrapper/quote never increases sample size.
     unique_peers = {q.ts_code: (s, q) for s, q in eligible}
     observations = []
@@ -368,6 +382,7 @@ def compute_checks(record):
     checks = (_operating(record, rows, period), _cash(record, rows, period), _valuation(record)) if _identity_qualified(record) else tuple(
         _check(key, status="unavailable", missing=("security_identity_unqualified",)) for key in QUESTIONS)
     return EvidenceChecksV1(run_id=record.run_id, ticker=record.ticker, analysis_date=record.analysis_date,
+        calculation_version=CALCULATION_VERSION,
         input_snapshot_id=record.snapshots[0].snapshot_id, input_evidence_ids=tuple(s.evidence_id for s in frozen), input_sha256=canonical_sha256(inputs),
         checks=checks)
 

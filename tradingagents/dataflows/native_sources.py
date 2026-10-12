@@ -13,10 +13,12 @@ from tradingagents.dataflows.catalyst_sources import CatalystSources
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.china_specialty import get_a_share_cninfo_announcements
 from tradingagents.dataflows.native_qualification import (
+    CALENDAR_INDEX_SYMBOL,
     NativeSourceUnavailable,
     api_date,
     prepare_public_prices,
     qualify_identity,
+    qualify_session_calendar,
     sina_factors,
     sina_identity,
     sina_statement,
@@ -47,12 +49,22 @@ SOURCE_ROUTING_VERSION = "native-public-sources-v1"
 DEFAULT_CHAINS = {
     "identity": ("eastmoney", "sina", "tushare"),
     "financial": ("sina", "tushare"),
-    "calendar": ("szse", "tushare"),
+    # The exchange session calendar walks the index daily series first.  Its
+    # keyless HTTP endpoint carries no daily quota, while the official SZSE
+    # month API only answers for .SZ and the tushare trade_cal endpoint is
+    # capped per day.  Keeping tencent in front stops a quota-exhausted vendor
+    # from removing the calendar -- and with it price, valuation and peer
+    # context -- for every later run that day.
+    "calendar": ("tencent", "szse", "tushare"),
     "price": ("tencent", "tushare"),
     "events": ("cninfo",),
 }
 SINA_FINANCE_URL = "https://quotes.sina.cn/cn/api/openapi.php/CompanyFinanceService.getFinanceReport2022"
 SZSE_CALENDAR_URL = "https://www.szse.cn/api/report/exchange/onepersistenthour/monthList"
+TENCENT_CALENDAR_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+# The index walk only needs to reach `start`, at most 500 calendar days back.
+# The endpoint caps a single response, so ask for a floor above that span.
+TENCENT_CALENDAR_REQUEST_ROWS = 1000
 STATEMENT_FIELDS = {
     "income": "ts_code,ann_date,f_ann_date,end_date,report_type,revenue,n_income,n_income_attr_p",
     "balancesheet": "ts_code,ann_date,f_ann_date,end_date,report_type,total_assets,total_liab",
@@ -245,6 +257,12 @@ class NativeSources(CatalystSources):
                 if vendor == "tushare":
                     rows = self.tushare("trade_cal", "cal_date,is_open", exchange={"SZ": "SZSE", "SH": "SSE", "BJ": "BSE"}[ts_code.split(".")[1]],
                         start_date=start.replace("-", ""), end_date=inputs.cutoff.replace("-", ""))
+                elif vendor == "tencent":
+                    payload = self._get(TENCENT_CALENDAR_URL, params={
+                        "param": f"{CALENDAR_INDEX_SYMBOL},day,,,{TENCENT_CALENDAR_REQUEST_ROWS},",
+                    }, referer="https://gu.qq.com/")
+                    rows = qualify_session_calendar(payload, index_symbol=CALENDAR_INDEX_SYMBOL,
+                        start=start, cutoff=inputs.cutoff)
                 else:
                     if not ts_code.endswith(".SZ"):
                         raise NativeSourceUnavailable("calendar_exchange_unsupported")

@@ -6,7 +6,7 @@ import calendar
 import hashlib
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 
@@ -16,6 +16,12 @@ from tradingagents.dataflows.tushare_price_history import (
     _positive,
     settled_sessions,
 )
+
+# Keyless, quota-free session index.  The SSE composite is fetched here only to
+# read its bar dates back as the exchange session calendar: a bar exists if and
+# only if the exchange traded that day, which is the same fact a vendor calendar
+# endpoint reports.  No price from this series enters research evidence.
+CALENDAR_INDEX_SYMBOL = "sh000001"
 
 
 class NativeSourceUnavailable(ValueError):
@@ -187,6 +193,47 @@ def szse_month(payload, year, month):
         rows.append({"cal_date": day.replace("-", ""), "is_open": flag})
     if seen != expected:
         raise NativeSourceUnavailable("calendar_window_not_complete")
+    return rows
+
+
+def qualify_session_calendar(payload, *, index_symbol, start, cutoff):
+    """Derive the daily session calendar from one index daily-bar response.
+
+    A dated bar on a broad index exists only for a session the exchange traded,
+    so the bar dates are the open days of the requested window.  The returned
+    shape matches ``szse_month`` so ``settled_sessions`` can consume either
+    source without branching.  Only bar dates are read; no price is admitted.
+    """
+    try:
+        begin, end = date.fromisoformat(start), date.fromisoformat(cutoff)
+    except (TypeError, ValueError):
+        raise NativeSourceUnavailable("calendar_window_invalid") from None
+    if end < begin or (end - begin).days > 500:
+        raise NativeSourceUnavailable("calendar_window_invalid")
+    data = payload.get("data") if isinstance(payload, dict) else None
+    node = data.get(index_symbol) if isinstance(data, dict) else None
+    if not isinstance(node, dict):
+        raise NativeSourceUnavailable("calendar_invalid_shape")
+    bars = node.get("day")
+    if bars is None:
+        bars = node.get("qfqday")
+    if not isinstance(bars, list) or not bars:
+        raise NativeSourceUnavailable("calendar_invalid_shape")
+    sessions = set()
+    for bar in bars:
+        day = bar[0] if isinstance(bar, (list, tuple)) and bar else None
+        if not isinstance(day, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise NativeSourceUnavailable("calendar_invalid_row")
+        sessions.add(day)
+    # A truncated index series would silently mark real sessions as closed, so
+    # require the walk to reach the requested start before trusting the set.
+    if min(sessions) > start or max(sessions) < cutoff:
+        raise NativeSourceUnavailable("calendar_window_not_complete")
+    rows, cursor = [], begin
+    while cursor <= end:
+        iso = cursor.isoformat()
+        rows.append({"cal_date": iso.replace("-", ""), "is_open": "1" if iso in sessions else "0"})
+        cursor += timedelta(days=1)
     return rows
 
 

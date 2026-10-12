@@ -24,6 +24,7 @@ import io
 import json
 import math
 import re
+import socket
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -84,20 +85,32 @@ def _bs_code(code: str, capability: str) -> str:
     )
 
 
+# baostock's transport sets no socket timeout of its own: its receive loop is a
+# bare ``while True: recv(8192)``, so a stalled server blocks the calling thread
+# forever. This adapter is called from bounded research collection, so cap every
+# baostock socket at a fixed deadline and restore the process default after.
+_BS_SOCKET_TIMEOUT_SECONDS = 30.0
+
+
 @contextmanager
 def _bs_session():
     """baostock login context manager; always logs out, even on error."""
     import baostock as bs  # lazy: optional dependency
 
-    lg = bs.login()
-    if getattr(lg, "error_code", "0") != "0":
-        raise AshareCapabilityUnavailableError(
-            "baostock", "baostock", f"login failed: {lg.error_code} {lg.error_msg}"
-        )
+    previous_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(_BS_SOCKET_TIMEOUT_SECONDS)
     try:
-        yield bs
+        lg = bs.login()
+        if getattr(lg, "error_code", "0") != "0":
+            raise AshareCapabilityUnavailableError(
+                "baostock", "baostock", f"login failed: {lg.error_code} {lg.error_msg}"
+            )
+        try:
+            yield bs
+        finally:
+            bs.logout()
     finally:
-        bs.logout()
+        socket.setdefaulttimeout(previous_timeout)
 
 
 def _bs_to_df(rs: Any) -> pd.DataFrame:
