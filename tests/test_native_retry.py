@@ -88,10 +88,12 @@ def test_permanent_errors_do_not_retry_or_repair(journal, monkeypatch, error):
 @pytest.mark.parametrize("code,status,retries", [
     ("request_failed", 408, 1), ("rate_limit_exceeded", 429, 1),
     ("request_failed", 503, 1),
+    ("transport_timeout", None, 1), ("transport_connection_error", None, 1),
     ("subscription_sharing_usage_limit_exceeded", 429, 0),
     ("authorization_rejected", 503, 0),
     ("subscription_sharing_unsupported_capability", 400, 0),
     ("stream_incomplete", None, 0),
+    ("deadline_exceeded", None, 0),
 ])
 def test_subscription_retry_keeps_dispatch_budget_and_permanent_boundaries(
     journal, monkeypatch, code, status, retries,

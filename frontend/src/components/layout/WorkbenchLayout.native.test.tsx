@@ -81,7 +81,7 @@ describe("evidence_v1 owns its single native Reader", () => {
     expect(screen.getByText("本次未生成可读最终报告。")).toBeVisible();
     expect(screen.queryByTestId("legacy-reader")).toBeNull();
     expect(screen.queryByTestId("catalyst-reader")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /技术诊断与执行记录/ }));
+    fireEvent.click(screen.getByRole("button", { name: /研究检查与审计/ }));
     expect(screen.getByTestId("native-audit")).toBeInTheDocument();
   });
 

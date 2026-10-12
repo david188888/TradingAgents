@@ -55,6 +55,7 @@ class ChatGPTClient(BaseLLMClient):
         if end <= time.monotonic():
             raise ChatGPTError("deadline_exceeded")
         generation = None
+        received_data = False
 
         async def watch():
             while True:
@@ -67,7 +68,7 @@ class ChatGPTClient(BaseLLMClient):
                 await asyncio.sleep(0.1)
 
         async def request():
-            nonlocal generation
+            nonlocal generation, received_data
             access, generation = await asyncio.to_thread(
                 self.auth.access, self.account_ref, timeout=min(10, max(.001, end - time.monotonic())), for_inference=True,
             )
@@ -94,6 +95,7 @@ class ChatGPTClient(BaseLLMClient):
                             if event is not None:
                                 return event
                     elif line.startswith("data:"):
+                        received_data = True
                         payload.append(line[5:].lstrip())
                 if payload:
                     event = self._event("\n".join(payload), response.headers.get("x-request-id"), finalized)
@@ -118,7 +120,13 @@ class ChatGPTClient(BaseLLMClient):
                 await asyncio.to_thread(self.auth.pause_usage, self.account_ref)
             raise
         except httpx.TimeoutException:
-            raise ChatGPTError("deadline_exceeded") from None
+            code = "deadline_exceeded" if time.monotonic() >= end else (
+                "stream_incomplete" if received_data else "transport_timeout")
+            raise ChatGPTError(code) from None
+        except httpx.NetworkError:
+            code = "deadline_exceeded" if time.monotonic() >= end else (
+                "stream_incomplete" if received_data else "transport_connection_error")
+            raise ChatGPTError(code) from None
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
             raise ChatGPTError("request_failed") from None
         finally:

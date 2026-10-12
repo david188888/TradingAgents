@@ -1,5 +1,5 @@
 import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
-import { AGENT_LABELS, countLabel, DISPOSITION_LABELS, dimensionLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
+import { AGENT_LABELS, DISPOSITION_LABELS, dimensionLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 import { CHECK_LABELS, LocalChallengeResult, LocalEvidenceChecks, claimText } from "./ResearchRecordSection";
 import type { EvidenceSelection } from "./ReaderEvidence";
 import { FocusAnswer } from "./FocusResponse";
@@ -65,6 +65,6 @@ export function ReaderAgentOutput({ role, process, output, error, record, runSta
       </> : null}
       <details><summary>{output.origin === "model" ? "保存的结构化提议（JSON）" : "保存的代码产物字段"}</summary><pre>{JSON.stringify(output.origin === "model" ? output.proposal : { code_sections:output.code_sections, evidence_checks:record?.evidence_checks, verifications:record?.verifications, assessment:record?.assessment }, null, 2)}</pre></details>
     </>}
-    {meta ? <details><summary>执行统计与记录口径</summary><p>主分析预算授权：{countLabel(meta.main_budget)}；SDK 主发出授权：{countLabel(meta.sdk_main)}；SDK 修复发出授权：{countLabel(meta.sdk_repair)}。</p>{meta.focus_budget ? <p>补充回应预算授权：{countLabel(meta.focus_budget)}；SDK 补充发出授权：{countLabel(meta.sdk_focus)}。</p> : null}<p>授权不证明网络送达、供应商接收、成功完成或计费。</p></details> : null}
+    {meta?.status === "failed" ? process?.model_failures?.filter(item => item.stage === role).map((item, index) => <p role="status" key={index}>{item.safe_message}</p>) : null}
   </section>;
 }

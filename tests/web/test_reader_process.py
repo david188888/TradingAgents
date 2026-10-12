@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from tests.test_native_research import Caller, seed_for
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
+from tradingagents.execution.native_runner import NativeRunner
 from tradingagents.execution.output_publisher import promote_derived_public_artifact
 from tradingagents.graph.native_research import run_native_research
 from tradingagents.observability.observer import DurableRunObserver
@@ -269,3 +270,22 @@ def test_historical_partitions_cannot_admit_later_source_families(tmp_path, monk
     assert saved_dimensions_match(
         record, SynthesisProposalV1.model_validate(proposal).dimensions, "evidence-production-v2"
     )
+
+
+def test_failed_output_diagnostics_are_closed_and_exclude_repaired_success(tmp_path):
+    store, run, journal, _ = saved(tmp_path, publish=False)
+    runner = NativeRunner(observer=journal.observer)
+    runner._stage(journal, 'operating_quality', 'failed')
+    runner._stage(journal, 'market_context', 'completed')
+    journal.put('native.model_diagnostics', {
+        'operating_quality.main': {'category': 'invalid_json'},
+        'operating_quality.repair': {'category': 'schema_validation', 'issues': [{'path': ['PRIVATE'], 'code': 'PRIVATE'}]},
+        'market_context.main': {'category': 'schema_validation'},
+    })
+    before = store.read_events(run)
+    process = project_reader_process(store, run)
+    assert [(f['stage'], f['category']) for f in process['model_failures']] == [('operating_quality', 'schema_validation')]
+    assert 'PRIVATE' not in json.dumps(process, ensure_ascii=False)
+    assert store.read_events(run) == before
+    runner._stage(journal, 'operating_quality', 'completed')
+    assert project_reader_process(store, run)['model_failures'] == []

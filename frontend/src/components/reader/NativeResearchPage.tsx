@@ -36,7 +36,7 @@ export function NativeResearchPage({ runId, ticker, status, state, response, mod
   return <section className="native-research-page" aria-label="证据研究" data-run={runId}>
     <header className="reader-surface-head">
       <div><span className="eyebrow">公司证据研究</span><h2>{ticker}</h2></div>
-      {completed || failed || stopped ? <button type="button" onClick={onOpenAudit}>技术诊断与执行记录 ↗</button> : null}
+      {completed || failed || stopped ? <button type="button" onClick={onOpenAudit}>研究检查与审计 ↗</button> : null}
     </header>
     <ModelFailureNotice failures={process.response?.model_failures ?? []} />
     {completed || record ? <section data-main-summary="native_research">

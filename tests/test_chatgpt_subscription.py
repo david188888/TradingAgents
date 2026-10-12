@@ -334,6 +334,50 @@ def test_responses_payload_completion_and_usage(oauth):
     }
 
 
+@pytest.mark.parametrize("error,expected", [
+    (httpx.ReadTimeout("PRIVATE"), "transport_timeout"),
+    (httpx.ConnectError("PRIVATE"), "transport_connection_error"),
+    (httpx.RemoteProtocolError("PRIVATE"), "request_failed"),
+])
+def test_early_transport_failure_preserves_retry_classification(oauth, error, expected):
+    auth, _, _, _, connect = oauth
+    def handler(request):
+        raise error
+    client = ChatGPTClient("future-model-z", auth=auth, account_ref=connect(),
+        stream_transport=httpx.MockTransport(handler), deadline=lambda: time.monotonic() + 30)
+    with pytest.raises(ChatGPTError) as caught:
+        client.get_llm().invoke("prompt")
+    assert caught.value.diagnostic.upstream_code == expected
+    assert "PRIVATE" not in str(caught.value)
+
+
+@pytest.mark.parametrize("error", [httpx.ReadTimeout("PRIVATE"), httpx.ReadError("PRIVATE")])
+def test_partial_stream_transport_failure_is_not_replayed(oauth, error):
+    auth, _, _, _, connect = oauth
+    class Stream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'data: {"type":"response.output_text.delta","delta":"PRIVATE"}\n\n'
+            raise error
+    client = ChatGPTClient("future-model-z", auth=auth, account_ref=connect(),
+        stream_transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=Stream())))
+    with pytest.raises(ChatGPTError) as caught:
+        client.get_llm().invoke("prompt")
+    assert caught.value.diagnostic.category == "stream_incomplete"
+
+
+@pytest.mark.parametrize("error", [httpx.ReadTimeout("PRIVATE"), httpx.ConnectError("PRIVATE")])
+def test_transport_error_at_run_deadline_is_not_retryable(oauth, error):
+    auth, _, _, _, connect = oauth
+    async def handler(request):
+        await asyncio.sleep(.04)
+        raise error
+    client = ChatGPTClient("future-model-z", auth=auth, account_ref=connect(),
+        stream_transport=httpx.MockTransport(handler), deadline=lambda: time.monotonic() + .02)
+    with pytest.raises(ChatGPTError) as caught:
+        client.get_llm().invoke("prompt")
+    assert caught.value.diagnostic.category == "deadline_exceeded"
+
+
 @pytest.mark.parametrize("terminal", ["completed", "missing", "failed"])
 def test_completed_items_require_terminal_completion(oauth, terminal):
     auth, _, _, _, connect = oauth

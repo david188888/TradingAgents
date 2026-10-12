@@ -1,12 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, getAuditDetail, getAuditSummary } from "../api/client";
-import type { AuditDetailDTO, AuditSelectionDTO, AuditSummaryDTO } from "../api/contracts";
-import { useAuditDetail, useAuditSummary } from "./useAudit";
+import { ApiError, getAuditDetail, getAuditSummary, getReaderProcess, getResearchRecord } from "../api/client";
+import type { AuditDetailDTO, AuditSelectionDTO, AuditSummaryDTO, ReaderProcessDTO } from "../api/contracts";
+import { useAuditDetail, useAuditResearch, useAuditSummary } from "./useAudit";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
-  return { ...actual, getAuditSummary: vi.fn(), getAuditDetail: vi.fn() };
+  return { ...actual, getAuditSummary: vi.fn(), getAuditDetail: vi.fn(), getReaderProcess: vi.fn(), getResearchRecord: vi.fn() };
 });
 
 const mockedSummary = vi.mocked(getAuditSummary);
@@ -181,5 +181,41 @@ describe("Audit hooks", () => {
     await waitFor(() => expect(refreshSummary).toHaveBeenCalledTimes(1));
     expect(result.current.detail).toBeNull();
     expect(result.current.error).toBeNull();
+  });
+});
+
+const observed = {value:0, completeness:"complete", basis:"test"} as const;
+const publicProcess = (run: string, sequence = 24): ReaderProcessDTO => ({
+  schema_version:1, run_id:run, source_sequence:sequence, profile:"evidence_v1", workflow_version:"evidence-production-v7",
+  availability:"partial", reason_code:"publication_pending", question_origin:"default", primary_selection:"not_recorded",
+  counts:{main_budget:observed, repair_budget:observed, sdk_main:observed, sdk_repair:observed, sdk_total:observed, data_capability:observed, data_http:observed}, roles:[], claim_origins:[], source_failures:[],
+});
+
+describe("research audit reads", () => {
+  beforeEach(() => { vi.mocked(getReaderProcess).mockReset(); vi.mocked(getResearchRecord).mockReset(); });
+  it("does no research reads in technical mode, preserves partial failures, and rejects a different sequence", async () => {
+    vi.mocked(getReaderProcess).mockResolvedValue(publicProcess("run_one"));
+    vi.mocked(getResearchRecord).mockRejectedValue(new Error("PRIVATE"));
+    const {result, rerender} = renderHook(({enabled, sequence}) => useAuditResearch("run_one", sequence, enabled), {initialProps:{enabled:false, sequence:24}});
+    expect(getReaderProcess).not.toHaveBeenCalled();
+    rerender({enabled:true, sequence:24});
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.process?.run_id).toBe("run_one");
+    expect(result.current.error).toBe(true);
+    expect(result.current.record).toBeNull();
+    rerender({enabled:true, sequence:25});
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.process).toBeNull();
+  });
+  it("ignores a late response after switching runs", async () => {
+    const old = deferred<ReaderProcessDTO>();
+    vi.mocked(getReaderProcess).mockReturnValueOnce(old.promise).mockResolvedValue(publicProcess("run_two"));
+    vi.mocked(getResearchRecord).mockImplementation(async run => ({state:"unavailable",schema_version:1,run_id:run,reason_code:"not_published"}));
+    const {result, rerender} = renderHook(({run}) => useAuditResearch(run, 24, true), {initialProps:{run:"run_one"}});
+    rerender({run:"run_two"});
+    await waitFor(() => expect(result.current.process?.run_id).toBe("run_two"));
+    await act(async () => old.resolve(publicProcess("run_one")));
+    expect(result.current.process?.run_id).toBe("run_two");
+    expect(result.current.record?.run_id).toBe("run_two");
   });
 });

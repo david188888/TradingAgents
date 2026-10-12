@@ -42,6 +42,7 @@ test("Audit modal and inner detail overlay pass axe", async ({ page }) => {
   await expect(page.locator(".topbar")).toHaveAttribute("aria-hidden", "true");
   await expect(page.locator(".layout")).toHaveAttribute("inert", "");
   await expectNoAxeViolations(page, "Audit modal");
+  await page.getByRole("button", { name: /技术排查/ }).click();
   await page.locator(".audit-center-nav button", { hasText: "工具" }).click();
   await page.getByRole("button", { name: /get_fixture_market_context/ }).click();
   await expect(page.getByRole("dialog", { name: "审计详情" })).toHaveAttribute("aria-modal", "true");
@@ -57,6 +58,7 @@ test("keyboard restores focus through layered Audit Escape", async ({ page }) =>
   await trigger.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "关闭审计中心" })).toBeFocused();
+  await page.getByRole("button", { name: /技术排查/ }).click();
   const tools = page.locator(".audit-center-nav button", { hasText: "工具" });
   await tools.focus();
   await page.keyboard.press("Enter");
