@@ -78,6 +78,7 @@ current architecture, operations and contract pages for supported behavior.
 
 - [v3.3.0 release notes](reviews/2026-10-11-v3.3-release-notes.md): unified company investment research, one bounded challenge/reply cycle, dependency canvas, adjacent details and truthful terminal publication states.
 - [v3.3.1 release notes](reviews/2026-10-12-v3.3.1-release-notes.md): research-first audit, subscription transport retry classification, A-share/Web installation fix and selective a-stock-data v3.10.2 review.
+- [v3.3.2 release notes](reviews/2026-10-12-v3.3.2-release-notes.md): early condition evidence binding, canonical synthesis aliases, bounded reference feedback and frozen-evidence Luna validation.
 - [v3.2.0 release notes](reviews/2026-10-11-v3.2-release-notes.md): ChatGPT subscription, bounded native retries and diagnostics, conservative official PDF parsing, Reader interaction improvements, and release limits since v3.1.0.
 
 - [v3.1.0 release notes](reviews/2026-10-07-v3.1-release-notes.md): cumulative independent research, evidence Reader, bounded checks, DeepSeek default and Tencent stock-volume correction since v3.0.0.
@@ -89,6 +90,8 @@ current architecture, operations and contract pages for supported behavior.
 - [600803 minimum-evidence acceptance](reviews/2026-10-05-minimum-evidence-acceptance.md): actual V5 public-source retrieval, three bounded checks, fixed-proposal Web/HTML outputs and remaining research-quality limits.
 
 ## Dated Investigations
+
+- [600418 diagnosis and Luna validation](reviews/2026-10-12-600418-luna-validation.md): original synthesis/valuation failures, publication-barrier explanation, real subscription trials and the successful isolated synthesis validation; historical records remain unchanged.
 
 - [a-stock-data v3.10.2 selective review](reviews/2026-10-12-a-stock-data-v3102-review.md): pinned upstream diff, PE-digestion applicability and retained missing-input boundaries; no applicable adapter code adoption.
 

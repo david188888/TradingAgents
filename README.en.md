@@ -75,7 +75,7 @@ Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at run
 | Research records and evidence contracts | [Contract index](docs/contracts/README.md) · [Research record](docs/contracts/research-record.md) |
 | Reader evidence tracing and presentation | [Reader architecture](docs/architecture/research-reader.md) |
 | Coding Agent and contributor workflow | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| All documentation and release records | [Documentation index](docs/README.md) · [3.3 release notes](docs/reviews/2026-10-11-v3.3-release-notes.md) |
+| All documentation and release records | [Documentation index](docs/README.md) · [3.3.2 release notes](docs/reviews/2026-10-12-v3.3.2-release-notes.md) |
 
 Coding Agents should start with [AGENTS.md](AGENTS.md). Code, contracts and current-state docs define supported behavior; historical plans are not implementation evidence.
 

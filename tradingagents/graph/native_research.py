@@ -17,6 +17,7 @@ from tradingagents.agents.schemas._native_stage import (
     SynthesisProposalV1,
     SynthesisProposalV2,
     SynthesisProposalV3,
+    validate_condition_evidence,
 )
 from tradingagents.agents.schemas._research_assessment import (
     ChallengeAssessmentV1,
@@ -219,6 +220,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     hypotheses, conditions, limits = [], {}, list(seed.limitations)
     origins = {}
     facts_by_id = {item.claim_id: item for item in seed.claims}
+    metric_evidence = {metric.metric_id: metric.input_evidence_ids for metric in seed.metrics}
     for role in ROLE_ORDER:
         proposal = proposals.get(role)
         if proposal is None:
@@ -235,6 +237,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             cid = "i." + hid[2:]
             evidence_ids = tuple(dict.fromkeys(key for fact_id in item.supporting_fact_ids
                                 for key in facts_by_id[fact_id].evidence_ids))
+            validate_condition_evidence(item, evidence_ids, metric_evidence)
             claims.append({"claim_id": cid, "kind": "inference", "statement": item.statement,
                            "evidence_ids": evidence_ids, "supporting_fact_ids": item.supporting_fact_ids})
             hypotheses.append({"hypothesis_id": hid, "claim_id": cid, "input_snapshot_id": seed.snapshots[0].snapshot_id,
@@ -242,16 +245,6 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                 "invalidation_conditions": [c.text for c in item.conditions if c.condition_role == "invalidation"],
                 "limitations": ["alternative_explanation:" + item.alternative_explanation]})
             for condition in item.conditions:
-                check = condition.check
-                if check is not None:
-                    if check.kind == "financial":
-                        operands = (check.current,) if check.base is None else (check.current, check.base)
-                        if any(operand.evidence_id not in evidence_ids for operand in operands):
-                            raise ValueError("condition references evidence outside its hypothesis")
-                    else:
-                        metric = next((m for m in seed.metrics if m.metric_id == check.metric_id), None)
-                        if metric is None or not set(metric.input_evidence_ids) <= set(evidence_ids):
-                            raise ValueError("condition references a metric outside its hypothesis")
                 bound = {"hypothesis_id": hid, "input_snapshot_id": seed.snapshots[0].snapshot_id,
                          **condition.model_dump(mode="json")}
                 conditions["condition." + canonical_sha256(bound)] = bound

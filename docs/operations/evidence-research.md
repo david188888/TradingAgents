@@ -229,6 +229,13 @@ The model adapter checks specialist fact IDs before saving a proposal. A
 schema-valid fabricated reference can use the existing single structured
 repair allowance; it cannot enter the kernel or cause unbounded retries.
 Kernel reference guards remain authoritative, including old cached proposals.
+V7 also checks a numeric condition's evidence/metric dependencies against its
+own hypothesis before saving a specialist proposal. Fresh synthesis requests
+use prompt-local short aliases that are restored before the same canonical
+gates. Existing prompts and saved outputs retain their recovery identity;
+these changes do not repair historical runs or supply missing valuation data.
+See the [unified research contract](../contracts/unified-company-research.md)
+for binding, repair feedback and compatibility boundaries.
 
 Verification is a closed local operation on saved financial fields or metrics.
 It is not an unrestricted model tool loop or additional data search. Checks

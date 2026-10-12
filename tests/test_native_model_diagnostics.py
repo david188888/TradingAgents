@@ -31,6 +31,21 @@ def test_schema_diagnostic_excludes_input_context_message_and_unknown_field_name
     assert SECRET not in json.dumps(diagnostic)
 
 
+@pytest.mark.parametrize("message,category", [
+    ("revised argument must cite the reply's facts", "reference_validation"),
+    (SECRET, "schema_validation"),
+])
+def test_public_root_binding_uses_exact_host_allowlist_only(message, category):
+    error = ValidationError.from_exception_data("record", [{
+        "type": "value_error", "loc": (), "input": SECRET, "ctx": {"error": ValueError(message)}}])
+    diagnostic = safe_model_diagnostic("synthesis", "main", "response_invalid", error,
+        schema=adapter.SynthesisProposalV3)
+    assert diagnostic["category"] == category
+    assert diagnostic.get("detail_code") == ("argument_reply_fact_reference" if category == "reference_validation" else None)
+    assert SECRET not in json.dumps(diagnostic)
+    assert message not in json.dumps(diagnostic)
+
+
 def test_http_diagnostic_keeps_numeric_status_and_only_known_codes():
     exc = RuntimeError(SECRET)
     exc.status_code, exc.code = 400, SECRET
