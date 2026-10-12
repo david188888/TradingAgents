@@ -406,6 +406,14 @@ VENDOR_METHODS = {
         # with standard OHLC field order in the same probe, so it is the
         # primary and mootdx is retained as a still-registered fallback: its
         # finance/F10 capabilities are untouched and stay reachable.
+        # Root cause confirmed 2026-10-12: the TDX servers now answer the old
+        # handshake with a "client does not match the quote main station"
+        # banner and reply to every legacy K-line command with a 2-byte stub
+        # and no payload. Roster/finance commands still answer, so the failure
+        # is protocol-version-specific, not a network block, and mootdx 0.11.7's
+        # parser also predates the new payload encoding. Treat mootdx bars as
+        # unavailable until the client is replaced; prefer the keyless HTTP
+        # providers (tencent/sina).
         # mootdx additionally short-circuits on a 5-minute in-process circuit
         # breaker (mootdx_provider.tdx_client), so even the fallback position
         # does not re-pay the server sweep on every request.

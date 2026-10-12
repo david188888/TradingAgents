@@ -372,11 +372,22 @@ class ResearchRecordV1(_RecordModel):
                 raise ValueError("available metrics require available input evidence")
         if self.evidence_checks is not None:
             from tradingagents.research.minimum_evidence import (
+                CALCULATION_VERSION,
                 challenge_assessments,
                 compute_checks,
             )
-            if self.construction != "native" or self.evidence_checks != compute_checks(self):
+            if self.construction != "native":
                 raise ValueError("local evidence checks or frozen input binding changed")
+            if self.evidence_checks.calculation_version == CALCULATION_VERSION:
+                if self.evidence_checks != compute_checks(self):
+                    raise ValueError("local evidence checks or frozen input binding changed")
+            elif self.evidence_checks.calculation_version != "minimum-evidence-v1":
+                raise ValueError("unknown evidence calculation version")
+            # A v1 record was produced by the earlier decision rule. It is
+            # served as written rather than re-scored by the current rule, so
+            # this change cannot turn already-published runs into corrupt
+            # reads. The challenge outcomes below are still recomputed, so a
+            # legacy record cannot claim a resolved economics question.
             bindings = index(self.challenge_bindings or (), "challenge_id")
             if bindings.keys() != challenges.keys():
                 raise ValueError("every v5 challenge requires a closed check binding")

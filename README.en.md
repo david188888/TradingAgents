@@ -62,7 +62,7 @@ Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at run
 
 ## Current limitations
 
-- **Limited coverage**: public sources may be missing, rate-limited or unable to establish historical availability. Some calendar and historical valuation capabilities require Tushare credentials and entitlements.
+- **Limited coverage**: public sources may be missing, rate-limited or unable to establish historical availability. Some historical valuation capabilities require Tushare credentials and entitlements. The trading calendar is now derived locally from index bars and no longer depends on a daily-quota vendor.
 - **Research quality needs evaluation**: completed runs may remain `partial / LOW_CONFIDENCE`. Passing evidence checks does not establish economic causes or fair value, and improved predictive accuracy has not been demonstrated.
 - **Defined product scope**: maintained research runs through the local A-share Web workbench. CLI analysis is no longer maintained; older workflows retain saved reading and compatible recovery.
 

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
     ChallengesProposalV2,
+    NativeEvidenceBindingError,
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
@@ -229,15 +230,25 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             continue
         allowed = {item.claim_id for item in views[role]}
         for index, item in enumerate(proposal.hypotheses):
+            # A proposal that cites evidence outside its own scope is rejected,
+            # but only that proposal: the kernel drops the offending hypothesis
+            # and records why. Terminating the run would discard every other
+            # specialist's valid work and make one bad reference unrecoverable.
             if not set(item.supporting_fact_ids) <= allowed:
-                raise ValueError("specialist hypothesis references facts outside its view")
+                limits.append(f"native_hypothesis_rejected:{role}:specialist_fact_reference")
+                continue
             hid = "h." + canonical_sha256({"input": identity, "role": role, "index": index,
                                            "proposal": item.model_dump(mode="json")})
             origins[hid] = role
             cid = "i." + hid[2:]
             evidence_ids = tuple(dict.fromkeys(key for fact_id in item.supporting_fact_ids
                                 for key in facts_by_id[fact_id].evidence_ids))
-            validate_condition_evidence(item, evidence_ids, metric_evidence)
+            try:
+                validate_condition_evidence(item, evidence_ids, metric_evidence)
+            except NativeEvidenceBindingError:
+                limits.append(f"native_hypothesis_rejected:{role}:condition_evidence_reference")
+                origins.pop(hid, None)
+                continue
             claims.append({"claim_id": cid, "kind": "inference", "statement": item.statement,
                            "evidence_ids": evidence_ids, "supporting_fact_ids": item.supporting_fact_ids})
             hypotheses.append({"hypothesis_id": hid, "claim_id": cid, "input_snapshot_id": seed.snapshots[0].snapshot_id,

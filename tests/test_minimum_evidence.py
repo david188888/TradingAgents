@@ -32,6 +32,7 @@ from tradingagents.research.evidence_freeze import (
     FrozenEvidenceDraft,
 )
 from tradingagents.research.minimum_evidence import (
+    CALCULATION_VERSION,
     cfo_decline,
     challenge_assessments,
     compute_checks,
@@ -60,11 +61,13 @@ def forecast(institution="甲证券", year=2026, published="2026-09-04", eps="1.
             "published": published, "forecast_year": year, "eps": eps, "unit": "CNY/share", "year_basis": "explicit_header"}
 
 
-def fixture(*, forecasts=True, peers=True, numeric_mutator=None):
+def fixture(*, forecasts=True, peers=True, snapshot=True, numeric_mutator=None):
     payloads = [("security_identity", "tushare.stock_basic", {"ts_code": "600803.SH", "list_date": "19940103"}, None, None),
         ("valuation", "tencent.valuation_snapshot", {"ts_code": "600803.SH", "name": "新奥股份", "as_of": "2026-09-30",
             "quote_timestamp": "2026-09-30T16:14:55+08:00", "price": 19.2, "pe_ttm": 13.63, "pb": 2.53,
             "total_market_cap_yi": 594.28, "currency": "CNY"}, "2026-09-30", None)]
+    if not snapshot:
+        payloads = [item for item in payloads if item[1] != "tencent.valuation_snapshot"]
     docs = documents()
     if numeric_mutator:
         numeric_mutator(docs)
@@ -152,6 +155,41 @@ def test_optional_branch_failure_preserves_passed_local_questions(forecasts, pee
     checks = {c.check_id: c for c in record(forecasts=forecasts, peers=peers).evidence_checks.checks}
     assert checks["valuation_context"].status == expected
     assert checks["operating_disclosures"].status == checks["cash_conversion"].status == "passed"
+
+
+def test_dated_forecast_passes_without_a_target_snapshot():
+    """A frozen forecast must not be discarded because a quote was missing.
+
+    The forecast carries its own publication date, so it is admitted on its own;
+    only the same-session peer comparison needs the snapshot to anchor a session.
+    """
+    checks = {c.check_id: c for c in record(snapshot=False, peers=False).evidence_checks.checks}
+    valuation = checks["valuation_context"]
+    assert valuation.status == "passed"
+    assert "dated_institution_forecast" in valuation.satisfied
+    assert "qualified_target_snapshot" in valuation.missing
+    assert "peers_fewer_than_three" in valuation.missing
+    assert checks["operating_disclosures"].status == checks["cash_conversion"].status == "passed"
+
+
+def test_legacy_calculation_version_record_stays_readable():
+    """A v1 record replays under the rule that produced it, not the new rule."""
+    current = record()
+    assert current.evidence_checks.calculation_version == CALCULATION_VERSION
+    assert compute_checks(current) == current.evidence_checks
+
+    payload = current.model_dump(mode="json")
+    payload["evidence_checks"]["calculation_version"] = "minimum-evidence-v1"
+    # Make the stored checks disagree with the v2 rule so the gate is load-bearing.
+    payload["evidence_checks"]["checks"][2]["status"] = "passed" if payload["evidence_checks"]["checks"][2]["status"] != "passed" else "unavailable"
+    legacy = ResearchRecordV1.model_validate(payload)
+    assert legacy.evidence_checks != compute_checks(legacy)
+
+    # An unrecognized version is rejected by the closed literal rather than
+    # being replayed under the current rule.
+    payload["evidence_checks"]["calculation_version"] = "minimum-evidence-v3"
+    with pytest.raises(ValidationError):
+        ResearchRecordV1.model_validate(payload)
 
 
 def test_cash_bridge_blank_required_cell_duplicate_or_changed_sum_cannot_pass():

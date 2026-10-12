@@ -49,13 +49,20 @@ REASON_LABELS = {
     "qualified_financial_fields_missing": "未取得合格财务字段",
     "qualified_valuation_inputs_missing": "未取得合格估值输入",
     "qualified_market_metrics_missing": "未取得合格市场指标",
-    "native_valuation_policy_v1": "估值参考由代码计算，并保留输入资格与假设限制",
     "valuation_identity_or_calendar_missing": "证券身份或对应交易所的日历未通过资格检查",
+    "valuation_identity_calendar_or_vintage_unqualified": "证券身份、交易日或历史版本未通过资格检查",
+    "valuation_identity_unavailable": "证券身份未通过资格校验，未取得估值输入",
+    "valuation_calendar_unavailable": "对应交易所的交易日历未通过资格检查，未取得估值输入",
     "valuation_historical_vintage_unverified": "历史估值版本未经验证",
     "valuation_snapshot_unavailable": "本次未取得合格估值快照",
     "valuation_history_unavailable": "本次未取得合格历史倍数",
     "valuation_budget_exhausted": "估值取数额度已用尽，保留已有合格资料",
+    "peer_identity_unavailable": "证券身份未通过资格校验，未取得同行估值背景",
+    "peer_calendar_unavailable": "对应交易所的交易日历未通过资格检查，未取得同行估值背景",
+    "peer_historical_vintage_unverified": "历史同行版本未经验证",
+    "valuation_quote_not_last_settled_session": "行情快照不是最后一个已结算交易日，未作为估值输入",
     "qualified_event_evidence_missing": "未取得合格事件证据",
+    "native_valuation_policy_v1": "估值参考由代码计算，并保留输入资格与假设限制",
 }
 
 
@@ -83,4 +90,12 @@ def limitation_label(value):
         return "全局覆盖限制 · "+CAPABILITY_LABELS.get(capability, capability)+"："+REASON_LABELS.get(reason, "取数或资格受限（"+reason+"）")
     if value.startswith("native_stage_unavailable:"):
         return ROLE_LABELS.get(value.split(":")[1], "研究综合")+"未形成合格输出"
+    if value.startswith("native_hypothesis_rejected:"):
+        # One proposal cited outside its own view and was dropped on its own;
+        # the rest of the run is unaffected, so the label says so.
+        _, _, detail = value.partition(":")
+        role, _, _code = detail.partition(":")
+        rejected = {"specialist_fact_reference": "引用了本专项视图之外的事实",
+                    "condition_evidence_reference": "条件引用了该假设之外的证据"}
+        return ROLE_LABELS.get(role, role)+"：有假设未通过引用校验已剔除（"+rejected.get(_code, _code)+"）"
     return REASON_LABELS.get(value, value)

@@ -156,7 +156,11 @@ class LocalEvidenceCheckV1(_Frozen):
 
 class EvidenceChecksV1(_Frozen):
     schema_version: Literal["evidence-checks-v1"] = "evidence-checks-v1"
-    calculation_version: Literal["minimum-evidence-v1"] = "minimum-evidence-v1"
+    # Bumped when a check's decision rule changes, not its output shape. A
+    # persisted record is replayed against the rule that produced it, so
+    # v1 records stay readable instead of loading as corrupt after a policy
+    # change; new records are written under the current literal.
+    calculation_version: Literal["minimum-evidence-v1", "minimum-evidence-v2"] = "minimum-evidence-v2"
     run_id: str
     ticker: str
     analysis_date: date

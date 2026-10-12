@@ -7,14 +7,17 @@ import pytest
 
 from tradingagents.agents.schemas._verification_plan import FinancialOperandV1
 from tradingagents.dataflows.native_qualification import (
+    CALENDAR_INDEX_SYMBOL,
     NativeSourceUnavailable,
     prepare_public_prices,
+    qualify_session_calendar,
     sina_factors,
     sina_identity,
     sina_statement,
     szse_month,
 )
 from tradingagents.dataflows.native_sources import NativeSources, source_chains
+from tradingagents.dataflows.tushare_price_history import settled_sessions
 from tradingagents.execution.budget import BudgetBucket, BudgetLedger
 from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.research.catalyst_evidence_policy import catalyst_evidence_policy_v1
@@ -54,8 +57,14 @@ def collector(monkeypatch):
 def test_native_defaults_and_explicit_overrides_are_independent_of_classic():
     chains = source_chains({"data_vendors": {"fundamental_data": "tushare"}})
     assert chains["financial"] == ("sina", "tushare")
+    # The session calendar must not open on a vendor with a daily quota: the
+    # official SZSE month API answers only for .SZ and tushare trade_cal is
+    # capped, so a quota-exhausted day would otherwise remove the calendar for
+    # every later run and take price, valuation and peer context with it.
+    assert chains["calendar"] == ("tencent", "szse", "tushare")
     assert source_chains({"evidence_source_vendors": {"financial": ["tushare"]}})["financial"] == ("tushare",)
     assert source_chains({"evidence_source_exclusions": ["tushare"]})["financial"] == ("sina",)
+    assert source_chains({"evidence_source_exclusions": ["tushare"]})["calendar"] == ("tencent", "szse")
     assert source_chains({"evidence_source_vendors": {"identity": []}})["identity"] == ()
 
 
@@ -185,6 +194,37 @@ def test_official_calendar_requires_whole_natural_month():
     payload["data"].pop()
     with pytest.raises(NativeSourceUnavailable, match="window_not_complete"):
         szse_month(payload, 2026, 9)
+
+
+def index_calendar(bars):
+    return {"data": {CALENDAR_INDEX_SYMBOL: {"day": [[day] for day in bars]}}}
+
+
+def test_session_calendar_derives_closed_days_from_index_bars_only():
+    """A bar exists iff the exchange traded, so bar dates are the open days."""
+    rows = qualify_session_calendar(index_calendar(["2026-10-08", "2026-10-09", "2026-10-12"]),
+        index_symbol=CALENDAR_INDEX_SYMBOL, start="2026-10-08", cutoff="2026-10-12")
+    assert rows == [{"cal_date": "20261008", "is_open": "1"}, {"cal_date": "20261009", "is_open": "1"},
+        {"cal_date": "20261010", "is_open": "0"}, {"cal_date": "20261011", "is_open": "0"},
+        {"cal_date": "20261012", "is_open": "1"}]
+    # The derived shape is the same contract the official SZSE month API returns.
+    assert settled_sessions(rows, start="2026-10-08", cutoff="2026-10-12",
+        captured_at=datetime(2026, 10, 12, 9, tzinfo=timezone.utc))[-1] == "2026-10-12"
+
+
+def test_session_calendar_rejects_a_truncated_index_series():
+    """A short walk would mark real sessions closed, so it must fail closed."""
+    with pytest.raises(NativeSourceUnavailable, match="window_not_complete"):
+        qualify_session_calendar(index_calendar(["2026-10-09", "2026-10-12"]),
+            index_symbol=CALENDAR_INDEX_SYMBOL, start="2026-10-01", cutoff="2026-10-12")
+
+
+@pytest.mark.parametrize("payload", [{}, {"data": []}, {"data": {CALENDAR_INDEX_SYMBOL: {}}},
+    {"data": {CALENDAR_INDEX_SYMBOL: {"day": [["not-a-date"]]}}}])
+def test_session_calendar_rejects_unqualified_shapes(payload):
+    with pytest.raises(NativeSourceUnavailable):
+        qualify_session_calendar(payload, index_symbol=CALENDAR_INDEX_SYMBOL,
+            start="2026-10-08", cutoff="2026-10-12")
 
 
 def price_fixture():

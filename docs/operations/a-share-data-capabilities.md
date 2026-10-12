@@ -67,11 +67,31 @@ SDK 缺失或导入失败时返回带来源的 `ChinaDataUnavailableError`，不
 | 股权质押 | `get_a_share_equity_pledge` | EastMoney datacenter（`RPT_CSDC_LIST`，中国结算周度） | 单只 A 股**或**单个统计日，二者互斥；仅沪深，北交所代码直接拒绝 |
 | 新股申购日历 | `get_a_share_ipo_calendar` | EastMoney datacenter（`RPTA_APP_IPOAPPLY`） | 市场级；含尚未申购的排期，定价前发行价为 None |
 | ST 名单 | `get_a_share_st_stock_list` | EastMoney clist（沪深风险警示板 + 北交所全表），baostock 兜底 | 市场级当日快照；两侧集合任一为空即报错 |
-| 交易日历 | `get_a_share_trading_calendar` | 深交所官方整月日历 | 单月；月份不完整或交易日标志异常直接报错 |
+| 交易日历 | `get_a_share_trading_calendar` | 深交所官方整月日历 | **仅 `.SZ`**；单月，月份不完整或交易日标志异常直接报错。沪深北通用日历见下方 native 证据链 |
 | 两融官方备胎 | `get_a_share_margin_trading_backup` | 上交所/深交所官方，一次一所 | 交易所 + 交易日；不覆盖北交所，代码号段与交易所不符即拒绝 |
 | 新浪研报列表 | `get_sina_research_reports` | 新浪财经研报列表 | 市场级或单只 A 股；**不含评级与目标价**，北交所代码需 `bj` 前缀 |
 | 社融 | `get_china_social_financing` | 人民银行官方 xls（零鉴权直连） | 市场级；月度社融增量表 |
 | PMI | `get_china_pmi` | 国家统计局 easyquery（零鉴权直连） | 市场级；制造业/非制造业/综合 |
+
+### native 证据链的交易日历
+
+`evidence_v1` 采集不使用上面的交易所日历接口，而是走 `native_sources` 的日历链
+`("tencent", "szse", "tushare")`：先用上证指数日 K 的**日期序列**派生出窗口内每个自然日的
+`is_open` 标志（有 K 线即开市），再交给同一个 `settled_sessions` 校验。指数价不进入证据。
+
+- 之所以不把 Tushare `trade_cal` 放首位：该接口**每天 5 次**硬配额，一旦当天用尽，
+  之后所有 run 都拿不到日历，连带 `price_history`、`valuation`、`peer_context` 全部降级。
+- 派生日历零鉴权、无配额，通用于沪深北；`.SZ` 的深交所官方整月日历作为次选，Tushare 仅兜底。
+- 若指数序列未覆盖到窗口起点，按 `calendar_window_not_complete` 报错而不是把真实交易日当休市。
+
+### baostock 调用约束
+
+baostock 自身**不设任何 socket 超时**（接收循环是裸 `while True: recv(8192)`），
+且 `ResultData.next()` 只是对 `cur_row_num` 的谓词——只有 `get_row_data()` 会推进游标。
+因此：迭代必须写成 `while rs.next(): rows.append(rs.get_row_data())`，
+不能用 `next()` 空转（会 100% CPU 死循环），也不要调用 `rs.get_data()`
+（其内部使用已被 pandas 3 移除的 `DataFrame.append`）。项目侧已由 `a_stock_v37._bs_session`
+统一设置 30 秒 socket 超时并在退出时还原。
 
 ### EastMoney datacenter 严格性
 

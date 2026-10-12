@@ -167,8 +167,23 @@ class MinimumEvidenceSources(ValuationSources):
         self._optional_cap(inputs, CAP_FORECAST, sources, gaps)
 
     def _valuation(self, inputs, ts_code, identity):
-        sources, peer_sources, gaps, peer_gaps = [], [], [], ["industry_candidates_not_business_equivalence", "selected_peers_not_full_industry_population"]
-        eligible = identity is not None and self.last_session is not None and inputs.cutoff == datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        sources, peer_sources, gaps, peer_gaps = [], [], ["industry_candidates_not_business_equivalence", "selected_peers_not_full_industry_population"], []
+        current_cutoff = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        identity_ok = identity is not None
+        calendar_ok = self.last_session is not None
+        vintage_ok = inputs.cutoff == current_cutoff
+        # Each gate records its own code so a blocked run states which condition
+        # failed instead of reporting one opaque "unqualified" reason.
+        if not identity_ok:
+            gaps.append("valuation_identity_unavailable")
+            peer_gaps.append("peer_identity_unavailable")
+        if not calendar_ok:
+            gaps.append("valuation_calendar_unavailable")
+            peer_gaps.append("peer_calendar_unavailable")
+        if not vintage_ok:
+            gaps.append("valuation_historical_vintage_unverified")
+            peer_gaps.append("peer_historical_vintage_unverified")
+        eligible = identity_ok and calendar_ok and vintage_ok
         selection = None
         if eligible and "eastmoney" in self.peer_vendors:
             def candidates_query():
@@ -184,9 +199,12 @@ class MinimumEvidenceSources(ValuationSources):
                 self.evidence(inputs, CAP_PEERS, "eastmoney.peer_candidates", selection, published=inputs.cutoff,
                     public_url="https://data.eastmoney.com/stockdata/"+ts_code[:6]+".html")
                 peer_sources.append("eastmoney.peer_candidates")
+        # The target snapshot and its same-session peers are one batched request,
+        # so the peer quotes are only reachable when the snapshot itself is.
         if eligible and "tencent" in self.valuation_vendors:
             codes = [ts_code] + ([r["ts_code"] for r in selection["candidates"]] if selection and "tencent" in self.peer_vendors else [])
             url = "https://qt.gtimg.cn/q="+",".join(c[-2:].lower()+c[:6] for c in codes)
+            rejected = []
             def quote_query():
                 response = self.session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
                 if response.status_code != 200:
@@ -197,7 +215,8 @@ class MinimumEvidenceSources(ValuationSources):
                 for code in codes[1:]:
                     try:
                         peers.append(PeerQuoteV1(target_ts_code=ts_code, **qualify_snapshot(text, ts_code=code, last_session=self.last_session)).model_dump(mode="json"))
-                    except (NativeSourceUnavailable, ValueError):
+                    except (NativeSourceUnavailable, ValueError) as exc:
+                        rejected.append(getattr(exc, "code", "peer_quote_unqualified"))
                         continue
                 return {"target": target, "peers": peers}
             try:
@@ -212,6 +231,7 @@ class MinimumEvidenceSources(ValuationSources):
                     self.evidence(inputs, CAP_PEERS, "tencent.peer_valuation", row, published=self.last_session, public_url=url)
                 if quotes["peers"]:
                     peer_sources.append("tencent.peer_valuation")
+            peer_gaps.extend(sorted(set(rejected)))
         if eligible and "tushare" in self.valuation_vendors:
             start = (date.fromisoformat(inputs.cutoff)-timedelta(days=1095)).isoformat()
             def history_query():
@@ -227,9 +247,6 @@ class MinimumEvidenceSources(ValuationSources):
             if history:
                 self.evidence(inputs, CAP_VALUATION, HISTORY_SOURCE, history, published=self.last_session)
                 sources.append(HISTORY_SOURCE)
-        if not eligible:
-            gaps.append("valuation_identity_calendar_or_vintage_unqualified")
-            peer_gaps.append("peer_identity_calendar_or_vintage_unqualified")
         if SNAPSHOT_SOURCE not in sources:
             gaps.append("valuation_snapshot_unavailable")
         if HISTORY_SOURCE not in sources:

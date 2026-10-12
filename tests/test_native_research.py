@@ -120,7 +120,13 @@ def test_changed_question_conflicts(tmp_path):
         run_native_research(seed, caller=Caller(), ledger=journal.ledger, research_question="不同问题")
 
 
-def test_wrong_specialist_fact_fails_before_publication(tmp_path):
+def test_wrong_specialist_fact_is_dropped_before_publication(tmp_path):
+    """A fabricated reference is rejected without discarding the whole run.
+
+    The offending hypothesis is dropped and the rejection is recorded, so no
+    fabricated fact reaches the published record while the other specialists'
+    valid work survives.
+    """
     journal = journal_for(tmp_path)
     base = Caller()
     def bad(stage, context):
@@ -128,9 +134,10 @@ def test_wrong_specialist_fact_fails_before_publication(tmp_path):
         if stage == "operating_quality":
             value["hypotheses"][0]["supporting_fact_ids"] = ["fabricated"]
         return value
-    with pytest.raises(ValueError, match="outside its view"):
-        run_native_research(seed_for(journal), caller=bad, ledger=journal.ledger)
-    assert journal.ledger.cached_result("native.output") is None
+    output = run_native_research(seed_for(journal), caller=bad, ledger=journal.ledger)
+    assert not any("fabricated" in fact_id for claim in output.claims for fact_id in claim.supporting_fact_ids)
+    assert not any("fabricated" in hypothesis.model_dump_json() for hypothesis in output.hypotheses)
+    assert "native_hypothesis_rejected:operating_quality:specialist_fact_reference" in output.limitations
 
 
 def test_cancelled_before_dispatch_consumes_no_models(tmp_path):
