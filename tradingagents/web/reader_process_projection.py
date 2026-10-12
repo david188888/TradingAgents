@@ -677,6 +677,25 @@ def _process(ctx):
             code = value.get("source_error_code")
             if code in SAFE_FAILURES:
                 failures.add(code)
+    model_failures = list((cp or {}).get("native.model_failures", {}).values())
+    failure_stages = {item["stage"] for item in model_failures}
+    # Expose only closed explanations for currently failed roles. An earlier
+    # malformed response followed by a successful repair is not a live failure.
+    explanations = {
+        "schema_validation": "研究输出未通过格式与字段校验，未能形成合格的研究提议。",
+        "reference_validation": "研究提议的依据引用未通过核对，本次输出未采用。",
+        "invalid_json": "研究输出格式不完整，本次输出未采用。",
+    }
+    diagnostics = (cp or {}).get("native.model_diagnostics", {})
+    for role in roles:
+        stage = role.role_key
+        if role.status != "failed" or stage in failure_stages:
+            continue
+        diagnostic = diagnostics.get(stage + ".repair", diagnostics.get(stage + ".main", {}))
+        category = diagnostic.get("category")
+        if category in explanations:
+            model_failures.append({"stage": stage, "category": category,
+                "safe_message": explanations[category], "action": "retry_later"})
     return ReaderProcessDTO(
         run_id=snapshot.run_id,
         source_sequence=ctx.sequence,
@@ -703,7 +722,7 @@ def _process(ctx):
         roles=tuple(roles),
         claim_origins=tuple(origins),
         source_failures=tuple(sorted(failures)),
-        model_failures=tuple((cp or {}).get("native.model_failures", {}).values()),
+        model_failures=tuple(model_failures),
     )
 
 

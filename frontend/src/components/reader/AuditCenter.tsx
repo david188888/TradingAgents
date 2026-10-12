@@ -6,8 +6,9 @@ import type {
   AuditSelectionDTO,
   AuditSummaryDTO,
 } from "../../api/contracts";
-import { useAuditDetail, useAuditSummary } from "../../hooks/useAudit";
+import { useAuditDetail, useAuditResearch, useAuditSummary } from "../../hooks/useAudit";
 import { AuditDetailPanel } from "./AuditDetailPanel";
+import { AuditResearchOverview } from "./AuditResearchOverview";
 
 export type AuditSectionId =
   | "overview"
@@ -114,6 +115,7 @@ export function AuditCenter({
 }: AuditCenterProps): JSX.Element | null {
   const [section, setSection] = useState<AuditSectionId>(context?.section ?? "overview");
   const [selection, setSelection] = useState<AuditSelectionDTO | null>(null);
+  const [technical, setTechnical] = useState(Boolean(context && (context.section !== "overview" || context.stageId)));
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const browserRef = useRef<HTMLDivElement>(null);
@@ -121,6 +123,7 @@ export function AuditCenter({
   const narrow = useNarrowAudit();
   const summaryState = useAuditSummary(runId, open);
   const sourceSequence = summaryState.summary?.source_sequence ?? null;
+  const research = useAuditResearch(runId, sourceSequence, open && !technical && sourceSequence !== null);
   const detailState = useAuditDetail(
     runId,
     sourceSequence,
@@ -131,6 +134,7 @@ export function AuditCenter({
   useEffect(() => {
     if (!open) return;
     setSection(context?.section ?? "overview");
+    setTechnical(Boolean(context && (context.section !== "overview" || context.stageId)));
     setSelection(null);
     detailTriggerRef.current = null;
     window.setTimeout(() => {
@@ -200,7 +204,7 @@ export function AuditCenter({
     <div className="audit-center-backdrop">
       <div
         ref={dialogRef}
-        className="audit-center"
+        className={`audit-center${technical ? "" : " audit-center--research"}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="audit-center-title"
@@ -211,19 +215,19 @@ export function AuditCenter({
           <div className="audit-center-identity">
             <span className="audit-center-seal" aria-hidden="true">AC</span>
             <div>
-              <span className="eyebrow">Audit Center · Terminal record</span>
+              <span className="eyebrow">Audit Center · 研究检查</span>
               <h2 id="audit-center-title">审计中心</h2>
-              <p className="qr-meta">技术诊断与执行记录：用于排查运行和记录问题。回顾研究内容请使用报告里的“Agent 产物”。</p>
+              <p className="qr-meta">核对研究能否使用、失败原因和资料限制。</p>
             </div>
           </div>
           <div className="audit-center-runline">
             <strong>{summary?.run.ticker ?? "读取中"}</strong>
             <span>{summary ? statusLabel(summary.run.status) : "等待摘要"}</span>
-            <span>{summary ? `seq ${summary.source_sequence}` : "—"}</span>
+            {technical ? <span>{summary ? `seq ${summary.source_sequence}` : "—"}</span> : null}
             {summaryState.refreshing ? <span className="audit-refreshing">正在校验…</span> : null}
           </div>
           <div className="audit-center-actions">
-            <button type="button" onClick={summaryState.refresh} disabled={summaryState.loading}>
+            <button type="button" onClick={() => { summaryState.refresh(); research.retry(); }} disabled={summaryState.loading}>
               刷新摘要
             </button>
             <button
@@ -246,7 +250,9 @@ export function AuditCenter({
         >
           <nav className="audit-center-nav" aria-label="审计分区">
             <span className="audit-nav-label">Index / 目录</span>
-            {(Object.keys(SECTION_LABELS) as AuditSectionId[]).map((id, index) => {
+            <button type="button" className={!technical ? "active" : ""} aria-current={!technical ? "page" : undefined} onClick={() => { setTechnical(false); setSelection(null); }}><span>01</span>研究检查</button>
+            <button type="button" className={technical ? "active" : ""} aria-expanded={technical} onClick={() => { setTechnical(value => !value); setSelection(null); setSection("overview"); }}><span>02</span>技术排查</button>
+            {technical ? (Object.keys(SECTION_LABELS) as AuditSectionId[]).map((id, index) => {
               const count = summary?.sections.find((item) => item.section_id === id)?.item_count;
               return (
                 <button
@@ -264,20 +270,20 @@ export function AuditCenter({
                   <em>{count ?? "—"}</em>
                 </button>
               );
-            })}
+            }) : null}
             <div className="audit-nav-foot">
               <span>只读 · 本机</span>
-              <span>Raw 按需加载</span>
+              <span>只展示保存记录</span>
             </div>
           </nav>
 
           <main className="audit-center-summary">
             <header className="audit-summary-head">
               <div>
-                <span className="eyebrow">Section {SECTION_LABELS[section]}</span>
-                <h3>{SECTION_LABELS[section]}</h3>
+                <span className="eyebrow">{technical ? "技术排查" : "研究结果与限制"}</span>
+                <h3>{technical ? SECTION_LABELS[section] : "研究检查"}</h3>
               </div>
-              {summary ? (
+              {summary && technical ? (
                 <span className={`audit-availability audit-availability--${summary.availability}`}>
                   {statusLabel(summary.availability)}
                 </span>
@@ -294,12 +300,12 @@ export function AuditCenter({
               </div>
             ) : null}
             {summary !== null && !unavailable ? (
-              <AuditSection
+              technical ? <AuditSection
                 section={section}
                 summary={summary}
                 context={context}
                 onSelect={selectDetail}
-              />
+              /> : <AuditResearchOverview summary={summary} process={research.process} response={research.record} loading={research.loading} error={research.error} onRetry={research.retry} />
             ) : null}
           </main>
         </div>
@@ -313,13 +319,13 @@ export function AuditCenter({
             onBack={closeDetail}
             onRetry={detailState.retry}
           />
-        ) : (
+        ) : technical ? (
           <aside className="audit-detail-empty" aria-label="审计详情">
             <span aria-hidden="true">↗</span>
             <h3>选择一项记录</h3>
             <p>摘要不会自动读取 Prompt、配置值或 artifact 内容。</p>
           </aside>
-        )}
+        ) : null}
       </div>
     </div>
   );

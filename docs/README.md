@@ -77,6 +77,7 @@ current architecture, operations and contract pages for supported behavior.
 - [Subscription, retry and Reader closeout](reviews/2026-10-11-subscription-retry-acceptance.md): combined local regression, official subscription boundaries, request accounting, credential-test isolation and remaining environment/research limits.
 
 - [v3.3.0 release notes](reviews/2026-10-11-v3.3-release-notes.md): unified company investment research, one bounded challenge/reply cycle, dependency canvas, adjacent details and truthful terminal publication states.
+- [v3.3.1 release notes](reviews/2026-10-12-v3.3.1-release-notes.md): research-first audit, subscription transport retry classification, A-share/Web installation fix and selective a-stock-data v3.10.2 review.
 - [v3.2.0 release notes](reviews/2026-10-11-v3.2-release-notes.md): ChatGPT subscription, bounded native retries and diagnostics, conservative official PDF parsing, Reader interaction improvements, and release limits since v3.1.0.
 
 - [v3.1.0 release notes](reviews/2026-10-07-v3.1-release-notes.md): cumulative independent research, evidence Reader, bounded checks, DeepSeek default and Tencent stock-volume correction since v3.0.0.
@@ -89,7 +90,11 @@ current architecture, operations and contract pages for supported behavior.
 
 ## Dated Investigations
 
+- [a-stock-data v3.10.2 selective review](reviews/2026-10-12-a-stock-data-v3102-review.md): pinned upstream diff, PE-digestion applicability and retained missing-input boundaries; no applicable adapter code adoption.
+
 These record inspected evidence and recommendations, not delivered runtime changes.
+
+- [600418 00:47 timeout and audit readability](reviews/2026-10-12-audit-and-600418-timeout.md): current-run read-only timeline, retry-policy presence, distinct operating-validation and overall-deadline failures, UI/retry verification and preserved records.
 
 - [600418 latest failure — hypothesis reference mismatch](reviews/2026-10-11-600418-latest-failure.md): the 19:15 V7 run's proposal merge failure, misleading configuration classification and unpublished Reader behavior; core validation repairs are separate from the UI delivery.
 
@@ -114,6 +119,8 @@ These are execution proposals, not descriptions of current runtime behavior.
 - [Unified company research design](superpowers/specs/2026-10-11-unified-company-research-design.md) and [local implementation record](superpowers/plans/2026-10-11-unified-company-research-implementation.md): approved V7 scope and dated offline/browser validation; current behavior belongs in the [unified research contract](contracts/unified-company-research.md).
 
 `Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
+
+- [Audit readability design](superpowers/specs/2026-10-12-audit-readability-design.md): approved research-check default and explicit technical entry; current behavior is in Reader architecture and observability operations.
 
 - [ChatGPT subscription design](superpowers/specs/2026-10-10-chatgpt-subscription-design.md) and [implementation record](superpowers/plans/2026-10-11-chatgpt-subscription-implementation.md): approved OAuth/catalog/Responses scope and dated offline, browser and minimal real-call evidence; current behavior is in subscription operations.
 - [Native retry and official PDF recovery design](superpowers/specs/2026-10-11-native-model-retry-design.md): implemented request accounting and parsing scope, with dated evidence in the 600418 investigation.

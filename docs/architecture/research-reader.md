@@ -97,6 +97,18 @@ pauses hidden polling, uses bounded retries, and stops after terminal convergenc
 Role bodies are fetched only for the selected role, with run/role/sequence guards.
 Post-baseline focus reads support V6 and V7, retaining workflow and event-boundary
 identity guards; older question semantics do not fetch supplemental output.
+
+Audit opens with research checks: published-report availability and limitations,
+failed roles with closed safe explanations, recorded source failures, and saved
+stage output status. It reads the public record/process routes and never treats
+technical-summary availability or file counts as research quality. Missing or
+failed reads remain explicit; unpublished proposals stay unpublished. Currently
+failed roles can expose final schema/reference/JSON failure categories through
+`model_failures`, without response text or validation paths; successfully repaired
+roles do not retain a visible failure. Technical counts, raw file navigation,
+tools, prompts and configuration are available only through the explicit
+technical-troubleshooting entry (or an existing targeted technical link).
+The main Reader process and stage reviews omit execution authorization counts.
 The running/terminal unpublished surface and the published Reader process view
 share `ResearchFlow.tsx`: a dependency overview groups the common evidence and
 independent specialists, then challenge, code checks, versioned replies,

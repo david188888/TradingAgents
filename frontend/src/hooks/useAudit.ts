@@ -1,12 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, getAuditDetail, getAuditSummary } from "../api/client";
+import { ApiError, getAuditDetail, getAuditSummary, getReaderProcess, getResearchRecord } from "../api/client";
 import type {
   AuditDetailDTO,
   AuditSelectionDTO,
   AuditSummaryDTO,
+  ReaderProcessDTO,
+  ResearchRecordResponseDTO,
 } from "../api/contracts";
 
 type AuditError = ApiError | Error | null;
+
+/** Public research projections only; never fetches prompts or raw files. */
+export function useAuditResearch(runId: string, sequence: number | null, enabled: boolean) {
+  const [state, setState] = useState<{ runId: string; sequence: number | null; process: ReaderProcessDTO | null; record: ResearchRecordResponseDTO | null; loading: boolean; error: boolean }>({ runId, sequence, process: null, record: null, loading: false, error: false });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setState({ runId, sequence, process: null, record: null, loading: enabled, error: false });
+    if (!enabled || sequence === null) return () => controller.abort();
+    void Promise.allSettled([getReaderProcess(runId, controller.signal), getResearchRecord(runId, controller.signal)]).then(([process, record]) => {
+      if (controller.signal.aborted) return;
+      const validProcess = process.status === "fulfilled" && process.value.run_id === runId && process.value.source_sequence === sequence;
+      const validRecord = record.status === "fulfilled" && record.value.run_id === runId && (record.value.state !== "ready" || record.value.record.run_id === runId);
+      setState({ runId, sequence, process: validProcess ? process.value : null, record: validRecord ? record.value : null, loading: false, error: !validProcess || !validRecord });
+    });
+    return () => controller.abort();
+  }, [runId, sequence, enabled, attempt]);
+  const current = enabled && state.runId === runId && state.sequence === sequence;
+  return { process: current ? state.process : null, record: current ? state.record : null, loading: enabled && (!current || state.loading), error: current && state.error, retry: () => setAttempt(value => value + 1) };
+}
 
 export interface UseAuditSummaryResult {
   summary: AuditSummaryDTO | null;

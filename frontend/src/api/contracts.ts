@@ -2299,6 +2299,7 @@ export interface ReaderProcessDTO {
   availability: "ready" | "partial" | "unavailable" | "not_applicable"; reason_code: string | null;
   question_origin: "user" | "default" | "not_recorded"; primary_selection: "synthesis" | "code" | "not_recorded";
   counts: NativeCountsDTO; roles: ReaderRoleDTO[]; claim_origins: Array<{claim_id: string; role_key: AgentKey}>; source_failures: string[];
+  /** Safe provider failures and closed output-validation explanations for failed roles. */
   model_failures?: ModelFailureDiagnosticDTO[];
 }
 export interface ModelFailureDiagnosticDTO {

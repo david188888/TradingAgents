@@ -245,8 +245,11 @@ without exposing unqualified proposals. The process endpoint reads summary
 metadata; the selected-role endpoint returns only closed research schema fields,
 never prompts, adapter responses or checkpoint envelopes. Both are read-only.
 `runtime/native_observation.py` records SDK observation coverage before MAIN
-authorization for new SDK-adapter runs. Reader and Audit separately report
-budget, SDK main/focus/repair, data-capability and HTTP authorizations; legacy incomplete
+authorization for new SDK-adapter runs. Public process DTOs retain separate
+budget, SDK main/focus/repair, data-capability and HTTP authorizations; the UI
+shows these only in Audit technical troubleshooting. Audit defaults to public
+research availability, failed-role explanations and limitations; main stage
+reviews omit execution counts. Legacy incomplete
 coverage is nullable or a lower bound. This marker does not change recovery
 identity, prompts, role selection or the research record. The separate
 `/reader/focus` projection validates committed supplemental bytes and their

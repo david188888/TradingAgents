@@ -25,7 +25,7 @@ test("desktop question, evidence, agent review and diagnostic truth",async({page
  await reader.getByRole("button",{name:"研究过程",exact:true}).click();
  await expect(reader.getByRole("group",{name:"被质疑专项回应",exact:true})).toBeVisible();
  await expect(reader.getByRole("heading",{name:"关注点回应",exact:true})).toBeVisible();
- await reader.getByText("调用记录与统计口径",{exact:true}).click();await expect(reader.getByText(/SDK 主发出授权：未记录/)).toBeVisible();
+ await expect(reader.getByText("调用记录与统计口径",{exact:true})).toHaveCount(0);
  await reader.getByRole("button",{name:"研究报告",exact:true}).click();
  const modalEntry=reader.locator(".qr-evidence-entry");await modalEntry.click();const dialog=page.getByRole("dialog",{name:"依据与概念解释",exact:true});await expect(dialog).toBeVisible();
  await expect(page.locator("#root")).toHaveAttribute("inert","");

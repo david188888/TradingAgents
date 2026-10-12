@@ -25,9 +25,12 @@ def transient_model_error(exc):
     if diagnostic is not None:
         code, status = diagnostic.upstream_code, diagnostic.upstream_status
         # Subscription permission/quota/stream errors belong to their own
-        # recovery flow; only generic HTTP errors qualify here.
+        # recovery flow; only request failures with closed HTTP/transport
+        # classifications qualify here.
         if diagnostic.category != "request_failed":
             return False
+        if code in {"transport_timeout", "transport_connection_error"}:
+            return True
     if isinstance(code, str) and code in _PERMANENT_CODES:
         return False
     if type(status) is int:

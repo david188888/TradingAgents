@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentKey, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
 import { useReaderAgent, useReaderFocus } from "../../hooks/useReaderProcess";
-import { AGENT_LABELS, countLabel, dimensionLabel, STANCE_LABELS, TERMS } from "../../domain/readerExplanation";
+import { AGENT_LABELS, dimensionLabel, STANCE_LABELS, TERMS } from "../../domain/readerExplanation";
 import { limitationLabel } from "../../domain/researchCoverage";
 import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
 import { claimText, LocalChallengeResult, LocalEvidenceChecks, MetricCard } from "./ResearchRecordSection";
@@ -145,7 +145,6 @@ export function NativeReader({ runId, record, process, processError, retryProces
               record={record} runStatus="completed" entity={null} onRole={setFlowRole} onInspect={(v,trigger)=>select(v,trigger)} onLocate={locate}
               onRetry={()=>{agent.retry();if(processError)retryProcess();}}/> : null}
           </ResearchFlow>
-          <details><summary>调用记录与统计口径</summary>{process ? <><p>主分析预算授权：{countLabel(process.counts.main_budget)}；结构化修复预算授权：{countLabel(process.counts.repair_budget)}</p><p>SDK 主发出授权：{countLabel(process.counts.sdk_main)}；修复发出授权：{countLabel(process.counts.sdk_repair)}；合计：{countLabel(process.counts.sdk_total)}</p>{process.counts.focus_budget ? <p>补充回应预算授权：{countLabel(process.counts.focus_budget)}；SDK 补充发出授权：{countLabel(process.counts.sdk_focus)}</p> : null}<p>数据能力调用：{countLabel(process.counts.data_capability)}；HTTP 尝试：{countLabel(process.counts.data_http)}</p><p className="qr-meta">发出授权不证明供应商接收或计费；重复保存 checkpoint 不重复计数。记录序列 {process.source_sequence}。</p></> : <p>未记录</p>}</details>
         </section> : null}
         {view === "agents" ? <ReaderAgentOutput role={role} process={process} output={agent.response} error={agent.error || processError} record={record} runStatus="completed" entity={entity} onRole={r=>{setRole(r);setEntity(null);}} onInspect={(v,trigger)=>select(v,trigger)} onLocate={locate} onRetry={()=>{agent.retry();if(processError)retryProcess();}}/> : null}
         {view === "evidence" ? <section><header className="qr-view-intro"><h2>证据目录</h2><p>按本次保存来源逐项核对；字段来源先看绑定事实，再展开原始数据。</p></header>{record.evidence.map(s=><article className="qr-catalog-card" key={s.evidence_id}><h3>{s.source_name}</h3><p className="qr-meta">{s.usable_as_of ?? "时间资格未验证"} · {s.content?.kind === "excerpt" ? "保存摘录" : s.content ? "保存字段" : "未保存正文"}</p>{inspectButton({kind:"source",id:s.evidence_id},"打开保存内容 →")}</article>)}</section> : null}
