@@ -1,5 +1,8 @@
 """V7 real durable kernel and public records, offline proposals only."""
 import copy
+import json
+import time
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +18,95 @@ from tradingagents.research.native_versions import UNIFIED_BUDGET_POLICY, UNIFIE
 from tradingagents.runtime.catalyst_checkpoint import CatalystJournal
 from tradingagents.runtime.run_models import RunSnapshot
 from tradingagents.runtime.store import RunStore
+
+
+@pytest.mark.parametrize("invalid", [None, "unknown_alias", "wrong_dimension", "reply_fact"])
+def test_synthesis_aliases_restore_canonical_references_and_preserve_gates(tmp_path, monkeypatch, invalid):
+    from tests.test_native_model import main
+    from tradingagents.execution import native_model as adapter
+
+    journal, seed = setup(tmp_path / "kernel")
+    proposals = UnifiedCaller()
+    run(journal, seed, proposals)
+    context = next(context for stage, context in proposals.calls if stage == "synthesis")
+    journal, seed = setup(tmp_path / "adapter")
+    main(journal, "synthesis")
+    expected = adapter.SynthesisProposalV3.model_validate(proposals("synthesis", context)).model_dump(mode="json")
+    prompts = []
+
+    def invoke(prompt):
+        prompts.append(prompt)
+        encoded, _ = json.JSONDecoder().raw_decode(prompt.split("Saved research context:\n", 1)[1])
+        assert encoded["record"]["claims"][0]["claim_id"].startswith("claim_")
+        proposal = proposals("synthesis", encoded)
+        by_dimension = {item["dimension"]: item for item in proposal["dimensions"]}
+        proposal["dimensions"] = [by_dimension[name] for name in context["dimension_policy"]]
+        if invalid is not None and len(prompts) == 1:
+            if invalid == "reply_fact":
+                proposal["opposing_arguments"][0].update(
+                    claim_ids=[encoded["record"]["hypotheses"][0]["claim_id"]],
+                    response_ids=[encoded["record"]["dialogue"]["responses"][0]["response_id"]])
+            else:
+                target = proposal["dimensions"][1]
+                target["claim_ids"] = (["claim_999999"] if invalid == "unknown_alias"
+                    else encoded["dimension_claim_ids"]["operating_quality"][:1])
+        return SimpleNamespace(content=json.dumps(proposal))
+
+    monkeypatch.setattr(adapter, "create_llm_client", lambda **_: SimpleNamespace(
+        get_llm=lambda: SimpleNamespace(invoke=invoke)))
+    model = adapter.NativeModelCaller(effective_config={"llm_provider": "deepseek", "quick_think_llm": "quick",
+        "deep_think_llm": "deep"}, run_id=seed.run_id, ledger=journal.ledger,
+        cancelled=lambda: False, deadline=lambda: time.monotonic() + 30)
+    assert model("synthesis", context) == expected
+    assert len(prompts) == (1 if invalid is None else 2)
+    if invalid is not None:
+        assert journal.state["native.model_diagnostics"]["synthesis.main"]["detail_code"] == (
+            "argument_reply_fact_reference" if invalid == "reply_fact" else "dimension_claim_reference")
+        assert "claim_" in prompts[1].split("Allowed dimension claim IDs:\n")[-1]
+        if invalid == "reply_fact":
+            assert "Exact reply fact bindings" in prompts[1] and "response_001" in prompts[1]
+    if invalid is not None:
+        journal.state["results"].pop("native.adapter.synthesis")
+    journal.persist()
+    restored = CatalystJournal(journal.observer, journal.state["identity"], require_existing=True)
+    inactive = adapter.NativeModelCaller(effective_config=model.config, run_id=seed.run_id,
+        ledger=restored.ledger, cancelled=lambda: True, deadline=lambda: -1)
+    before = json.dumps(restored.state, sort_keys=True)
+    assert inactive.recover_cached("synthesis", context) == expected
+    assert json.dumps(restored.state, sort_keys=True) == before
+    assert len(prompts) == (1 if invalid is None else 2)
+
+
+@pytest.mark.parametrize("alias_version", [None, 1])
+def test_existing_synthesis_prompt_keeps_saved_reference_format(tmp_path, monkeypatch, alias_version):
+    import hashlib
+
+    from tests.test_native_model import main
+    from tradingagents.execution import native_model as adapter
+
+    journal, seed = setup(tmp_path / "kernel")
+    proposals = UnifiedCaller()
+    run(journal, seed, proposals)
+    context = next(context for stage, context in proposals.calls if stage == "synthesis")
+    journal, seed = setup(tmp_path / "adapter")
+    main(journal, "synthesis")
+    model = adapter.NativeModelCaller(effective_config={"llm_provider": "deepseek", "quick_think_llm": "quick",
+        "deep_think_llm": "deep"}, run_id=seed.run_id, ledger=journal.ledger,
+        cancelled=lambda: False, deadline=lambda: time.monotonic() + 30)
+    journal.put("native.binding_guidance.synthesis", 1)
+    if alias_version is not None:
+        journal.put("native.reference_aliases.synthesis", alias_version)
+    old_prompt = model._prompt("synthesis", context)
+    journal.put("native.prompt.synthesis", hashlib.sha256(old_prompt.encode()).hexdigest())
+    prompts = []
+    def invoke(prompt):
+        prompts.append(prompt)
+        return SimpleNamespace(content=json.dumps(proposals("synthesis", model._model_context("synthesis", context))))
+    monkeypatch.setattr(adapter, "create_llm_client", lambda **_: SimpleNamespace(get_llm=lambda: SimpleNamespace(invoke=invoke)))
+    model("synthesis", context)
+    assert prompts == [old_prompt]
+    assert journal.state.get("native.reference_aliases.synthesis") == alias_version
+    assert "This applies to maintained replies too" not in old_prompt
 
 
 class UnifiedCaller:
@@ -196,7 +288,7 @@ def test_sdk_v7_schema_validation_and_reply_effort_use_eight_shared_attempts(tmp
     journal,seed=setup(tmp_path,full=True)
     proposals=UnifiedCaller(challenge_count=3)
     def output():
-        context=json.loads(stub.prompts[-1].split("Saved research context:\n",1)[1])
+        context,_=json.JSONDecoder().raw_decode(stub.prompts[-1].split("Saved research context:\n",1)[1])
         stage=("response_"+context["role"] if "assigned" in context else "synthesis" if context.get("record",{}).get("dialogue") is not None
                else "challenge" if "record" in context else context["view_scope"]["role"])
         return proposals(stage,context)

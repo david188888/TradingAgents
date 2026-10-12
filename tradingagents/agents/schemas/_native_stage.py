@@ -1,5 +1,6 @@
 """Closed model proposals; facts, IDs, execution and publication remain code-owned."""
 
+from collections.abc import Iterable, Mapping
 from datetime import date
 from typing import Annotated, Literal
 
@@ -49,6 +50,31 @@ class HypothesisProposalV1(_Proposal):
 class SpecialistProposalV1(_Proposal):
     hypotheses: tuple[HypothesisProposalV1, ...] = Field(default=(), max_length=3)
     unknowns: tuple[Annotated[str, Field(min_length=1, max_length=300)], ...] = Field(default=(), max_length=3)
+
+
+class NativeEvidenceBindingError(ValueError):
+    """A proposal's references violate the frozen evidence boundary."""
+
+
+def validate_condition_evidence(
+    hypothesis: HypothesisProposalV1,
+    evidence_ids: Iterable[str],
+    metric_evidence: Mapping[str, Iterable[str]],
+) -> None:
+    """Conditions may use only sources supporting their own hypothesis."""
+    allowed = set(evidence_ids)
+    for condition in hypothesis.conditions:
+        check = condition.check
+        if check is None:
+            continue
+        if check.kind == "financial":
+            operands = (check.current,) if check.base is None else (check.current, check.base)
+            if any(operand.evidence_id not in allowed for operand in operands):
+                raise NativeEvidenceBindingError("condition references evidence outside its hypothesis")
+        else:
+            sources = metric_evidence.get(check.metric_id)
+            if sources is None or not set(sources) <= allowed:
+                raise NativeEvidenceBindingError("condition references a metric outside its hypothesis")
 
 
 class ChallengeProposalV1(_Proposal):

@@ -213,6 +213,14 @@ classic checkpoint toggle. Unknown dispatched calls remain spent and are not
 automatically repeated. Persisted adapter responses can recover the gap before
 the kernel's MAIN result without another model call.
 
+For V7, the adapter checks condition evidence against its own hypothesis before
+saving specialist proposals; the kernel repeats that shared rule at merge.
+`execution/native_references.py` gives fresh synthesis requests deterministic
+prompt-local aliases, restored to canonical IDs before unchanged record gates
+and caching. Frozen prompts retain their original format. Binding guidance and
+safe repair feedback remain within the existing repair budget; see the
+[unified research contract](docs/contracts/unified-company-research.md).
+
 Fresh V7 identities freeze `execution/native_retry.py`'s model retry policy.
 The adapter permits three transient retries per call with 2/5/10-second waits,
 bounded by the existing shared three-retry/twelve-attempt ledger limits. Repair

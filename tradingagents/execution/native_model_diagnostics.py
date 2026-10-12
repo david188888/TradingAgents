@@ -8,6 +8,8 @@ from tradingagents.execution.budget import BudgetExhausted
 
 _BINDINGS = {
     "specialist reference outside supplied facts": "specialist_fact_reference",
+    "condition references evidence outside its hypothesis": "condition_evidence_reference",
+    "condition references a metric outside its hypothesis": "condition_metric_reference",
     "synthesis dimension references outside allowed claims": "dimension_claim_reference",
     "synthesis key claim invalid": "key_claim_reference",
     "synthesis primary challenge invalid": "primary_challenge_reference",
@@ -22,6 +24,9 @@ _BINDINGS = {
 _UPSTREAM_CODES = {
     "invalid_request_error", "context_length_exceeded", "insufficient_quota",
     "rate_limit_exceeded", "authentication_error", "model_not_found",
+}
+_PUBLIC_BINDINGS = {
+    "Value error, revised argument must cite the reply's facts": "argument_reply_fact_reference",
 }
 
 
@@ -78,6 +83,8 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, response=
                        "date_parsing", "date_from_datetime_parsing", "enum", "greater_than_equal",
                        "less_than_equal", "finite_number"}
             issues.append({"path": path, "code": code if code in allowed else "validation_error"})
+            if not issue["loc"] and code == "value_error" and issue["msg"] in _PUBLIC_BINDINGS:
+                value.update(category="reference_validation", detail_code=_PUBLIC_BINDINGS[issue["msg"]])
         value["issues"] = issues
     elif isinstance(exc, ValueError) and str(exc) in _BINDINGS:
         value.update(category="invalid_json" if str(exc) == "duplicate JSON key" else "reference_validation",

@@ -27,6 +27,12 @@
 历史 checkpoint 没有该字段时，不能回填或推断其具体失败原因。
 ChatGPT 的账户/用量操作提示仍使用单独的 `native.model_failures`。
 
+V7 条件引用失配在专项提议保存前进入现有结构修复；内核合并时重复校验，
+以类型化证据错误区分凭据/配置缺失。综合论证与回应事实失配使用固定的
+`argument_reply_fact_reference`，不保存任意 root-validator 消息。
+引用修复只重述冻结输入中的允许绑定，不回显无效响应，也不增加修复次数。
+短代号、提示冻结和兼容性边界见[统一研究契约](../contracts/unified-company-research.md)。
+
 ## 原生模型有限网络重试
 
 新建 V6 研究在恢复身份中冻结 `model_retry_policy`（`native-network-retry-v1`）。

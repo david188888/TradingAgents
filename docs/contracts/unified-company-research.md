@@ -60,6 +60,32 @@ V7 permits at most eight main calls (three initial specialists, critic, three
 replies and synthesis), one optional post-baseline focus and twelve actual model
 attempts total. Repairs and network retries consume that same attempt ceiling.
 The two-repair/shared-three-retry limits and data/verification ceilings remain.
+V7 specialist parsing checks financial condition operands and metric sources
+against the evidence of their own hypothesis before saving a proposal. Invalid
+bindings use the existing bounded repair opportunity; if repair fails, the
+specialist is unavailable and the remaining research can publish a limited
+record. The kernel repeats the same binding check for supplied proposals;
+condition-binding failures are evidence rejection, not missing provider configuration.
+New V7 reference repairs include fixed validation feedback about the failed
+binding, repeating the allowed dimension IDs when necessary. Previously saved
+generic repair prompts keep their exact hashes; unknown dispatches are never
+replayed and repair/attempt limits are unchanged.
+Fresh V7 specialist/synthesis stages also persist a binding-guidance marker
+before their first prompt is frozen. They repeat the existing structure and
+reference constraints near the response instruction. A stage with an already
+saved prompt does not acquire this marker or change its prompt hash on recovery.
+Fresh V7 synthesis requests additionally persist a prompt-local reference-alias
+marker. Saved identifier definitions are sorted into short aliases by kind;
+only reference fields are translated, leaving prose, invalidation text and
+closed check IDs unchanged. Responses map exact aliases back to canonical IDs
+before the existing schema and public-record gates run. Unknown aliases are
+not guessed or repaired by the mapper. Canonical proposals remain the saved
+artifact, and already frozen synthesis prompts retain their original format.
+The alias prompt also spells out the existing argument-to-reply fact rule:
+when an argument cites a response, every cited claim must be one of that
+response's supporting facts, including for maintained replies. A fixed
+allowlisted diagnostic can supply these saved bindings to bounded repair;
+raw response text and arbitrary validator messages are never included.
 V6 keeps its original five/one/twelve policy. Stable reservation/merge order,
 checkpoint caching and unknown-dispatch non-replay apply to replies too.
 Reply tasks reuse the corresponding specialist's configured model effort.

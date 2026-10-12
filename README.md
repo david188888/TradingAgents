@@ -75,7 +75,7 @@ Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记�
 | 研究记录与证据契约 | [契约索引](docs/contracts/README.md) · [研究记录](docs/contracts/research-record.md) |
 | Reader 的证据追溯与展示 | [Reader 架构](docs/architecture/research-reader.md) |
 | 编码 Agent 与贡献者如何修改项目 | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| 全部文档与发布记录 | [文档索引](docs/README.md) · [3.3 发布说明](docs/reviews/2026-10-11-v3.3-release-notes.md) |
+| 全部文档与发布记录 | [文档索引](docs/README.md) · [3.3.2 发布说明](docs/reviews/2026-10-12-v3.3.2-release-notes.md) |
 
 编码 Agent 从 [AGENTS.md](AGENTS.md) 开始；当前行为以代码、契约和当前状态文档为准，历史计划不是实现证据。
 

@@ -422,6 +422,112 @@ def test_v4_synthesis_dimension_binding_uses_one_bounded_repair(journal, monkeyp
     assert len(stub.prompts) == 2
 
 
+@pytest.mark.parametrize("kind", ["financial", "financial_base", "metric", "missing_metric"])
+def test_v7_condition_scope_uses_bounded_repair_before_saving(journal, monkeypatch, kind):
+    journal.state["identity"]["workflow_version"] = "evidence-production-v7"
+    main(journal)
+    operand = {"evidence_id": "e.other", "table": "cashflow",
+               "field": "n_cashflow_act", "report_period": "2026-06-30"}
+    predicate = {"operator": "lt", "threshold": "0", "unit": "CNY"}
+    check = {"kind": "financial", "operation": "value", "current": operand, "predicate": predicate}
+    if kind == "financial_base":
+        check.update(operation="difference", current={**operand, "evidence_id": "e.support"},
+                     base={**operand, "report_period": "2025-06-30"})
+    if "metric" in kind:
+        check = {"kind": "metric", "metric_id": "m.other", "predicate": predicate}
+    invalid = {"hypotheses": [{"statement": "条件性经营假设", "supporting_fact_ids": ["f.support"],
+        "conditions": [{"condition_role": "invalidation", "text": "后续资料不支持该解释", "check": check}],
+        "alternative_explanation": "营运资金时点变化"}]}
+    context = {"facts": [{"claim_id": "f.support", "evidence_ids": ["e.support"]},
+                         {"claim_id": "f.other", "evidence_ids": ["e.other"]}],
+               "metrics": [] if kind == "missing_metric" else [{"metric_id": "m.other", "input_evidence_ids": ["e.other"]}]}
+    stub, _ = sdk(monkeypatch, [invalid, valid("operating_quality")])
+    result = caller(journal)("operating_quality", context)
+    assert result["hypotheses"] == []
+    assert len(stub.prompts) == 2
+    assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 1
+    assert "e.other" not in json.dumps(journal.state["results"])
+    diagnostic = journal.state["native.model_diagnostics"]["operating_quality.main"]
+    assert diagnostic["category"] == "reference_validation"
+    assert diagnostic["detail_code"] == ("condition_metric_reference" if "metric" in kind else "condition_evidence_reference")
+    assert "Validation failure: " + diagnostic["detail_code"] in stub.prompts[1]
+
+
+def test_v7_valid_condition_scope_needs_no_repair(journal, monkeypatch):
+    journal.state["identity"]["workflow_version"] = "evidence-production-v7"
+    main(journal)
+    proposal = {"hypotheses": [{"statement": "条件性经营假设", "supporting_fact_ids": ["f.support"],
+        "conditions": [{"condition_role": "invalidation", "text": "现金流恢复为正", "check": {
+            "kind": "financial", "operation": "value", "current": {"evidence_id": "e.support",
+                "table": "cashflow", "field": "n_cashflow_act", "report_period": "2026-06-30"},
+            "predicate": {"operator": "gt", "threshold": "0", "unit": "CNY"}}}],
+        "alternative_explanation": "营运资金时点变化"}]}
+    stub, _ = sdk(monkeypatch, [proposal])
+    result = caller(journal)("operating_quality", {"facts": [{"claim_id": "f.support", "evidence_ids": ["e.support"]}]})
+    assert result["hypotheses"]
+    assert len(stub.prompts) == 1
+    assert journal.ledger.consumed(BudgetBucket.STRUCTURED_REPAIR) == 0
+
+
+def test_v7_reference_repair_feedback_is_frozen_and_readonly_recoverable(journal, monkeypatch):
+    from tradingagents.research.native_versions import UNIFIED_BUDGET_POLICY
+    journal.state["identity"]["workflow_version"] = "evidence-production-v7"
+    journal.state["identity"]["focus_budget_policy"] = dict(UNIFIED_BUDGET_POLICY)
+    main(journal)
+    invalid = {"hypotheses": [{"statement": "条件性经营假设", "supporting_fact_ids": ["f.support"],
+        "conditions": [{"condition_role": "invalidation", "text": "现金流恢复为正", "check": {
+            "kind": "financial", "operation": "value", "current": {"evidence_id": "e.other",
+                "table": "cashflow", "field": "n_cashflow_act", "report_period": "2026-06-30"},
+            "predicate": {"operator": "gt", "threshold": "0", "unit": "CNY"}}}],
+        "alternative_explanation": "营运资金时点变化"}]}
+    context = {"facts": [{"claim_id": "f.support", "evidence_ids": ["e.support"]}]}
+    stub, _ = sdk(monkeypatch, [invalid, valid("operating_quality")])
+    expected = caller(journal)("operating_quality", context)
+    journal.state["results"].pop("native.adapter.operating_quality")
+    journal.persist()
+    restored = CatalystJournal(journal.observer, journal.state["identity"], require_existing=True)
+    inactive = caller(restored, cancelled=lambda: True, deadline=lambda: -1)
+    before = json.dumps(restored.state, sort_keys=True)
+    assert inactive.recover_cached("operating_quality", context) == expected
+    assert json.dumps(restored.state, sort_keys=True) == before
+    assert len(stub.prompts) == 2
+    assert "every hypothesis needs at least one condition" in stub.prompts[0]
+
+
+def test_v7_existing_main_prompt_does_not_gain_new_guidance(journal, monkeypatch):
+    import hashlib
+    journal.state["identity"]["workflow_version"] = "evidence-production-v7"
+    main(journal)
+    model = caller(journal)
+    context = {"facts": []}
+    old_prompt = model._prompt("operating_quality", context)
+    journal.state["native.prompt.operating_quality"] = hashlib.sha256(old_prompt.encode()).hexdigest()
+    stub, _ = sdk(monkeypatch, [valid("operating_quality")])
+    model("operating_quality", context)
+    assert stub.prompts == [old_prompt]
+    assert "native.binding_guidance.operating_quality" not in journal.state
+
+
+def test_v7_saved_generic_repair_prompt_keeps_legacy_hash(journal):
+    import hashlib
+    journal.state["identity"]["workflow_version"] = "evidence-production-v7"
+    model = caller(journal)
+    base = "frozen prompt\n" + adapter._REPAIR_INSTRUCTION
+    journal.state["native.model_diagnostics"] = {"synthesis.main": {"detail_code": "dimension_claim_reference"}}
+    journal.state["native.prompt.synthesis.repair"] = hashlib.sha256(base.encode()).hexdigest()
+    assert model._repair_prompt("synthesis", "frozen prompt", {"dimension_claim_ids": {}}) == base
+
+
+def test_v7_dimension_repair_feedback_repeats_exact_allowed_claims(journal):
+    journal.state["identity"]["workflow_version"] = "evidence-production-v7"
+    journal.state["native.model_diagnostics"] = {"synthesis.main": {"detail_code": "dimension_claim_reference"}}
+    context = {"dimension_claim_ids": {"operating_quality": ["f.operating"], "valuation": []}}
+    prompt = caller(journal)._repair_prompt("synthesis", "frozen prompt", context)
+    assert "Validation failure: dimension_claim_reference" in prompt
+    assert json.dumps(context["dimension_claim_ids"], ensure_ascii=False, sort_keys=True) in prompt
+    assert "empty claim_ids" in prompt
+
+
 def test_sdk_observation_precedes_main_authorization_and_initialization_failure(journal, monkeypatch):
     from tradingagents.web.reader_process_projection import native_counts
 
