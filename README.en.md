@@ -15,6 +15,7 @@ New studies use one company investment research workflow, combining operations, 
 - **A-share evidence chain**: combines public company information, official disclosures, financials and prices while preserving sources, timestamps and coverage limits.
 - **Purposeful Agent roles**: operating, event and market specialists develop isolated hypotheses followed by one challenge round, actual checks, targeted specialist replies and synthesis; code owns evidence admission, reference validation and deterministic calculations.
 - **Traceable research reading**: follow judgments back to evidence, doubts and Agent outputs. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
+- **Company report delivery**: preserve public introductions, fundamentals and market observations independently. Gaps limit their sections; unfinished synthesis still delivers saved basics and valid specialist findings, explicitly without an overall rating.
 
 ## Overall architecture and Agent design
 

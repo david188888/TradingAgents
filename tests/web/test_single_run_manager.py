@@ -499,11 +499,13 @@ def test_failure_terminalizes_run_and_cleans_worker_without_false_report(tmp_pat
 
 def test_condition_evidence_failure_is_not_classified_as_missing_configuration():
     from tradingagents.agents.schemas._native_stage import NativeEvidenceBindingError
+    from tradingagents.execution.native_model import NativeModelReferenceInvalid
     from tradingagents.web.manager import _error_category
 
     assert _error_category(NativeEvidenceBindingError(
         "condition references evidence outside its hypothesis")) == "evidence_rejection"
     assert _error_category(ValueError("missing provider config")) == "missing_configuration"
+    assert _error_category(NativeModelReferenceInvalid("native model response invalid")) == "evidence_rejection"
 
 
 def test_failure_compensates_open_vendor_tool_turn_role_then_pending_roles(tmp_path):

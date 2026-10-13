@@ -12,6 +12,7 @@ from tradingagents.agents.schemas._native_stage import (
     SynthesisProposalV1,
     SynthesisProposalV2,
     SynthesisProposalV3,
+    saved_specialist_acceptance,
 )
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
@@ -20,6 +21,7 @@ from tradingagents.research.native_versions import (
     FOCUS_KERNEL_VERSION,
     FOCUS_WORKFLOW_VERSION,
     RESPONSE_ROLES,
+    SPECIALIST_REFERENCE_POLICY,
     UNIFIED_KERNEL_VERSION,
     UNIFIED_QUESTION,
     UNIFIED_WORKFLOW_VERSION,
@@ -251,11 +253,31 @@ def _context(store, run_id, through=None):
             raise ValueError("baseline_objective")
         seed = ResearchRecordV1.model_validate(cp["native_seed"])
         native_input = cp["native_input"]
-        if native_input != {
+        expected_input = {
             "workflow_version": VERSIONS[version],
             "seed_sha256": canonical_sha256(seed),
             "research_question": record.assessment.research_question,
-        }:
+        }
+        from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
+        company_policy = cp["identity"].get("company_research_policy")
+        if company_policy is not None:
+            if (company_policy != COMPANY_RESEARCH_POLICY or version != UNIFIED_WORKFLOW_VERSION
+                    or company_policy not in record.limitations):
+                raise ValueError("company_policy")
+            expected_input["company_research_policy"] = company_policy
+        from tradingagents.research.native_versions import REPORT_DELIVERY_POLICY
+        report_policy = cp["identity"].get("report_delivery_policy")
+        if report_policy is not None:
+            if (report_policy != REPORT_DELIVERY_POLICY or version != UNIFIED_WORKFLOW_VERSION
+                    or report_policy not in record.limitations):
+                raise ValueError("report_policy")
+            expected_input["report_delivery_policy"] = report_policy
+        policy = cp["identity"].get("specialist_reference_policy")
+        if policy is not None:
+            if policy != SPECIALIST_REFERENCE_POLICY or version != UNIFIED_WORKFLOW_VERSION:
+                raise ValueError("specialist_policy")
+            expected_input["specialist_reference_policy"] = policy
+        if native_input != expected_input:
             raise ValueError("input")
         output = cp["results"]["native.output"]
         if output["identity"] != native_input or canonical_sha256(
@@ -325,7 +347,11 @@ def _proposal(ctx, role):
         chids.extend(assignments)
     elif isinstance(proposal, SpecialistProposalV1):
         allowed = {f.claim_id for f in saved_fact_views(seed, version)[role]}
-        for index, item in enumerate(proposal.hypotheses):
+        accepted = saved_specialist_acceptance(cp, role, proposal)
+        if accepted and any(f"native_hypothesis_rejected:{role}:{r.code}:{r.index}" not in record.limitations for r in accepted.rejections):
+            raise ValueError("specialist_rejection_binding")
+        indices = accepted.indices if accepted else tuple(range(len(proposal.hypotheses)))
+        for index, item in zip(indices, proposal.hypotheses, strict=True):
             hid = "h." + canonical_sha256(
                 {
                     "input": cp["native_input"],
@@ -542,6 +568,9 @@ def _agent(ctx, role):
                 else "proposal_not_recorded",
             )
         record = ctx.record
+        if (isinstance(proposal, SpecialistProposalV1) and not proposal.hypotheses
+                and "native_stage_unavailable:" + role in record.limitations):
+            return ReaderAgentDTO(**base, availability="unavailable", reason_code="native_stage_unavailable")
         relations = [
             OutputRelation(
                 entity_id=cid,
@@ -664,6 +693,10 @@ def _process(ctx):
             if key in {"operating_quality", "event_context", "market_context"}:
                 origins.extend(ClaimOrigin(claim_id=cid, role_key=key) for cid in agent.claim_ids)
     primary = "not_recorded"
+    if ctx.seed and ctx.record and getattr(ctx.record.assessment, "report_status", None) is not None:
+        origins.extend(ClaimOrigin(claim_id=claim.claim_id, role_key="evidence") for claim in ctx.seed.claims)
+    if ctx.record and getattr(ctx.record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}:
+        primary = "code"
     if agents.get("synthesis") and agents["synthesis"].proposal:
         primary = (
             "synthesis"

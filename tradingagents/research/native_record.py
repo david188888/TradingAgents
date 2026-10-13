@@ -19,6 +19,7 @@ from tradingagents.agents.schemas._research_record import (
     make_evidence_snapshot,
 )
 from tradingagents.agents.schemas._verification_plan import FINANCIAL_FIELDS, FinancialOperandV1
+from tradingagents.dataflows.company_profile import PROFILE_CAPABILITY, PROFILE_SOURCE
 from tradingagents.dataflows.ticker_utils import to_tushare_symbol
 from tradingagents.research.evidence_freeze import (
     CAP_EVENT_COVERAGE,
@@ -51,6 +52,7 @@ from tradingagents.research.verification_tools import (
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 Mode = Literal["company_research", "catalyst_research", "holding_review"]
 _SOURCE_CAPABILITIES = {
+    PROFILE_SOURCE: PROFILE_CAPABILITY,
     **dict.fromkeys(IDENTITY_SOURCES, CAP_IDENTITY),
     **dict.fromkeys(FINANCIAL_SOURCES, CAP_FUNDAMENTALS),
     "cninfo": CAP_EVENT_COVERAGE,
@@ -107,6 +109,15 @@ def _financial_content(payload, ticker: str) -> SourceContentV1 | None:
 
 
 def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceContentV1 | None:
+    if item.source_name == PROFILE_SOURCE:
+        from tradingagents.research.company_basics import PROFILE_LABELS
+        if (not isinstance(payload, dict) or payload.get("ts_code") != ticker
+                or payload.get("capture_scope") != "current_public_profile"
+                or not isinstance(payload.get("fields"), dict)
+                or not payload["fields"] or not set(payload["fields"]) <= PROFILE_LABELS.keys()
+                or any(not isinstance(v, str) or not 1 <= len(v) <= 700 for v in payload["fields"].values())):
+            return None
+        return _content(payload, "公司公开资料明确字段摘录；为采集时点介绍，不证明计划兑现")
     if item.source_name in VALUATION_SOURCES:
         try:
             selected = valuation_content(payload, item.source_name, ticker, item.usable_as_of.astimezone(SHANGHAI).date())
@@ -163,11 +174,11 @@ def _source_record(item: CatalystEvidence, draft: FrozenEvidenceDraft, payload) 
     if item.published_at is not None and (item.published_at.tzinfo is None or item.published_at.astimezone(SHANGHAI).date() > date.fromisoformat(draft.cutoff)):
         availability = "unavailable"
         limitation.append("source_publication_after_cutoff_or_unqualified")
-    if item.source_name in VALUATION_SOURCES and (
+    if item.source_name in VALUATION_SOURCES | {PROFILE_SOURCE} and (
             item.captured_at is None or item.captured_at.tzinfo is None
             or item.captured_at.astimezone(SHANGHAI).date().isoformat() != draft.cutoff):
         availability = "unavailable"
-        limitation.append("valuation_historical_vintage_unverified")
+        limitation.append("profile_historical_vintage_unverified" if item.source_name == PROFILE_SOURCE else "valuation_historical_vintage_unverified")
     content = _source_content(item, payload, to_tushare_symbol(draft.ticker))
     if content is None:
         availability = "unavailable"
@@ -232,7 +243,7 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                         original_thesis: str | None = None,
                         holding_facts_as_of: str | None = None,
                         include_coverage: bool = False, include_valuation: bool = False,
-                        include_minimum: bool = False) -> ResearchRecordV1:
+                        include_minimum: bool = False, include_basics: bool = False) -> ResearchRecordV1:
     """Retain proven fields only; source coverage gaps never prove absence.
 
     Context bytes are bound to the collector's source-family digest before any
@@ -295,10 +306,12 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     coverage = tuple(f"global_coverage:{cap.capability}:{cap.status.value}" for cap in draft.capabilities) if include_coverage else ()
     gaps = tuple(f"global_gap:{cap.capability}:{gap}" for cap in draft.capabilities for gap in cap.degradations) if include_coverage else ()
     identity_limits = () if identity_ok else ("security_identity_unqualified",)
+    from tradingagents.research.native_versions import REPORT_DELIVERY_POLICY
+    delivery_limits = (REPORT_DELIVERY_POLICY,) if include_basics else ()
     seed = ResearchRecordV1(run_id=draft.run_id, ticker=draft.ticker, mode=mode,
         analysis_date=cutoff, construction="native", evidence=evidence,
         snapshots=(make_evidence_snapshot(evidence),),
-        limitations=(*coverage, *gaps, *identity_limits))
+        limitations=(*coverage, *gaps, *identity_limits, *delivery_limits))
     if not identity_ok:
         if include_minimum:
             from tradingagents.research.minimum_evidence import compute_checks
@@ -309,7 +322,12 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     for source in sources:
         if source.availability != "available" or source.content is None:
             continue
-        if include_minimum and source.source_name in NEW_SOURCES:
+        if include_basics and source.source_name == PROFILE_SOURCE:
+            from tradingagents.research.company_basics import PROFILE_LABELS
+            for field, value in json.loads(source.content.text)["fields"].items():
+                facts.append(_fact(source, "company_introduction", "profile." + field,
+                    f"公开公司资料 · {PROFILE_LABELS[field]}：{value}"))
+        elif include_minimum and source.source_name in NEW_SOURCES:
             from tradingagents.research.minimum_evidence import fact_statement
             dimension, locator, statement = fact_statement(source.source_name, payloads[source.evidence_id])
             facts.append(_fact(source, dimension, locator, statement))
@@ -349,8 +367,13 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
         elif include_valuation and source.source_name in VALUATION_SOURCES:
             payload = payloads[source.evidence_id]
             if source.source_name == "tencent.valuation_snapshot":
-                facts.append(_fact(source, "valuation", "snapshot",
-                    f"估值观察 {payload['as_of']}：收盘价 {payload['price']} 元/股，PE-TTM {payload['pe_ttm']} 倍，PB {payload['pb']} 倍，总市值 {payload['total_market_cap_yi']} 亿元；倍数不等于内在价值。"))
+                price_label = (f"行情快照（{payload['quote_timestamp']}，尚未结算）"
+                    if payload.get("quote_basis") == "unsettled_session_snapshot" else "收盘价")
+                statement = f"估值观察 {payload['as_of']}：{price_label} {payload['price']} 元/股，PE-TTM {payload['pe_ttm']} 倍，PB {payload['pb']} 倍，总市值 {payload['total_market_cap_yi']} 亿元；倍数不等于内在价值。"
+                if include_basics:
+                    from tradingagents.research.company_basics import basic_claim_text
+                    statement = basic_claim_text(statement)
+                facts.append(_fact(source, "valuation", "snapshot", statement))
             else:
                 facts.append(_fact(source, "valuation", "history",
                     f"已保存 {len(payload['rows'])} 个交易日的 PE-TTM/PB 回溯序列；仅用于本次当前时点的历史定位，不证明历史时点可用性。"))
@@ -377,6 +400,19 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                         f"脚本计算 {metric.label} = {metric.value} {metric.unit}；样本 {metric.sample_size}，窗口 {metric.window_start} 至 {metric.window_end}；这是历史风险统计，不是价值区间。"))
         elif source.source_name == "user.original_thesis":
             facts.append(_fact(source, "holding_thesis", "original_thesis", "用户保存了原持仓论点；正文见证据摘录。这仅证明用户的原声明，不证明该论点为真。"))
+    if include_basics:
+        from tradingagents.research.company_basics import PROFILE_LABELS, disclosed_profile_fields
+        saved_fields = {field for field in PROFILE_LABELS if any("source_field:profile." + field in fact.limitations for fact in facts)}
+        for source in sources:
+            if source.source_name not in BODY_SOURCES or source.availability != "available" or source.content is None:
+                continue
+            # Only a saved explicit description, never an arbitrary report page
+            # or financial-table heading, can provide the profile fallback.
+            for field, excerpt in disclosed_profile_fields(source.content.text).items():
+                if field not in saved_fields:
+                    facts.append(_fact(source, "company_introduction", "profile." + field,
+                        "公司披露 · " + PROFILE_LABELS[field] + "：" + excerpt))
+                    saved_fields.add(field)
     record = ResearchRecordV1.model_validate({**seed.model_dump(mode="python"), "claims": tuple(facts), "metrics": tuple(metrics)})
     if include_valuation:
         record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "limitations": (*record.limitations, "native_valuation_policy_v1")})
@@ -386,4 +422,8 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     if include_minimum:
         from tradingagents.research.minimum_evidence import compute_checks
         record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "evidence_checks": compute_checks(record)})
+    if include_basics:
+        from tradingagents.research.company_basics import assemble_company_basics
+        basics = assemble_company_basics(record, company_name=identity_payload.get("name") if identity_ok else None)
+        record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "company_basics": basics})
     return record

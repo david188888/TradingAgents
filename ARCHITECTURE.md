@@ -79,7 +79,7 @@ relabel a successful data check as resolved economics. V5 introduced these
 checks without an extra model stage. V6 freezes the independent baseline first,
 then optionally answers the user focus once through `execution/native_focus.py`.
 The collector and core kernel never receive that focus. `research/native_versions.py`
-owns V6 frozen mode objectives and V7 investment objective/kernel/budget identity. V7 adds one bounded targeted reply per challenged specialist before synthesis, a versioned dialogue and V3 investment assessment. Old V1–V6 prompts, roles, budgets and report semantics remain versioned. See the [unified research contract](docs/contracts/unified-company-research.md).
+owns V6 frozen mode objectives and V7 investment objective/kernel/budget identity. V7 adds one bounded targeted reply per challenged specialist before synthesis, a versioned dialogue and V3 investment assessment. Fresh V7 identities freeze a company policy for timestamped current-session valuation, cautious judgement with missing valuation anchors, and role-local enumerated model references. Older identities retain their admission, prompts and judgement gates. Old V1–V6 prompts, roles, budgets and report semantics remain versioned. See the [unified research contract](docs/contracts/unified-company-research.md).
 
 Workflow `evidence-production-v4` uses `dataflows/native_valuation.py:ValuationSources`,
 which extends the v3 bounded disclosures collector with qualified valuation
@@ -221,6 +221,15 @@ and caching. Frozen prompts retain their original format. Binding guidance and
 safe repair feedback remain within the existing repair budget; see the
 [unified research contract](docs/contracts/unified-company-research.md).
 
+Fresh V7 identities also freeze the specialist reference-isolation policy.
+After one bounded repair fails or is refused, the adapter can preserve only
+the original schema-valid hypotheses whose references pass the shared rule.
+Durable candidate/acceptance envelopes retain original indices and closed
+rejection reasons; the kernel and Reader use the same binding. Effective
+rejections produce partial/LOW_CONFIDENCE output. Cancellation, deadlines and
+checkpoint conflicts do not trigger this fallback. Legacy identities keep
+their adapter behavior and saved prompts.
+
 Fresh V7 identities freeze `execution/native_retry.py`'s model retry policy.
 The adapter permits three transient retries per call with 2/5/10-second waits,
 bounded by the existing shared three-retry/twelve-attempt ledger limits. Repair
@@ -231,6 +240,14 @@ See [retry accounting](docs/operations/observability-replay.md#原生模型有�
 
 Native publication requires an assessed `research-record-v1` and its durable
 authorization barrier; failure cannot complete the run or fall back to a case.
+Fresh V7 identities freeze a separate report-delivery policy. The optional
+`company_basics` pack binds public profile, fundamental and quantitative fields
+to saved facts. `research/report_delivery.py` restores host-owned copied
+synthesis bindings and assembles effective saved findings after unusable
+synthesis. V3 `report_status` separates delivery from coverage; an unfinished
+synthesis report has a null stance and preserves all source/reply provenance.
+Historical serialization and identities remain unchanged. See the
+[unified contract](docs/contracts/unified-company-research.md).
 Markdown and the single native Reader consume that same record. The desktop
 V7 Reader starts with the independent scope, investment stance, referenced support/counterevidence and original falsifiers, then key claims, primary
 challenge and proposed next check, executed checks, valuation and quantitative

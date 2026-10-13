@@ -130,7 +130,8 @@ class UnifiedCaller:
                 for h in context["record"]["hypotheses"][:self.challenge_count]]}
         if stage.startswith("response_"):
             if self.fail_reply:
-                raise TimeoutError("offline reply unavailable")
+                from tradingagents.execution.native_model import NativeModelUnavailable
+                raise NativeModelUnavailable("offline reply unavailable")
             assert "record" not in context
             return {"responses": [{"challenge_id": cid, "hypothesis_id": hid, "disposition": self.disposition,
                 "rationale": "承认尚有不确定性", "supporting_fact_ids": context["allowed_facts_by_challenge"][cid][:1]}
@@ -146,7 +147,7 @@ class UnifiedCaller:
             "challenge_assessments": [{"challenge_id": c["challenge_id"], "rationale": "经济问题仍未解决"} for c in record["challenges"]]}
 
 
-def setup(tmp_path, *, full=False):
+def setup(tmp_path, *, full=False, delivery=False):
     snapshot = RunSnapshot.create(ticker="600803", analysis_date="2026-10-05", metadata={
         "research_profile": "evidence_v1", "native_workflow_version": UNIFIED_WORKFLOW_VERSION})
     store = RunStore(tmp_path)
@@ -154,6 +155,12 @@ def setup(tmp_path, *, full=False):
     observer = DurableRunObserver(store, snapshot.run_id, development_assertions=False)
     identity = {"workflow_version": UNIFIED_WORKFLOW_VERSION, "focus_budget_policy": UNIFIED_BUDGET_POLICY,
                 "ticker": snapshot.ticker, "mode": "company_research", "cutoff": snapshot.analysis_date}
+    if delivery:
+        from tradingagents.research.native_versions import (
+            COMPANY_RESEARCH_POLICY,
+            REPORT_DELIVERY_POLICY,
+        )
+        identity.update(company_research_policy=COMPANY_RESEARCH_POLICY, report_delivery_policy=REPORT_DELIVERY_POLICY)
     journal = CatalystJournal(observer, identity)
     draft, context = fixture()
     if full:
@@ -174,7 +181,7 @@ def setup(tmp_path, *, full=False):
         evidence["run_id"] = snapshot.run_id
         evidence["ticker"] = snapshot.ticker
     seed = build_native_record(type(draft).model_validate(payload), context, mode="company_research",
-                               include_valuation=True, include_minimum=True)
+                               include_valuation=True, include_minimum=True, include_basics=delivery)
     return journal, seed
 
 

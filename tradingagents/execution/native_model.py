@@ -20,11 +20,15 @@ from pydantic import BaseModel
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
     ChallengesProposalV2,
+    HypothesisRejectionV1,
+    NativeEvidenceBindingError,
+    SpecialistCandidateV1,
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
     SynthesisProposalV3,
-    validate_condition_evidence,
+    saved_specialist_acceptance,
+    validate_hypothesis_references,
 )
 from tradingagents.execution.budget import (
     AttemptPhase,
@@ -32,6 +36,7 @@ from tradingagents.execution.budget import (
     BudgetExhausted,
     BudgetLimitHit,
 )
+from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.execution.native_model_diagnostics import safe_model_diagnostic
 from tradingagents.execution.native_references import reference_aliases, translate_references
 from tradingagents.execution.native_retry import MODEL_RETRY_POLICY, transient_model_error
@@ -42,8 +47,11 @@ from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.research.native_versions import (
+    COMPANY_RESEARCH_POLICY,
     FOCUS_WORKFLOW_VERSION,
+    REPORT_DELIVERY_POLICY,
     RESPONSE_ROLES,
+    SPECIALIST_REFERENCE_POLICY,
     UNIFIED_WORKFLOW_VERSION,
 )
 from tradingagents.runtime.catalyst_checkpoint import (
@@ -72,7 +80,7 @@ class NativeModelUnavailable(RuntimeError):
     """Fixed, source-neutral errors safe for a run's public failure boundary."""
 
 
-class NativeModelCancelled(NativeModelUnavailable):
+class NativeModelCancelled(NativeModelUnavailable, AnalysisCancelled):
     pass
 
 
@@ -82,6 +90,20 @@ class _TransientModelRequest(NativeModelUnavailable):
 
 class NativeFocusInvalid(NativeModelUnavailable):
     pass
+
+
+class NativeModelReferenceInvalid(NativeModelUnavailable):
+    """Schema-valid response rejected by owning reference scope."""
+
+
+def _alias_schema_choices(value, aliases):
+    if isinstance(value, dict):
+        return {key: ([_alias_schema_choices(item, aliases) for item in part] if key == "enum"
+                else aliases.get(part, part) if key == "const" and isinstance(part, str)
+                else _alias_schema_choices(part, aliases)) for key, part in value.items()}
+    if isinstance(value, list):
+        return [_alias_schema_choices(item, aliases) for item in value]
+    return aliases.get(value, value) if isinstance(value, str) else value
 
 
 def _unique_object(pairs):
@@ -119,6 +141,18 @@ class NativeModelCaller:
         if retry_policy is not None and retry_policy != MODEL_RETRY_POLICY:
             raise CatalystCheckpointConflict("native model retry policy mismatch")
         self.retry_enabled = retry_policy == MODEL_RETRY_POLICY
+        reference_policy = ledger.journal.state.get("identity", {}).get("specialist_reference_policy")
+        if reference_policy is not None and (reference_policy != SPECIALIST_REFERENCE_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+            raise CatalystCheckpointConflict("native specialist reference policy mismatch")
+        self.isolate_specialists = reference_policy == SPECIALIST_REFERENCE_POLICY
+        company_policy = ledger.journal.state.get("identity", {}).get("company_research_policy")
+        if company_policy is not None and (company_policy != COMPANY_RESEARCH_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+            raise CatalystCheckpointConflict("native company research policy mismatch")
+        self.scoped_references = company_policy == COMPANY_RESEARCH_POLICY
+        report_policy = ledger.journal.state.get("identity", {}).get("report_delivery_policy")
+        if report_policy is not None and (report_policy != REPORT_DELIVERY_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+            raise CatalystCheckpointConflict("native report delivery policy mismatch")
+        self.deliver_company_report = report_policy == REPORT_DELIVERY_POLICY
         if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
             self.schemas.update(challenge=ChallengesProposalV2, synthesis=SynthesisProposalV2)
             self.instructions["challenge"] += " Select only the closed check IDs/observed risk. Economic questions remain unresolved even when a local evidence check passes."
@@ -182,9 +216,20 @@ class NativeModelCaller:
 
     def _prompt(self, stage: str, context: Mapping[str, Any]) -> str:
         try:
+            canonical = context
             context = self._model_context(stage, context)
+            schema_value = self.schemas[stage].model_json_schema()
+            if self.ledger.journal.state.get("native.reference_schema." + stage) == 1:
+                from tradingagents.execution.native_prompt_context import (
+                    compact_synthesis_context,
+                    reference_schema,
+                )
+                schema_value = reference_schema(schema_value, stage, canonical, delivery=self.deliver_company_report)
+                schema_value = _alias_schema_choices(schema_value, reference_aliases(canonical))
+                if stage == "synthesis":
+                    context = compact_synthesis_context(context, delivery=self.deliver_company_report)
             payload = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-            schema = json.dumps(self.schemas[stage].model_json_schema(), ensure_ascii=False, sort_keys=True)
+            schema = json.dumps(schema_value, ensure_ascii=False, sort_keys=True)
             language = str(self.config.get("output_language", "Chinese"))
         except Exception:
             raise NativeModelUnavailable("native model context invalid") from None
@@ -249,6 +294,14 @@ class NativeModelCaller:
             if context is not None and self.ledger.journal.state.get("native.reference_aliases." + stage) in {1, 2}:
                 aliases = reference_aliases(context)
                 value = translate_references(value, {alias: identifier for identifier, alias in aliases.items()})
+            if context is not None and stage == "synthesis" and self.deliver_company_report:
+                from tradingagents.agents.schemas._research_record import ResearchRecordV1
+                from tradingagents.research.report_delivery import normalize_synthesis_bindings
+                normalized = normalize_synthesis_bindings(value, ResearchRecordV1.model_validate(context["record"]))
+                if normalized != value:
+                    self.ledger.record_result("native.synthesis_bindings." + phase,
+                        {"policy": REPORT_DELIVERY_POLICY, "restored_saved_metadata": True})
+                value = normalized
             # JSON-mode validation preserves date handling in condition schemas.
             proposal = self.schemas[stage].model_validate_json(json.dumps(value, allow_nan=False))
             if context is not None and stage == "focus_response":
@@ -256,17 +309,30 @@ class NativeModelCaller:
                 from tradingagents.agents.schemas._research_record import ResearchRecordV1
                 validate_focus_proposal(ResearchRecordV1.model_validate(context["record"]), proposal)
             if context is not None and stage in {"operating_quality", "event_context", "market_context"}:
-                allowed = {fact["claim_id"] for fact in context.get("facts", [])}
-                for hypothesis in proposal.hypotheses:
-                    if not set(hypothesis.supporting_fact_ids) <= allowed:
-                        raise ValueError("specialist reference outside supplied facts")
-                    if self.ledger.journal.state.get("identity", {}).get("workflow_version") == UNIFIED_WORKFLOW_VERSION:
-                        facts = {fact["claim_id"]: fact for fact in context["facts"]}
-                        evidence_ids = {eid for fid in hypothesis.supporting_fact_ids
-                                        for eid in facts[fid]["evidence_ids"]}
-                        metric_evidence = {metric["metric_id"]: metric["input_evidence_ids"]
-                                           for metric in context.get("metrics", [])}
-                        validate_condition_evidence(hypothesis, evidence_ids, metric_evidence)
+                facts = {fact["claim_id"]: fact.get("evidence_ids", []) for fact in context.get("facts", [])}
+                metric_evidence = {metric["metric_id"]: metric["input_evidence_ids"] for metric in context.get("metrics", [])}
+                accepted, indices, rejected = [], [], []
+                first_error = None
+                for index, hypothesis in enumerate(proposal.hypotheses):
+                    try:
+                        validate_hypothesis_references(hypothesis, facts, metric_evidence,
+                            conditions=self.ledger.journal.state.get("identity", {}).get("workflow_version") == UNIFIED_WORKFLOW_VERSION)
+                    except NativeEvidenceBindingError as exc:
+                        if not self.isolate_specialists:
+                            raise
+                        first_error = first_error or exc
+                        rejected.append(HypothesisRejectionV1(index=index, code=exc.code))
+                    else:
+                        accepted.append(hypothesis)
+                        indices.append(index)
+                if rejected:
+                    if phase == "main":
+                        candidate = SpecialistCandidateV1(
+                            prompt_sha256=self.ledger.journal.state["native.prompt." + stage],
+                            proposal=proposal.model_copy(update={"hypotheses": tuple(accepted)}),
+                            indices=tuple(indices), rejections=tuple(rejected))
+                        self.ledger.record_result("native.specialist_candidate." + stage, candidate.model_dump(mode="json"))
+                    raise first_error
             if context is not None and stage.startswith("response_"):
                 supplied = {r.challenge_id: r for r in proposal.responses}
                 if len(supplied) != len(proposal.responses) or supplied.keys() != context["assigned"].keys():
@@ -310,10 +376,34 @@ class NativeModelCaller:
                     raise ValueError("synthesis challenge coverage invalid")
             return proposal.model_dump(mode="json")
         except Exception as exc:
+            if isinstance(exc, (CatalystCheckpointConflict, NativeModelCancelled, TimeoutError)):
+                raise
             self._record_safe_diagnostic(stage, phase, "response_invalid", exc, response=response)
             if stage == "focus_response":
                 raise NativeFocusInvalid("native focus response invalid") from None
-            raise NativeModelUnavailable("native model response invalid") from None
+            error = NativeModelReferenceInvalid if isinstance(exc, NativeEvidenceBindingError) else NativeModelUnavailable
+            raise error("native model response invalid") from None
+
+    def _candidate(self, stage, digest, context):
+        saved = self.ledger.cached_result("native.specialist_candidate." + stage)
+        if not self.isolate_specialists or saved is None:
+            return None
+        try:
+            candidate = SpecialistCandidateV1.model_validate(saved)
+            if (candidate.prompt_sha256 != digest
+                    or not self.ledger.journal.state.get("native.model." + stage + ".dispatched")):
+                raise ValueError("candidate prompt mismatch")
+            facts = {fact["claim_id"]: fact["evidence_ids"] for fact in context.get("facts", [])}
+            metrics = {m["metric_id"]: m["input_evidence_ids"] for m in context.get("metrics", [])}
+            for item in candidate.proposal.hypotheses:
+                validate_hypothesis_references(item, facts, metrics)
+            return candidate
+        except (ValueError, KeyError, TypeError):
+            raise CatalystCheckpointConflict("native specialist candidate invalid") from None
+
+    def _accept_candidate(self, stage, candidate):
+        self.ledger.record_result("native.specialist_accepted." + stage, candidate.model_dump(mode="json"))
+        return candidate.proposal.model_dump(mode="json")
 
     def _cached(self, logical: str, digest: str, stage: str) -> dict[str, Any] | None:
         saved = self.ledger.cached_result(logical)
@@ -322,9 +412,12 @@ class NativeModelCaller:
         if saved.get("prompt_sha256") != digest:
             raise CatalystCheckpointConflict("native model cached prompt mismatch")
         try:
-            return self.schemas[stage].model_validate_json(
+            proposal = self.schemas[stage].model_validate_json(
                 json.dumps(saved["proposal"], allow_nan=False)
-            ).model_dump(mode="json")
+            )
+            if isinstance(proposal, SpecialistProposalV1):
+                saved_specialist_acceptance(self.ledger.journal.state, stage, proposal)
+            return proposal.model_dump(mode="json")
         except Exception:
             raise CatalystCheckpointConflict("native model cache invalid") from None
 
@@ -414,6 +507,8 @@ class NativeModelCaller:
             except ChatGPTError as exc:
                 self._record_failure(stage, exc)
                 raise NativeModelUnavailable(exc.diagnostic.safe_message) from None
+            except (CatalystCheckpointConflict, NativeModelCancelled):
+                raise
             except Exception as exc:
                 self._record_safe_diagnostic(stage, phase, "configuration_unavailable", exc,
                     attempt_key=usage_key or stage)
@@ -432,6 +527,8 @@ class NativeModelCaller:
                         attempt_key=usage_key or stage)
                     raise _TransientModelRequest("native model transient request failed") from None
                 raise NativeModelUnavailable(exc.diagnostic.safe_message) from None
+            except (CatalystCheckpointConflict, NativeModelCancelled):
+                raise
             except Exception as exc:
                 self._record_safe_diagnostic(stage, phase, "request_failed", exc,
                     attempt_key=usage_key or stage)
@@ -508,6 +605,20 @@ class NativeModelCaller:
                 "including maintained replies. Otherwise use other qualified baseline claims with "
                 "response_ids:[]; do not invent or reassign facts. Exact reply fact bindings:\n"
                 + json.dumps(reply_facts, ensure_ascii=False, sort_keys=True))
+        if code == "judgement_condition_reference":
+            record = self._model_context(stage, context)["record"]
+            conditions = [{"hypothesis_id": h["hypothesis_id"], "invalidation_index": i, "text": text}
+                for h in record["hypotheses"] for i, text in enumerate(h["invalidation_conditions"])]
+            return base + ("\nValidation failure: judgement_condition_reference. Copy the exact saved "
+                "hypothesis/index/text tuple; do not paraphrase this host-owned condition. "
+                "Allowed change conditions:\n" + json.dumps(conditions, ensure_ascii=False, sort_keys=True))
+        if code in {"adjudication_disposition_binding", "adjudication_reply_reference", "adjudication_coverage"}:
+            record = self._model_context(stage, context)["record"]
+            bindings = [{key: reply[key] for key in ("challenge_id", "response_id", "disposition")}
+                for reply in record["dialogue"]["responses"]]
+            return base + ("\nValidation failure: " + code + ". Every challenge must bind its own saved "
+                "reply exactly once. Do not strengthen a revised/withdrawn/unanswerable reply. "
+                "Saved reply bindings:\n" + json.dumps(bindings, ensure_ascii=False, sort_keys=True))
         return base
 
     def recover_cached(self, stage: str, context: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -536,6 +647,11 @@ class NativeModelCaller:
                 if self.ledger.journal.state.get("native.prompt." + stage + ".repair") != repair_digest:
                     raise CatalystCheckpointConflict("native model cached repair prompt mismatch")
                 return repaired
+            candidate = self._candidate(stage, digest, context)
+            if candidate is not None:
+                # Known valid main content survives an interrupted repair; no
+                # unknown dispatch is repeated. This method remains read-only.
+                return candidate.proposal.model_dump(mode="json")
             return None
 
     def __call__(self, stage: str, context: Mapping[str, Any]) -> dict[str, Any]:
@@ -555,6 +671,11 @@ class NativeModelCaller:
                 and stage == "synthesis" and "native.prompt." + stage not in self.ledger.journal.state
                 and "native.reference_aliases." + stage not in self.ledger.journal.state):
             self._bind("native.reference_aliases." + stage, 2)
+        if (self.scoped_references and stage in {*STAGE_SCHEMAS} - {"challenge"}
+                and "native.prompt." + stage not in self.ledger.journal.state):
+            self._bind("native.reference_schema." + stage, 1)
+            if stage != "synthesis":
+                self._bind("native.reference_aliases." + stage, 1)
         prompt = self._prompt(stage, context)
         digest = hashlib.sha256(prompt.encode()).hexdigest()
         self._bind("native.prompt." + stage, digest)
@@ -569,16 +690,35 @@ class NativeModelCaller:
         if repaired is not None:
             return repaired
         if self.ledger.journal.state.get("native.model." + stage + ".dispatched"):
+            candidate = self._candidate(stage, digest, context)
+            if candidate is not None:
+                return self._accept_candidate(stage, candidate)
             raise NativeModelUnavailable("native model response unavailable; dispatch cannot be repeated")
         response = self._invoke(stage, prompt, lambda: self._dispatch_main(stage))
         try:
             value = self._parse(stage, response, context)
+        except NativeModelCancelled:
+            raise
         except NativeModelUnavailable:
             if stage == "focus_response":
                 raise
             repair_prompt = self._repair_prompt(stage, prompt, context)
             repair_digest = hashlib.sha256(repair_prompt.encode()).hexdigest()
-            value = self._repair(stage, repair_prompt, repair_digest, context)
+            try:
+                value = self._repair(stage, repair_prompt, repair_digest, context)
+            except NativeModelCancelled:
+                raise
+            except (NativeModelUnavailable, BudgetExhausted):
+                self._ensure_active()
+                candidate = self._candidate(stage, digest, context)
+                if candidate is None:
+                    raise
+                value = self._accept_candidate(stage, candidate)
+        if (self.isolate_specialists and stage in {"operating_quality", "event_context", "market_context"}
+                and self.ledger.cached_result("native.specialist_accepted." + stage) is None):
+            proposal = SpecialistProposalV1.model_validate(value)
+            self._accept_candidate(stage, SpecialistCandidateV1(prompt_sha256=digest, proposal=proposal,
+                indices=tuple(range(len(proposal.hypotheses))), rejections=()))
         self.ledger.record_result("native.adapter." + stage, {"prompt_sha256": digest, "proposal": value})
         return value
 

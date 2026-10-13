@@ -20,6 +20,7 @@ _BINDINGS = {
     "operating judgement requires cited financial evidence": "operating_financial_reference",
     "holding judgement requires cited original thesis": "holding_thesis_reference",
     "duplicate JSON key": "duplicate_json_key",
+    "critical economic challenge or missing anchor prohibits favorable": "investment_stance_ceiling",
 }
 _UPSTREAM_CODES = {
     "invalid_request_error", "context_length_exceeded", "insufficient_quota",
@@ -27,6 +28,14 @@ _UPSTREAM_CODES = {
 }
 _PUBLIC_BINDINGS = {
     "Value error, revised argument must cite the reply's facts": "argument_reply_fact_reference",
+    "Value error, judgement condition does not match the public hypothesis": "judgement_condition_reference",
+    "Value error, adjudication cannot strengthen the specialist's reply": "adjudication_disposition_binding",
+    "Value error, adjudication references another challenge's reply": "adjudication_reply_reference",
+    "Value error, every challenge requires a separate adjudication": "adjudication_coverage",
+    "Value error, investment argument contains invalid claims": "argument_claim_reference",
+    "Value error, investment argument contains invalid replies": "argument_response_reference",
+    "Value error, withdrawn or revised assertions cannot support the conclusion": "excluded_claim_reference",
+    "Value error, duplicate or dangling research reference": "public_reference_integrity",
 }
 
 

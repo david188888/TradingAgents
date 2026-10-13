@@ -1736,10 +1736,14 @@ def _checkpoint_sequence(events: list[PersistedEvent]) -> int:
 
 
 def _error_category(error: BaseException | None) -> str:
+    from tradingagents.execution.native_model import NativeModelReferenceInvalid
+
     if error is None:
         return "unexpected_internal_failure"
     if isinstance(error, ReportPublicationError):
         return "report_publication"
+    if isinstance(error, NativeModelReferenceInvalid):
+        return "evidence_rejection"
     name = type(error).__name__.lower()
     if "checkpoint" in name or "fingerprint" in name:
         return "checkpoint_incompatibility"

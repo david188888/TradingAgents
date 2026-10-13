@@ -77,6 +77,7 @@ current architecture, operations and contract pages for supported behavior.
 - [Subscription, retry and Reader closeout](reviews/2026-10-11-subscription-retry-acceptance.md): combined local regression, official subscription boundaries, request accounting, credential-test isolation and remaining environment/research limits.
 
 - [v3.3.0 release notes](reviews/2026-10-11-v3.3-release-notes.md): unified company investment research, one bounded challenge/reply cycle, dependency canvas, adjacent details and truthful terminal publication states.
+- [v3.4.0 release notes](reviews/2026-10-13-v3.4.0-release-notes.md): traceable company basics, local-gap report delivery, unrated saved specialist summaries, bounded reference isolation and timestamped quotes.
 - [v3.3.1 release notes](reviews/2026-10-12-v3.3.1-release-notes.md): research-first audit, subscription transport retry classification, A-share/Web installation fix and selective a-stock-data v3.10.2 review.
 - [v3.3.2 release notes](reviews/2026-10-12-v3.3.2-release-notes.md): early condition evidence binding, canonical synthesis aliases, bounded reference feedback and frozen-evidence Luna validation.
 - [v3.2.0 release notes](reviews/2026-10-11-v3.2-release-notes.md): ChatGPT subscription, bounded native retries and diagnostics, conservative official PDF parsing, Reader interaction improvements, and release limits since v3.1.0.
@@ -90,6 +91,10 @@ current architecture, operations and contract pages for supported behavior.
 - [600803 minimum-evidence acceptance](reviews/2026-10-05-minimum-evidence-acceptance.md): actual V5 public-source retrieval, three bounded checks, fixed-proposal Web/HTML outputs and remaining research-quality limits.
 
 ## Dated Investigations
+
+- [Company report delivery validation](reviews/2026-10-13-company-report-delivery-validation.md): basic-data retention, local gaps, host-owned synthesis bindings, unrated specialist summary, offline browser checks and a preserved-source 600418 preview.
+
+- [Luna E2E and offline synthesis diagnosis](reviews/2026-10-13-luna-e2e-offline-diagnosis.md): two real 600418 runs, timestamped quote admission, specialist improvement, remaining synthesis failure, authentic PDF checks and zero-call offline validation.
 
 - [600418 diagnosis and Luna validation](reviews/2026-10-12-600418-luna-validation.md): original synthesis/valuation failures, publication-barrier explanation, real subscription trials and the successful isolated synthesis validation; historical records remain unchanged.
 

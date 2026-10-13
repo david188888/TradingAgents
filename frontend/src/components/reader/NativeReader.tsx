@@ -1,3 +1,4 @@
+import { CompanyBasics } from "./CompanyBasics";
 import { InvestmentJudgement, ResearchDialogue } from "./InvestmentJudgement";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -36,6 +37,8 @@ export function NativeReader({ runId, record, process, processError, retryProces
   const agent = useReaderAgent(runId, view === "agents" ? role : view === "process" ? flowRole : null, process);
   const supplemental = useReaderFocus(runId, process);
   const unified = assessment.schema_version === "research-assessment-v3";
+  const retainedSummary = unified && ["specialist_summary", "basic_report"].includes(assessment.report_status ?? "");
+  const delivery = unified && !!assessment.report_status;
   const independent = unified || process?.workflow_version === "evidence-production-v6";
   const hasFocus = process?.roles.some(r=>r.role_key === "focus_response");
   const preferred = record.metrics.filter(m => /\.(annualized_volatility|historical_var_95|max_drawdown|atr_14)$/.test(m.metric_id));
@@ -108,7 +111,8 @@ export function NativeReader({ runId, record, process, processError, retryProces
       <div className="qr-reading-main">
         {view === "report" ? <>
           <header className="qr-question"><span className="qr-eyebrow">{independent ? "本次研究范围" : process?.question_origin === "user" ? "你的研究问题" : "本次研究问题"}</span><h2>{assessment.research_question}</h2><p className="qr-meta">{!independent && process?.workflow_version ? "历史运行：研究问题参与了当时的基础分析。 " : ""}证据截至 {record.analysis_date}{assessment.forward_window_calendar_days ? ` · 展望 ${assessment.forward_window_calendar_days} 个日历日` : ""}</p></header>
-          <article className="qr-answer"><span className={`qr-tag${assessment.quality === "LOW_CONFIDENCE" ? " warn" : ""}`}>{assessment.quality === "LOW_CONFIDENCE" ? "结论仍需核查" : "通过当前质量门槛"}</span><h3>{unified ? `投资吸引力 · ${STANCE_LABELS[assessment.investment_stance]}` : independent ? "综合判断" : "当前回答"}</h3><p className="qr-judgement">{assessment.judgement}</p><p className="qr-boundary">研究流程已完成 · 记录{assessment.completeness === "complete" ? "完整" : "部分"} · {assessment.quality === "LOW_CONFIDENCE" ? "证据或挑战仍有保留；不确定不等于否定。" : "仍需在已保存依据与适用范围内理解。"}</p>{contribution("synthesis")}</article>
+          <article className="qr-answer"><span className={`qr-tag${assessment.quality === "LOW_CONFIDENCE" ? " warn" : ""}`}>{assessment.quality === "LOW_CONFIDENCE" ? "结论仍需核查" : "通过当前质量门槛"}</span><h3>{unified ? assessment.investment_stance === null ? "公司报告 · 暂未形成总体评级" : `投资吸引力 · ${STANCE_LABELS[assessment.investment_stance]}` : independent ? "综合判断" : "当前回答"}</h3><p className="qr-judgement">{assessment.judgement}</p><p className="qr-boundary">{retainedSummary ? "报告已交付 · 综合阶段未完成" : delivery ? "报告已交付 · 综合分析已形成" : "研究流程已完成"} · 分析覆盖{assessment.completeness === "complete" ? "完整" : "部分"} · {assessment.quality === "LOW_CONFIDENCE" ? "证据或挑战仍有保留；不确定不等于否定。" : "仍需在已保存依据与适用范围内理解。"}</p>{retainedSummary ? <span className="qr-meta">依据已保存资料与专项产物汇总。</span> : contribution("synthesis")}</article>
+          <CompanyBasics record={record} onInspect={(v,trigger)=>select(v,trigger)}/>
           {unified ? <InvestmentJudgement record={record} onInspect={(v,trigger)=>select(v,trigger)}/> : null}
           <nav className="qr-jump-nav" aria-label="报告章节">{[["qr-findings","关键依据"],["qr-doubt","疑点与下一步"],["qr-checks","已经核对什么"],["qr-valuation","估值定位"],["qr-quant","量化背景"]].map(([id,label]) => <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({block:"start",behavior:"instant"})}>{label}</button>)}</nav>
           <section className="qr-report-section" id="qr-findings">{sectionHead("01",independent ? "关键研究依据" : "哪些依据支持回答","先看重点推断，再沿右侧找到绑定事实和保存来源。")}
@@ -117,14 +121,14 @@ export function NativeReader({ runId, record, process, processError, retryProces
           </section>
           <section className="qr-report-section" id="qr-doubt" data-follow-kind="challenge" data-follow-id={primary?.challenge_id ?? ""}>{sectionHead("02","最大的疑点，下一步怎么查","区分待验证的经济问题、模型建议和已经执行的检查。")}
             <article className="qr-next-box"><span className="qr-tag warn">主要疑点</span><h3>{primary?.statement ?? "本次未选出主要挑战；不代表不存在风险。"}</h3>{primary ? <><h4>挑战提出的核查办法 · 尚非执行结果</h4><p>{primary.proposed_test}</p><footer className="qr-actions">{inspectButton({kind:"challenge",id:primary.challenge_id})}{contribution("challenge",primary.challenge_id)}</footer></> : null}
-              <h4>综合给出的完整下一步</h4><p>{assessment.next_check}</p>{contribution("synthesis")}
+              <h4>{retainedSummary ? "后续待完成事项" : "综合给出的完整下一步"}</h4><p>{assessment.next_check}</p>{retainedSummary ? <span className="qr-meta">根据保存章节和执行状态列示。</span> : contribution("synthesis")}
               <p className="qr-boundary">{process?.primary_selection === "code" ? "主要疑点由挑战环节提出，代码关键级别规则置顶。" : process?.primary_selection === "synthesis" ? "主要疑点由挑战环节提出，综合环节选择。" : "主要疑点的选择归属尚未核验。"} 下一步是建议，是否已执行需查看下方记录。</p>
             </article>
             {record.challenges.length > 1 ? <button className="qr-text-button" onClick={() => changeView("full")}>查看全部 {record.challenges.length} 条挑战 →</button> : null}
           </section>
           <section className="qr-report-section" id="qr-checks">{sectionHead("03","已经核对了什么","这些检查核对指定资料和数字；通过检查仍不能证明业务联系、增长能否持续或价格是否合理。")}
             {process?.source_failures.includes("document_parser_not_installed") ? <div className="qr-fault"><h3>本次部分公告正文未能解析</h3><p>运行时缺少 PDF 解析依赖，影响正文核对。这是程序读取问题，不表示公司没有披露。</p></div> : null}
-            {record.evidence_checks?.checks.map(c => <article className="qr-check" key={c.check_id} data-follow-kind="check" data-follow-id={c.check_id}><span className={`qr-tag${c.status === "passed" ? "" : " warn"}`}>{c.status === "passed" ? "证据子问题已核对" : c.status === "conflict" ? "存在数据冲突" : "所需证据不足"}</span><h3>{c.question}</h3>{c.observations.map((o,i) => <p key={i}>{o.label}：{o.value} {o.unit}</p>)}{c.missing.map((m,i) => <p className="qr-meta" key={i}>{limitationLabel(m)}</p>)}{inspectButton({kind:"check",id:c.check_id})}</article>)}
+            {record.evidence_checks?.checks.map(c => <article className="qr-check" key={c.check_id} data-follow-kind="check" data-follow-id={c.check_id}><span className={`qr-tag${c.status === "passed" ? "" : " warn"}`}>{c.status === "passed" ? "证据子问题已核对" : c.status === "conflict" ? "存在数据冲突" : delivery ? "此项资料待补" : "所需证据不足"}</span><h3>{c.question}</h3>{c.observations.map((o,i) => <p key={i}>{o.label}：{o.value} {o.unit}</p>)}{c.missing.map((m,i) => <p className="qr-meta" key={i}>{limitationLabel(m)}</p>)}{inspectButton({kind:"check",id:c.check_id})}</article>)}
             <p className="qr-meta">额外条件验证：{record.verifications.length} 次。{!record.verifications.length ? "本次未执行新增来源的独立验证。" : "执行范围和结果见完整记录。"}</p>{contribution("code_checks")}
           </section>
           {unified ? <ResearchDialogue record={record} onInspect={(v,trigger)=>select(v,trigger)}/> : null}

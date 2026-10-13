@@ -242,6 +242,28 @@ these changes do not repair historical runs or supply missing valuation data.
 See the [unified research contract](../contracts/unified-company-research.md)
 for binding, repair feedback and compatibility boundaries.
 
+Fresh V7 runs freeze `specialist_reference_policy=bounded-repair-then-isolate-v1`
+in their checkpoint identity. After full JSON/schema validation, fact references
+and condition evidence/metric dependencies are validated per hypothesis. A bad
+reference receives the existing single structured repair opportunity. A valid
+repair replaces the main proposal; responses are never combined. If repair is
+invalid, unavailable or refused by the budget, only the original main response's
+validated hypotheses survive. Malformed main JSON/schema cannot be salvaged.
+Cancellation, an expired active deadline and checkpoint conflicts propagate
+instead of selecting the fallback.
+
+The saved candidate contains only accepted hypotheses, their original indices,
+prompt identity and closed rejection codes. Accepted metadata preserves those
+indices in kernel and Reader hypothesis IDs. Dropped hypotheses are recorded in
+limitations with role/index/reason and force `partial / LOW_CONFIDENCE`; an
+all-rejected specialist is explicitly unavailable. Fact, condition-evidence and
+condition-metric errors remain distinct, using the existing `evidence_rejection`
+public failure category rather than `missing_configuration`. Read-only recovery
+can use the known valid main candidate after interruption, including an unknown
+repair dispatch, without issuing another request. Saved valid repairs take
+precedence. Older identities without this policy retain their adapter behavior;
+unknown policies and invalid acceptance bindings are incompatible checkpoints.
+
 Verification is a closed local operation on saved financial fields or metrics.
 It is not an unrestricted model tool loop or additional data search. Checks
 bind a hypothesis, challenge, immutable condition and input snapshot. Actual
@@ -401,6 +423,26 @@ availability never establishes that all economic questions are answered.
 
 ## Native valuation qualification
 
+Fresh V7 runs freeze `company_research_policy=timestamped-quote-cautious-judgement-v1`.
+In addition to the last settled snapshot below, this policy admits a quote on
+the current open exchange-calendar date, with a timezone-aware capture timestamp
+at or after the quote timestamp. The saved quote retains its actual date/time
+and is labelled as an unsettled snapshot when the daily session is not yet
+settled. Peer comparisons still require exactly the target quote's date. Saved
+historical multiples may end before the quote date, retain their own dates, and
+never include rows after the quote. Historical-cutoff live retrieval remains
+unavailable. Older checkpoint identities keep settled-only admission.
+
+The same fresh policy shows role-local short aliases and actual reference enums
+in specialist/synthesis prompts. Synthesis omits duplicated raw source bodies
+while retaining saved source provenance, complete claims, hypotheses, challenges,
+code observations and replies. Canonical validation still rejects invented,
+unrelated and withdrawn references. Cached legacy prompts keep their hashes.
+Missing valuation/range prevents a favorable stance but does not erase a cautious
+overall judgement supported by qualified operating facts and referenced reasons.
+The public record carries the policy marker; records without it retain the
+original overall gate. See the unified research contract for judgement rules.
+
 V4 adds optional capability `valuation`. A Tencent snapshot requires exact code,
 positive finite price/market cap, at least one positive multiple and a timestamp
 on the last settled exchange session. The last settled session comes from the
@@ -481,3 +523,13 @@ baseline authorship. Reads never call a model/provider or mutate saved state.
 ## V7 unified company investment research
 
 New single/batch studies use `evidence-production-v7` / `native-research-kernel-v6`. Three specialists, one critic and existing checks are followed by zero to three targeted reply calls and one synthesis. No-target replies are skipped; failed replies are saved as unavailable and require partial/LOW_CONFIDENCE. The eight/one/twelve budget, four-dimensional investment gates, referenced reasons, original change conditions and separate adjudications are defined in the [current contract](../contracts/unified-company-research.md). V1–V6 recovery uses its saved identity without acquiring V7 stages. Reader/Markdown share the saved stance and dialogue; reading never issues research calls.
+
+Fresh V7 identities freeze `report_delivery_policy=company-basics-local-gaps-delivery-v1`.
+The collector independently attempts explicitly labelled current company profile
+fields and retains vendor financials/quotes when PDF detail is missing. New report
+delivery is distinct from `completeness`/`quality`: unusable synthesis retains
+qualified basics and effective specialist findings with a null overall stance
+and an explicit unfinished synthesis status. It does not publish a fabricated
+model decision or change cancellation/deadline/persistence failure semantics.
+Recovery without the marker retains historical source attempts, prompts and
+serialized output; do not rerun or rewrite old reports to apply the new policy.

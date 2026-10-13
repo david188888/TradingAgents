@@ -3,6 +3,11 @@
 Status: Current — compatibility publication and evidence_v1 native research execution.
 
 `agents/schemas/_research_record.py` owns `research-record-v1`.
+New V7 report-delivery identities may add `company_basics` (typed claim-bound
+public introduction, fundamental and quantitative fields) and V3 `report_status`.
+Only these identities allow an unrated/null investment stance. Absent new fields
+remain omitted for exact legacy serialization. The [unified company contract](unified-company-research.md)
+owns delivery, local-gap and synthesis-fallback semantics.
 `research/record_assembly.py` adapts committed company research, holding review
 and catalyst cases without model calls or provider requests. The original case
 remains authoritative for its conclusion, quality and research eligibility.

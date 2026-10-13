@@ -18,7 +18,8 @@ from tradingagents.agents.schemas._native_stage import (
     SynthesisProposalV1,
     SynthesisProposalV2,
     SynthesisProposalV3,
-    validate_condition_evidence,
+    saved_specialist_acceptance,
+    validate_hypothesis_references,
 )
 from tradingagents.agents.schemas._research_assessment import (
     ChallengeAssessmentV1,
@@ -30,6 +31,7 @@ from tradingagents.agents.schemas._research_assessment import (
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import VerificationPlanV1, canonical_sha256
 from tradingagents.execution.budget import AttemptPhase, BudgetBucket, BudgetLimitHit
+from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.execution.verification_executor import execute_verification
 from tradingagents.research.native_policy import (
     QUESTIONS,
@@ -43,6 +45,8 @@ from tradingagents.research.native_policy import (
 from tradingagents.research.native_versions import (
     BASE_QUESTIONS,
     FOCUS_KERNEL_VERSION,
+    REPORT_DELIVERY_POLICY,
+    SPECIALIST_REFERENCE_POLICY,
     UNIFIED_KERNEL_VERSION,
     UNIFIED_QUESTION,
 )
@@ -93,8 +97,11 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
             value = value.model_dump_json()
         elif not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False, allow_nan=False)
+        if stage == "synthesis" and ledger.journal.state["identity"].get("report_delivery_policy") == REPORT_DELIVERY_POLICY:
+            from tradingagents.research.report_delivery import normalize_synthesis_bindings
+            value = json.dumps(normalize_synthesis_bindings(json.loads(value), ResearchRecordV1.model_validate(context["record"])), ensure_ascii=False)
         proposal = schema.model_validate_json(value)
-    except CatalystCheckpointConflict:
+    except (CatalystCheckpointConflict, AnalysisCancelled, TimeoutError):
         raise
     except Exception:
         if ledger.journal.failed:
@@ -175,6 +182,22 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         raise ValueError("research question must contain 1..400 characters")
     identity = {"workflow_version": UNIFIED_KERNEL_VERSION if unified else FOCUS_KERNEL_VERSION if independent else "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
+    from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
+    company_policy = ledger.journal.state["identity"].get("company_research_policy")
+    report_policy = ledger.journal.state["identity"].get("report_delivery_policy")
+    if report_policy is not None:
+        if report_policy != REPORT_DELIVERY_POLICY or not unified:
+            raise CatalystCheckpointConflict("native report delivery policy mismatch")
+        identity["report_delivery_policy"] = report_policy
+    if company_policy is not None:
+        if company_policy != COMPANY_RESEARCH_POLICY or not unified:
+            raise CatalystCheckpointConflict("native company research policy mismatch")
+        identity["company_research_policy"] = company_policy
+    policy = ledger.journal.state["identity"].get("specialist_reference_policy")
+    if policy is not None:
+        if policy != SPECIALIST_REFERENCE_POLICY:
+            raise CatalystCheckpointConflict("native specialist reference policy mismatch")
+        identity["specialist_reference_policy"] = policy
     _bound_put(ledger.journal, "native_seed", seed.model_dump(mode="json"))
     _bound_put(ledger.journal, "native_input", identity)
     cached_final = ledger.cached_result("native.output")
@@ -202,6 +225,10 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         if scoped:
             contexts[role]["view_scope"] = {"role": role, "coverage_is": "isolated_specialist_input_only",
                 "instruction": "未在本专项看到的资料不等于全局缺失；unknowns只描述本专项待查问题。"}
+        if report_policy is not None:
+            from tradingagents.research.company_basics import foundation_context
+            contexts[role]["company_foundation"] = foundation_context(seed)
+            contexts[role]["global_coverage"] = global_coverage(seed)
         if minimum and role == "operating_quality":
             contexts[role]["local_checks"] = seed.evidence_checks.model_dump(mode="json")
             contexts[role]["minimum_evidence_instruction"] = "局部检查仅回答其命名问题。可选数据缺失保留已有局部判断；会计桥不证明经济因果，同行样本和机构预测不证明合理价值。"
@@ -219,6 +246,10 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         proposals = {role: pending[role].result() for role in ROLE_ORDER if role in pending}
     claims = list(seed.model_dump(mode="json")["claims"])
     hypotheses, conditions, limits = [], {}, list(seed.limitations)
+    if company_policy is not None:
+        limits.append(company_policy)
+    if report_policy is not None:
+        limits.append(report_policy)
     origins = {}
     facts_by_id = {item.claim_id: item for item in seed.claims}
     metric_evidence = {metric.metric_id: metric.input_evidence_ids for metric in seed.metrics}
@@ -228,14 +259,27 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             if role in contexts:
                 limits.append("native_stage_unavailable:" + role)
             continue
-        allowed = {item.claim_id for item in views[role]}
-        for index, item in enumerate(proposal.hypotheses):
+        try:
+            accepted = saved_specialist_acceptance(ledger.journal.state, role, proposal)
+        except (ValueError, KeyError, TypeError):
+            raise CatalystCheckpointConflict("native specialist acceptance invalid") from None
+        indices = accepted.indices if accepted else tuple(range(len(proposal.hypotheses)))
+        if accepted:
+            limits.extend(f"native_hypothesis_rejected:{role}:{r.code}:{r.index}" for r in accepted.rejections)
+            if accepted.rejections and not proposal.hypotheses:
+                limits.append("native_stage_unavailable:" + role)
+        facts = {item.claim_id: item.evidence_ids for item in views[role]}
+        initial_hypotheses = len(hypotheses)
+        for index, item in zip(indices, proposal.hypotheses, strict=True):
             # A proposal that cites evidence outside its own scope is rejected,
             # but only that proposal: the kernel drops the offending hypothesis
             # and records why. Terminating the run would discard every other
             # specialist's valid work and make one bad reference unrecoverable.
-            if not set(item.supporting_fact_ids) <= allowed:
-                limits.append(f"native_hypothesis_rejected:{role}:specialist_fact_reference")
+            try:
+                validate_hypothesis_references(item, facts, metric_evidence)
+            except NativeEvidenceBindingError as exc:
+                suffix = f":{index}" if policy else ""
+                limits.append(f"native_hypothesis_rejected:{role}:{exc.code}" + suffix)
                 continue
             hid = "h." + canonical_sha256({"input": identity, "role": role, "index": index,
                                            "proposal": item.model_dump(mode="json")})
@@ -243,12 +287,6 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             cid = "i." + hid[2:]
             evidence_ids = tuple(dict.fromkeys(key for fact_id in item.supporting_fact_ids
                                 for key in facts_by_id[fact_id].evidence_ids))
-            try:
-                validate_condition_evidence(item, evidence_ids, metric_evidence)
-            except NativeEvidenceBindingError:
-                limits.append(f"native_hypothesis_rejected:{role}:condition_evidence_reference")
-                origins.pop(hid, None)
-                continue
             claims.append({"claim_id": cid, "kind": "inference", "statement": item.statement,
                            "evidence_ids": evidence_ids, "supporting_fact_ids": item.supporting_fact_ids})
             hypotheses.append({"hypothesis_id": hid, "claim_id": cid, "input_snapshot_id": seed.snapshots[0].snapshot_id,
@@ -259,6 +297,8 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                 bound = {"hypothesis_id": hid, "input_snapshot_id": seed.snapshots[0].snapshot_id,
                          **condition.model_dump(mode="json")}
                 conditions["condition." + canonical_sha256(bound)] = bound
+        if policy and proposal.hypotheses and len(hypotheses) == initial_hypotheses:
+            limits.append("native_stage_unavailable:" + role)
         limits.extend("specialist_unknown:" + (role+":" if scoped else "") + item for item in proposal.unknowns)
     current = _validated(seed, claims=claims, hypotheses=hypotheses, limitations=limits)
     _bound_put(ledger.journal, "native_conditions", conditions)
@@ -334,12 +374,20 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if unified:
         from tradingagents.research.unified_assessment import stance_ceiling
         synthesis_context["unified_instruction"] = "回答投资吸引力，逐条裁决所有挑战并绑定对应回应ID。修正/撤回的原推断禁止作为肯定性支撑；修正理由须引用回应及其事实。缺经营/估值用insufficient_evidence；critical未解决或无估值锚点不得favorable。改变判断条件引用hypothesis_id与原失效条件文本/索引。裁决不能改变代码局部outcome。"
+        if company_policy is not None:
+            synthesis_context["unified_instruction"] = synthesis_context["unified_instruction"].replace(
+                "缺经营/估值用insufficient_evidence",
+                "缺经营依据用insufficient_evidence；缺估值或合理价值区间只限制估值项并禁止favorable，可根据合格经营依据给出neutral/unfavorable及明确条件，不得把缺区间等同于无研究结果")
         synthesis_context["stance_ceiling"] = stance_ceiling(current, tuple(
             DimensionAssessmentV1(dimension=name, status=status, judgement=reason,
                 claim_ids=tuple(dimension_claim_ids(current)[name]), limitations=(reason,))
             for name, (status, reason) in dimension_policy(current, scoped=scoped, valuation=valuation).items()))
+        if report_policy is not None:
+            synthesis_context["unified_instruction"] = "形成有依据的公司判断，资料缺口只限制对应章节。缺经营细项或估值区间禁止favorable，但可用合格引用理由给出谨慎neutral/unfavorable；没有整体判断时选insufficient_evidence，交付时显示未形成评级。修正/撤回原推断不得用于肯定支撑。失效条件只选hypothesis_id/index，原文由代码恢复；每项裁决只选challenge_id并给rationale，回应ID和处理状态由代码绑定。"
     synthesis = _call("synthesis", synthesis_context,
         SynthesisProposalV3 if unified else SynthesisProposalV2 if minimum else SynthesisProposalV1, caller=caller, ledger=ledger, cancelled=cancelled) if seed.claims else None
+    if report_policy is not None and cancelled():
+        raise AnalysisCancelled("native report cancelled before assembly")
     if synthesis is None:
         limits.append("native_synthesis_unavailable")
         dimensions = tuple(DimensionAssessmentV1(dimension=name, status="unresolved", judgement="证据或综合环节不足。",
@@ -347,6 +395,12 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         judgement, next_check, keys, primary = "资料或综合环节不足，暂不能形成完整研究判断。", "补齐缺失资料并重新核查。", (), None
         challenge_assessments = tuple(ChallengeAssessmentV1(challenge_id=item.challenge_id,
                                      rationale="未完成对整体假设的核查。") for item in current.challenges)
+        if report_policy is not None:
+            from tradingagents.research.report_delivery import retained_summary
+            dimensions, keys = retained_summary(current)
+            judgement = "公司基础报告与已有专项结果已交付；综合阶段未完成，暂未形成总体评级。"
+            next_check = "补充各章节列明的具体资料，并在后续完成综合分析。"
+            primary = next((item.challenge_id for item in current.challenges if item.severity == "critical"), None)
     else:
         dimensions = gate_dimensions(current, synthesis.dimensions, scoped=scoped, valuation=valuation)
         judgement, next_check, keys, primary = synthesis.judgement, synthesis.next_check, synthesis.key_claim_ids, synthesis.primary_challenge_id
@@ -355,7 +409,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         if critical_ids and primary not in critical_ids:
             primary = next(item.challenge_id for item in current.challenges if item.severity == "critical")
     complete = (not (unified and any(r.status == "unavailable" for r in current.dialogue.responses)) and synthesis is not None and not any(item.status == "unresolved" for item in dimensions)
-                and not any(item.startswith("native_stage_unavailable:") for item in limits))
+                and not any(item.startswith(("native_stage_unavailable:", "native_hypothesis_rejected:")) for item in limits))
     if minimum:
         challenge_assessments = local_assessments(current)
     extra = {}

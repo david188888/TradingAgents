@@ -54,6 +54,35 @@ class MinimumEvidenceSources(ValuationSources):
         config["evidence_source_exclusions"] = [v for v in excluded if v != "ths"]
         super().__init__(SimpleNamespace(**{**vars(request), "effective_config": config}), run_id, session, fetch)
 
+    def _identity(self, inputs, ts_code):
+        identity = super()._identity(inputs, ts_code)
+        from tradingagents.dataflows.company_profile import (
+            PROFILE_CAPABILITY,
+            PROFILE_SOURCE,
+            qualify_company_profile,
+        )
+        from tradingagents.research.native_versions import REPORT_DELIVERY_POLICY
+        if getattr(self.request, "report_delivery_policy", None) != REPORT_DELIVERY_POLICY:
+            return identity
+        gaps, result = [], None
+        url = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vCI_CorpInfo/stockid/{ts_code[:6]}.phtml"
+        if identity is None or "sina" in self.request.effective_config.get("evidence_source_exclusions", []):
+            gaps.append("profile_identity_or_source_unavailable")
+        elif inputs.cutoff != datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat():
+            gaps.append("profile_historical_vintage_unverified")
+        else:
+            try:
+                result = self._attempt(PROFILE_CAPABILITY, "sina", "company_profile.v1", lambda:
+                    qualify_company_profile(self._get(url, text=True), ts_code=ts_code, cutoff=inputs.cutoff))
+            except BudgetExhausted:
+                gaps.append("profile_budget_exhausted")
+        if result is not None:
+            self.evidence(inputs, PROFILE_CAPABILITY, PROFILE_SOURCE, result, public_url=url)
+            gaps.extend("profile_field_missing:" + field for field in
+                        ("introduction", "main_business", "business_scope", "industry") if field not in result["fields"])
+        self._optional_cap(inputs, PROFILE_CAPABILITY, (PROFILE_SOURCE,) if result else (), gaps)
+        return identity
+
     def _optional_cap(self, inputs, capability, sources, gaps=(), detail=None):
         inputs.capabilities.append(FrozenCapability(capability=capability, required=False,
             status=CapabilityStatus.PARTIAL if sources and gaps else CapabilityStatus.QUALIFIED if sources else CapabilityStatus.UNAVAILABLE,
@@ -210,11 +239,17 @@ class MinimumEvidenceSources(ValuationSources):
                 if response.status_code != 200:
                     raise NativeSourceUnavailable("valuation_http_unavailable")
                 text = response.content.decode("gb18030")
-                target = qualify_snapshot(text, ts_code=ts_code, last_session=self.last_session)
+                options = self._snapshot_options()
+                target = qualify_snapshot(text, ts_code=ts_code, last_session=self.last_session, **options)
                 peers = []
                 for code in codes[1:]:
                     try:
-                        peers.append(PeerQuoteV1(target_ts_code=ts_code, **qualify_snapshot(text, ts_code=code, last_session=self.last_session)).model_dump(mode="json"))
+                        peer = qualify_snapshot(text, ts_code=code, last_session=target["as_of"], **options)
+                        if peer["as_of"] != target["as_of"]:
+                            raise NativeSourceUnavailable("peer_quote_date_mismatch")
+                        peer.pop("quote_basis", None)
+                        peer.pop("quote_captured_at", None)
+                        peers.append(PeerQuoteV1(target_ts_code=ts_code, **peer).model_dump(mode="json"))
                     except (NativeSourceUnavailable, ValueError) as exc:
                         rejected.append(getattr(exc, "code", "peer_quote_unqualified"))
                         continue
@@ -225,10 +260,10 @@ class MinimumEvidenceSources(ValuationSources):
                 quotes = None
                 gaps.append("valuation_budget_exhausted")
             if quotes:
-                self.evidence(inputs, CAP_VALUATION, SNAPSHOT_SOURCE, quotes["target"], published=self.last_session, public_url=url)
+                self.evidence(inputs, CAP_VALUATION, SNAPSHOT_SOURCE, quotes["target"], published=quotes["target"]["as_of"], public_url=url)
                 sources.append(SNAPSHOT_SOURCE)
                 for row in quotes["peers"]:
-                    self.evidence(inputs, CAP_PEERS, "tencent.peer_valuation", row, published=self.last_session, public_url=url)
+                    self.evidence(inputs, CAP_PEERS, "tencent.peer_valuation", row, published=row["as_of"], public_url=url)
                 if quotes["peers"]:
                     peer_sources.append("tencent.peer_valuation")
             peer_gaps.extend(sorted(set(rejected)))
