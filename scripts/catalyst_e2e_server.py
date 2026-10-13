@@ -6,6 +6,8 @@ calls a model or data provider and does not represent research-quality evidence.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -83,14 +85,33 @@ class NativeFixtureSources:
     def collect(self):
         from tests.test_native_valuation import valuation_fixture
         draft, context = valuation_fixture()
+        if self.request.ticker.startswith("600418"):
+            from tradingagents.dataflows.company_profile import PROFILE_CAPABILITY, PROFILE_SOURCE
+            from tradingagents.research.evidence_freeze import CapabilityStatus, FrozenCapability
+            payloads = [(e, json.loads(json.dumps(context[e["evidence_id"]], ensure_ascii=False)
+                        .replace("600803.SH", "600418.SH").replace("新奥股份", "江淮汽车（合成测试）"))) for e in draft.evidence]
+            payloads.append(({"capability": PROFILE_CAPABILITY, "source_name": PROFILE_SOURCE,
+                "source_tier": "vendor", "captured_at": "2026-09-30T08:30:00Z", "observed_at": "2026-09-30T08:30:00Z",
+                "usable_as_of": "2026-09-30T08:30:00Z", "time_basis": "synthetic fixture", "value_basis": "synthetic fixture"},
+                {"ts_code": "600418.SH", "name": "江淮汽车（合成测试）", "capture_scope": "current_public_profile",
+                 "fields": {"main_business": "汽车业务介绍（仅为离线浏览器测试合成字段）"}}))
+            evidence, context = [], {}
+            for item, payload in payloads:
+                digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                key = "e.d" + digest[:16]
+                evidence.append({**item, "evidence_id":key, "source_family_id":item["source_name"]+":"+digest,
+                    "run_id":self.run_id,"ticker":self.request.ticker})
+                context[key] = payload
+            draft = draft.model_copy(update={"evidence":tuple(evidence), "capabilities":(*draft.capabilities,
+                FrozenCapability(capability=PROFILE_CAPABILITY, status=CapabilityStatus.QUALIFIED, required=False, reason="synthetic fixture"))})
         return draft.model_copy(update={"run_id": self.run_id, "ticker": self.request.ticker,
             "cutoff": self.request.analysis_date,
             "evidence": tuple({**e, "run_id":self.run_id, "ticker":self.request.ticker} for e in draft.evidence)}), context
 
 
 class NativeFixtureCaller:
-    def __init__(self, **kwargs):
-        pass
+    def __init__(self, *, fail_synthesis=False, **kwargs):
+        self.fail_synthesis = fail_synthesis
 
     def __call__(self, stage, context):
         time.sleep(.25)
@@ -111,6 +132,8 @@ class NativeFixtureCaller:
                 "alternative_explanation": "测试替代解释：期间差异。",
             }]}
         if stage == "synthesis":
+            if self.fail_synthesis:
+                raise ValueError("synthetic unusable synthesis")
             dimensions = []
             for dimension, (ceiling, reason) in context["dimension_policy"].items():
                 refs = context["dimension_claim_ids"].get(dimension, [])[:1]
@@ -133,7 +156,8 @@ def build_app():
     def factory(request, observer):
         if request.research_profile == "evidence_v1":
             from tradingagents.execution.native_runner import NativeRunner
-            return NativeRunner(observer, sources_factory=NativeFixtureSources, caller_factory=NativeFixtureCaller)
+            return NativeRunner(observer, sources_factory=NativeFixtureSources,
+                caller_factory=lambda **kwargs: NativeFixtureCaller(fail_synthesis=request.ticker.startswith("600418"), **kwargs))
         if request.research_profile == "catalyst_v1":
             return CatalystRunner(observer, sources_factory=FixtureSources, caller_factory=FixtureCaller)
         return _fake_runner_factory(request, observer)

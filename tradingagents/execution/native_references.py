@@ -22,6 +22,8 @@ def reference_aliases(context: Mapping[str, Any]) -> dict[str, str]:
                 collect(item)
 
     collect(context.get("record", {}))
+    for key in ("facts", "sources", "metrics"):
+        collect(context.get(key, []))
     aliases = {}
     for kind, values in identifiers.items():
         for index, identifier in enumerate(sorted(values), 1):

@@ -42,8 +42,11 @@ from tradingagents.observability.roles import (
 )
 from tradingagents.research.native_record import build_native_record
 from tradingagents.research.native_versions import (
+    COMPANY_RESEARCH_POLICY,
     FOCUS_BUDGET_POLICY,
     FOCUS_WORKFLOW_VERSION,
+    REPORT_DELIVERY_POLICY,
+    SPECIALIST_REFERENCE_POLICY,
     UNIFIED_BUDGET_POLICY,
     UNIFIED_WORKFLOW_VERSION,
 )
@@ -61,7 +64,7 @@ PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 
 
-def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True):
+def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True):
     from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
 
     return {
@@ -73,6 +76,12 @@ def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_p
         "holding_context": asdict(request.holding_context) if request.holding_context else None,
         "config": prepare_effective_config(request.effective_config),
         "active_timeout_seconds": request.effective_config.get("evidence_timeout_seconds", 300),
+        **({"company_research_policy": COMPANY_RESEARCH_POLICY}
+           if workflow_version == UNIFIED_WORKFLOW_VERSION and company_research_policy else {}),
+        **({"report_delivery_policy": REPORT_DELIVERY_POLICY}
+           if workflow_version == UNIFIED_WORKFLOW_VERSION and report_delivery_policy else {}),
+        **({"specialist_reference_policy": SPECIALIST_REFERENCE_POLICY}
+           if workflow_version == UNIFIED_WORKFLOW_VERSION and specialist_reference_policy else {}),
         **({"focus_budget_policy": dict(UNIFIED_BUDGET_POLICY if workflow_version == UNIFIED_WORKFLOW_VERSION else FOCUS_BUDGET_POLICY)} if workflow_version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else {}),
         **({"model_retry_policy": deepcopy(MODEL_RETRY_POLICY)}
            if workflow_version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and model_retry_policy else {}),
@@ -90,7 +99,10 @@ def validate_native_resume(store, run_id, request):
     state = load_checkpoint(store, run_id)
     version = state["identity"].get("workflow_version") if state is not None else None
     retry_policy = state is not None and "model_retry_policy" in state["identity"]
-    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy):
+    reference_policy = state is not None and "specialist_reference_policy" in state["identity"]
+    company_policy = state is not None and "company_research_policy" in state["identity"]
+    report_policy = state is not None and "report_delivery_policy" in state["identity"]
+    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -198,8 +210,11 @@ class NativeRunner:
             validate_native_resume(self.observer.store, run_id, request)
         version = load_checkpoint(self.observer.store, run_id)["identity"]["workflow_version"] if resume else WORKFLOW_VERSION
         retry_policy = not resume or "model_retry_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        reference_policy = not resume or "specialist_reference_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        company_policy = not resume or "company_research_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        report_policy = not resume or "report_delivery_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version,
-            model_retry_policy=retry_policy), require_existing=resume)
+            model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy), require_existing=resume)
         seed = load_native_seed(journal.ledger)
         if seed is None:
             active()
@@ -258,6 +273,8 @@ class NativeRunner:
                     key: value for key, value in request.effective_config.items()
                     if key != "research_question"
                 }
+            source_fields["company_research_policy"] = journal.state["identity"].get("company_research_policy")
+            source_fields["report_delivery_policy"] = journal.state["identity"].get("report_delivery_policy")
             source_request = SimpleNamespace(**source_fields)
             with BudgetedSession(
                 journal.ledger, active, lambda: deadline - time.monotonic()
@@ -286,6 +303,7 @@ class NativeRunner:
                 include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
                 include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
                 include_minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
+                include_basics=journal.state["identity"].get("report_delivery_policy") == REPORT_DELIVERY_POLICY,
             )
             if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat()) != (
                 run_id,

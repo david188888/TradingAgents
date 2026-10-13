@@ -6,11 +6,14 @@ from tradingagents.research.native_versions import UNIFIED_DIMENSIONS
 
 def stance_ceiling(record, dimensions):
     by_name = {d.dimension: d for d in dimensions}
-    if any(by_name[name].status == "unresolved" or not by_name[name].claim_ids
-           for name in ("operating_quality", "valuation")):
-        return "insufficient_evidence"
-    if record.valuation is None:
-        return "insufficient_evidence"
+    from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
+    cautious = COMPANY_RESEARCH_POLICY in record.limitations
+    from tradingagents.research.report_delivery import delivery_enabled
+    delivery = delivery_enabled(record)
+    if by_name["operating_quality"].status == "unresolved" or not by_name["operating_quality"].claim_ids:
+        return "no_favorable" if delivery else "insufficient_evidence"
+    if by_name["valuation"].status == "unresolved" or not by_name["valuation"].claim_ids or record.valuation is None:
+        return "no_favorable" if cautious or delivery else "insufficient_evidence"
     claims = {c.claim_id: c for c in record.claims}
     valuation_sources = {e for dimension in dimensions for cid in dimension.claim_ids
                          for e in claims[cid].evidence_ids}
@@ -26,6 +29,15 @@ def stance_ceiling(record, dimensions):
 
 def validate_unified_assessment(record):
     assessment = record.assessment
+    from tradingagents.research.report_delivery import delivery_enabled
+    delivery = delivery_enabled(record)
+    if delivery:
+        if assessment.report_status is None or assessment.investment_stance == "insufficient_evidence":
+            raise ValueError("new company reports require an explicit delivery state")
+        if (assessment.report_status == "synthesized") != (assessment.investment_stance is not None):
+            raise ValueError("unrated report must not manufacture an investment stance")
+    elif assessment.report_status is not None or assessment.investment_stance is None:
+        raise ValueError("legacy records cannot carry report delivery fields")
     if record.dialogue is None or record.mode != "company_research" or assessment.forward_window_calendar_days is not None:
         raise ValueError("V3 assessment requires unified company dialogue")
     if tuple(d.dimension for d in assessment.dimensions) != UNIFIED_DIMENSIONS:
@@ -68,6 +80,8 @@ def validate_unified_assessment(record):
         reply = replies.get(item.response_id)
         if reply is None or reply.challenge_id != cid:
             raise ValueError("adjudication references another challenge's reply")
+        if delivery and item.disposition != reply.disposition:
+            raise ValueError("new report must preserve the saved reply disposition")
         if reply.disposition in {"withdrawn", "revised", "unanswerable"} and item.disposition != reply.disposition:
             raise ValueError("adjudication cannot strengthen the specialist's reply")
     hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
@@ -82,11 +96,11 @@ def validate_unified_assessment(record):
     if hypotheses and not assessment.change_conditions:
         raise ValueError("unified judgement requires public falsifiers")
     ceiling = stance_ceiling(record, assessment.dimensions)
-    if ceiling == "insufficient_evidence" and assessment.investment_stance != ceiling:
+    if ceiling == "insufficient_evidence" and assessment.investment_stance != ceiling and not delivery:
         raise ValueError("missing operating or valuation support requires insufficient evidence")
     if ceiling == "no_favorable" and assessment.investment_stance == "favorable":
         raise ValueError("critical challenge or missing valuation anchor prohibits favorable")
-    if assessment.investment_stance != "insufficient_evidence" and not assessment.supporting_arguments and not assessment.opposing_arguments:
+    if assessment.investment_stance not in {None, "insufficient_evidence"} and not assessment.supporting_arguments and not assessment.opposing_arguments:
         raise ValueError("investment stance requires referenced reasons")
     if any(r.status == "unavailable" for r in record.dialogue.responses) and (
         assessment.completeness != "partial" or assessment.quality != "LOW_CONFIDENCE"

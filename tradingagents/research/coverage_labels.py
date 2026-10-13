@@ -47,6 +47,14 @@ REASON_LABELS = {
     "operating_table_layout_not_admitted": "经营表布局未通过解析校验，原文可能仍可读取",
     "dimension_judgement_requires_further_validation": "对应资料可用，判断仍需进一步核查",
     "qualified_financial_fields_missing": "未取得合格财务字段",
+    "company-basics-local-gaps-delivery-v1": "基础资料与有效专项持续交付，具体缺口限制对应章节",
+    "host_retained_findings_not_synthesis": "保留已保存事实或有效专项观点；综合阶段尚未完成",
+    "profile_historical_vintage_unverified": "未取得研究截点对应的公司介绍版本",
+    "profile_identity_or_source_unavailable": "公司介绍的证券身份或来源未取得",
+    "profile_budget_exhausted": "公司介绍取数额度已用尽，保留其他已有资料",
+    "timestamped-quote-cautious-judgement-v1": "使用带时间标记的行情；估值缺口限制估值项，整体判断仍需合格经营依据",
+    "valuation_unsettled_session_snapshot": "使用采集时刻的当日行情，尚非已结算交易日收盘价",
+    "valuation_history_precedes_quote": "历史倍数截至前一已结算交易日，当前行情保留自身日期",
     "qualified_valuation_inputs_missing": "未取得合格估值输入",
     "qualified_market_metrics_missing": "未取得合格市场指标",
     "valuation_identity_or_calendar_missing": "证券身份或对应交易所的日历未通过资格检查",
@@ -94,8 +102,11 @@ def limitation_label(value):
         # One proposal cited outside its own view and was dropped on its own;
         # the rest of the run is unaffected, so the label says so.
         _, _, detail = value.partition(":")
-        role, _, _code = detail.partition(":")
+        role, _, reason = detail.partition(":")
+        _code, _, index = reason.partition(":")
         rejected = {"specialist_fact_reference": "引用了本专项视图之外的事实",
-                    "condition_evidence_reference": "条件引用了该假设之外的证据"}
-        return ROLE_LABELS.get(role, role)+"：有假设未通过引用校验已剔除（"+rejected.get(_code, _code)+"）"
+                    "condition_evidence_reference": "条件引用了该假设之外的证据",
+                    "condition_metric_reference": "条件指标的来源不属于该假设"}
+        position = "第"+str(int(index)+1)+"条" if index.isdigit() else "有"
+        return ROLE_LABELS.get(role, role)+"："+position+"假设未通过引用校验已剔除（"+rejected.get(_code, _code)+"）"
     return REASON_LABELS.get(value, value)

@@ -38,6 +38,11 @@ def valuation_content(payload, source_name, ticker, cutoff):
         quoted = datetime.fromisoformat(payload["quote_timestamp"])
         if quoted.tzinfo is None or quoted.astimezone(ZoneInfo("Asia/Shanghai")).date() != as_of:
             raise ValueError("valuation timestamp mismatch")
+        if "quote_basis" in payload:
+            captured = datetime.fromisoformat(payload["quote_captured_at"])
+            if (captured.tzinfo is None or quoted > captured
+                    or payload["quote_basis"] not in {"unsettled_session_snapshot", "settled_session_snapshot"}):
+                raise ValueError("valuation capture timestamp invalid")
         for key in ("price", "total_market_cap_yi"):
             _finite(payload[key], positive=True)
         for key in ("pe_ttm", "pb"):
@@ -76,7 +81,9 @@ def assemble_valuation(record, payloads):
     refs = [snapshot_source.evidence_id]
     history = next((s for s in eligible if s.source_name == "tushare.valuation_history"), None)
     rows = []
-    if history is not None and payloads[history.evidence_id]["as_of"] == snapshot.as_of.isoformat():
+    if history is not None and (payloads[history.evidence_id]["as_of"] == snapshot.as_of.isoformat()
+            or ("quote_basis" in payloads[snapshot_source.evidence_id]
+                and payloads[history.evidence_id]["as_of"] < snapshot.as_of.isoformat())):
         rows = payloads[history.evidence_id]["rows"]
         refs.append(history.evidence_id)
     annual = None
@@ -105,4 +112,6 @@ def assemble_valuation(record, payloads):
         pb_history=tuple(DailyMultipleV1(day=date.fromisoformat(r["date"]), value=r["pb"]) for r in rows if r["pb"] is not None))
     return NativeValuationV1(inputs=inputs, assessment=assess_valuation(inputs), input_evidence_ids=tuple(refs), input_sha256=canonical_sha256(inputs),
         limitations=("current_capture_history_is_not_archived_pit", "historical_multiple_band_is_assumption_not_intrinsic_value",
-                      "market_cap_and_quote_rounding_affect_implied_share_count"))
+                      "market_cap_and_quote_rounding_affect_implied_share_count",
+                      *( ("valuation_unsettled_session_snapshot",) if payloads[snapshot_source.evidence_id].get("quote_basis") == "unsettled_session_snapshot" else ()),
+                      *( ("valuation_history_precedes_quote",) if history is not None and rows and payloads[history.evidence_id]["as_of"] < snapshot.as_of.isoformat() else ())))

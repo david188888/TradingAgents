@@ -166,7 +166,7 @@ export interface ResearchDialogueV1DTO {
   responses: ResearchResponseDTO[];
 }
 export interface InvestmentFieldsDTO {
-  investment_stance: "favorable" | "neutral" | "unfavorable" | "insufficient_evidence";
+  investment_stance: "favorable" | "neutral" | "unfavorable" | "insufficient_evidence" | null;
   supporting_arguments: Array<{rationale: string; claim_ids: string[]; response_ids: string[]}>;
   opposing_arguments: Array<{rationale: string; claim_ids: string[]; response_ids: string[]}>;
   change_conditions: Array<{hypothesis_id: string; invalidation_index: number; text: string}>;
@@ -174,7 +174,17 @@ export interface InvestmentFieldsDTO {
 }
 export interface ResearchAssessmentV3DTO extends Omit<ResearchAssessmentV2DTO, "schema_version">, InvestmentFieldsDTO {
   schema_version: "research-assessment-v3";
+  report_status?: "synthesized" | "analysis_unrated" | "specialist_summary" | "basic_report" | null;
 }
+export interface CompanyBasicsV1DTO {
+  schema_version: "company-basics-v1";
+  company_name: string | null;
+  introduction: CompanyBasicFieldV1DTO[];
+  fundamentals: CompanyBasicFieldV1DTO[];
+  quantitative: CompanyBasicFieldV1DTO[];
+  gaps: string[];
+}
+export interface CompanyBasicFieldV1DTO { label: string; claim_id: string; report_period: string | null }
 export interface EvidenceChecksV1DTO {
   schema_version: "evidence-checks-v1"; calculation_version: "minimum-evidence-v1";
   run_id: string; ticker: string; analysis_date: string; input_snapshot_id: string;
@@ -221,6 +231,7 @@ export interface ResearchRecordV1DTO {
   metrics: QuantitativeMetricV1DTO[];
   assessment?: ResearchAssessmentV1DTO | ResearchAssessmentV2DTO | ResearchAssessmentV3DTO | null;
   dialogue?: ResearchDialogueV1DTO | null;
+  company_basics?: CompanyBasicsV1DTO | null;
   valuation?: NativeValuationV1DTO | null;
   evidence_checks?: EvidenceChecksV1DTO | null;
   challenge_bindings?: Array<{ challenge_id: string; check_id: EvidenceCheckId | null; observed_risk: "cash_conversion.cfo_yoy_decline" | null; observation_date: string | null }> | null;
@@ -2313,7 +2324,9 @@ export interface FinancialOperandDTO { evidence_id: string; table: "income" | "b
 export type VerificationConditionDTO = { kind: "financial"; operation: "value" | "difference" | "growth"; current: FinancialOperandDTO; base: FinancialOperandDTO | null; predicate: NumericPredicateDTO } | { kind: "metric"; metric_id: string; predicate: NumericPredicateDTO };
 export interface ChallengesProposalDTO { challenges: Array<{ hypothesis_id: string; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; proposed_test: string; condition_id: string | null; check_id?: EvidenceCheckId | null; observed_risk?: "cash_conversion.cfo_yoy_decline" | null; observation_date?: string | null }> }
 export interface SynthesisProposalDTO { judgement: string; dimensions: DimensionAssessmentV1DTO[]; key_claim_ids: string[]; primary_challenge_id: string | null; next_check: string; challenge_assessments: Array<{ challenge_id: string; outcome: "unresolved"; rationale: string }> }
-export interface SynthesisProposalV3DTO extends SynthesisProposalDTO, InvestmentFieldsDTO {}
+export interface SynthesisProposalV3DTO extends SynthesisProposalDTO, InvestmentFieldsDTO {
+  investment_stance: Exclude<InvestmentFieldsDTO["investment_stance"], null>;
+}
 export interface ResponsesProposalDTO { responses: ResearchResponseProposalDTO[] }
 export interface ReaderAgentDTO {
   schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;

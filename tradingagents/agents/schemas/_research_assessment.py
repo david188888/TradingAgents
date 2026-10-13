@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from ._evidence_checks import ChallengeAssessmentV2
 from ._research_dialogue import (
@@ -62,11 +62,19 @@ class ResearchAssessmentV2(ResearchAssessmentV1):
 
 class ResearchAssessmentV3(ResearchAssessmentV2):
     schema_version: Literal["research-assessment-v3"] = "research-assessment-v3"
-    investment_stance: Literal["favorable", "neutral", "unfavorable", "insufficient_evidence"]
+    investment_stance: Literal["favorable", "neutral", "unfavorable", "insufficient_evidence"] | None
+    report_status: Literal["synthesized", "analysis_unrated", "specialist_summary", "basic_report"] | None = None
     supporting_arguments: tuple["InvestmentArgumentV1", ...] = Field(default=(), max_length=3)
     opposing_arguments: tuple["InvestmentArgumentV1", ...] = Field(default=(), max_length=3)
     change_conditions: tuple["JudgementConditionV1", ...] = Field(default=(), max_length=3)
     adjudications: tuple["ChallengeAdjudicationV1", ...] = Field(default=(), max_length=3)
+
+    @model_serializer(mode="wrap")
+    def compatible_delivery_status(self, handler):
+        value = handler(self)
+        if self.report_status is None:
+            value.pop("report_status", None)
+        return value
 
 
 

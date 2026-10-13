@@ -27,7 +27,7 @@ def finite_number(value, *, positive=False):
     return number
 
 
-def qualify_snapshot(text, *, ts_code, last_session):
+def qualify_snapshot(text, *, ts_code, last_session, current_session=None, captured_at=None):
     symbol = ts_code[-2:].lower() + ts_code[:6]
     matches = re.findall(r'v_' + re.escape(symbol) + r'="([^"]+)"', text)
     if len(matches) != 1:
@@ -39,11 +39,16 @@ def qualify_snapshot(text, *, ts_code, last_session):
         observed = datetime.strptime(fields[30], "%Y%m%d%H%M%S").replace(tzinfo=ZoneInfo("Asia/Shanghai"))
     except ValueError:
         raise NativeSourceUnavailable("valuation_timestamp_invalid") from None
-    if observed.date().isoformat() != last_session:
+    quote_day = observed.date().isoformat()
+    if current_session is not None and (captured_at is None or captured_at.tzinfo is None
+            or current_session != captured_at.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+            or current_session < last_session or observed > captured_at):
+        raise NativeSourceUnavailable("valuation_timestamp_invalid")
+    if quote_day not in {last_session, current_session}:
         raise NativeSourceUnavailable("valuation_quote_not_last_settled_session")
     # Zero turnover is not a proven settled market observation.
     finite_number(fields[37], positive=True)
-    result = {"ts_code": ts_code, "name": fields[1], "as_of": last_session,
+    result = {"ts_code": ts_code, "name": fields[1], "as_of": quote_day,
         "quote_timestamp": observed.isoformat(), "price": finite_number(fields[3], positive=True),
         "total_market_cap_yi": finite_number(fields[45], positive=True), "currency": "CNY"}
     for field, key in ((39, "pe_ttm"), (46, "pb")):
@@ -51,6 +56,9 @@ def qualify_snapshot(text, *, ts_code, last_session):
         result[key] = number if number is not None and number > 0 else None
     if result["pe_ttm"] is None and result["pb"] is None:
         raise NativeSourceUnavailable("valuation_multiples_unavailable")
+    if current_session is not None:
+        result.update(quote_basis="unsettled_session_snapshot" if quote_day != last_session else "settled_session_snapshot",
+                      quote_captured_at=captured_at.isoformat())
     return result
 
 
@@ -90,13 +98,24 @@ class ValuationSources(DisclosureSources):
         excluded = config.get("evidence_source_exclusions", [])
         self.valuation_vendors = [v for v in self.valuation_vendors if v not in excluded]
         self.last_session = None
+        self.current_session = None
+        self.company_research_policy = getattr(request, "company_research_policy", None)
 
     def _calendar(self, inputs, ts_code, start):
         rows = super()._calendar(inputs, ts_code, start)
         if rows is not None:
             self.last_session = settled_sessions(rows, start=start, cutoff=inputs.cutoff,
                 captured_at=datetime.now(ZoneInfo("UTC")))[-1]
+        if rows is not None:
+            self.current_session = next((api_date(row["cal_date"]) for row in rows
+                if str(row["is_open"]) == "1" and api_date(row["cal_date"]) == inputs.cutoff), None)
         return rows
+
+    def _snapshot_options(self):
+        from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
+        if self.company_research_policy == COMPANY_RESEARCH_POLICY and self.current_session is not None:
+            return {"current_session": self.current_session, "captured_at": datetime.now(ZoneInfo("UTC"))}
+        return {}
 
     def _valuation(self, inputs, ts_code, identity):
         sources, gaps = [], []
@@ -113,7 +132,7 @@ class ValuationSources(DisclosureSources):
                     if response.status_code != 200:
                         raise NativeSourceUnavailable("valuation_http_unavailable")
                     return qualify_snapshot(response.content.decode("gb18030"),
-                        ts_code=ts_code, last_session=self.last_session)
+                        ts_code=ts_code, last_session=self.last_session, **self._snapshot_options())
                 try:
                     snapshot = self._attempt(CAP_VALUATION, "tencent", "valuation.snapshot.v4", query)
                 except BudgetExhausted:

@@ -48,6 +48,8 @@ def fact_views(record, *, valuation=False):
     for fact in record.claims:
         if fact.kind != "fact":
             continue
+        if "native_dimension:company_introduction" in fact.limitations:
+            continue
         if any(sources[key].availability != "available" or sources[key].content is None
                or sources[key].usable_as_of is None for key in fact.evidence_ids):
             continue

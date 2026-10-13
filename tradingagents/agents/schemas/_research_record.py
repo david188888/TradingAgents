@@ -29,6 +29,7 @@ from tradingagents.research.valuation import (
     assess_valuation,
 )
 
+from ._company_basics import CompanyBasicsV1
 from ._evidence_checks import ChallengeCheckBindingV1, EvidenceChecksV1
 from ._research_assessment import ResearchAssessmentV1, ResearchAssessmentV2, ResearchAssessmentV3
 from ._research_dialogue import ResearchDialogueV1, validate_dialogue
@@ -254,6 +255,7 @@ class ResearchRecordV1(_RecordModel):
     evidence_checks: EvidenceChecksV1 | None = None
     challenge_bindings: tuple[ChallengeCheckBindingV1, ...] | None = None
     dialogue: ResearchDialogueV1 | None = None
+    company_basics: CompanyBasicsV1 | None = None
     limitations: tuple[str, ...] = ()
 
     @field_validator("assessment", mode="before")
@@ -278,6 +280,8 @@ class ResearchRecordV1(_RecordModel):
             value.pop("challenge_bindings", None)
         if self.dialogue is None:
             value.pop("dialogue", None)
+        if self.company_basics is None:
+            value.pop("company_basics", None)
         return value
 
     @model_validator(mode="after")
@@ -330,6 +334,18 @@ class ResearchRecordV1(_RecordModel):
             if any(item.day > self.analysis_date for item in (*inputs.pe_history, *inputs.pb_history)):
                 raise ValueError("native valuation history after cutoff")
         facts = {key for key, item in claims.items() if item.kind == "fact"}
+        if self.company_basics is not None:
+            from tradingagents.research.native_versions import REPORT_DELIVERY_POLICY
+            if REPORT_DELIVERY_POLICY not in self.limitations or self.construction != "native" or self.mode != "company_research":
+                raise ValueError("company basics require the frozen report delivery policy")
+            fields = (*self.company_basics.introduction, *self.company_basics.fundamentals, *self.company_basics.quantitative)
+            refs(tuple(field.claim_id for field in fields), facts)
+            for field in fields:
+                if field.report_period is not None and field.report_period > self.analysis_date:
+                    raise ValueError("company basic period after cutoff")
+                if any(evidence[key].availability != "available" or evidence[key].content is None
+                       or evidence[key].usable_as_of is None for key in claims[field.claim_id].evidence_ids):
+                    raise ValueError("company basics require qualified saved facts")
         for claim in self.claims:
             refs(claim.evidence_ids, evidence.keys())
             refs(claim.supporting_fact_ids, facts)

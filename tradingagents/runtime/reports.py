@@ -370,7 +370,25 @@ def _build_v4_native_markdown(record: Any) -> str:
     if assessment.schema_version == "research-assessment-v3":
         stances = {"favorable": "偏有吸引力", "neutral": "中性", "unfavorable": "偏缺乏吸引力", "insufficient_evidence": "证据不足"}
         dispositions = {"maintained": "维持", "revised": "修正", "withdrawn": "撤回", "unanswerable": "无法回答"}
-        lines.extend(["## 投资吸引力判断", "", stances[assessment.investment_stance], ""])
+        report_status = assessment.report_status
+        if report_status is not None:
+            statuses = {"synthesized": "公司报告已交付，综合判断已形成", "analysis_unrated": "公司报告已交付，暂未形成总体评级",
+                        "specialist_summary": "基础报告与专项汇总已交付；综合阶段未完成", "basic_report": "基础报告已交付；综合阶段未完成"}
+            lines.extend(["报告交付状态：" + statuses[report_status] + "。", ""])
+        if record.company_basics is not None:
+            from tradingagents.research.company_basics import basic_claim_text
+            basics = record.company_basics
+            lines.extend(["## 公司基础资料", "", text(basics.company_name or record.ticker), ""])
+            for label, fields in (("公司公开介绍", basics.introduction), ("基本面数据", basics.fundamentals), ("量化与行情", basics.quantitative)):
+                lines.extend(["### " + label, ""])
+                lines.extend("- " + text(field.label) + "：" + text(basic_claim_text(claims[field.claim_id].statement)) + "（依据：" + text(field.claim_id) + "）" for field in fields)
+                if not fields:
+                    lines.append("此项明确字段未取得；其他已保存资料继续交付。")
+                lines.append("")
+            if basics.gaps:
+                lines.extend(["### 基础资料的局部缺口", "", *("- " + text(gap) for gap in basics.gaps), ""])
+        lines.extend(["## 投资吸引力判断" if assessment.investment_stance is not None else "## 已有分析与待完成判断", "",
+                      stances[assessment.investment_stance] if assessment.investment_stance is not None else "暂未形成总体评级。", ""])
         for label, arguments in (("支持理由", assessment.supporting_arguments), ("反对理由与反证", assessment.opposing_arguments)):
             lines.extend(["### " + label, ""])
             lines.extend("- " + text(a.rationale) + "（依据：" + "、".join(text(c) for c in a.claim_ids) + "；回应：" + "、".join(text(r) for r in a.response_ids) + "）" for a in arguments)
@@ -389,7 +407,8 @@ def _build_v4_native_markdown(record: Any) -> str:
                 "质疑：" + text(challenge.statement), "",
                 "专项回应：" + dispositions[reply.disposition] + ("（回应缺席）" if reply.status == "unavailable" else "") + "；" + text(reply.rationale), "",
                 "回应依据：" + "、".join(text(c) for c in reply.supporting_fact_ids), "",
-                "综合裁决：" + dispositions[adjudication.disposition] + "；" + text(adjudication.rationale), "",
+                (("代码保留的回应状态：" + dispositions[adjudication.disposition] + "；") if report_status in {"specialist_summary", "basic_report"}
+                 else "综合意见：" if report_status else "综合裁决：" + dispositions[adjudication.disposition] + "；") + text(adjudication.rationale), "",
                 "专项回应与综合意见不等于实际核查，也不自动关闭经济挑战。", ""])
         if not record.dialogue.responses:
             lines.extend(["没有需要专项回应的挑战，未调用回应环节。", ""])
@@ -495,7 +514,9 @@ def build_markdown_from_native_record(record: Any, *, workflow_version=None, foc
     if workflow_version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
         return content
     content = content.replace("。研究问题：", "。研究范围：", 1)
-    content = content.replace(f"**{_markdown_text(record.assessment.judgement)}**", "## 综合判断\n\n" + f"**{_markdown_text(record.assessment.judgement)}**", 1)
+    summary = getattr(record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}
+    heading = "报告交付与待完成分析" if summary else "综合判断"
+    content = content.replace(f"**{_markdown_text(record.assessment.judgement)}**", "## " + heading + "\n\n" + f"**{_markdown_text(record.assessment.judgement)}**", 1)
     if focus_response is None and focus_reason is None:
         return content
     lines = [content.rstrip(), "", "## 补充关注点回应", "", "独立基础研究完成后，依据已有保存证据补充回应；不改写上文的综合判断。", ""]

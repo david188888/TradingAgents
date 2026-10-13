@@ -46,6 +46,25 @@ def test_public_root_binding_uses_exact_host_allowlist_only(message, category):
     assert message not in json.dumps(diagnostic)
 
 
+@pytest.mark.parametrize("message,code", [
+    ("judgement condition does not match the public hypothesis", "judgement_condition_reference"),
+    ("adjudication cannot strengthen the specialist's reply", "adjudication_disposition_binding"),
+    ("adjudication references another challenge's reply", "adjudication_reply_reference"),
+    ("every challenge requires a separate adjudication", "adjudication_coverage"),
+    ("investment argument contains invalid claims", "argument_claim_reference"),
+    ("investment argument contains invalid replies", "argument_response_reference"),
+    ("withdrawn or revised assertions cannot support the conclusion", "excluded_claim_reference"),
+])
+def test_public_root_failures_keep_distinct_safe_codes(message, code):
+    error = ValidationError.from_exception_data("record", [{
+        "type": "value_error", "loc": (), "input": SECRET, "ctx": {"error": ValueError(message)}}])
+    diagnostic = safe_model_diagnostic("synthesis", "main", "response_invalid", error,
+        schema=adapter.SynthesisProposalV3)
+    assert diagnostic["category"] == "reference_validation"
+    assert diagnostic["detail_code"] == code
+    assert SECRET not in json.dumps(diagnostic) and message not in json.dumps(diagnostic)
+
+
 def test_http_diagnostic_keeps_numeric_status_and_only_known_codes():
     exc = RuntimeError(SECRET)
     exc.status_code, exc.code = 400, SECRET
