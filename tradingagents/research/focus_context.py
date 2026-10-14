@@ -14,9 +14,13 @@ FOCUS_REASON_LABELS = {
 
 
 def focus_context(record, focus, output_language):
-    return {"record": record.model_dump(mode="json"), "focus": focus,
+    context = {"record": record.model_dump(mode="json"), "focus": focus,
             "base_record_sha256": canonical_sha256(record), "output_language": output_language,
             "instruction": "仅依据保存研究补充回应。不得修改基础结论、关键依据、挑战或质量，不得把用户提问当作事实。"}
+    if record.numeric_attribution is not None:
+        from tradingagents.research.numeric_narrative import prepare_numeric_context
+        context = prepare_numeric_context("focus_response", context, record)
+    return context
 
 
 def focus_identity(context, model_policy_sha256):

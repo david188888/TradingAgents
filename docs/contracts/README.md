@@ -23,6 +23,7 @@ This page is a map, not a second schema. Python and TypeScript definitions remai
 | Native SDK observation coverage | [`native_observation.py`](../../tradingagents/runtime/native_observation.py) | Native SDK adapter, process and Audit counts; independent of research/recovery identity |
 | Audit Center projection | [`tradingagents/web/audit_models.py`](../../tradingagents/web/audit_models.py), [`audit_projection.py`](../../tradingagents/web/audit_projection.py) | `/api/runs/{run_id}/audit` and `/audit/detail` |
 | Browser wire facade | [`frontend/src/api/contracts.ts`](../../frontend/src/api/contracts.ts) | React API client and state consumers |
+| Fresh V7 numeric narrative | [`agents/schemas/_numeric_attribution.py`](../../tradingagents/agents/schemas/_numeric_attribution.py), [`research/numeric_catalog.py`](../../tradingagents/research/numeric_catalog.py), [`research/numeric_narrative.py`](../../tradingagents/research/numeric_narrative.py), [`research/numeric_integration.py`](../../tradingagents/research/numeric_integration.py) | Native adapter/kernel/cache, record/focus validation, publication, Reader and Markdown; [grammar and limits](numeric-narrative.md) |
 
 The frontend facade mirrors the backend wire shape and documents intentional opaque fields. It does not replace the Python models or authorize backend changes.
 

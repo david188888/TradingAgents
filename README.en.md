@@ -16,6 +16,7 @@ New studies use one company investment research workflow, combining operations, 
 - **Purposeful Agent roles**: operating, event and market specialists develop isolated hypotheses followed by one challenge round, actual checks, targeted specialist replies and synthesis; code owns evidence admission, reference validation and deterministic calculations.
 - **Traceable research reading**: follow judgments back to evidence, doubts and Agent outputs. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
 - **Company report delivery**: preserve public introductions, fundamentals and market observations independently. Gaps limit their sections; unfinished synthesis still delivers saved basics and valid specialist findings, explicitly without an overall rating.
+- **Verifiable numeric fragments**: new studies reference frozen numbers that code renders with units, periods and actual/forecast labels, validated through Reader and export. Surrounding explanations still need researcher review; see the [numeric contract](docs/contracts/numeric-narrative.md).
 
 ## Overall architecture and Agent design
 

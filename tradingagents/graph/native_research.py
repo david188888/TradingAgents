@@ -45,6 +45,7 @@ from tradingagents.research.native_policy import (
 from tradingagents.research.native_versions import (
     BASE_QUESTIONS,
     FOCUS_KERNEL_VERSION,
+    NUMERIC_NARRATIVE_POLICY,
     REPORT_DELIVERY_POLICY,
     SPECIALIST_REFERENCE_POLICY,
     UNIFIED_KERNEL_VERSION,
@@ -71,11 +72,18 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
     _bound_put(ledger.journal, logical + ".input", {"sha256": canonical_sha256(context)})
     cached = ledger.cached_result(logical)
     if cached is not None:
+        from tradingagents.research.numeric_integration import validate_cached_numeric
+        validate_cached_numeric(ledger.journal, stage, cached["proposal"], context, schema)
         return schema.model_validate_json(json.dumps(cached["proposal"]))
     recover = getattr(caller, "recover_cached", None)
     if callable(recover):
         saved = recover(stage, context)
         if saved is not None:
+            from tradingagents.research.numeric_integration import validate_cached_numeric
+            receipt = validate_cached_numeric(ledger.journal, stage, saved, context, schema, allow_candidate=True)
+            if receipt is not None:
+                from tradingagents.research.numeric_integration import remember_numeric
+                remember_numeric(ledger.journal, stage, saved, receipt["proof"], context)
             proposal = schema.model_validate_json(json.dumps(saved, allow_nan=False))
             ledger.record_result(logical, {"proposal": proposal.model_dump(mode="json")})
             return proposal
@@ -93,6 +101,8 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
     ledger.mark_dispatched(token)
     try:
         value = caller(stage, context)
+        from tradingagents.research.numeric_integration import accept_numeric_result
+        value = accept_numeric_result(ledger.journal, stage, value, context, schema)
         if isinstance(value, BaseModel):
             value = value.model_dump_json()
         elif not isinstance(value, str):
@@ -118,6 +128,8 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
 
 
 def _validated(record, **updates):
+    if record.numeric_attribution is not None:
+        updates.setdefault("numeric_attribution", None)
     return ResearchRecordV1.model_validate({**record.model_dump(mode="json"), **updates})
 
 
@@ -139,6 +151,8 @@ def load_native_seed(ledger: DurableBudgetLedger) -> ResearchRecordV1 | None:
             return None
         try:
             record = ResearchRecordV1.model_validate(saved)
+            from tradingagents.research.numeric_integration import validate_record_numeric
+            validate_record_numeric(record, ledger.journal.state["identity"])
         except Exception:
             raise CatalystCheckpointConflict("native seed invalid") from None
         identity = ledger.journal.state.get("native_input")
@@ -182,6 +196,14 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         raise ValueError("research question must contain 1..400 characters")
     identity = {"workflow_version": UNIFIED_KERNEL_VERSION if unified else FOCUS_KERNEL_VERSION if independent else "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
+    from tradingagents.research.numeric_integration import numeric_enabled, validate_record_numeric
+    numeric = numeric_enabled(ledger.journal.state["identity"])
+    if numeric:
+        from tradingagents.research.numeric_narrative import prepare_numeric_context
+        if not unified:
+            raise CatalystCheckpointConflict("native numeric workflow mismatch")
+        validate_record_numeric(seed, ledger.journal.state["identity"])
+        identity["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
     from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
     company_policy = ledger.journal.state["identity"].get("company_research_policy")
     report_policy = ledger.journal.state["identity"].get("report_delivery_policy")
@@ -204,7 +226,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if cached_final is not None:
         if cached_final["identity"] != identity:
             raise CatalystCheckpointConflict("native output identity mismatch")
-        return ResearchRecordV1.model_validate(cached_final["record"])
+        restored = ResearchRecordV1.model_validate(cached_final["record"])
+        validate_record_numeric(restored, ledger.journal.state["identity"])
+        return restored
     views = fact_views(seed, valuation=valuation)
     contexts, reservations = {}, {}
     for role in ROLE_ORDER:
@@ -232,6 +256,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         if minimum and role == "operating_quality":
             contexts[role]["local_checks"] = seed.evidence_checks.model_dump(mode="json")
             contexts[role]["minimum_evidence_instruction"] = "局部检查仅回答其命名问题。可选数据缺失保留已有局部判断；会计桥不证明经济因果，同行样本和机构预测不证明合理价值。"
+        if numeric:
+            from tradingagents.research.numeric_narrative import prepare_numeric_context
+            contexts[role] = prepare_numeric_context(role, contexts[role], seed)
         logical = "native." + role
         if ledger.cached_result(logical) is None and not any(
             item.logical_call_id == logical and item.dispatched_at is not None for item in ledger.records()
@@ -250,6 +277,8 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         limits.append(company_policy)
     if report_policy is not None:
         limits.append(report_policy)
+    if numeric:
+        limits.append(NUMERIC_NARRATIVE_POLICY)
     origins = {}
     facts_by_id = {item.claim_id: item for item in seed.claims}
     metric_evidence = {metric.metric_id: metric.input_evidence_ids for metric in seed.metrics}
@@ -316,6 +345,8 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if minimum:
         critic_context["local_checks"] = seed.evidence_checks.model_dump(mode="json")
         critic_context["check_binding_instruction"] = "可选择给定check_id；它只回答固定证据子问题，不能改名或解决经济母问题。observed_risk仅可选cash_conversion.cfo_yoy_decline，observation_date保留明确后续日期。缺数据不等于风险消失。"
+    if numeric:
+        critic_context = prepare_numeric_context("challenge", critic_context, current)
     critique = _call("challenge", critic_context, challenge_schema, caller=caller,
                      ledger=ledger, cancelled=cancelled) if hypotheses else challenge_schema()
     challenges, tasks, bindings = [], [], []
@@ -384,6 +415,8 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             for name, (status, reason) in dimension_policy(current, scoped=scoped, valuation=valuation).items()))
         if report_policy is not None:
             synthesis_context["unified_instruction"] = "形成有依据的公司判断，资料缺口只限制对应章节。缺经营细项或估值区间禁止favorable，但可用合格引用理由给出谨慎neutral/unfavorable；没有整体判断时选insufficient_evidence，交付时显示未形成评级。修正/撤回原推断不得用于肯定支撑。失效条件只选hypothesis_id/index，原文由代码恢复；每项裁决只选challenge_id并给rationale，回应ID和处理状态由代码绑定。"
+    if numeric:
+        synthesis_context = prepare_numeric_context("synthesis", synthesis_context, current)
     synthesis = _call("synthesis", synthesis_context,
         SynthesisProposalV3 if unified else SynthesisProposalV2 if minimum else SynthesisProposalV1, caller=caller, ledger=ledger, cancelled=cancelled) if seed.claims else None
     if report_policy is not None and cancelled():
@@ -397,7 +430,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                                      rationale="未完成对整体假设的核查。") for item in current.challenges)
         if report_policy is not None:
             from tradingagents.research.report_delivery import retained_summary
-            dimensions, keys = retained_summary(current)
+            dimensions, keys = retained_summary(current, numeric_policy=numeric)
             judgement = "公司基础报告与已有专项结果已交付；综合阶段未完成，暂未形成总体评级。"
             next_check = "补充各章节列明的具体资料，并在后续完成综合分析。"
             primary = next((item.challenge_id for item in current.challenges if item.severity == "critical"), None)
@@ -426,5 +459,8 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         forward_window_calendar_days=84 if seed.mode == "catalyst_research" else None,
         limitations=tuple(dict.fromkeys(limits)), **extra)
     output = _validated(current, assessment=assessment.model_dump(mode="json"), limitations=list(dict.fromkeys(limits)))
+    if numeric:
+        from tradingagents.research.numeric_integration import attach_numeric_attribution
+        output = attach_numeric_attribution(output, ledger.journal)
     ledger.record_result("native.output", {"identity": identity, "record": output.model_dump(mode="json")})
     return output

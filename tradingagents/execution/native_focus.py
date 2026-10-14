@@ -65,6 +65,8 @@ def execute_focus_response(record, focus, *, ledger, caller, cancelled, deadline
             base_record_sha256=digest, focus=focus,
             status="available" if proposal is not None else "unavailable",
             proposal=proposal, reason_code=reason,
+            numeric_attribution=(ledger.cached_result("native.numeric.accepted.focus_response")
+                if record.numeric_attribution is not None and proposal is not None else None),
         )
         validate_focus_response(record, response)
         ledger.record_result(FOCUS_LOGICAL, {"identity": identity, "response": response.model_dump(mode="json")})
@@ -75,6 +77,8 @@ def execute_focus_response(record, focus, *, ledger, caller, cancelled, deadline
     recover = getattr(caller, "recover_cached", None)
     saved = recover("focus_response", context) if callable(recover) else None
     if saved is not None:
+        from tradingagents.research.numeric_integration import validate_cached_numeric
+        validate_cached_numeric(journal, "focus_response", saved, context, FocusProposalV1)
         proposal = FocusProposalV1.model_validate(saved)
         validate_focus_proposal(record, proposal)
         return save(proposal)
@@ -96,6 +100,8 @@ def execute_focus_response(record, focus, *, ledger, caller, cancelled, deadline
             return save(reason="deadline_exceeded")
         ledger.mark_dispatched(grant)
         value = caller("focus_response", context)
+        from tradingagents.research.numeric_integration import accept_numeric_result
+        value = accept_numeric_result(journal, "focus_response", value, context, FocusProposalV1)
         if cancelled():
             raise AnalysisCancelled()
         proposal = FocusProposalV1.model_validate(value)

@@ -153,6 +153,10 @@ class NativeModelCaller:
         if report_policy is not None and (report_policy != REPORT_DELIVERY_POLICY or version != UNIFIED_WORKFLOW_VERSION):
             raise CatalystCheckpointConflict("native report delivery policy mismatch")
         self.deliver_company_report = report_policy == REPORT_DELIVERY_POLICY
+        from tradingagents.research.numeric_integration import numeric_enabled
+        self.numeric_enabled = numeric_enabled(ledger.journal.state["identity"])
+        if self.numeric_enabled and version != UNIFIED_WORKFLOW_VERSION:
+            raise CatalystCheckpointConflict("native numeric workflow mismatch")
         if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
             self.schemas.update(challenge=ChallengesProposalV2, synthesis=SynthesisProposalV2)
             self.instructions["challenge"] += " Select only the closed check IDs/observed risk. Economic questions remain unresolved even when a local evidence check passes."
@@ -228,6 +232,9 @@ class NativeModelCaller:
                 schema_value = _alias_schema_choices(schema_value, reference_aliases(canonical))
                 if stage == "synthesis":
                     context = compact_synthesis_context(context, delivery=self.deliver_company_report)
+            if self.numeric_enabled:
+                from tradingagents.research.numeric_narrative import numeric_prompt_schema
+                schema_value = numeric_prompt_schema(schema_value)
             payload = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
             schema = json.dumps(schema_value, ensure_ascii=False, sort_keys=True)
             language = str(self.config.get("output_language", "Chinese"))
@@ -243,6 +250,19 @@ class NativeModelCaller:
             + f"\nOutput language: {language}. Return one JSON object only, no Markdown.\n"
             + "Schema:\n" + schema + "\nSaved research context:\n" + payload
         )
+        if self.numeric_enabled:
+            prompt += (
+                "\nReturn the numeric envelope {proposal, plans, structured_bindings}. "
+                "All narrative quantities, dates and numbered identities must use the exact "
+                "{{num:n_alias}} or {{meta:m_alias}} tokens supplied in numeric_aliases/numeric_meta. "
+                "Never type observed values, calculate numbers, change units or remove forecast/quote labels. "
+                "If no eligible anchor exists, explain the gap qualitatively. Unknowns/limitations are qualitative. "
+                "Plans are permitted only in conditions or suggested checks; reference {{plan:p_alias}} "
+                "and declare its field_path and typed parameters. Every check.current/base, check.metric_id, "
+                "check.predicate and challenge.observation_date needs an exact structured_binding. "
+                "A plan is a proposed threshold/date, never a company fact. Existing evidence scope, "
+                "reply/argument bindings and all invocation limits remain unchanged."
+            )
         if self.ledger.journal.state.get("native.binding_guidance." + stage) == 1:
             if stage in {"operating_quality", "event_context", "market_context"}:
                 prompt += (
@@ -294,6 +314,11 @@ class NativeModelCaller:
             if context is not None and self.ledger.journal.state.get("native.reference_aliases." + stage) in {1, 2}:
                 aliases = reference_aliases(context)
                 value = translate_references(value, {alias: identifier for identifier, alias in aliases.items()})
+            numeric_proof = None
+            if self.numeric_enabled:
+                from tradingagents.research.numeric_narrative import compile_numeric_stage
+                value, numeric_proof = compile_numeric_stage(stage, value, context, self.schemas[stage],
+                    isolate=self.isolate_specialists and stage in {"operating_quality", "event_context", "market_context"})
             if context is not None and stage == "synthesis" and self.deliver_company_report:
                 from tradingagents.agents.schemas._research_record import ResearchRecordV1
                 from tradingagents.research.report_delivery import normalize_synthesis_bindings
@@ -313,7 +338,14 @@ class NativeModelCaller:
                 metric_evidence = {metric["metric_id"]: metric["input_evidence_ids"] for metric in context.get("metrics", [])}
                 accepted, indices, rejected = [], [], []
                 first_error = None
+                numeric_indices = numeric_proof["indices"] if numeric_proof else list(range(len(proposal.hypotheses)))
+                if numeric_proof:
+                    for rejection in numeric_proof["rejections"]:
+                        rejected.append(HypothesisRejectionV1(**rejection))
+                    if rejected:
+                        first_error = NativeEvidenceBindingError("numeric hypothesis invalid", code=rejected[0].code)
                 for index, hypothesis in enumerate(proposal.hypotheses):
+                    original_index = numeric_indices[index]
                     try:
                         validate_hypothesis_references(hypothesis, facts, metric_evidence,
                             conditions=self.ledger.journal.state.get("identity", {}).get("workflow_version") == UNIFIED_WORKFLOW_VERSION)
@@ -321,10 +353,10 @@ class NativeModelCaller:
                         if not self.isolate_specialists:
                             raise
                         first_error = first_error or exc
-                        rejected.append(HypothesisRejectionV1(index=index, code=exc.code))
+                        rejected.append(HypothesisRejectionV1(index=original_index, code=exc.code))
                     else:
                         accepted.append(hypothesis)
-                        indices.append(index)
+                        indices.append(original_index)
                 if rejected:
                     if phase == "main":
                         candidate = SpecialistCandidateV1(
@@ -332,6 +364,12 @@ class NativeModelCaller:
                             proposal=proposal.model_copy(update={"hypotheses": tuple(accepted)}),
                             indices=tuple(indices), rejections=tuple(rejected))
                         self.ledger.record_result("native.specialist_candidate." + stage, candidate.model_dump(mode="json"))
+                        if numeric_proof is not None:
+                            from tradingagents.research.numeric_integration import (
+                                filter_numeric_proof,
+                            )
+                            filtered = filter_numeric_proof(stage, numeric_proof, indices, rejected, context, self.schemas[stage])
+                            self.ledger.record_result("native.numeric.candidate." + stage, filtered)
                     raise first_error
             if context is not None and stage.startswith("response_"):
                 supplied = {r.challenge_id: r for r in proposal.responses}
@@ -374,7 +412,11 @@ class NativeModelCaller:
                     raise ValueError("synthesis primary challenge invalid")
                 if {c.challenge_id for c in proposal.challenge_assessments} != challenges:
                     raise ValueError("synthesis challenge coverage invalid")
-            return proposal.model_dump(mode="json")
+            value = proposal.model_dump(mode="json")
+            if numeric_proof is not None:
+                from tradingagents.research.numeric_integration import remember_numeric
+                remember_numeric(self.ledger.journal, stage, value, numeric_proof, context)
+            return value
         except Exception as exc:
             if isinstance(exc, (CatalystCheckpointConflict, NativeModelCancelled, TimeoutError)):
                 raise
@@ -397,11 +439,26 @@ class NativeModelCaller:
             metrics = {m["metric_id"]: m["input_evidence_ids"] for m in context.get("metrics", [])}
             for item in candidate.proposal.hypotheses:
                 validate_hypothesis_references(item, facts, metrics)
+            if self.numeric_enabled:
+                from tradingagents.research.numeric_narrative import validate_numeric_stage
+                proof = self.ledger.cached_result("native.numeric.candidate." + stage)
+                validate_numeric_stage(stage, candidate.proposal.model_dump(mode="json"), proof, context, self.schemas[stage])
             return candidate
         except (ValueError, KeyError, TypeError):
             raise CatalystCheckpointConflict("native specialist candidate invalid") from None
 
     def _accept_candidate(self, stage, candidate):
+        if self.numeric_enabled:
+            from tradingagents.research.numeric_integration import remember_numeric
+            context = self.ledger.cached_result("native.numeric.context." + stage)
+            proposal = candidate.proposal.model_dump(mode="json")
+            accepted = self.ledger.cached_result("native.numeric.accepted." + stage)
+            # A valid repair has its own compiled receipt. The original
+            # isolated candidate is only the fallback after repair failure.
+            proof = (accepted["proof"] if accepted is not None and accepted["proposal"] == proposal
+                     else self.ledger.cached_result("native.numeric.candidate." + stage))
+            remember_numeric(self.ledger.journal, stage, candidate.proposal.model_dump(mode="json"),
+                proof, context)
         self.ledger.record_result("native.specialist_accepted." + stage, candidate.model_dump(mode="json"))
         return candidate.proposal.model_dump(mode="json")
 
@@ -417,6 +474,10 @@ class NativeModelCaller:
             )
             if isinstance(proposal, SpecialistProposalV1):
                 saved_specialist_acceptance(self.ledger.journal.state, stage, proposal)
+            if self.numeric_enabled:
+                from tradingagents.research.numeric_integration import validate_cached_numeric
+                context = self.ledger.cached_result("native.numeric.context." + stage)
+                validate_cached_numeric(self.ledger.journal, stage, proposal.model_dump(mode="json"), context, self.schemas[stage])
             return proposal.model_dump(mode="json")
         except Exception:
             raise CatalystCheckpointConflict("native model cache invalid") from None
@@ -585,6 +646,12 @@ class NativeModelCaller:
             return base
         diagnostic = self.ledger.journal.state.get("native.model_diagnostics", {}).get(stage + ".main", {})
         code = diagnostic.get("detail_code")
+        if isinstance(code, str) and code.startswith("numeric_"):
+            return base + ("\nNumeric validation failed: " + code + ". Use only the exact supplied "
+                "num/meta tokens in narrative quantities. Do not copy bare numbers or guess anchors. "
+                "Use a qualitative explanation when qualified data is missing. Keep plans explicitly "
+                "proposed and bind check operands/predicates/dates to their own item. Existing schema "
+                "and reference constraints still apply.")
         if code == "dimension_claim_reference":
             allowed = json.dumps(self._model_context(stage, context)["dimension_claim_ids"], ensure_ascii=False, sort_keys=True)
             return base + ("\nValidation failure: dimension_claim_reference. Each dimension.claim_ids must be "
@@ -651,13 +718,24 @@ class NativeModelCaller:
             if candidate is not None:
                 # Known valid main content survives an interrupted repair; no
                 # unknown dispatch is repeated. This method remains read-only.
-                return candidate.proposal.model_dump(mode="json")
+                value = candidate.proposal.model_dump(mode="json")
+                if self.numeric_enabled:
+                    from tradingagents.research.numeric_integration import validate_cached_numeric
+                    validate_cached_numeric(self.ledger.journal, stage, value, context, self.schemas[stage], allow_candidate=True)
+                return value
             return None
 
     def __call__(self, stage: str, context: Mapping[str, Any]) -> dict[str, Any]:
         if stage not in self.schemas:
             raise ValueError("unknown native model stage")
         self._ensure_active()
+        if self.numeric_enabled:
+            from tradingagents.research.numeric_narrative import numeric_validation_context
+            saved_context = numeric_validation_context(context)
+            prior = self.ledger.cached_result("native.numeric.context." + stage)
+            if prior is not None and prior != saved_context:
+                raise CatalystCheckpointConflict("native numeric context changed")
+            self.ledger.record_result("native.numeric.context." + stage, saved_context)
         logical = "native." + stage
         bucket = BudgetBucket.FOCUS_RESPONSE if stage == "focus_response" else BudgetBucket.MAIN_ANALYSIS
         if not any(item.logical_call_id == logical and item.bucket == bucket

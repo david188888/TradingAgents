@@ -89,6 +89,10 @@ def publish_native_record(
             raise NativePublicationError("native publication requires a lifecycle authorizer")
         from tradingagents.research.native_versions import validate_assessment_version
         validate_assessment_version(record, journal.state["identity"].get("workflow_version"))
+        from tradingagents.research.numeric_integration import validate_record_numeric
+        validate_record_numeric(record, journal.state["identity"])
+        if record.numeric_attribution is not None and record.numeric_attribution.input_identity != journal.state.get("native_input"):
+            raise NativePublicationError("native numeric input binding mismatch")
         candidate = record.model_dump(mode="json")
         digest = _digest(candidate)
         with journal.lock:

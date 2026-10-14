@@ -155,7 +155,7 @@ export function RunHistory({
   return (
     <section className="history">
       <div className="section-title">
-        <h2>最近运行</h2>
+        <h2>历史记录</h2>
         {runs.length > 0 ? (
           <button
             type="button"

@@ -60,7 +60,12 @@ class NativeEvidenceBindingError(ValueError):
         self.code = code
 
 
-ReferenceCode = Literal["specialist_fact_reference", "condition_evidence_reference", "condition_metric_reference"]
+ReferenceCode = Literal[
+    "specialist_fact_reference", "condition_evidence_reference", "condition_metric_reference",
+    "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
+    "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
+    "numeric_manifest_binding", "numeric_catalog_limit",
+]
 
 
 class HypothesisRejectionV1(_Proposal):

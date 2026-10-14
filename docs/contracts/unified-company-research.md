@@ -107,6 +107,17 @@ specialist keeps only its independently validated hypotheses, with local rejecti
 limitations, and the remaining research can publish a limited
 record. The kernel repeats the same binding check for supplied proposals;
 condition-binding failures are evidence rejection, not missing provider configuration.
+Reference validation checks that IDs exist, belong to the supplied specialist
+scope and satisfy saved condition/dialogue bindings. Fresh V7 identities also
+freeze `numeric_narrative_policy=anchored-narrative-v1`: model quantities use
+qualified catalog references, compiled into host-owned fragments before entity
+IDs, with receipts revalidated through cache, publication, Reader, Markdown and
+focus. Unbound numeric prose is rejected through the existing repair/degradation
+path. Historical identities without the marker retain reference-only behavior.
+Deterministic metrics, local checks and valuation retain their existing saved-input
+validation. The numeric policy certifies fragments and bindings, while surrounding
+natural-language meaning and economic interpretation still need review.
+See [frozen numeric narrative](numeric-narrative.md) for the grammar and limits.
 New V7 reference repairs include fixed validation feedback about the failed
 binding, repeating the allowed dimension IDs when necessary. Previously saved
 generic repair prompts keep their exact hashes; unknown dispatches are never

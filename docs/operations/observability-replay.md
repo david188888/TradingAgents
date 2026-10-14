@@ -8,6 +8,25 @@
 - `scratchpad.jsonl`：安全的调试标记流。每条记录只保留事件类型、稳定哈希、artifact 引用和少量数值元数据，并用 `event_id`/`event_sequence` 关联到 `events.jsonl`。
 - `cycle-record/<sha256>.json`：单个 `CycleRecord` artifact，冻结该轮 query、非机密 spec 快照、事件范围和报告/scratchpad 引用，用于审计或离线 replay。
 
+## 事件写入与 SSE 恢复
+
+`runtime/store.py:RunStore` 为同一实例中的每个 run 使用线程级 `RLock`，
+在锁内分配单调递增的 `sequence`、追加完整事件行并 `fsync`。
+`web/broker.py:EventBroker` 使用同一锁先持久化再发布；订阅时捕获磁盘
+watermark 并注册实时订阅，避免磁盘回放与实时交接之间丢失事件。
+
+`GET /api/runs/{run_id}/events` 接受 `after` 查询游标或标准
+`Last-Event-ID`，发送 `id: sequence`。两种游标同时提供时必须一致。
+慢订阅者队列溢出会关闭连接，客户端可从已接收游标重新读取磁盘事件。
+前端使用 fetch 流和事件正文的 `sequence`；`useRunStream` 负责有限指数
+退避与游标恢复，reducer 丢弃重复序号。刷新页面后可从零回放重建状态。
+重连和回放不重新执行研究或调用模型。
+
+这些锁与序号缓存只属于同一个 `RunStore` 实例。默认 Web 启动器运行
+单进程；多个进程或独立实例同时写同一 run 目录没有共享写锁，不能据此
+部署多个共享目录的写入者。多进程支持需要同时设计序号、生命周期所有权
+与 broker 协调，不能只添加 `asyncio.Lock`。
+
 ## 安全规则
 
 `scratchpad.jsonl` 不是模型思考文本的存储位置。它不得持久化私有推理链、prompt、原始工具参数或原始工具结果；这些值仅被清洗后计算 SHA-256，并可指向已经过红化处理的 artifact。`thinking` 事件只表达 `private_reasoning_not_persisted`，因此可在回放中说明边界，而不会泄露模型内部推理。
@@ -35,10 +54,10 @@ V7 条件引用失配在专项提议保存前进入现有结构修复；内核�
 
 ## 原生模型有限网络重试
 
-新建 V6 研究在恢复身份中冻结 `model_retry_policy`（`native-network-retry-v1`）。
+新建 V6/V7 身份冻结 `model_retry_policy`（`native-network-retry-v1`）。
 首次请求后最多重试三次，间隔依次为 2、5、10 秒；只处理明确的连接/超时
 错误、HTTP 408、429 与 5xx。已识别的凭据、参数、上下文或额度错误不重试；
-JSON/schema 错误仍走原有结构修复。V6 可选关注点回应保持一次调用、不重试。
+JSON/schema 错误仍走原有结构修复。V6/V7 可选关注点回应保持一次调用、不重试。
 
 ChatGPT 订阅仅对普通 HTTP 408/429/5xx 使用上述有限重试；计划额度、权限、
 能力、协议错误及未完成流不重试。它的 Responses 客户端每次 invoke 只发

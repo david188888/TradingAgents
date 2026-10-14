@@ -63,7 +63,9 @@ def response_error(response):
     """Do not persist/echo arbitrary upstream messages or raw response bodies."""
     try:
         body = response.json()
-        code = body.get("error", {}).get("code", "request_failed")
+        error = body.get("error", {})
+        # OAuth token endpoints use a string; inference APIs use an object.
+        code = error if isinstance(error, str) else error.get("code", "request_failed")
         if not isinstance(code, str):
             code = "request_failed"
     except (ValueError, AttributeError, TypeError):

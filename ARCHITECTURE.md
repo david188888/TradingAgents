@@ -35,6 +35,11 @@ protected registrations, refresh rotation and account-specific model catalogs;
 non-secret account reference. Credentials live outside run artifacts; safe
 failure diagnostics and measured token usage are checkpointed for projections.
 See [ChatGPT subscription operations](docs/operations/chatgpt-subscription.md).
+The frontend `useChatGPT` hook serializes local status → account catalog reads
+after entry, account mutations and login completion, with stale-response guards.
+Single/batch creation share `ModelConfiguration`; recovery uses the safe model
+diagnostic carried by the optional Web error-envelope field. Stored authorization,
+catalog readiness and actual inference permission remain distinct.
 
 ## Native Research Architecture
 
@@ -58,6 +63,13 @@ deterministic calculations, execution limits and durable publication. Missing
 inputs remain explicit; a successful computable check cannot establish economic
 causality. The canonical boundaries are in `agents/schemas/` and `research/`;
 see the [contract index](docs/contracts/README.md) for producers and consumers.
+
+Fresh V7 runs freeze an anchored numeric narrative policy. `numeric_catalog.py`
+qualifies saved numeric inputs, `numeric_narrative.py` compiles model references
+before entity IDs, and `numeric_integration.py` binds receipts to cached and public
+records. Reader/exports validate those receipts without new model calls. Historical
+identities retain their original behavior; numeric fragments do not certify the
+surrounding economic explanation. See [numeric narrative](docs/contracts/numeric-narrative.md).
 
 New Web single and batch requests default to `evidence_v1` and route to
 `execution/native_runner.py:NativeRunner`. The React creation form offers one company investment research workflow, with an optional supplementary focus. Historical catalyst/holding modes remain read/resume only; fresh creation/retry of those modes returns 422.

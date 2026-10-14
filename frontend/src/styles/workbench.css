@@ -4962,3 +4962,44 @@ td.input-ref {
 .layout.sidebar-collapsed >aside.sidebar {display:none;}
 
 .main:has(.question-reader) { overflow:visible; }
+
+/* Sidebar configuration: inputs → connection/models → history. */
+aside.sidebar { min-width: 0; scrollbar-gutter: stable; }
+.sidebar-section { min-width: 0; padding: 18px 0 4px; }
+.sidebar-section + .sidebar-section { border-top: 1px solid var(--line); margin-top: 6px; }
+.sidebar-section > .section-title { margin: 0 0 16px; }
+.sidebar-section > .section-title h2 { font: 650 13px var(--font-sans); letter-spacing: .03em; }
+.sidebar .analysis-mode-tabs { padding: 0; gap: 18px; }
+.sidebar .mode-tab { flex: 1; padding: 10px 4px; }
+.sidebar .input-group { min-width: 0; margin-bottom: 14px; }
+.sidebar .input-group select { min-width: 0; text-overflow: ellipsis; }
+.sidebar .input-group small, .sidebar .qr-meta { font-size: 11px; line-height: 1.65; }
+.sidebar .qr-meta { margin: 0 0 16px; }
+.sidebar .secondary {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 32px; padding: 6px 10px; border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm); background: transparent; color: var(--text);
+  font: 500 12px var(--font-sans); line-height: 1.4; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.sidebar .secondary:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.sidebar .secondary:disabled { color: var(--faint); cursor: not-allowed; }
+.sidebar :is(button, summary, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.chatgpt-controls { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
+.chatgpt-connection { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.connection-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--faint); }
+.connection-dot.ready { background: var(--green); }
+.chatgpt-controls > small { margin: 6px 0 12px; }
+.chatgpt-controls > label { margin-top: 12px; }
+.connection-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.connection-link { color: var(--accent); font-size: 12px; line-height: 1.5; text-underline-offset: 3px; }
+.connection-error, .connection-note, .connection-login p { font-size: 12px; line-height: 1.65; margin: 10px 0 0; overflow-wrap: anywhere; }
+.connection-error { color: var(--red); }
+.connection-note, .connection-login p { color: var(--muted); }
+.account-options { margin-top: 12px; color: var(--muted); font-size: 11px; }
+.account-options summary { width: fit-content; padding: 4px 0; cursor: pointer; }
+.account-options .connection-actions { margin-top: 6px; }
+.sidebar .account-logout { color: var(--muted); }
+.sidebar .history { margin-top: 24px; padding-top: 20px; }
+.sidebar .history > .section-title h2 { font: 650 13px var(--font-sans); }
+@media (prefers-reduced-motion: reduce) { .sidebar .secondary { transition: none; } }

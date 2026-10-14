@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import date
 from typing import Any, Literal
 
@@ -45,6 +46,53 @@ def _read_checked(store, run_id, event):
     return raw
 
 
+def _validate_numeric_publication(store, run_id, event, events, record, snapshot):
+    """Bind new numeric records to their exact publication checkpoint.
+
+    Legacy records keep their original read contract. A numeric policy cannot
+    be inferred from a later checkpoint, nor may a detached attribution table
+    turn an old publication into a numerically verified one.
+    """
+    from tradingagents.agents.schemas._verification_plan import canonical_sha256
+    from tradingagents.research.numeric_integration import validate_record_numeric
+    from tradingagents.runtime.catalyst_checkpoint import CHECKPOINT_KIND, load_checkpoint
+
+    marker = (snapshot.metadata or {}).get("numeric_narrative_policy")
+    attribution = getattr(record, "numeric_attribution", None)
+    try:
+        checkpoint = load_checkpoint(store, run_id, through=event.sequence)
+    except Exception:
+        if marker is None and attribution is None:
+            # Old public Reader records did not require a catalyst checkpoint.
+            return
+        raise
+    identity = checkpoint["identity"] if checkpoint is not None else {}
+    if marker is None and "numeric_narrative_policy" not in identity:
+        validate_record_numeric(record, identity)
+        return
+    if marker is not None and marker != identity.get("numeric_narrative_policy"):
+        raise ValueError("numeric publication policy mismatch")
+    barrier = next((item for item in events if item.event_id == event.parent_event_id), None)
+    if (barrier is None or barrier.type != "artifact.written" or barrier.status != "committed"
+            or barrier.payload.get("kind") != CHECKPOINT_KIND
+            or barrier.sequence != event.payload.get("committed_sequence")
+            or barrier.sequence >= event.sequence
+            or event.payload.get("graph_task_id") != "native.final"):
+        raise ValueError("numeric publication barrier missing")
+    saved = json.loads(_read_checked(store, run_id, barrier))
+    if (not isinstance(saved, dict) or saved.get("version") != 1
+            or saved.get("run_id") != run_id or saved.get("identity") != identity):
+        raise ValueError("numeric publication barrier identity mismatch")
+    candidate = record.model_dump(mode="json")
+    if (saved.get("native_publication_candidate") != candidate
+            or saved.get("native_publication_authorized_candidate_sha256") != canonical_sha256(candidate)
+            or saved.get("publication_authorized") is not True):
+        raise ValueError("numeric publication authorization mismatch")
+    validate_record_numeric(record, saved["identity"])
+    if record.numeric_attribution is not None and record.numeric_attribution.input_identity != saved.get("native_input"):
+        raise ValueError("numeric publication input binding mismatch")
+
+
 def project_research_record(store: Any, run_id: str, *, through: int | None = None) -> dict[str, Any]:
     snapshot = store.read_snapshot(run_id)  # Existing global 404 for missing run.
     events = (store.read_events(run_id) if through is None else store.read_events(run_id, through=through))
@@ -68,6 +116,7 @@ def project_research_record(store: Any, run_id: str, *, through: int | None = No
             if record.construction == "native":
                 from tradingagents.research.native_versions import validate_assessment_version
                 validate_assessment_version(record, (snapshot.metadata or {}).get("native_workflow_version"))
+                _validate_numeric_publication(store, run_id, event, events, record, snapshot)
         except Exception:
             reason = "corrupt"
         else:

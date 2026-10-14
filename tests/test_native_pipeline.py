@@ -31,6 +31,31 @@ class PipelineCaller:
         self.lock = threading.Lock()
 
     def __call__(self, stage, context):
+        result = self._proposal(stage, context)
+        if context.get("numeric_narrative_policy") is None:
+            return result
+        plans, bindings = [], []
+        if stage in {"operating_quality", "event_context", "market_context"}:
+            anchors = {a["anchor_id"]: a for a in context["numeric_catalog"]["anchors"]}
+            for hi, hypothesis in enumerate(result["hypotheses"]):
+                for ci, condition in enumerate(hypothesis["conditions"]):
+                    check = condition.get("check")
+                    if check is None:
+                        continue
+                    path = f"hypotheses.{hi}.conditions.{ci}"
+                    alias = "p_threshold"
+                    condition["text"] = "披露收入触及失效条件：{{plan:" + alias + "}}"
+                    plans.append({"alias": alias, "field_path": path + ".text", "kind": "quantity", **check["predicate"]})
+                    operand = check["current"]
+                    numeric_alias = next(key for key, aid in context["numeric_aliases"].items()
+                        if operand["evidence_id"] in anchors[aid]["input_evidence_ids"]
+                        and all(anchors[aid]["lineage"].get("source_selector", {}).get(k) == operand[k]
+                                for k in ("table", "field", "report_period")))
+                    bindings.extend([{"field_path": path + ".check.current", "kind": "num", "alias": numeric_alias},
+                        {"field_path": path + ".check.predicate", "kind": "plan", "alias": alias}])
+        return {"proposal": result, "plans": plans, "structured_bindings": bindings}
+
+    def _proposal(self, stage, context):
         with self.lock:
             self.calls.append((stage, copy.deepcopy(context)))
         if stage in {"operating_quality", "event_context", "market_context"}:
