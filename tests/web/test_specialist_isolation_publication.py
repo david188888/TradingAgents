@@ -24,7 +24,7 @@ def test_bad_reference_is_isolated_in_actual_adapter_and_published_reader(tmp_pa
     def invoke(prompt):
         schema, _ = json.JSONDecoder().raw_decode(prompt.split("Schema:\n", 1)[1])
         context, _ = json.JSONDecoder().raw_decode(prompt.split("Saved research context:\n", 1)[1])
-        title = schema["title"]
+        title = schema.get("properties", {}).get("proposal", schema)["title"]
         if title == "SpecialistProposalV1":
             stage = context["view_scope"]["role"]
         elif title == "ResponsesProposalV1":
@@ -33,13 +33,21 @@ def test_bad_reference_is_isolated_in_actual_adapter_and_published_reader(tmp_pa
             stage = "challenge" if title.startswith("Challenges") else "synthesis"
         calls.append(stage)
         if stage == "challenge" and all_invalid:
-            value = {"challenges": []}
+            value = {"proposal": {"challenges": []}, "plans": [], "structured_bindings": []}
         else:
             value = delegate(stage, context)
         if stage == "operating_quality":
-            bad = deepcopy(value["hypotheses"][0])
+            proposal = value["proposal"]
+            bad = deepcopy(proposal["hypotheses"][0])
             bad["supporting_fact_ids"] = ["f.fabricated"]
-            value["hypotheses"] = [bad] if all_invalid else [bad, *value["hypotheses"]]
+            # Isolate the original reference gate. An unbound numeric operand
+            # is now rejected earlier by the separate numeric scope gate.
+            bad["conditions"] = [{"condition_role": "invalidation", "text": "后续经营恶化", "check": None}]
+            proposal["hypotheses"] = [bad] if all_invalid else [bad, *proposal["hypotheses"]]
+            for key in ("plans", "structured_bindings"):
+                value[key] = [] if all_invalid else [
+                    {**item, "field_path": item["field_path"].replace("hypotheses.0.", "hypotheses.1.")}
+                    for item in value[key]]
         return SimpleNamespace(content=json.dumps(value, ensure_ascii=False),
             usage_metadata={"input_tokens": 10, "output_tokens": 20})
     def forbidden(*args, **kwargs):

@@ -32,6 +32,12 @@ user focus, then validate and publish the baseline followed by its supplement.
 `NativeRunner` and `graph/native_research.py` own execution; the host derives
 V2 local outcomes from admitted bindings and recomputed local results; V7 adds the V3 investment stance, referenced reasons, original falsifiers and separate adjudications.
 
+Fresh V7 numeric-policy publications additionally bind compiled numeric fragments
+and their receipts to the authorized checkpoint and public record. Reader and
+per-Agent projections verify saved receipts without repair or model calls; absent
+or corrupt new-policy proofs remain unavailable. Historical records keep their
+original read contract. See [numeric narrative](../contracts/numeric-narrative.md).
+
 The V7 desktop Reader prioritizes the company investment scope, stance, supporting/opposing reasons, public falsifiers and key
 evidence, the main doubt and suggested next check, executed checks, valuation
 and quantitative context. Linked facts, saved source content and fixed financial

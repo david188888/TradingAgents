@@ -213,6 +213,63 @@ export interface NativeValuationV1DTO {
   limitations: string[];
 }
 
+export interface NumericAnchorV1DTO {
+  anchor_id: string; definition_key: string; label: string; subject: string;
+  basis: "actual_reported" | "observed_quote" | "institution_forecast" | "computed_statistic" | "accounting_check" | "valuation_reference";
+  value: string; unit: string; required_fact_ids: string[]; input_evidence_ids: string[]; snapshot_id: string;
+  metadata: Record<string, string | number>;
+  lineage: { kind: "source" | "calculation"; source_name?: string; source_family_id?: string;
+    source_content_sha256?: string; calculation_version?: string; input_sha256?: string;
+    source_selector?: Record<string, string | number>; operands?: string[] };
+  limitations: string[];
+}
+export interface NumericMetadataV1DTO {
+  meta_id: string; kind: "identity" | "period" | "source_title"; text: string;
+  required_fact_ids: string[]; input_evidence_ids: string[];
+}
+export interface NumericCatalogV1DTO {
+  schema_version: "numeric-catalog-v1"; anchors: NumericAnchorV1DTO[]; metadata: NumericMetadataV1DTO[];
+  availability: "available" | "unavailable"; reason_code: "numeric_catalog_limit" | null;
+}
+export interface NumericPlanV1DTO {
+  alias: string; field_path: string; kind: "quantity" | "date"; threshold: string | null;
+  unit: "CNY" | "CNY/share" | "ratio" | "percent" | "multiple" | "count" | null;
+  operator: "lt" | "le" | "eq" | "ge" | "gt" | null; date: string | null;
+}
+export type NumericProposalDTO = SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalV3DTO | ResponsesProposalDTO | FocusProposalDTO;
+export interface NumericStageProofV1DTO {
+  policy: "anchored-narrative-v1"; stage: string; context_sha256: string; proposal_sha256: string; catalog_hash: string;
+  envelope: { proposal: NumericProposalDTO; plans: NumericPlanV1DTO[];
+    structured_bindings: Array<{ field_path: string; kind: "num" | "plan"; alias: string }> };
+  fields: Array<{ path: string; text_sha256: string; lexer_version: "quantity-lexer-v1";
+    segments: Array<{ kind: "literal" | "num" | "meta" | "plan" | "inherited"; text: string;
+      alias: string | null; anchor_id: string | null;
+      parameters: NumericPlanV1DTO | { hypothesis_id: string; invalidation_index: number } | null }> }>;
+  indices: number[]; rejections: Array<{ index: number; code: string }>;
+}
+export interface NumericValidationContextV1DTO {
+  numeric_narrative_policy: "anchored-narrative-v1"; numeric_analysis_date: string;
+  numeric_catalog: NumericCatalogV1DTO; numeric_aliases: Record<string, string>; numeric_meta: Record<string, NumericMetadataV1DTO>;
+  facts?: ResearchRecordV1DTO["claims"]; assertions?: ResearchRecordV1DTO["claims"];
+  hypotheses?: ResearchRecordV1DTO["hypotheses"]; challenges?: ResearchRecordV1DTO["challenges"];
+  assigned?: Record<string, string>; allowed_facts_by_challenge?: Record<string, string[]>;
+  dimension_claim_ids?: Record<string, string[]>;
+  local_checks?: EvidenceChecksV1DTO | ResearchRecordV1DTO["challenge_bindings"];
+  record?: Pick<ResearchRecordV1DTO, "analysis_date" | "claims" | "hypotheses" | "challenges" | "dialogue">;
+}
+export interface NumericRecordedStageV1DTO {
+  stage: string; proposal: NumericProposalDTO; proof: NumericStageProofV1DTO; context: NumericValidationContextV1DTO;
+}
+export interface NumericAttributionV1DTO {
+  policy: "anchored-narrative-v1"; catalog: NumericCatalogV1DTO;
+  input_identity: { workflow_version?: string; seed_sha256?: string; research_question?: string;
+    numeric_narrative_policy?: "anchored-narrative-v1"; company_research_policy?: string;
+    report_delivery_policy?: string; specialist_reference_policy?: string };
+  stages: NumericRecordedStageV1DTO[];
+  final_fields: Array<{ path: Array<string | number>; text_sha256: string; kind: "stage" | "host" | "composite";
+    sources: Array<{ stage: string; path: string }> }>;
+}
+
 export interface ResearchRecordV1DTO {
   schema_version: "research-record-v1";
   run_id: string;
@@ -232,6 +289,7 @@ export interface ResearchRecordV1DTO {
   assessment?: ResearchAssessmentV1DTO | ResearchAssessmentV2DTO | ResearchAssessmentV3DTO | null;
   dialogue?: ResearchDialogueV1DTO | null;
   company_basics?: CompanyBasicsV1DTO | null;
+  numeric_attribution?: NumericAttributionV1DTO | null;
   valuation?: NativeValuationV1DTO | null;
   evidence_checks?: EvidenceChecksV1DTO | null;
   challenge_bindings?: Array<{ challenge_id: string; check_id: EvidenceCheckId | null; observed_risk: "cash_conversion.cfo_yoy_decline" | null; observation_date: string | null }> | null;
@@ -804,6 +862,7 @@ export interface ApiErrorDetail {
   message: string;
   fields: string[];
   active_run_id?: string;
+  diagnostic?: ModelFailureDiagnosticDTO | null;
 }
 
 export interface ApiErrorResponse {
@@ -2345,6 +2404,7 @@ export interface ResearchFocusResponseDTO {
   schema_version: "research-focus-response-v1"; run_id: string; ticker: string; mode: ResearchMode;
   analysis_date: string; input_snapshot_id: string; base_record_sha256: string; focus: string;
   status: "available" | "unavailable"; proposal: FocusProposalDTO | null; reason_code: FocusReason | null;
+  numeric_attribution?: NumericRecordedStageV1DTO | null;
 }
 export interface ReaderFocusDTO {
   schema_version: 1; run_id: string; source_sequence: number; workflow_version: string | null;

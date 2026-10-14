@@ -39,6 +39,7 @@ rules here in focused documents rather than duplicating them in the README.
 - [Contract index](contracts/README.md): canonical Python, runtime, web, and frontend sources, plus change propagation rules.
 - [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
 - [Local price statistics](contracts/local-price-statistics.md): deterministic return-risk/ATR methods and frozen price evidence, separate from valuation.
+- [Frozen numeric narrative](contracts/numeric-narrative.md): fresh V7 host-owned numeric fragments, scoped templates, structural bindings, cache/publication replay, focus isolation and historical compatibility.
 - [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, native three-mode workflow and bounded verification, mandatory publication, read-only Reader and compatibility limits.
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.
@@ -68,6 +69,8 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 
 ## Delivery Snapshots
 
+- [ChatGPT recovery and sidebar design](superpowers/specs/2026-10-14-chatgpt-sidebar-recovery-design.md): approved scope and invariants; current behavior is documented in ChatGPT subscription operations.
+
 These are dated delivery and verification records, not current-state contracts.
 Later workflows can supersede their UI, question or role semantics; follow the
 current architecture, operations and contract pages for supported behavior.
@@ -91,6 +94,8 @@ current architecture, operations and contract pages for supported behavior.
 - [600803 minimum-evidence acceptance](reviews/2026-10-05-minimum-evidence-acceptance.md): actual V5 public-source retrieval, three bounded checks, fixed-proposal Web/HTML outputs and remaining research-quality limits.
 
 ## Dated Investigations
+
+- [External engineering diagnosis verification](reviews/2026-10-14-external-engineering-diagnosis-verification.md): current-path corrections, locally reproduced numeric-reference limits, role-deadline and industry-data boundaries, compatibility-news risks and unmeasured product proposals.
 
 - [Company report delivery validation](reviews/2026-10-13-company-report-delivery-validation.md): basic-data retention, local gaps, host-owned synthesis bindings, unrated specialist summary, offline browser checks and a preserved-source 600418 preview.
 
@@ -123,6 +128,8 @@ These are execution proposals, not descriptions of current runtime behavior.
 - [Unified Reader prototype](superpowers/prototypes/2026-09-30-unified-research-reader.html), [sample metric generator](superpowers/prototypes/reader_sample_metrics.py), [sample metrics](superpowers/prototypes/reader_sample_metrics.json), and [catalyst layout prototype](superpowers/specs/2026-09-28-catalyst-research-layout.html): retained synthetic design material, not live research or runtime contracts.
 
 ## Historical / Archive
+
+- [Numeric narrative design](superpowers/specs/2026-10-14-numeric-narrative-design.md) and [local implementation record](superpowers/plans/2026-10-14-numeric-narrative-implementation.md): approved whole-chain scope and dated offline validation; current behavior and limits belong in the numeric contract above.
 
 - [Unified company research design](superpowers/specs/2026-10-11-unified-company-research-design.md) and [local implementation record](superpowers/plans/2026-10-11-unified-company-research-implementation.md): approved V7 scope and dated offline/browser validation; current behavior belongs in the [unified research contract](contracts/unified-company-research.md).
 

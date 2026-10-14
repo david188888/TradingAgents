@@ -47,7 +47,7 @@ SDK 缺失或导入失败时返回带来源的 `ChinaDataUnavailableError`，不
 `python -m pip install --dry-run --ignore-installed -e ".[china,web]" --index-url https://pypi.org/simple`。
 清华等镜像在当前网络返回 403 时，切换官方源只作用于该命令，不必改全局配置。
 
-`evidence_v1` 使用独立的有界多源路由：东方财富/新浪身份、新浪三表、深交所日历、腾讯原始日线与新浪日期化因子优先，Tushare 备源。三种研究模式共用此路由；classic/catalyst 的供应商设置保持原语义。新浪字段保留合并范围、币种、实际披露日期及更新时间，按元值准入，不沿用旧文本适配器的亿元换算；不同供应商不合并来源家族。深交所日历只准入深市标的；历史因子无归档版本仍不可用。具体候选、配置与恢复边界见 [native 来源政策](evidence-research.md#evidence-and-workflow)。
+新建 `evidence_v1` 公司研究使用独立的有界多源路由：身份默认东方财富→新浪→Tushare，财务默认新浪→Tushare，价格默认腾讯→Tushare，官方公告使用巨潮。日历默认腾讯指数日期序列→深交所→Tushare，详见下方[native 交易日历](#native-证据链的交易日历)。历史 native 模式按保存身份恢复；classic/catalyst 的供应商设置保持原语义。新浪三表保留合并范围、币种、实际披露日期及更新时间，按元值准入，不沿用旧文本适配器的亿元换算；不同供应商不合并来源家族。深交所日历只准入深市标的；历史因子无归档版本仍不可用。具体候选、配置与恢复边界见 [native 来源政策](evidence-research.md#evidence-and-workflow)。
 
 | 能力 | 路由方法 | 当前来源 | 输入范围 |
 |---|---|---|---|

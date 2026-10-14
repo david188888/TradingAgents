@@ -160,6 +160,10 @@ class ChatGPTAuth:
             if response.status_code >= 300:
                 raise response_error(response)
             return response
+        except httpx.TimeoutException:
+            raise ChatGPTError("transport_timeout") from None
+        except httpx.NetworkError:
+            raise ChatGPTError("transport_connection_error") from None
         except httpx.HTTPError:
             raise ChatGPTError("request_failed") from None
 

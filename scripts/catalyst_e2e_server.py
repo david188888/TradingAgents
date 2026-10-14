@@ -114,6 +114,12 @@ class NativeFixtureCaller:
         self.fail_synthesis = fail_synthesis
 
     def __call__(self, stage, context):
+        proposal = self._proposal(stage, context)
+        if context.get("numeric_narrative_policy") is not None:
+            return {"proposal": proposal, "plans": [], "structured_bindings": []}
+        return proposal
+
+    def _proposal(self, stage, context):
         time.sleep(.25)
         if stage == "focus_response":
             return {"answer": "固定测试补充回应：已有经营数据不能证明 AI 业务关系。",

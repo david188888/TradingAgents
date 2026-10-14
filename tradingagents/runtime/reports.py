@@ -191,6 +191,10 @@ class ReportArtifactWriter:
         )
 
         checkpoint = load_checkpoint(self.store, run_id)
+        from tradingagents.research.numeric_integration import validate_record_numeric
+        validate_record_numeric(record, checkpoint["identity"] if checkpoint else {})
+        if record.numeric_attribution is not None and record.numeric_attribution.input_identity != checkpoint.get("native_input"):
+            raise ReportPublicationError("native numeric report input mismatch")
         version = checkpoint["identity"].get("workflow_version") if checkpoint else None
         response, reason = None, None
         if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and checkpoint["identity"].get("research_question"):

@@ -30,7 +30,9 @@ def checkpoint(tmp_path):
         llm_provider="deepseek", quick_think_llm="quick", deep_think_llm="deep",
         runtime_semantics_hash="a" * 64, metadata={"effective_config_artifact_id": "data:" + "b" * 64})
     store.create_run(snapshot)
-    return CatalystJournal(DurableRunObserver(store, snapshot.run_id, development_assertions=False), native_identity(request))
+    # This suite freezes the pre-numeric V7 protocol. Fresh numeric identities
+    # are exercised separately with their required envelope and catalog.
+    return CatalystJournal(DurableRunObserver(store, snapshot.run_id, development_assertions=False), native_identity(request, numeric_narrative_policy=False))
 
 
 def mixed(kind="fact"):
@@ -177,7 +179,7 @@ def test_resume_accepts_absent_policy_and_rejects_unknown_policy(checkpoint):
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1", effective_config=CONFIG)
     assert checkpoint.state["identity"]["specialist_reference_policy"] == SPECIALIST_REFERENCE_POLICY
     validate_native_resume(checkpoint.observer.store, checkpoint.ledger.run_id, request)
-    identity = native_identity(request, specialist_reference_policy=False)
+    identity = native_identity(request, specialist_reference_policy=False, numeric_narrative_policy=False)
     checkpoint.put("identity", identity)
     validate_native_resume(checkpoint.observer.store, checkpoint.ledger.run_id, request)
     identity["specialist_reference_policy"] = "unknown"

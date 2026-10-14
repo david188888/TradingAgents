@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from tradingagents.execution.models import ANALYST_WIRE_KEYS, ResearchProfile
+from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
 from tradingagents.research.native_evidence_policy import NativeEvidencePolicyV1
 
 SUPPORTED_OUTPUT_LANGUAGES = (
@@ -301,6 +302,7 @@ class ApiErrorDetail(BaseModel):
     message: str
     fields: tuple[str, ...] = ()
     active_run_id: str | None = None
+    diagnostic: ModelFailureDiagnostic | None = None
 
 
 class ApiErrorResponse(BaseModel):

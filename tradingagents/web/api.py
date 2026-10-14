@@ -291,7 +291,10 @@ def create_app(
     @app.exception_handler(ChatGPTError)
     async def handle_chatgpt_error(_request: Request, exc):
         d = exc.diagnostic
-        return _error_response(d.upstream_status or 422, d.category, d.safe_message)
+        return _error_response(
+            d.upstream_status or 422, d.category, d.safe_message,
+            diagnostic=d.model_dump(mode="json"),
+        )
 
     @app.middleware("http")
     async def add_response_headers(request: Request, call_next):
@@ -1575,6 +1578,7 @@ def _error_response(
     *,
     fields: tuple[str, ...] = (),
     active_run_id: str | None = None,
+    diagnostic: dict[str, Any] | None = None,
 ) -> JSONResponse:
     detail: dict[str, Any] = {
         "code": code,
@@ -1583,4 +1587,6 @@ def _error_response(
     }
     if active_run_id is not None:
         detail["active_run_id"] = active_run_id
+    if diagnostic is not None:
+        detail["diagnostic"] = diagnostic
     return JSONResponse({"detail": detail}, status_code=status_code)

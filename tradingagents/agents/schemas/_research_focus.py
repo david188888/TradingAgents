@@ -4,8 +4,9 @@ from datetime import date
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
+from ._numeric_attribution import NumericRecordedStageV1
 from ._research_record import ResearchRecordV1
 from ._verification_plan import canonical_sha256
 
@@ -49,6 +50,14 @@ class ResearchFocusResponseV1(BaseModel):
     status: Literal["available", "unavailable"]
     proposal: FocusProposalV1 | None = None
     reason_code: FocusReason | None = None
+    numeric_attribution: NumericRecordedStageV1 | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_bytes(self, handler):
+        value = handler(self)
+        if self.numeric_attribution is None:
+            value.pop("numeric_attribution", None)
+        return value
 
     @model_validator(mode="after")
     def closed_status(self):
@@ -95,3 +104,5 @@ def validate_focus_response(record: ResearchRecordV1, response: ResearchFocusRes
         raise ValueError("focus baseline binding mismatch")
     if response.proposal is not None:
         validate_focus_proposal(record, response.proposal)
+    from tradingagents.research.numeric_integration import validate_focus_numeric
+    validate_focus_numeric(record, response)

@@ -42,7 +42,7 @@ def normalize_synthesis_bindings(value, record):
     return result
 
 
-def retained_summary(record):
+def retained_summary(record, *, numeric_policy=False):
     """Keep actual effective specialist statements and code-selected facts."""
     allowed = dimension_claim_ids(record)
     claims = {c.claim_id: c for c in record.claims}
@@ -59,6 +59,8 @@ def retained_summary(record):
                 judgement="此项具体判断仍待补充；已有基础资料和其他专项结果已保留。", limitations=(gap,)))
         else:
             statement = label + "；".join(claims[cid].statement for cid in ids)
+            if numeric_policy and len(statement) > 400:
+                statement = "已保留本维度的有效专项产物；完整观点与数值依据见对应引用。"
             dimensions.append(DimensionAssessmentV1(dimension=name, status="conditional", judgement=statement[:400],
                 claim_ids=tuple(ids), limitations=("host_retained_findings_not_synthesis",)))
             keys.extend(ids)

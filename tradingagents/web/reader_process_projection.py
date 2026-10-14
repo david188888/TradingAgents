@@ -277,6 +277,15 @@ def _context(store, run_id, through=None):
             if policy != SPECIALIST_REFERENCE_POLICY or version != UNIFIED_WORKFLOW_VERSION:
                 raise ValueError("specialist_policy")
             expected_input["specialist_reference_policy"] = policy
+        from tradingagents.research.numeric_integration import (
+            numeric_enabled,
+            validate_record_numeric,
+        )
+        if numeric_enabled(cp["identity"]):
+            from tradingagents.research.native_versions import NUMERIC_NARRATIVE_POLICY
+            expected_input["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
+        validate_record_numeric(seed, cp["identity"])
+        validate_record_numeric(record, cp["identity"])
         if native_input != expected_input:
             raise ValueError("input")
         output = cp["results"]["native.output"]
@@ -331,6 +340,14 @@ def _proposal(ctx, role):
         else (SynthesisProposalV3 if version == UNIFIED_WORKFLOW_VERSION else SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else SynthesisProposalV1)
     )
     proposal = schema.model_validate(saved["proposal"])
+    from tradingagents.research.numeric_integration import validate_cached_numeric
+    numeric_context = cp["results"].get("native.numeric.accepted." + role, {}).get("context")
+    if numeric_context is not None:
+        from types import SimpleNamespace
+        journal = SimpleNamespace(state=cp, ledger=SimpleNamespace(cached_result=lambda key: cp["results"].get(key)))
+        validate_cached_numeric(journal, role, proposal.model_dump(mode="json"), numeric_context, schema)
+    elif cp["identity"].get("numeric_narrative_policy") is not None:
+        raise ValueError("numeric role receipt missing")
     claims = {c.claim_id: c for c in record.claims}
     hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
     cids, chids = [], []

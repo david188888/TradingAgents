@@ -15,6 +15,7 @@ UNIFIED_WORKFLOW_VERSION = "evidence-production-v7"
 SPECIALIST_REFERENCE_POLICY = "bounded-repair-then-isolate-v1"
 COMPANY_RESEARCH_POLICY = "timestamped-quote-cautious-judgement-v1"
 REPORT_DELIVERY_POLICY = "company-basics-local-gaps-delivery-v1"
+NUMERIC_NARRATIVE_POLICY = "anchored-narrative-v1"
 UNIFIED_KERNEL_VERSION = "native-research-kernel-v6"
 UNIFIED_BUDGET_POLICY = {"main_analysis": 8, "focus_response": 1, "model_attempts": 12}
 UNIFIED_QUESTION = "截至分析时点，结合公司经营、当前估值、事件与市场风险，这家公司是否具有投资吸引力，为什么，哪些反证和条件会改变判断？"

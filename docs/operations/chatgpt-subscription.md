@@ -19,6 +19,39 @@ permission or every capability. Admission failures retain the official error cod
 and a fixed, actionable message. Single and batch submissions freeze the account
 registration reference along with both selected models.
 
+The left panel groups research input, model/account configuration and history.
+Single-company and batch creation use the same model controls. On first entry,
+account selection, login completion (including the same account) and model
+refresh, the browser reads local account status and then loads that account's
+catalog automatically. Leaving the provider invalidates pending reads; an older
+response cannot replace the current account's catalog. Re-selecting the current
+provider preserves explicit model choices.
+Configured ChatGPT default model IDs are also preserved while the catalog loads;
+if a configured ID is unavailable, selection remains explicit and submission is
+blocked until an available model is chosen.
+
+**模型已就绪** means the current catalog loaded, not that inference permission or
+remaining quota has been verified. Stored scopes alone no longer produce an
+unconditional “已授权” badge. Empty selectors explain whether models are loading,
+authorization is required or the connection needs recovery. A configuration
+error is shown once beside its recovery action and blocks submission.
+
+For expired/rejected authentication, choose **重新认证** and complete the official
+sign-in page. It reuses the selected registration and checks the same identity;
+the model list reloads on completion. **账户选项** also provides manual
+reauthentication, account addition, logout and usage management. If the popup is
+blocked, **打开官方登录页面** opens the pending authorization; **取消登录** cancels
+it. There is no automatic login, consent or switch to another account.
+
+A transient catalog transport failure, HTTP 408 or generic HTTP 5xx may retry
+once during a load sequence. This is a read-only catalog request and sends no
+inference. Authentication, permission, quota and capability failures are never
+automatically retried. Persistent connection errors expose **重试加载模型** or
+**重试连接**. OAuth token errors are parsed in both string and API-object forms;
+the Web error envelope includes the existing safe diagnostic/action, never the
+upstream error description or credentials. After a refresh invalidates local
+credentials, the browser reconciles account status without losing the error.
+
 ## Usage and failure behavior
 
 Eligible requests use ChatGPT plan allowance. There is no automatic switch to an

@@ -72,6 +72,12 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, response=
     elif isinstance(exc, BudgetExhausted):
         value.update(category="budget_refused", budget_bucket=exc.hit.bucket.value,
                      budget_limit=exc.hit.limit, budget_consumed=exc.hit.consumed)
+    elif getattr(exc, "code", None) in {
+        "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
+        "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
+        "numeric_manifest_binding", "numeric_catalog_limit",
+    }:
+        value.update(category="reference_validation", detail_code=exc.code)
     elif isinstance(exc, TimeoutError) or type(exc).__name__ in {"APITimeoutError", "ReadTimeout", "ConnectTimeout"}:
         value["category"] = "request_timeout"
     elif type(exc).__name__ == "APIConnectionError":

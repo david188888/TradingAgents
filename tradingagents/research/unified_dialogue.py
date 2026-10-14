@@ -60,6 +60,10 @@ def run_responses(record, origins, question, *, call, caller, ledger, cancelled,
         from tradingagents.research.minimum_evidence import challenge_assessments
         context["check_results"] = [a.model_dump(mode="json") for a in challenge_assessments(record) if a.challenge_id in targets]
         context["local_checks"] = [b.model_dump(mode="json") for b in record.challenge_bindings or () if b.challenge_id in targets]
+        from tradingagents.research.numeric_integration import numeric_enabled
+        if numeric_enabled(ledger.journal.state["identity"]):
+            from tradingagents.research.numeric_narrative import prepare_numeric_context
+            context = prepare_numeric_context(stage, context, record)
         contexts[role] = context
         logical = "native." + stage
         if ledger.cached_result(logical) is None and not any(r.logical_call_id == logical and r.dispatched_at for r in ledger.records()):

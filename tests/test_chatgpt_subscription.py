@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from tradingagents.llm_clients.chatgpt_auth import AUTH_ORIGIN, SCOPES, ChatGPTAuth
 from tradingagents.llm_clients.chatgpt_client import ChatGPTClient
-from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+from tradingagents.llm_clients.chatgpt_errors import ChatGPTError, response_error
 from tradingagents.web.api import _analysis_request, create_app
 from tradingagents.web.schemas import RunCreateRequest
 from tradingagents.web.store import RunStore
@@ -116,7 +116,7 @@ def oauth(tmp_path):
                 assert options["refresh_release"].wait(2)
             if options.get("refresh_error"):
                 return httpx.Response(
-                    400, json={"error": {"code": "invalid_grant", "message": "SECRET"}}
+                    400, json={"error": options.get("refresh_error_body", {"code": "invalid_grant", "message": "SECRET"})}
                 )
             return httpx.Response(
                 200,
@@ -670,3 +670,50 @@ def test_batch_http_freezes_subscription_account(oauth, tmp_path):
         batch = response.json()
         assert batch["items"][0]["config"]["chatgpt_account_ref"] == ref
     assert "access-private" not in json.dumps(batch)
+
+
+@pytest.mark.parametrize("code", ["invalid_grant", "invalid_client"])
+def test_oauth_string_errors_require_reauthentication(oauth, tmp_path, code):
+    auth, _, options, _, connect = oauth
+    ref = connect()
+    with auth._locked():
+        state = auth._read()
+        state["accounts"][ref]["expires_at"] = 0
+        auth._write(state)
+    options.update(refresh_error=True, refresh_error_body=code)
+    app = create_app(store=RunStore(tmp_path / "runs"), environment={}, chatgpt_auth=auth)
+    with TestClient(app, base_url="http://127.0.0.1") as browser:
+        response = browser.get("/api/chatgpt/models", params={"account_ref": ref})
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert detail["code"] == code
+        assert detail["diagnostic"]["action"] == "sign_in"
+        assert detail["diagnostic"]["upstream_code"] == code
+        assert not browser.get("/api/chatgpt/status").json()["accounts"][0]["plan_enabled"]
+        assert "access-private" not in response.text and "refresh-private" not in response.text
+
+
+@pytest.mark.parametrize("body", [
+    {"error": "invalid_grant", "error_description": "SECRET"},
+    {"error": {"code": "invalid_grant", "message": "SECRET"}},
+])
+def test_error_shapes_preserve_only_safe_diagnostics(body):
+    error = response_error(httpx.Response(400, json=body))
+    assert error.diagnostic.category == "invalid_grant"
+    assert error.diagnostic.action == "sign_in"
+    assert "SECRET" not in error.diagnostic.model_dump_json()
+
+
+@pytest.mark.parametrize("error,code", [
+    (httpx.ReadTimeout("SECRET"), "transport_timeout"),
+    (httpx.ConnectError("SECRET"), "transport_connection_error"),
+])
+def test_catalog_transport_failure_keeps_closed_retry_classification(tmp_path, error, code):
+    def handler(_request):
+        raise error
+    auth = ChatGPTAuth(tmp_path / "auth", transport=httpx.MockTransport(handler))
+    with pytest.raises(ChatGPTError) as caught:
+        auth._request("GET", "https://api.openai.com/v1/models")
+    assert caught.value.diagnostic.category == "request_failed"
+    assert caught.value.diagnostic.upstream_code == code
+    assert "SECRET" not in str(caught.value)

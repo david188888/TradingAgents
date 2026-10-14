@@ -31,6 +31,7 @@ from tradingagents.research.valuation import (
 
 from ._company_basics import CompanyBasicsV1
 from ._evidence_checks import ChallengeCheckBindingV1, EvidenceChecksV1
+from ._numeric_attribution import NumericAttributionV1
 from ._research_assessment import ResearchAssessmentV1, ResearchAssessmentV2, ResearchAssessmentV3
 from ._research_dialogue import ResearchDialogueV1, validate_dialogue
 from ._verification_plan import canonical_sha256
@@ -256,6 +257,7 @@ class ResearchRecordV1(_RecordModel):
     challenge_bindings: tuple[ChallengeCheckBindingV1, ...] | None = None
     dialogue: ResearchDialogueV1 | None = None
     company_basics: CompanyBasicsV1 | None = None
+    numeric_attribution: NumericAttributionV1 | None = None
     limitations: tuple[str, ...] = ()
 
     @field_validator("assessment", mode="before")
@@ -282,6 +284,8 @@ class ResearchRecordV1(_RecordModel):
             value.pop("dialogue", None)
         if self.company_basics is None:
             value.pop("company_basics", None)
+        if self.numeric_attribution is None:
+            value.pop("numeric_attribution", None)
         return value
 
     @model_validator(mode="after")
@@ -448,4 +452,7 @@ class ResearchRecordV1(_RecordModel):
             validate_unified_assessment(self)
         elif self.dialogue is not None and self.assessment is not None:
             raise ValueError("dialogue requires V3 assessment")
+        if self.numeric_attribution is not None:
+            from tradingagents.research.numeric_integration import validate_record_numeric
+            validate_record_numeric(self, {"numeric_narrative_policy": self.numeric_attribution.policy})
         return self
