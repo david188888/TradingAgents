@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { ExplainedText, ExplanationContext } from "./PlainExplanation";
 import type { ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
 import { limitationLabel } from "../../domain/researchCoverage";
 import { TERMS } from "../../domain/readerExplanation";
@@ -47,12 +49,17 @@ export function ReaderEvidence({ record, selected, term, onTerm }: {
   record: ResearchRecordV1DTO; selected: EvidenceSelection | null; term: string | null; onTerm(term: string | null): void;
 }) {
   const content = selectionContent(record, selected);
+  const explanation = useContext(ExplanationContext);
+  const indicator = selected ? explanation?.indicators[`${selected.kind}:${selected.id}`] : null;
   if (term && TERMS[term]) return <div className="qr-evidence-body"><span className="qr-tag">概念解释 · 一般方法</span><h3>{term}</h3><p>{TERMS[term]}</p><p className="qr-meta">这段说明不是新增公司事实或研究结论。</p><button onClick={() => onTerm(null)}>返回当前依据</button></div>;
   return <div className="qr-evidence-body">
-    <span className="qr-tag">本次保存的依据</span><h3>{content.title}</h3>
+    <span className="qr-tag">本次保存的依据</span><h3>{indicator?.label ?? (selected?.kind === "claim" ? "当前事实或判断" : selected?.kind === "challenge" ? "当前疑点与支撑事实" : content.title)}</h3>
+    {selected?.kind === "claim" && !content.facts.some(f=>f.claim_id === selected.id) ? <ExplainedText target={`claim:${selected.id}`} text={content.title}/> : null}
+    {selected?.kind === "challenge" ? <ExplainedText target={`challenge:${selected.id}`} text={content.title}/> : null}
+    {selected?.kind === "valuation" && record.valuation ? <ExplainedText target="valuation:reasoning" text={[record.valuation.assessment.verdict.overall_label_zh,...record.valuation.assessment.verdict.fact_notes_zh].join("\n")}/> : null}
     {content.boundClaims.filter(c => c.kind !== "fact" && selected?.kind !== "claim").map(c => <p className="qr-meta" key={c.claim_id}>待验证推断：{c.statement}</p>)}
-    {content.facts.length ? <section><h4>{selected?.kind === "source" ? "此来源中的保存事实" : "绑定的支撑事实"}</h4>{content.facts.map(f => <div className="qr-fact" key={f.claim_id}><p>{claimText(f.statement)}</p>{f.limitations.length ? <details><summary>字段定位与适用范围</summary>{f.limitations.map((l, i) => <p className="qr-meta" key={i}>{limitationLabel(l)}</p>)}</details> : null}</div>)}</section> : <p className="qr-meta">该项直接绑定来源或计算输入，未逐条指定支撑事实。请结合下方来源、方法和判断范围核对。</p>}
-    {selected?.kind === "metric" ? <p>{record.metrics.find(m => m.metric_id === selected.id)?.method}</p> : null}
+    {content.facts.length ? <section><h4>{selected?.kind === "source" ? "此来源中的保存事实" : "绑定的支撑事实"}</h4>{content.facts.map(f => <div className="qr-fact" key={f.claim_id}><ExplainedText target={`claim:${f.claim_id}`} text={claimText(f.statement)}/>{f.limitations.length ? <details><summary>字段定位与适用范围</summary>{f.limitations.map((l, i) => <p className="qr-meta" key={i}>{limitationLabel(l)}</p>)}</details> : null}</div>)}</section> : <p className="qr-meta">该项直接绑定来源或计算输入，未逐条指定支撑事实。请结合下方来源、方法和判断范围核对。</p>}
+    {selected?.kind === "metric" ? <ExplainedText target={`metric:${selected.id}`} text={record.metrics.find(m => m.metric_id === selected.id)?.method ?? ""}/> : null}
     <div className="qr-method-note"><h4>如何读这些依据</h4><p>事实是已保存资料中的信息；推断是对事实的解释。引用关系可追溯，仍需核对资料是否足以支持判断。</p></div>
     {content.sources.map(source => <SavedSource key={source.evidence_id} source={source} />)}
     {!content.sources.length ? <p>没有绑定的保存来源。系统不会在打开此处时补取资料。</p> : null}

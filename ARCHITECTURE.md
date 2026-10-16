@@ -204,7 +204,7 @@ publication.
 
 The FastAPI adapter exposes raw run/artifact access plus read-only projections:
 the Reader (`/api/runs/{id}/reader`), the structured package
-(`/api/runs/{id}/reader/package`), run view, audit views, and market views.
+(`/api/runs/{id}/reader/package`), run view, and audit views.
 The shared record (`/api/runs/{id}/reader/record`) adapts committed company,
 holding and catalyst cases into source content, claims, hypotheses, challenges,
 verification records and metrics. It checks artifact and source-case integrity;
@@ -281,6 +281,12 @@ the supported saved V1–V7 workflows; unknown versions or failed bindings degra
 without exposing unqualified proposals. The process endpoint reads summary
 metadata; the selected-role endpoint returns only closed research schema fields,
 never prompts, adapter responses or checkpoint envelopes. Both are read-only.
+V7 stages also qualify independently before final publication through
+`web/reader_stage_projection.py`. Selected-role DTOs can carry an unassessed
+public stage record and provisional proposal; process summaries expose only
+counts/status. Frozen evidence, role scopes, numeric receipts and saved
+verification bindings are checked without executing research. Existing final
+publication checks remain mandatory; stage material is never a final report.
 `runtime/native_observation.py` records SDK observation coverage before MAIN
 authorization for new SDK-adapter runs. Public process DTOs retain separate
 budget, SDK main/focus/repair, data-capability and HTTP authorizations; the UI
@@ -343,3 +349,15 @@ The current production runtime contract is `horizon-policy-v2`, selected by
 `PRODUCTION_RUNTIME_CONTRACT` in `tradingagents/runtime/contracts.py`.
 `horizon-policy-v3` is currently an internal test-gated selection requiring
 injected preflight inputs; it is not production runtime policy.
+
+## Plain-language reading supplement
+
+The native Web Reader shares deterministic indicator definitions and numeric
+presentation across report and related evidence. New-study creation metadata
+opts into an independent, bounded post-completion model explanation job using
+the frozen quick-model configuration and maintained API/subscription transport.
+Its own manifest and artifact bind to the published baseline/focus and never
+change research checkpoints, ratings, stage counts or original Markdown.
+Historical reports receive supported definitions and formatting only. GETs are
+read-only; eligible new-study retries require an explicit POST. See the
+[explanation contract](docs/contracts/report-explanation.md) for ownership, limits and failure semantics.

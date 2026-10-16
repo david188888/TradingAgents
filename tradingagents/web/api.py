@@ -250,6 +250,8 @@ def create_app(
             )
         selected_manager = manager
         selected_manager.chatgpt_auth = selected_auth
+        if hasattr(selected_manager, "_explanations"):
+            selected_manager._explanations.chatgpt_auth = selected_auth
         selected_store = store or getattr(manager, "store", None) or RunStore()
         selected_broker = broker or manager_broker or EventBroker(selected_store)
     else:
@@ -270,6 +272,8 @@ def create_app(
             if callable(recover):
                 application.state.recovered_runs = recover()
         yield
+        if hasattr(selected_manager, "_explanations"):
+            selected_manager._explanations.close()
         selected_auth.close()
 
     app = FastAPI(
@@ -605,6 +609,21 @@ def create_app(
     @app.get("/api/runs/{run_id}/reader/record")
     def get_reader_record(run_id: str) -> dict[str, Any]:
         return project_research_record(selected_store, run_id)
+
+    @app.get("/api/runs/{run_id}/reader/explanations")
+    def get_reader_explanations(run_id: str) -> dict[str, Any]:
+        from tradingagents.web.report_explanation import project_report_explanation
+        return project_report_explanation(selected_store, run_id,
+            service=getattr(selected_manager, "_explanations", None))
+
+    @app.post("/api/runs/{run_id}/reader/explanations", status_code=202)
+    def retry_reader_explanations(run_id: str) -> dict[str, Any]:
+        from tradingagents.web.report_explanation import project_report_explanation
+        try:
+            selected_manager.explanations.start(run_id, retry=True)
+        except ValueError:
+            raise ApiBoundaryError(409, "explanation_unavailable", "This report cannot generate a plain-language explanation.") from None
+        return project_report_explanation(selected_store, run_id, service=selected_manager.explanations)
 
     @app.get("/api/runs/{run_id}/reader/focus")
     def get_reader_focus(run_id: str, source_sequence: int | None = Query(default=None, ge=0)) -> dict[str, Any]:

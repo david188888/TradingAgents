@@ -44,7 +44,6 @@ from tradingagents.graph.catalyst_workflow import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
-from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.research.native_versions import (
     COMPANY_RESEARCH_POLICY,
@@ -546,66 +545,34 @@ class NativeModelCaller:
         raise NativeModelUnavailable("native model retries exhausted")
 
     def _invoke_once(self, stage: str, prompt: str, dispatch: Callable[[], None], *, usage_key: str | None = None, phase: str = "main") -> Any:
-        self._ensure_active()
-        slots = global_model_slots()
-        while not slots.acquire(timeout=min(0.1, self._ensure_active())):
-            self._ensure_active()
-        try:
-            remaining = self._ensure_active()
-            try:
-                kwargs = provider_llm_kwargs(self.config, task="native." + stage.removeprefix("response_"))
-                kwargs.update(max_retries=0, timeout=remaining)
-                if self.config["llm_provider"] == "chatgpt":
-                    if self.chatgpt_auth is None:
-                        raise ChatGPTError("not_signed_in")
-                    kwargs.update(auth=self.chatgpt_auth, account_ref=self.config.get("chatgpt_account_ref"),
-                                  cancelled=self.cancelled, deadline=self.deadline, before_request=dispatch)
-                client = create_llm_client(
-                    provider=self.config["llm_provider"],
-                    model=self.config["deep_think_llm"] if stage == "synthesis" else self.config["quick_think_llm"],
-                    base_url=self.config.get("backend_url"), **kwargs,
-                )
-            except ChatGPTError as exc:
+        from tradingagents.execution.model_request import invoke_model_request
+
+        def on_error(category, exc):
+            if isinstance(exc, ChatGPTError):
                 self._record_failure(stage, exc)
-                raise NativeModelUnavailable(exc.diagnostic.safe_message) from None
-            except (CatalystCheckpointConflict, NativeModelCancelled):
-                raise
-            except Exception as exc:
-                self._record_safe_diagnostic(stage, phase, "configuration_unavailable", exc,
-                    attempt_key=usage_key or stage)
-                raise NativeModelUnavailable("native model configuration unavailable") from None
-            self._ensure_active()
-            # Durable authorization precedes invoke; a crash afterwards is
-            # conservatively consumed and cannot authorize a new request.
-            if self.config["llm_provider"] != "chatgpt":
-                dispatch()
-            try:
-                response = client.get_llm().invoke(prompt)
-            except ChatGPTError as exc:
-                self._record_failure(stage, exc)
-                if transient_model_error(exc):
-                    self._record_safe_diagnostic(stage, phase, "request_failed", exc,
-                        attempt_key=usage_key or stage)
+                if category == "request_failed" and transient_model_error(exc):
+                    self._record_safe_diagnostic(stage, phase, category, exc, attempt_key=usage_key or stage)
                     raise _TransientModelRequest("native model transient request failed") from None
                 raise NativeModelUnavailable(exc.diagnostic.safe_message) from None
-            except (CatalystCheckpointConflict, NativeModelCancelled):
-                raise
-            except Exception as exc:
-                self._record_safe_diagnostic(stage, phase, "request_failed", exc,
-                    attempt_key=usage_key or stage)
-                if transient_model_error(exc):
-                    raise _TransientModelRequest("native model transient request failed") from None
-                raise NativeModelUnavailable("native model request failed") from None
-            usage = getattr(response, "usage_metadata", None)
-            if isinstance(usage, dict) and all(type(usage.get(k)) is int and usage[k] >= 0 for k in ("input_tokens", "output_tokens")):
-                with self.ledger.journal.lock:
-                    self.ledger.journal.put("native.model_usage", {
-                        **self.ledger.journal.state.get("native.model_usage", {}), (usage_key or stage): usage,
-                    })
-            self._ensure_active()
-            return response
-        finally:
-            slots.release()
+            if isinstance(exc, (CatalystCheckpointConflict, NativeModelCancelled)):
+                raise exc
+            self._record_safe_diagnostic(stage, phase, category, exc, attempt_key=usage_key or stage)
+            if category == "request_failed" and transient_model_error(exc):
+                raise _TransientModelRequest("native model transient request failed") from None
+            raise NativeModelUnavailable("native model " + ("configuration unavailable" if category == "configuration_unavailable" else "request failed")) from None
+
+        def on_usage(usage):
+            with self.ledger.journal.lock:
+                self.ledger.journal.put("native.model_usage", {
+                    **self.ledger.journal.state.get("native.model_usage", {}), (usage_key or stage): usage,
+                })
+
+        return invoke_model_request(config=self.config,
+            model=self.config["deep_think_llm"] if stage == "synthesis" else self.config["quick_think_llm"],
+            task="native." + stage.removeprefix("response_"), prompt=prompt,
+            client_factory=create_llm_client, slots=global_model_slots(), ensure_active=self._ensure_active,
+            cancelled=self.cancelled, deadline=self.deadline, dispatch=dispatch,
+            on_error=on_error, on_usage=on_usage, chatgpt_auth=self.chatgpt_auth)
 
     def _record_failure(self, stage: str, exc: ChatGPTError) -> None:
         diagnostic = exc.diagnostic.model_copy(update={"stage": stage}).model_dump(mode="json")

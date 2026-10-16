@@ -10,6 +10,7 @@
  * decoded via explicit type assertions on the parsed JSON.
  */
 import type {
+  ReportExplanationDTO,
   AgentKey, ReaderProcessDTO, ReaderAgentDTO, ReaderFocusDTO,
   ApiErrorCode,
   ApiErrorResponse,
@@ -39,6 +40,15 @@ import { API, CATALYST_CASE_PATH } from "./contracts";
 
 /** Same-origin base; prepended to every API path. */
 export const API_BASE = "";
+
+export function getReportExplanation(runId: string, signal?: AbortSignal): Promise<ReportExplanationDTO> {
+  assertRunId(runId);
+  return request<ReportExplanationDTO>("GET", `/api/runs/${runId}/reader/explanations`, undefined, signal);
+}
+export function retryReportExplanation(runId: string): Promise<ReportExplanationDTO> {
+  assertRunId(runId);
+  return request<ReportExplanationDTO>("POST", `/api/runs/${runId}/reader/explanations`);
+}
 
 /**
  * The F2 spec names this type ConfigPayload, but contracts.ts only exports

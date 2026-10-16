@@ -1,13 +1,28 @@
 import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
 import { AGENT_LABELS, DISPOSITION_LABELS, dimensionLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 import { CHECK_LABELS, LocalChallengeResult, LocalEvidenceChecks, claimText } from "./ResearchRecordSection";
-import type { EvidenceSelection } from "./ReaderEvidence";
+import { ReaderEvidence, type EvidenceSelection } from "./ReaderEvidence";
+import { SavedStageEvidence } from "./SavedStageEvidence";
 import { FocusAnswer } from "./FocusResponse";
 
-export function ReaderAgentOutput({ role, process, output, error, record, runStatus, entity, onRole, onInspect, onLocate, onRetry }: {
+export function ReaderAgentOutput({ role, process, output, error, record: publishedRecord, runStatus, entity, onRole, onInspect: inspectPublished, onLocate: locatePublished, onRetry }: {
   role: AgentKey; process: ReaderProcessDTO | null; output: ReaderAgentDTO | null; error: boolean; record: ResearchRecordV1DTO | null; runStatus?: string; entity: string | null;
   onRole(role: AgentKey): void; onInspect(selection: EvidenceSelection, trigger?: HTMLElement): void; onLocate(selection: EvidenceSelection): void; onRetry(): void;
 }) {
+  const stage = output?.availability === "stage_available";
+  const record = stage ? output.stage_record ?? null : publishedRecord;
+  const [selected, setSelected] = useState<EvidenceSelection | null>(null);
+  const [term, setTerm] = useState<string | null>(null);
+  const evidencePane = useRef<HTMLDivElement>(null);
+  const evidenceTrigger = useRef<HTMLElement | null>(null);
+  useEffect(() => { setSelected(null); setTerm(null); }, [role, output?.source_sequence]);
+  useEffect(() => { if (selected) { evidencePane.current?.scrollIntoView({block:"nearest"}); evidencePane.current?.focus({preventScroll:true}); } }, [selected]);
+  const onInspect = (selection: EvidenceSelection, trigger?: HTMLElement) => {
+    if (!stage) return inspectPublished(selection, trigger);
+    evidenceTrigger.current = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    setTerm(null); setSelected(selection);
+  };
+  const onLocate = (selection: EvidenceSelection) => stage ? onInspect(selection) : locatePublished(selection);
   const meta = process?.roles.find(r => r.role_key === role), p = output?.proposal;
   const relations = (id: string) => output?.relations.find(r => r.entity_id === id);
   const relation = (id: string, kind: "claim" | "challenge") => {
@@ -17,8 +32,9 @@ export function ReaderAgentOutput({ role, process, output, error, record, runSta
   return <section className="qr-agent-review" aria-label="Agent 产物回顾">
     <div className="qr-agent-tabs" aria-label="选择角色">{Object.entries(AGENT_LABELS).filter(([key])=>!(key === "focus_response" || key.startsWith("response_")) || process?.roles.some(r=>r.role_key === key)).map(([key, label]) => <button key={key} aria-pressed={role === key} onClick={() => onRole(key as AgentKey)}>{label}{key === "evidence" || key === "code_checks" ? " · 代码" : ""}</button>)}</div>
     <header><span className="qr-eyebrow">{meta?.origin === "code" ? "代码环节" : "Agent 保存产物"}</span><h2>{AGENT_LABELS[role]}</h2><p>{meta?.purpose}</p><p className="qr-meta">{STATUS_LABELS[meta?.status ?? ""] ?? "状态未记录"} · {meta ? outputLabel(meta.output_availability, meta.reason_code, runStatus) : "正在读取保存状态"}</p></header>
-    <div className="qr-method-note"><h3>使用了什么输入</h3><p>{output?.input_description ?? "等待读取已保存的输入范围说明。"}</p><p className="qr-meta">这里只展示研究字段，不包含模型对话、提示词或内部思考。</p></div>
-    {error ? <p role="status">产物暂时无法读取。<button onClick={onRetry}>重试读取</button></p> : !output ? <p aria-busy="true">正在读取所选角色的保存产物…</p> : output.availability !== "available" ? <p role="status">{outputLabel(output.availability, output.reason_code, runStatus)}。{record?.assessment ? "最终报告仍可按原保存记录阅读。" : "当前没有可展示的合格产物正文。"}</p> : <>
+    {stage ? <p className="qr-stage-notice" role="status">{output.origin === "model" ? "以下是已保存并通过本环节校验的阶段提议，尚非最终研究结论。" : "以下是本环节已保存并通过校验的资料与检查，可在后续研究期间核对。"}最终研究发布状态单独记录。</p> : null}
+    {stage && selected && record ? <div className="qr-stage-inspection" ref={evidencePane} tabIndex={-1} role="region" aria-label="阶段依据详情"><button onClick={() => { setSelected(null); evidenceTrigger.current?.focus(); }}>收起依据</button><ReaderEvidence record={record} selected={selected} term={term} onTerm={setTerm}/></div> : null}
+    {error ? <p role="status">产物暂时无法读取。<button onClick={onRetry}>重试读取</button></p> : !output ? <p aria-busy="true">正在读取所选角色的保存产物…</p> : !["available", "stage_available"].includes(output.availability) ? <p role="status">{outputLabel(output.availability, output.reason_code, runStatus)}。{publishedRecord?.assessment ? "最终报告仍可按原保存记录阅读。" : "可在研究检查中核对执行状态与原因。"}</p> : <>
       {p && "answer" in p ? <><p className="qr-meta">此回应引用基础研究，不是被引用事实或推断的作者，也不会改写基础综合。</p><FocusAnswer proposal={p} onInspect={onInspect}/></> : null}
       {p && "hypotheses" in p ? <>
         <h3>全部研究假设（{p.hypotheses.length}）</h3>
@@ -47,24 +63,27 @@ export function ReaderAgentOutput({ role, process, output, error, record, runSta
           {record?.assessment && record.assessment.schema_version !== "research-assessment-v1" ? record.assessment.challenge_assessments.filter(a => a.challenge_id === id).map(a => <details key={a.challenge_id}><summary>最终代码核查结果 · 另列来源</summary><LocalChallengeResult item={a}/></details>) : null}
         </article>; })}
       </> : null}
-      {p && "responses" in p ? <><h3>针对质疑的专项回应</h3>{p.responses.map(r=><article className="qr-output-card" key={r.challenge_id}><h4>{DISPOSITION_LABELS[r.disposition]}</h4><p>{record?.challenges.find(c=>c.challenge_id===r.challenge_id)?.statement}</p><p>{r.rationale}</p>{r.supporting_fact_ids.map(id=><button key={id} onClick={e=>onInspect({kind:"claim",id},e.currentTarget)}>{claimText(record?.claims.find(c=>c.claim_id===id)?.statement ?? id)} →</button>)}{r.remaining_unknowns.map((u,i)=><p key={i}>{u}</p>)}<button onClick={()=>onLocate({kind:"challenge",id:r.challenge_id})}>定位最终质疑与裁决 →</button></article>)}</> : null}
+      {p && "responses" in p ? <><h3>针对质疑的专项回应</h3>{p.responses.map(r=><article className="qr-output-card" key={r.challenge_id}><h4>{DISPOSITION_LABELS[r.disposition]}</h4><p>{record?.challenges.find(c=>c.challenge_id===r.challenge_id)?.statement}</p><p>{r.rationale}</p>{r.supporting_fact_ids.map(id=><button key={id} onClick={e=>onInspect({kind:"claim",id},e.currentTarget)}>{claimText(record?.claims.find(c=>c.claim_id===id)?.statement ?? id)} →</button>)}{r.remaining_unknowns.map((u,i)=><p key={i}>{u}</p>)}<button onClick={()=>onLocate({kind:"challenge",id:r.challenge_id})}>{stage ? "核对质疑与依据" : "定位最终质疑与裁决"} →</button></article>)}</> : null}
       {p && "judgement" in p ? <>
         <article className="qr-output-card"><h3>原回答</h3><p>{p.judgement}</p><h3>完整下一步</h3><p>{p.next_check}</p></article>
         <h3>原分项判断</h3>{p.dimensions.map(d => <article className="qr-output-card" key={d.dimension}><h4>{dimensionLabel(d.dimension,record?.assessment?.schema_version === "research-assessment-v3")}</h4><p>{d.judgement}</p><p className="qr-meta">提议状态：{d.status === "unresolved" ? "待核查" : d.status === "conditional" ? "有条件判断" : "提议有支持"}</p>{d.claim_ids.map(id => <button key={id} onClick={() => onInspect({kind:"claim",id})}>{claimText(record?.claims.find(c => c.claim_id === id)?.statement ?? id)}</button>)}<details><summary>维度研究字段</summary><pre>{JSON.stringify(d,null,2)}</pre></details></article>)}
         <h3>重点依据的选择</h3>{p.key_claim_ids.map(id => <article key={id}><p>{record?.claims.find(c => c.claim_id === id)?.statement}</p>{relation(id,"claim")}</article>)}
         <h3>主要疑点的选择</h3><p>{record?.challenges.find(c => c.challenge_id === p.primary_challenge_id)?.statement ?? "原提议未选择主要疑点"}</p>
-        <p className="qr-meta">{process?.primary_selection === "code" ? "最终主要疑点由代码关键级别规则置顶，与本提议不同。" : "原提议与最终主要疑点一致；仍受发布规则约束。"}</p>
-        <h3>提议的挑战处理意见</h3>{p.challenge_assessments.map(a => <article className="qr-output-card" key={a.challenge_id}><p>{record?.challenges.find(c => c.challenge_id === a.challenge_id)?.statement}</p><p>{a.rationale}</p><span className="qr-tag warn">原提议：尚未解决</span><button onClick={() => onLocate({kind:"challenge",id:a.challenge_id})}>核对最终结果 →</button></article>)}
+        {!stage ? <p className="qr-meta">{process?.primary_selection === "code" ? "最终主要疑点由代码关键级别规则置顶，与本提议不同。" : "原提议与最终主要疑点一致；仍受发布规则约束。"}</p> : null}
+        <h3>提议的挑战处理意见</h3>{p.challenge_assessments.map(a => <article className="qr-output-card" key={a.challenge_id}><p>{record?.challenges.find(c => c.challenge_id === a.challenge_id)?.statement}</p><p>{a.rationale}</p><span className="qr-tag warn">原提议：尚未解决</span><button onClick={() => onLocate({kind:"challenge",id:a.challenge_id})}>{stage ? "核对质疑与依据" : "核对最终结果"} →</button></article>)}
       </> : null}
       {output.origin === "code" && record ? <>
-        <h3>保存的代码产物</h3><p>{role === "evidence" ? `冻结了 ${record.claims.filter(c => c.kind === "fact").length} 条事实和 ${record.evidence.length} 项来源。` : `保存了 ${record.verifications.length} 次额外条件验证。固定证据子问题与最终发布资格如下。`}</p>
+        <h3>{role === "evidence" ? "已冻结的证据与检查" : "已保存的条件核查"}</h3><p>{role === "evidence" ? `冻结了 ${record.claims.filter(c => c.kind === "fact").length} 条事实和 ${record.evidence.length} 项来源记录。` : `保存了 ${record.verifications.length} 次额外条件验证。检查结果只回答所列条件。`}</p>
         <LocalEvidenceChecks record={record} onInspect={(sources, _label, trigger) => { if(sources[0]) onInspect({kind:"source",id:sources[0].evidence_id}, trigger); }}/>
         {record.verifications.map(v => <article className="qr-output-card" key={v.verification_id}><p>{v.condition_text}</p><p>{v.result}</p><p className="qr-meta">{v.status} · 只核查指定条件</p></article>)}
-        <p>记录完整性：{record.assessment?.completeness === "complete" ? "完整" : "部分"}；结论质量：{record.assessment?.quality === "PASS" ? "通过当前质量门槛" : "证据或挑战仍有保留"}。</p>
-        <button onClick={() => onLocate({kind:"source",id:record.evidence[0]?.evidence_id ?? ""})}>查看全部事实、来源与最终记录 →</button>
+        {role === "evidence" ? <SavedStageEvidence key={`${role}.${output.source_sequence}`} record={record}/> : null}
+        {record.assessment ? <><p>记录完整性：{record.assessment.completeness === "complete" ? "完整" : "部分"}；结论质量：{record.assessment.quality === "PASS" ? "通过当前质量门槛" : "证据或挑战仍有保留"}。</p><button onClick={() => onLocate({kind:"source",id:record.evidence[0]?.evidence_id ?? ""})}>查看全部事实、来源与最终记录 →</button></> : null}
       </> : null}
+      {record && output.origin === "model" ? <details className="qr-stage-inputs"><summary>{stage ? "本环节事实输入与依据" : "引用事实与保存依据"}（{output.input_fact_ids.length} 条事实）</summary><SavedStageEvidence key={`${role}.${output.source_sequence}`} record={record} factIds={output.input_fact_ids}/></details> : null}
       <details><summary>{output.origin === "model" ? "保存的结构化提议（JSON）" : "保存的代码产物字段"}</summary><pre>{JSON.stringify(output.origin === "model" ? output.proposal : { code_sections:output.code_sections, evidence_checks:record?.evidence_checks, verifications:record?.verifications, assessment:record?.assessment }, null, 2)}</pre></details>
     </>}
+    <details className="qr-method-note"><summary>本环节职责与输入范围说明</summary><p>{output?.input_description ?? "等待读取已保存的输入范围说明。"}</p><p className="qr-meta">这里只展示研究字段，不包含模型对话、提示词或内部思考。</p></details>
     {meta?.status === "failed" ? process?.model_failures?.filter(item => item.stage === role).map((item, index) => <p role="status" key={index}>{item.safe_message}</p>) : null}
   </section>;
 }
+import { useEffect, useRef, useState } from "react";

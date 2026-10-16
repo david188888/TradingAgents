@@ -90,6 +90,6 @@ export function useReaderAgent(runId: string, role: AgentKey | null, process: Re
     }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
     // A mere checkpoint count change does not fetch the output again.
-  }, [runId, role, selected?.output_availability, selected?.output_sequence, retryKey, process?.profile]);
+  }, [runId, role, selected?.output_availability, selected?.output_sequence, selected?.reason_code, retryKey, process?.profile]);
   return { response: response?.run_id === runId && response.role_key === role ? response : null, error, retry: () => setRetryKey(k => k + 1) };
 }

@@ -168,10 +168,24 @@ def build_app():
             return CatalystRunner(observer, sources_factory=FixtureSources, caller_factory=FixtureCaller)
         return _fake_runner_factory(request, observer)
     manager = SingleRunManager(store, broker, runner_factory=factory)
+    # Exercise the real supplement lifecycle without an external model request.
+    from types import SimpleNamespace
+
+    def explain_fixture(prompt):
+        targets = json.loads(prompt.split("\nDATA:\n")[1].split("\nRepair:")[0])
+        return SimpleNamespace(content=json.dumps({"entries": [{"target": t["target"],
+            "explanation": "这是保存分析的通俗说明，判断仍需结合对应证据和限定条件理解。",
+            "uncertainty": "现有资料不能保证未来结果。", "references": t["references"][:1]} for t in targets]}, ensure_ascii=False))
+
+    manager.explanations.client_factory = lambda **kwargs: SimpleNamespace(
+        get_llm=lambda: SimpleNamespace(invoke=explain_fixture))
     os.environ["TRADINGAGENTS_CATALYST_PROFILE_ENABLED"] = "1"
     os.environ["TRADINGAGENTS_EVIDENCE_ENABLED"] = "true"
     _stub_summary_llm()
+    from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
+
     return create_app(manager=manager, checkpoint_available=False,
+        chatgpt_auth=ChatGPTAuth(Path(root) / "fixture-chatgpt-auth"),
         environment={"DEEPSEEK_API_KEY": "synthetic-fixture-key"}, connectivity_check=lambda _ticker: None)
 
 

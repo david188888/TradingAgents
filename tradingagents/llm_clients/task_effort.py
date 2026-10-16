@@ -21,7 +21,7 @@ DEEPSEEK_EFFORT_TASKS = frozenset(CLASSIC_ROLE_TASKS.values()) | frozenset({
     "catalyst.catalyst_events", "catalyst.operating_delivery", "catalyst.market_reaction",
     "catalyst.independent_refutation", "catalyst.synthesis",
     "aux.news_cluster", "aux.news_coverage", "aux.news_sentiment",
-    "aux.news_deep_review", "aux.context_compaction", "aux.debate_summary",
+    "aux.news_deep_review", "aux.context_compaction", "aux.debate_summary", "aux.report_explanation",
 })
 
 

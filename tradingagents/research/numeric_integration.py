@@ -113,9 +113,9 @@ def _texts(record):
     raw = record.model_dump(mode="json")
     for name in ("claims", "hypotheses", "challenges"):
         for i, item in enumerate(raw[name]):
-            fields = ({"statement"} if name == "claims" else
-                      {"assumptions", "invalidation_conditions", "limitations"} if name == "hypotheses"
-                      else {"statement", "proposed_test"})
+            fields = (("statement",) if name == "claims" else
+                      ("assumptions", "invalidation_conditions", "limitations") if name == "hypotheses"
+                      else ("statement", "proposed_test"))
             for field in fields:
                 value = item.get(field)
                 if isinstance(value, str):
@@ -288,7 +288,15 @@ def _validate_record_numeric(record, identity):
         validate_numeric_stage(saved["stage"], saved["proposal"], saved["proof"],
                                saved["context"], stage_schema(saved["stage"]))
     _validate_entities(record, stages, attribution.input_identity)
-    if [f.model_dump(mode="json") for f in attribution.final_fields] != _final_fields(record, stages):
+    saved_fields = [f.model_dump(mode="json") for f in attribution.final_fields]
+    expected_fields = _final_fields(record, stages)
+    saved_by_path = {tuple(f["path"]): f for f in saved_fields}
+    expected_by_path = {tuple(f["path"]): f for f in expected_fields}
+    # Historical producers iterated sets, whose order differs across processes.
+    # Paths identify fields; order grants no evidence. Reject duplicates before
+    # comparing every binding so dictionary indexing cannot hide extra entries.
+    if (len(saved_by_path) != len(saved_fields) or len(expected_by_path) != len(expected_fields)
+            or saved_by_path != expected_by_path):
         raise ValueError("numeric final field binding changed")
     # Every model-created public assertion needs an accepted stage receipt.
     covered = {s["stage"] for s in stages}

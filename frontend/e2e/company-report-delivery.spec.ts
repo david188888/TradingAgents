@@ -13,7 +13,11 @@ test('unusable synthesis still delivers a traceable basic report and specialist 
  await expect(reader.locator('.qr-answer')).toContainText('综合阶段未完成');
  await expect(reader.locator('.qr-answer')).not.toContainText('投资吸引力 · 证据不足');
  const basics=reader.getByRole('region',{name:'公司基础资料',exact:true});
- await expect(basics.getByText('公开公司资料 · 主营业务：汽车业务介绍（仅为离线浏览器测试合成字段）',{exact:true})).toBeVisible();
+ await expect(reader.locator('.qr-explanation-status')).toContainText('通俗解读已保存');
+ const profile=basics.getByText('公开公司资料 · 主营业务：汽车业务介绍（仅为离线浏览器测试合成字段）',{exact:true});
+ if (!(await profile.isVisible())) await basics.locator('article').filter({hasText:'公开公司资料 · 主营业务'}).getByText('专业原文',{exact:true}).click();
+ await expect(profile).toBeVisible();
+ await expect(basics.getByText('不同于整个集团的净利润，也不等于已收到或可分配的现金。')).toBeVisible();
  await expect(basics.getByRole('heading',{name:/归母净利润/})).toBeVisible();
  await expect(basics.getByRole('heading',{name:'量化与行情',exact:true})).toBeVisible();
  await expect(reader.getByRole('button',{name:'来自研究综合 · 回顾产物 →'})).toHaveCount(0);

@@ -92,11 +92,31 @@ published-record integrity, input/seed digest, exact proposal-derived IDs and
 historical role eligibility. [`native_reader_versions.py`](../../tradingagents/web/native_reader_versions.py)
 freezes V1–V7 read policy, including the original and patched V1 publication
 gate. A bad role binding degrades that role while leaving the published report
-readable. Missing legacy proposals are unrecorded; saved but unpublished output
-remains pending publication. No role body is exposed before qualification.
+readable. Missing legacy proposals are unrecorded; older workflows retain their
+pending-publication behavior. V7 also qualifies saved stages independently of
+final publication: `stage_available` carries a closed `stage_record` without an
+assessment, plus the selected proposal and its actual fact inputs. Evidence can
+be read as soon as its facts-only seed is saved, before kernel input exists.
+Specialists retain their original accepted indices and isolated reference scope;
+challenges, checks, replies and synthesis require qualified prerequisites.
+Saved verification results are checked against their input, plan and output;
+rebuilding a display never executes a check. Numeric catalogs and contexts are
+rebuilt before replaying saved receipts. Invalid existing final-publication or
+output bindings cannot fall back to stage success. No role body is exposed
+before its applicable qualification.
 Every valid specialist hypothesis, scoped unknown and condition, every challenge,
 and the complete synthesis proposal remain reviewable even when absent from the
 first screen. Original proposals and code-owned final handling are separate.
+
+Stage reviews put actual saved results before folded method explanations. The
+evidence review exposes searchable facts and expandable saved source content,
+dates, fixed checks and limitations; source records without qualified content
+remain explicitly limited. Model reviews label proposals as provisional and
+provide working evidence links before final publication. Stage DTOs do not
+claim final inclusion, assessment quality or publication success. Public process
+summaries carry counts and refresh boundaries, never stage bodies. Numeric final
+field bindings are compared by unique field path, preserving historic ordering
+without accepting duplicate, missing or changed bindings across processes.
 
 The frontend process hook follows SSE sequence/role changes, coalesces reads,
 pauses hidden polling, uses bounded retries, and stops after terminal convergence.
@@ -177,3 +197,15 @@ are separate from budget reservations; total includes the optional focus call.
 ## V7 investment judgement and bounded dialogue
 
 The main report exposes stance, referenced supporting/opposing reasons, public change conditions and all four dimensions. The dialogue section connects original hypothesis, challenge, local check, targeted reply and separate synthesis adjudication. `InvestmentJudgement.tsx` reads these saved public fields; it creates no narrative or score. Progress/Agent/Audit roles are versioned; V7 adds three conditional reply roles before synthesis, and no-target replies are not applicable. Old modes remain readable/resumable; failed old modes offer a new company study rather than an incompatible retry. See the [current contract](../contracts/unified-company-research.md).
+
+## Plain-language reading supplement
+
+The native Web Reader shares deterministic indicator definitions and numeric
+presentation across report and related evidence. New-study creation metadata
+opts into an independent, bounded post-completion model explanation job using
+the frozen quick-model configuration and maintained API/subscription transport.
+Its own manifest and artifact bind to the published baseline/focus and never
+change research checkpoints, ratings, stage counts or original Markdown.
+Historical reports receive supported definitions and formatting only. GETs are
+read-only; eligible new-study retries require an explicit POST. See the
+[explanation contract](../contracts/report-explanation.md) for ownership, limits and failure semantics.

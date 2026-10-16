@@ -14,9 +14,10 @@ New studies use one company investment research workflow, combining operations, 
 
 - **A-share evidence chain**: combines public company information, official disclosures, financials and prices while preserving sources, timestamps and coverage limits.
 - **Purposeful Agent roles**: operating, event and market specialists develop isolated hypotheses followed by one challenge round, actual checks, targeted specialist replies and synthesis; code owns evidence admission, reference validation and deterministic calculations.
-- **Traceable research reading**: follow judgments back to evidence, doubts and Agent outputs. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
+- **Traceable research reading**: inspect qualified saved stage outputs, facts and sources while research is running, with stage proposals clearly separated from final conclusions. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
 - **Company report delivery**: preserve public introductions, fundamentals and market observations independently. Gaps limit their sections; unfinished synthesis still delivers saved basics and valid specialist findings, explicitly without an overall rating.
 - **Verifiable numeric fragments**: new studies reference frozen numbers that code renders with units, periods and actual/forecast labels, validated through Reader and export. Surrounding explanations still need researcher review; see the [numeric contract](docs/contracts/numeric-narrative.md).
+- **Plain-language reading**: financial and historical-risk indicators include definitions and readable numbers. New studies receive a separately saved model explanation shared by the report and related evidence, with professional wording available to expand. Historical reports receive indicator and formatting improvements only. See the [reading boundaries](docs/contracts/report-explanation.md).
 
 ## Overall architecture and Agent design
 
@@ -77,7 +78,7 @@ Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at run
 | Research records and evidence contracts | [Contract index](docs/contracts/README.md) · [Research record](docs/contracts/research-record.md) |
 | Reader evidence tracing and presentation | [Reader architecture](docs/architecture/research-reader.md) |
 | Coding Agent and contributor workflow | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| All documentation and release records | [Documentation index](docs/README.md) · [3.3.2 release notes](docs/reviews/2026-10-12-v3.3.2-release-notes.md) |
+| All documentation and release records | [Documentation index](docs/README.md) · [3.4.0 release notes](docs/reviews/2026-10-13-v3.4.0-release-notes.md) |
 
 Coding Agents should start with [AGENTS.md](AGENTS.md). Code, contracts and current-state docs define supported behavior; historical plans are not implementation evidence.
 

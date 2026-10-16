@@ -12,7 +12,10 @@ test("desktop question, evidence, agent review and diagnostic truth",async({page
  await expect(reader.locator(".qr-question h2")).not.toHaveText("需要核对哪些经营事实？");
  await expect(reader.locator(".qr-answer h3")).toContainText("投资吸引力");
  const supplemental=reader.getByRole("region",{name:"补充关注点回应",exact:true});
- await expect(supplemental.getByText("固定测试补充回应：已有经营数据不能证明 AI 业务关系。",{exact:true})).toBeVisible();
+ await expect(reader.locator('.qr-explanation-status')).toContainText('通俗解读已保存');
+ const focusOriginal=supplemental.getByText("固定测试补充回应：已有经营数据不能证明 AI 业务关系。",{exact:true});
+ if (!(await focusOriginal.isVisible())) await supplemental.getByText('专业原文',{exact:true}).click();
+ await expect(focusOriginal).toBeVisible();
  expect(await reader.evaluate(el=>{const sections=el.querySelectorAll('.qr-report-section');return sections[sections.length-1].id;})).toBe("qr-focus");
  await page.getByRole("button",{name:"收起研究配置",exact:true}).click();await expect(page.locator("aside.sidebar")).toBeHidden();
  await expect(page.getByRole("complementary",{name:"相关依据",exact:true})).toBeVisible();

@@ -36,6 +36,7 @@ FIXED_JSON_LOCATORS = frozenset(
         "projections/reader-brief-v1.json",
         "projections/run-view-v1.json",
         "projections/debate-summary-v1.json",
+        "supplements/report-explanation-v1.json",
     }
 )
 
@@ -450,8 +451,8 @@ class RunStore:
     def write_fixed_json(self, run_id: str, locator: str, value: Any) -> None:
         """Atomically materialize a versioned projection at an approved path.
 
-        These files are deterministic caches over append-only facts, not raw
-        agent artifacts. Their fixed names make a cheap read possible while
+        These files are deterministic projections or independent supplement job
+        manifests. Their fixed names make a cheap read possible while
         keeping all path construction server-owned.
         """
         if locator not in FIXED_JSON_LOCATORS:

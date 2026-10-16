@@ -79,6 +79,7 @@ The finite code-owned registry is `llm_clients/task_effort.py`:
 | `aux.news_sentiment` | Compact news classification, only when the existing optional Layer 1 is enabled; early low comparison candidate. |
 | `aux.news_deep_review` | Existing optional Layer 2 review; retain `high`. |
 | `aux.context_compaction`, `aux.debate_summary` | Public context compression and classic reading index; early low comparison candidates that must preserve caveats and source attribution. |
+| `aux.report_explanation` | Saved plain-language supplement beside unchanged professional research; inherits global effort unless explicitly overridden. |
 
 These are review recommendations, not measured quality/cost results. No
 task-specific defaults are inserted and no local user preset is rewritten.
