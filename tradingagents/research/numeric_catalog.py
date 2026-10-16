@@ -376,7 +376,7 @@ def _valuation(builder):
                 lineage={**lineage, "source_selector": {"component": "synthesis", "field": field}}, limitations=value.limitations)
 
 
-def build_numeric_catalog(record):
+def build_numeric_catalog(record, *, source_only=False):
     """Build without I/O or re-validating the containing record model."""
     builder = _Builder(record)
     try:
@@ -406,8 +406,9 @@ def build_numeric_catalog(record):
             elif source.source_name in PRICE_SOURCES:
                 _prices(builder, source, payload)
         _metrics(builder)
-        _local_checks(builder)
-        _valuation(builder)
+        if not source_only:
+            _local_checks(builder)
+            _valuation(builder)
     except _CatalogLimit:
         return NumericCatalogV1(availability="unavailable", reason_code="numeric_catalog_limit").model_dump(mode="json")
     return NumericCatalogV1(anchors=tuple(builder.anchors[key] for key in sorted(builder.anchors)),

@@ -100,6 +100,12 @@ Records/checkpoints without the frozen policy keep their old schemas, prompts,
 IDs and absent-field serialization. They are not retroactively certified by
 opening Reader. An optional field in an old DTO does not enable the new policy.
 
+Final narrative bindings are identified by their unique field paths. Readers
+compare every path, text digest, provenance kind and stage-source binding without
+depending on the list's iteration order. Duplicate, missing or changed bindings
+remain invalid. This admits historical lists generated in another Python
+process without rewriting saved artifacts or relaxing numeric qualification.
+
 ## Limits and validation evidence
 
 The guarantee covers the host-generated numeric fragments and their bindings.

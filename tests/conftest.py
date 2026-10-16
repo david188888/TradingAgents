@@ -105,3 +105,16 @@ def mock_llm_client():
         return_value=client,
     ):
         yield client
+
+
+@pytest.fixture(autouse=True)
+def _no_live_report_explanation_provider(monkeypatch):
+    """New post-completion jobs must not bypass a research test's fake caller.
+
+    Supplement acceptance tests inject their own explicit request-only fake.
+    Other lifecycle tests may complete new runs without testing explanations.
+    """
+    def disabled(**kwargs):
+        raise RuntimeError("supplement provider disabled in offline tests")
+
+    monkeypatch.setattr("tradingagents.execution.report_explanation.create_llm_client", disabled)

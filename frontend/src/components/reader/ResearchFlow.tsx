@@ -68,14 +68,15 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, recor
                 const code = key === "code_checks";
                 const label = code ? group.id === "publication" ? "基础研究发布" : "代码条件核查" : AGENT_LABELS[key];
                 const savedStatus = meta ? outputLabel(meta.output_availability, meta.reason_code, runStatus) : "正在读取保存状态";
-                const outputStatus = status === "not_reached" ? "后续未执行" : status === "pending" && terminal ? "本环节未执行" : savedStatus;
+                const outputStatus = group.id === "publication" && meta?.output_availability === "stage_available" ? terminal ? "本次未发布最终研究" : "最终研究尚未发布"
+                  : status === "not_reached" ? "后续未执行" : status === "pending" && terminal ? "本环节未执行" : savedStatus;
                 return <article className="rf-node" key={`${group.id}.${key}`} data-role={key}
                   data-status={status} data-active={activeRun && status === "running"} data-selected={selectedRole === key}>
                   <div className="rf-node-meta"><span className="rf-index">{String(index + 1).padStart(2,"0")}{group.keys.length > 1 && known ? String.fromCharCode(65 + position) : ""}</span>
                     <span className="rf-status">{code ? "代码职责" : STATUS_LABELS[status] ?? "未记录"}</span></div>
                   <h3>{label}</h3><p className="rf-purpose">{code ? group.id === "publication" ? "验证并保存可公开阅读的基础研究。" : "核查给定条件，保留经济解释与未知项。" : meta?.purpose ?? AGENT_PURPOSE[key]}</p>
                   {key === "evidence" && record ? <p className="rf-count">{record.evidence.length} 项来源 · {record.claims.filter(c => c.kind === "fact").length} 条事实</p> : null}
-                  <p className="rf-output">{outputStatus}{meta?.output_count != null && group.id !== "publication" && !(key === "evidence" && record) ? ` · ${meta.output_count} 项` : ""}</p>
+                  <p className="rf-output">{outputStatus}{meta?.output_count != null && group.id !== "publication" && !(key === "evidence" && record) ? ` · ${meta.output_count} ${key === "evidence" ? "条事实" : "项"}` : ""}</p>
                   <button type="button" aria-label={`查看${label}环节与保存产物`} aria-expanded={selectedRole === key}
                     aria-controls={selectedRole ? detailId : undefined} onClick={e => select(key,e.currentTarget)}>查看本环节与保存产物 <span aria-hidden="true">↗</span></button>
                 </article>;

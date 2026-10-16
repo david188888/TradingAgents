@@ -215,6 +215,7 @@ class Context:
     seed: ResearchRecordV1 | None
     reason: str | None
     store: Any = None
+    stage_reader: Any = None
 
 
 def _context(store, run_id, through=None):
@@ -247,8 +248,13 @@ def _context(store, run_id, through=None):
             raise ValueError("identity")
         published = project_research_record(store, run_id, through=sequence)
         if published["state"] != "ready":
-            return Context(snapshot, sequence, events, cp, None, None, "publication_pending", store)
-        record = ResearchRecordV1.model_validate(published["record"])
+            if version != UNIFIED_WORKFLOW_VERSION:
+                return Context(snapshot, sequence, events, cp, None, None, "publication_pending", store)
+            reason = "publication_pending" if published["reason_code"] in {"not_published", "publication_failed"} else "output_identity_unavailable"
+            if reason != "publication_pending" or cp["results"].get("native.output") is None:
+                return Context(snapshot, sequence, events, cp, None, None, reason, store)
+        record = ResearchRecordV1.model_validate(published["record"] if published["state"] == "ready"
+                                                 else cp["results"]["native.output"]["record"])
         if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and record.assessment.research_question != (UNIFIED_QUESTION if version == UNIFIED_WORKFLOW_VERSION else BASE_QUESTIONS[record.mode]):
             raise ValueError("baseline_objective")
         seed = ResearchRecordV1.model_validate(cp["native_seed"])
@@ -321,7 +327,7 @@ def _context(store, run_id, through=None):
             raise ValueError("seed_content")
     except Exception:
         return Context(snapshot, sequence, events, cp, record, None, "output_identity_unavailable", store)
-    return Context(snapshot, sequence, events, cp, record, seed, None, store)
+    return Context(snapshot, sequence, events, cp, record, seed, reason, store)
 
 
 def _proposal(ctx, role):
@@ -536,6 +542,31 @@ def _agent(ctx, role):
                               else "pending_publication" if focus["state"] == "pending" else "unavailable",
                               reason_code=response["reason_code"] if response else focus["reason_code"])
     if ctx.reason:
+        if (ctx.reason == "publication_pending" and ctx.checkpoint
+                and ctx.checkpoint["identity"].get("workflow_version") == UNIFIED_WORKFLOW_VERSION
+                and ctx.checkpoint.get("native_seed") is not None):
+            try:
+                from tradingagents.web.reader_stage_projection import StageReader
+                if ctx.stage_reader is None:
+                    ctx.stage_reader = StageReader(ctx)
+                if ctx.record is not None and origin == "model":
+                    _proposal(ctx, role)
+                material = ctx.stage_reader.read(role)
+                if material is not None:
+                    record, proposal, claims, challenges, inputs = material
+                    return ReaderAgentDTO(**base, availability="stage_available", reason_code="stage_qualified",
+                        stage_record=record, proposal=proposal, claim_ids=claims, challenge_ids=challenges,
+                        input_fact_ids=inputs, code_sections=("facts", "sources", "checks") if role == "evidence"
+                        else ("checks", "verifications") if role == "code_checks" else ())
+                if role in {"operating_quality", "event_context", "market_context"} and not ctx.stage_reader.views[role]:
+                    return ReaderAgentDTO(**base, availability="not_applicable", reason_code="no_qualified_facts_not_called")
+                status = next((e.payload.get("new_status") for e in reversed(ctx.events)
+                    if e.type == "role.status_changed" and e.actor_id == "native." + role), None)
+                return ReaderAgentDTO(**base, availability="not_applicable" if status == "skipped" else "not_recorded",
+                    reason_code="no_targeted_challenges_not_called" if status == "skipped" and role in RESPONSE_ROLES
+                    else "stage_not_saved" if status in {"failed", "completed"} else "stage_pending")
+            except Exception:
+                return ReaderAgentDTO(**base, availability="unavailable", reason_code="stage_binding_unavailable")
         pending = ctx.reason == "publication_pending"
         saved = ctx.checkpoint and ctx.checkpoint["results"].get("native." + role)
         availability = (
@@ -677,7 +708,7 @@ def _process(ctx):
                     output_availability=agent.availability,
                     reason_code=agent.reason_code,
                     output_count=None
-                    if agent.availability != "available"
+                    if agent.availability not in {"available", "stage_available"}
                     else len(agent.claim_ids)
                     if key in {"evidence", "operating_quality", "event_context", "market_context"}
                     else len(agent.proposal.responses)
@@ -687,7 +718,9 @@ def _process(ctx):
                     else 1
                     if agent.proposal is not None
                     else None,
-                    output_sequence=max(
+                    output_sequence=max((e.sequence for e in ctx.events if e.type == "role.status_changed"
+                        and e.actor_id == "native." + ("challenge" if key == "code_checks" else key)), default=0)
+                    if agent.availability == "stage_available" else max(
                         (
                             e.sequence
                             for e in ctx.events
@@ -707,14 +740,14 @@ def _process(ctx):
                     focus_budget=n.focus_budget, sdk_focus=n.sdk_focus,
                 )
             )
-            if key in {"operating_quality", "event_context", "market_context"}:
+            if key in {"operating_quality", "event_context", "market_context"} and agent.availability == "available":
                 origins.extend(ClaimOrigin(claim_id=cid, role_key=key) for cid in agent.claim_ids)
     primary = "not_recorded"
-    if ctx.seed and ctx.record and getattr(ctx.record.assessment, "report_status", None) is not None:
+    if ctx.reason is None and ctx.seed and ctx.record and getattr(ctx.record.assessment, "report_status", None) is not None:
         origins.extend(ClaimOrigin(claim_id=claim.claim_id, role_key="evidence") for claim in ctx.seed.claims)
-    if ctx.record and getattr(ctx.record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}:
+    if ctx.reason is None and ctx.record and getattr(ctx.record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}:
         primary = "code"
-    if agents.get("synthesis") and agents["synthesis"].proposal:
+    if agents.get("synthesis") and agents["synthesis"].availability == "available" and agents["synthesis"].proposal:
         primary = (
             "synthesis"
             if agents["synthesis"].proposal.primary_challenge_id

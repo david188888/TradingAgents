@@ -6,6 +6,10 @@ export function isTerminalRun(status: string): boolean {
   return ["completed", "failed", "cancelled", "interrupted"].includes(status);
 }
 export function outputLabel(value: OutputAvailability, reason: string | null, runStatus?: string): string {
+  if (value === "stage_available") return "已保存，可查看 · 阶段产物";
+  if (reason === "stage_binding_unavailable") return "保存内容未通过本环节校验，暂不可展示";
+  if (reason === "stage_not_saved") return "本环节未保存有效产物";
+  if (reason === "stage_pending") return isTerminalRun(runStatus ?? "") ? "本次未保存可读阶段产物" : "尚未保存可读阶段产物";
   if (isTerminalRun(runStatus ?? "")) {
     if (value === "pending_publication") return "提议已保存 · 本次未发布";
     if (reason === "publication_pending" && value === "not_recorded") return "本次未发布公开产物";

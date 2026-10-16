@@ -1,3 +1,4 @@
+import { ExplainedText } from "./PlainExplanation";
 import type { FocusProposalDTO, ReaderFocusDTO } from "../../api/contracts";
 import type { EvidenceSelection } from "./ReaderEvidence";
 
@@ -17,7 +18,7 @@ export const FOCUS_REASONS: Record<string, string> = {
 export function FocusAnswer({ proposal, onInspect }: {proposal: FocusProposalDTO; onInspect(value: EvidenceSelection, trigger?: HTMLElement): void}) {
   return <>
     <span className="qr-tag">{{answered:"已有证据可回应",partial:"只能部分回应",unresolved:"现有证据无法判断"}[proposal.answerability]}</span>
-    <p>{proposal.answer}</p>
+    <ExplainedText target="focus:answer" text={proposal.answer}/>
     {proposal.limitations.map((limit,i)=><p className="qr-meta" key={i}>{limit}</p>)}
     {proposal.suggested_next_check ? <><h3>建议后续核查 · 尚未执行</h3><p>{proposal.suggested_next_check}</p></> : null}
     <div className="qr-actions">{proposal.claim_ids.map((id,i)=><button key={id} onClick={e=>onInspect({kind:"claim",id},e.currentTarget)}>引用事实或推断 {i+1} →</button>)}{proposal.evidence_ids.map((id,i)=><button key={id} onClick={e=>onInspect({kind:"source",id},e.currentTarget)}>保存来源 {i+1} →</button>)}</div>

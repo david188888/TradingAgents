@@ -39,6 +39,24 @@ describe("bounded saved Reader reads",()=>{
   await waitFor(()=>expect(getReaderAgent).toHaveBeenCalledTimes(1));rerender({p:process("run-a",5)});expect(getReaderAgent).toHaveBeenCalledTimes(1);
   rerender({p:process("run-a",10,"available")});await waitFor(()=>expect(result.current.response?.source_sequence).toBe(10));expect(getReaderAgent).toHaveBeenCalledTimes(2);
  });
+ it("refreshes a selected stage when its saved material becomes readable, then when it publishes",async()=>{
+  vi.mocked(getReaderAgent).mockImplementation(async(run,role,seq)=>output(run,role,seq));
+  const {result,rerender}=renderHook(({p})=>useReaderAgent("run-a","operating_quality",p),{initialProps:{p:process("run-a",1)}});
+  await waitFor(()=>expect(getReaderAgent).toHaveBeenCalledTimes(1));
+  const stage=process("run-a",4);stage.roles[0].output_availability="stage_available";stage.roles[0].output_sequence=3;
+  rerender({p:stage});await waitFor(()=>expect(result.current.response?.source_sequence).toBe(4));
+  rerender({p:{...stage,source_sequence:8}});expect(getReaderAgent).toHaveBeenCalledTimes(2);
+  rerender({p:process("run-a",10,"available")});await waitFor(()=>expect(result.current.response?.source_sequence).toBe(10));
+  expect(getReaderAgent).toHaveBeenCalledTimes(3);
+ });
+ it("refreshes a selected explanation when the failure reason changes without a body",async()=>{
+  vi.mocked(getReaderAgent).mockImplementation(async(run,role,seq)=>output(run,role,seq));
+  const waiting=process("run-a",1);waiting.roles[0].output_availability="not_recorded";waiting.roles[0].reason_code="stage_pending";
+  const {rerender}=renderHook(({p})=>useReaderAgent("run-a","operating_quality",p),{initialProps:{p:waiting}});
+  await waitFor(()=>expect(getReaderAgent).toHaveBeenCalledTimes(1));
+  const failed=structuredClone(waiting);failed.source_sequence=4;failed.roles[0].reason_code="stage_not_saved";
+  rerender({p:failed});await waitFor(()=>expect(getReaderAgent).toHaveBeenCalledTimes(2));
+ });
  it("a stale role response cannot replace the active role",async()=>{
   const old=deferred<ReaderAgentDTO>();vi.mocked(getReaderAgent).mockReturnValueOnce(old.promise).mockResolvedValue(output("run-a","challenge",10));
   const {result,rerender}=renderHook(({role})=>useReaderAgent("run-a",role,process()),{initialProps:{role:"operating_quality" as AgentKey}});

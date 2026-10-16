@@ -37,6 +37,7 @@ rules here in focused documents rather than duplicating them in the README.
 ## Contracts
 
 - [Contract index](contracts/README.md): canonical Python, runtime, web, and frontend sources, plus change propagation rules.
+- [Plain-language report reading](contracts/report-explanation.md): indicator definitions, numeric formatting and bounded new-study model explanations beside unchanged professional research.
 - [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
 - [Local price statistics](contracts/local-price-statistics.md): deterministic return-risk/ATR methods and frozen price evidence, separate from valuation.
 - [Frozen numeric narrative](contracts/numeric-narrative.md): fresh V7 host-owned numeric fragments, scoped templates, structural bindings, cache/publication replay, focus isolation and historical compatibility.
@@ -67,108 +68,15 @@ Schemas are not copied into Markdown. When a field, enum, event, artifact, or en
 
 - [Architecture decisions](decisions/README.md): ADR lifecycle and future decision records. No historical ADRs are reconstructed here.
 
-## Delivery Snapshots
+## Archive
 
-- [ChatGPT recovery and sidebar design](superpowers/specs/2026-10-14-chatgpt-sidebar-recovery-design.md): approved scope and invariants; current behavior is documented in ChatGPT subscription operations.
+- [Documentation archive](archive/README.md): 历史设计、实施计划、验收与定点调查记录的完整清单。
 
-These are dated delivery and verification records, not current-state contracts.
-Later workflows can supersede their UI, question or role semantics; follow the
-current architecture, operations and contract pages for supported behavior.
-
-- [Research flow UI acceptance](reviews/2026-10-11-research-flow-ui-acceptance.md): dependency canvas, adjacent details, terminal publication wording, V6/V7 focus reads, responsive/keyboard/motion/axe validation and preserved failure-repair boundaries.
-
-- [Subscription, retry and Reader closeout](reviews/2026-10-11-subscription-retry-acceptance.md): combined local regression, official subscription boundaries, request accounting, credential-test isolation and remaining environment/research limits.
-
-- [v3.3.0 release notes](reviews/2026-10-11-v3.3-release-notes.md): unified company investment research, one bounded challenge/reply cycle, dependency canvas, adjacent details and truthful terminal publication states.
-- [v3.4.0 release notes](reviews/2026-10-13-v3.4.0-release-notes.md): traceable company basics, local-gap report delivery, unrated saved specialist summaries, bounded reference isolation and timestamped quotes.
-- [v3.3.1 release notes](reviews/2026-10-12-v3.3.1-release-notes.md): research-first audit, subscription transport retry classification, A-share/Web installation fix and selective a-stock-data v3.10.2 review.
-- [v3.3.2 release notes](reviews/2026-10-12-v3.3.2-release-notes.md): early condition evidence binding, canonical synthesis aliases, bounded reference feedback and frozen-evidence Luna validation.
-- [v3.2.0 release notes](reviews/2026-10-11-v3.2-release-notes.md): ChatGPT subscription, bounded native retries and diagnostics, conservative official PDF parsing, Reader interaction improvements, and release limits since v3.1.0.
-
-- [v3.1.0 release notes](reviews/2026-10-07-v3.1-release-notes.md): cumulative independent research, evidence Reader, bounded checks, DeepSeek default and Tencent stock-volume correction since v3.0.0.
-- [Independent research and focus-response acceptance](reviews/2026-10-07-independent-research-focus-acceptance.md): local V6 information-flow isolation, bounded supplemental response, recovery/publication, Reader and offline/browser checks; original 002130 files retained.
-- [a-stock-data v3.10.1 acceptance](reviews/2026-10-07-a-stock-data-v3101-acceptance.md): local Tencent stock volume-unit correction and regression evidence, plus the separately authorized Proma fixed-tag upgrade and rollback record.
-- [Question-first Reader implementation](reviews/2026-10-06-question-first-reader-acceptance.md): desktop report/evidence/Agent review, truthful native diagnostics, offline and saved-record validation, and remaining research limits.
-- [v3.0.0 release notes](reviews/2026-10-05-v3-release-notes.md): Web product migration, changes since v2.10.0, verification and research-quality limits.
-- [Web final acceptance — 600803](reviews/2026-10-04-web-final-acceptance.md): delivered native Web default and Reader, real fresh/frozen trial outcomes, HTML preview, validation and remaining human/research-quality checks.
-- [600803 minimum-evidence acceptance](reviews/2026-10-05-minimum-evidence-acceptance.md): actual V5 public-source retrieval, three bounded checks, fixed-proposal Web/HTML outputs and remaining research-quality limits.
-
-## Dated Investigations
-
-- [External engineering diagnosis verification](reviews/2026-10-14-external-engineering-diagnosis-verification.md): current-path corrections, locally reproduced numeric-reference limits, role-deadline and industry-data boundaries, compatibility-news risks and unmeasured product proposals.
-
-- [Company report delivery validation](reviews/2026-10-13-company-report-delivery-validation.md): basic-data retention, local gaps, host-owned synthesis bindings, unrated specialist summary, offline browser checks and a preserved-source 600418 preview.
-
-- [Luna E2E and offline synthesis diagnosis](reviews/2026-10-13-luna-e2e-offline-diagnosis.md): two real 600418 runs, timestamped quote admission, specialist improvement, remaining synthesis failure, authentic PDF checks and zero-call offline validation.
-
-- [600418 diagnosis and Luna validation](reviews/2026-10-12-600418-luna-validation.md): original synthesis/valuation failures, publication-barrier explanation, real subscription trials and the successful isolated synthesis validation; historical records remain unchanged.
-
-- [a-stock-data v3.10.2 selective review](reviews/2026-10-12-a-stock-data-v3102-review.md): pinned upstream diff, PE-digestion applicability and retained missing-input boundaries; no applicable adapter code adoption.
-
-These record inspected evidence and recommendations, not delivered runtime changes.
-
-- [600418 00:47 timeout and audit readability](reviews/2026-10-12-audit-and-600418-timeout.md): current-run read-only timeline, retry-policy presence, distinct operating-validation and overall-deadline failures, UI/retry verification and preserved records.
-
-- [600418 latest failure — hypothesis reference mismatch](reviews/2026-10-11-600418-latest-failure.md): the 19:15 V7 run's proposal merge failure, misleading configuration classification and unpublished Reader behavior; core validation repairs are separate from the UI delivery.
-
-- [600418 investigation and bounded recovery](reviews/2026-10-11-600418-research-investigation.md): historical model failure, PDF dependency/cell parsing repair, isolated reproduction, retry accounting and limits that remain unresolved.
-
-- [a-stock-data v3.10.1 review](reviews/2026-10-07-a-stock-data-v3101-review.md) and [Proma skill review](reviews/2026-10-07-proma-a-stock-data-v3101-review.md): pinned upstream changes, confirmed Tencent volume-label defect, pre-upgrade Proma version/dirty state, and proposed update/validation scope; delivery evidence is in the acceptance record above.
-- [Low-cost evidence investigation — 600803](reviews/2026-10-05-low-cost-evidence-investigation.md): actual official PDFs, public-source probes, current selection/parser gaps and the approved minimum-evidence scope.
-- [External project evidence review](reviews/2026-10-05-external-projects-evidence-review.md): pinned-source review of TradingAgents-astock, Vibe-Research, vibe-astock and Phoenix Tree AI, practical adoption decisions and verification limits.
-
-## Proposed Engineering Designs
-
-These are execution proposals, not descriptions of current runtime behavior.
-
-- [Research flow and adjacent detail design](superpowers/specs/2026-10-11-research-flow-design.md) and [execution plan](superpowers/plans/2026-10-11-research-flow-ui.md): approved layout, version and publication boundaries; current UI behavior belongs in the Reader architecture above.
-
-- [Evidence-driven research and Reader design](superpowers/specs/2026-09-30-evidence-driven-research-and-reader-proposal.md) and [implementation plan](superpowers/plans/2026-09-30-evidence-driven-research-implementation.md): retained overall goals and remaining quality/readability evaluation criteria. The Web default migration is delivered; current engineering behavior belongs in the operations and contract pages above.
-- [Frozen evaluation criteria](superpowers/plans/eval-table-frozen.md) and [case inputs](superpowers/plans/eval-cases.json): retained classic/catalyst comparison protocol, not completed evaluation results or authorization for new paid calls.
-- [Unified Reader prototype](superpowers/prototypes/2026-09-30-unified-research-reader.html), [sample metric generator](superpowers/prototypes/reader_sample_metrics.py), [sample metrics](superpowers/prototypes/reader_sample_metrics.json), and [catalyst layout prototype](superpowers/specs/2026-09-28-catalyst-research-layout.html): retained synthetic design material, not live research or runtime contracts.
-
-## Historical / Archive
-
-- [Numeric narrative design](superpowers/specs/2026-10-14-numeric-narrative-design.md) and [local implementation record](superpowers/plans/2026-10-14-numeric-narrative-implementation.md): approved whole-chain scope and dated offline validation; current behavior and limits belong in the numeric contract above.
-
-- [Unified company research design](superpowers/specs/2026-10-11-unified-company-research-design.md) and [local implementation record](superpowers/plans/2026-10-11-unified-company-research-implementation.md): approved V7 scope and dated offline/browser validation; current behavior belongs in the [unified research contract](contracts/unified-company-research.md).
-
-`Status: Historical | Frozen Design | Archived Plan` — **Do not use these documents as evidence of current implementation behavior.** They are kept for traceability and migration, not as current-state contracts.
-
-- [Audit readability design](superpowers/specs/2026-10-12-audit-readability-design.md): approved research-check default and explicit technical entry; current behavior is in Reader architecture and observability operations.
-
-- [ChatGPT subscription design](superpowers/specs/2026-10-10-chatgpt-subscription-design.md) and [implementation record](superpowers/plans/2026-10-11-chatgpt-subscription-implementation.md): approved OAuth/catalog/Responses scope and dated offline, browser and minimal real-call evidence; current behavior is in subscription operations.
-- [Native retry and official PDF recovery design](superpowers/specs/2026-10-11-native-model-retry-design.md): implemented request accounting and parsing scope, with dated evidence in the 600418 investigation.
-
-- [Independent research and focus-response design](superpowers/specs/2026-10-07-independent-research-and-focus-response-design.md) and [implementation plan](superpowers/plans/2026-10-07-independent-research-and-focus-response-implementation.md): approved V6 separation and local implementation history; current behavior is described in Web operations and the research-record contract.
-- [Question-first dual-column Reader design](superpowers/specs/2026-10-06-question-first-reader-design.md) and [completed implementation plan](superpowers/plans/2026-10-06-question-first-reader-implementation.md): frozen approved scope and implementation history, retained at their original paths for review. [B2 visual direction](superpowers/prototypes/2026-10-06-question-first-reader-b-v2.html), [contribution preview](superpowers/prototypes/2026-10-06-question-first-reader-b-v3.html) and [approved B4 Agent review](superpowers/prototypes/2026-10-06-question-first-reader-b-v4.html) record the design decisions; they are prototypes, not live results. Current behavior belongs in Reader architecture/operations, with verification in the dated implementation review above.
-- [Low-cost evidence design](archive/designs/2026-10-05-low-cost-evidence-design.md) and [implementation](archive/plans/2026-10-05-low-cost-evidence-implementation.md): completed V5 design and local delivery history; current rules are in Web operations and the research-record contract, with results in the dated acceptance above.
-
-- [Legacy learning-research composite](archive/legacy/learning-research-reader-2026-08-13.md): frozen historical reference for the learning research / Reader path and its implementation records.
-- [Catalyst redesign](archive/designs/2026-09-28-catalyst-research-redesign.md), [task plan](archive/plans/2026-09-29-catalyst-research-task-plan.md), and [engineering handoff](archive/reviews/2026-09-29-engineering-handoff.md): original scope, task dependencies and writing-time blockers; archiving does not certify every original goal.
-- [Capability probe design](archive/designs/2026-09-29-capability-probe-matrix.md), [probe results](archive/reviews/2026-09-29-data-capability-probe.md), [baseline manifest](archive/reviews/2026-09-29-baseline-manifest.md), [pytest baseline](archive/reviews/2026-09-29-baseline-pytest-failures.md), [readability baseline](archive/reviews/2026-09-29-baseline-readability.md), and [hidden model-call audit](archive/reviews/2026-09-29-hidden-llm-audit.md): dated pre-migration measurements and source limitations.
-- [Catalyst wiring design](archive/designs/2026-09-30-catalyst-production-wiring-design.md), [plan](archive/plans/2026-09-30-catalyst-production-wiring-plan.md), and [acceptance](archive/reviews/2026-09-30-catalyst-wiring-acceptance.md): implementation history; current entry and qualification semantics are in catalyst operations.
-- [Research foundation acceptance](archive/reviews/2026-09-30-research-foundation-acceptance.md) and [shared record acceptance](archive/reviews/2026-09-30-research-record-acceptance.md): initial A/B and limited Reader implementation history.
-- [a-stock-data v3.10.0 branch handoff](archive/reviews/2026-09-30-a-stock-data-v310-sync.md) and [research/data integration acceptance](archive/reviews/2026-10-02-research-data-integration-acceptance.md): retained branch history, local merge, compatibility fixes, validation and remaining research migration work.
-- [Bounded verification design](archive/designs/2026-10-02-bounded-verification-design.md), [implementation](archive/plans/2026-10-02-bounded-verification-implementation.md) and [acceptance](archive/reviews/2026-10-02-bounded-verification-acceptance.md): C1 execution, predicate semantics, durable recovery and validation history.
-- [Native wiring design](archive/designs/2026-10-02-native-research-wiring-design.md), [implementation](archive/plans/2026-10-02-native-research-wiring-implementation.md), [kernel acceptance](archive/reviews/2026-10-02-native-research-kernel-acceptance.md), and [public wiring acceptance](archive/reviews/2026-10-03-native-research-public-wiring-acceptance.md): C2 shared-kernel and public entry implementation history; current behavior is in native API operations.
-- [Native multi-source design](archive/designs/2026-10-03-native-multisource-design.md), [implementation](archive/plans/2026-10-03-native-multisource-implementation.md), [acceptance](archive/reviews/2026-10-03-native-multisource-acceptance.md), and [live smoke record](archive/reviews/2026-10-03-002130-live-smoke.md): bounded source routing and dated coverage evidence, not a general research-quality result.
-- [Official body and operating-detail design](archive/designs/2026-10-03-disclosure-body-operating-detail-design.md), [implementation](archive/plans/2026-10-03-disclosure-body-operating-detail-implementation.md) and [acceptance](archive/reviews/2026-10-03-disclosure-body-operating-detail-acceptance.md): bounded PDF admission, deterministic operating tables and scoped coverage labels; current behavior is in the native API operations page.
-- [Research data integrity design](archive/designs/2026-08-13-research-data-integrity-design.md): frozen design, implemented.
-- [Research data integrity plan](archive/plans/2026-08-13-research-data-integrity-plan.md): archived implementation plan, completed.
-- [Wind A-share integration plan](archive/plans/2026-08-12-wind-a-share-integration-plan.md): archived research and implementation plan for the Wind integration.
-- [Upstream v0.5 correctness batch plan](archive/plans/2026-09-18-upstream-v0.5-correctness-batch.md): archived implementation plan, completed and released in v2.10.0.
-- [Upstream v0.5 prompt/evidence batch plan](archive/plans/2026-09-19-upstream-v0.5-prompt-evidence-batch.md): archived implementation plan, completed and released in v2.10.0.
-- [First-principles review](archive/reviews/2026-08-13-tradingagents-first-principles-review.md): historical audit snapshot, not a current-state contract.
-- [Upstream v0.6.0 review](archive/reviews/2026-10-04-upstream-v060-review.md): historical A-share selective-adoption review; later DeepSeek implementation points to the current reasoning guide.
-- [DeepSeek effort audit](archive/reviews/2026-10-04-deepseek-effort-audit.md): historical call-site assessment and trial candidates before task overrides; current behavior is in the reasoning configuration guide.
-- [DeepSeek task effort design](archive/designs/2026-10-04-deepseek-task-effort-design.md): archived configuration design; defaults and recovery behavior are documented in the reasoning guide.
-- [Task effort validation](archive/reviews/2026-10-04-deepseek-task-effort-validation.md): offline checks, live official-API wiring, browser acceptance and same-environment failure comparison.
-
-Every archived document carries a `Status:` field and a pointer back to this index.
+本索引只描述当前受支持的行为。归档文档保留其写作时的事实，不因归档而获得认可，
+也不得作为当前实现证据；需要追溯某个历史决策时，从归档索引进入。
 
 ## Document Conventions
 
-- Non-current documents must start with one of: `Status: Proposed`, `Status: Historical`, `Status: Frozen Design`, `Status: Archived Plan` — and must state: **Do not use this document as evidence of current implementation behavior.** Proposed designs belong under Proposed Engineering Designs until implemented or archived.
+- Non-current documents must start with one of: `Status: Proposed`, `Status: Historical`, `Status: Frozen Design`, `Status: Archived Plan` — and must state: **Do not use this document as evidence of current implementation behavior.** Proposed designs stay in the archive index until implemented or archived.
 - Current documents are marked `Status: Current`.
 - Current-state pages do not carry implementation-process noise (story points, sprints, task boards, uncommitted-worktree notes, one-off test counts, or “Next / To Do” markers). Those belong in issues, PRs, project management systems, or historical plans.

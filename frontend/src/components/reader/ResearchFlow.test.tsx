@@ -30,6 +30,18 @@ function Harness({value=process(),status="failed"}:{value?:ReaderProcessDTO;stat
 
 describe("truthful dependency flow",()=>{
   beforeEach(()=>{HTMLElement.prototype.scrollIntoView=vi.fn();});
+  it("shows qualified stage counts without presenting code checks as final publication",()=>{
+    const value=process();
+    for (const item of value.roles) if (item.role_key === "evidence" || item.role_key === "code_checks") {
+      item.output_availability="stage_available";item.reason_code="stage_qualified";
+    }
+    value.roles[0].output_count=132;
+    render(<Harness value={value} status="running"/>);
+    expect(screen.getByText(/132 条事实/)).toBeVisible();
+    const publication=screen.getByRole("heading",{name:"基础研究发布"}).closest("article")!;
+    expect(publication).toHaveTextContent("最终研究尚未发布");
+    expect(publication).not.toHaveTextContent("已发布，可回顾");
+  });
   it("keeps execution completion separate from unpublished output and does not invent a failed node",()=>{
     const {container}=render(<Harness/>);
     const operating=within(screen.getByRole("group",{name:"独立专项分工"})).getByRole("heading",{name:"经营研究"}).closest("article")!;

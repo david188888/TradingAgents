@@ -150,6 +150,16 @@ class SingleRunManager:
         return _default_runner_factory(request, observer, chatgpt_auth=self.chatgpt_auth)
 
     @property
+    def explanations(self):
+        from tradingagents.execution.report_explanation import ExplanationService
+        from tradingagents.web.report_explanation import load_explanation_record
+        with self._guard:
+            if not hasattr(self, "_explanations"):
+                self._explanations = ExplanationService(self.store,
+                    lambda run_id: load_explanation_record(self.store, run_id), chatgpt_auth=self.chatgpt_auth)
+            return self._explanations
+
+    @property
     def active_run_id(self) -> str | None:
         return self.scheduler.active_run_id
 
@@ -471,6 +481,7 @@ class SingleRunManager:
                 ),
                 **({**request.profile_identity(),
                     "native_workflow_version": WORKFLOW_VERSION,
+                    "report_explanation_policy": "plain-language-report-v1",
                     "evidence_policy": request.evidence_policy.model_dump(mode="json")}
                     if request.research_profile == "evidence_v1" else {}),
                 **(
@@ -776,6 +787,9 @@ class SingleRunManager:
             # read only committed artifacts and must never change the run's
             # completed terminal state.
             self._publish_thesis_diff(run_id, completed_at)
+        if request.research_profile == "evidence_v1":
+            with contextlib.suppress(Exception):
+                self.explanations.start(run_id)
         if request.research_profile in {"catalyst_v1", "evidence_v1"}:
             return
         try:

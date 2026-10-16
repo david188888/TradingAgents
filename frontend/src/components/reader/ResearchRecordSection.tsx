@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { ExplainedText, ExplanationContext } from "./PlainExplanation";
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
@@ -150,8 +152,9 @@ function metricValue(metric: QuantitativeMetricV1DTO): string {
 }
 
 export function MetricCard({ metric }: { metric: QuantitativeMetricV1DTO }): JSX.Element {
+  const explanations = useContext(ExplanationContext);
   return <article className="record-metric">
-    <h4>{metric.label}</h4><strong>{metricValue(metric)}</strong>
+    <h4>{metric.label}</h4>{explanations?.indicators[`metric:${metric.metric_id}`] ? <ExplainedText target={`metric:${metric.metric_id}`} text={`${metric.value} ${metric.unit}`}/> : <strong>{metricValue(metric)}</strong>}
     <details><summary>口径与依据</summary>
       <p>{metric.method}</p><p>{metric.window_start ?? "—"} → {metric.window_end ?? "—"}</p>
       <p>样本 {metric.sample_size ?? "未取得"}{metric.tail_sample_size === null ? "" : ` · 尾部样本 ${metric.tail_sample_size}`}</p>

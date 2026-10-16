@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
@@ -14,6 +14,7 @@ from tradingagents.agents.schemas._native_stage import (
 )
 from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
 from tradingagents.agents.schemas._research_focus import FocusProposalV1
+from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
 
 AgentKey = Literal[
@@ -29,6 +30,7 @@ AgentKey = Literal[
 ]
 OutputAvailability = Literal[
     "available",
+    "stage_available",
     "pending_publication",
     "not_recorded",
     "unavailable",
@@ -117,6 +119,8 @@ class ReaderAgentDTO(_ReaderModel):
     reason_code: str | None = None
     origin: Literal["model", "code"]
     input_description: str
+    # Independently qualified public stage material, never a final assessment.
+    stage_record: ResearchRecordV1 | None = None
     # Closed schema fields only: never an adapter, prompt, response or checkpoint.
     proposal: (
         SpecialistProposalV1
@@ -136,3 +140,14 @@ class ReaderAgentDTO(_ReaderModel):
     code_sections: tuple[
         Literal["facts", "sources", "checks", "verifications", "publication"], ...
     ] = ()
+
+    @model_validator(mode="after")
+    def stage_is_not_a_final_report(self):
+        if self.availability == "stage_available":
+            if (self.stage_record is None or self.stage_record.run_id != self.run_id
+                    or self.stage_record.assessment is not None
+                    or self.origin == "model" and self.proposal is None or self.relations):
+                raise ValueError("stage material requires an unassessed matching record")
+        elif self.stage_record is not None:
+            raise ValueError("stage record requires independent stage qualification")
+        return self

@@ -196,6 +196,22 @@ export interface EvidenceChecksV1DTO {
   }>;
 }
 
+/** Canonical: agents/schemas/_report_explanation.py; additive, read-only supplement. */
+export interface IndicatorExplanationDTO {
+  label: string; value: string | null; definition: string; interpretation: string;
+  caution: string; professional: string; scope: string; raw_value: string | null; raw_unit: string | null;
+}
+export interface ExplanationEntryDTO {
+  target: string; explanation: string; uncertainty: string; references: string[];
+}
+export interface ReportExplanationDTO {
+  schema_version: 1; run_id: string; base_record_sha256: string | null;
+  state: "not_generated" | "generating" | "available" | "partial" | "failed" | "interrupted" | "unsupported" | "corrupt";
+  reason_code: string | null; eligible: boolean;
+  indicators: Record<string, IndicatorExplanationDTO>; entries: Record<string, ExplanationEntryDTO>;
+  unavailable_targets: Record<string, string>; model: string | null; generated_at: string | null;
+}
+
 export interface NativeValuationV1DTO {
   inputs: {
     run_id: string; ticker: string; as_of: string;
@@ -813,6 +829,7 @@ export type ApiErrorCode =
   | "evidence_market_unsupported"
   | "evidence_mode_unsupported"
   | "evidence_profile_unavailable"
+  | "explanation_unavailable"
   | "event_cursor_mismatch"
   | "frontend_unavailable"
   | "history_corrupted"
@@ -2355,7 +2372,7 @@ export interface CatalystLegacyRecordDTO {
 
 // Canonical: web/reader_process_models.py; proposals: agents/schemas/_native_stage.py.
 export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks" | "focus_response" | "response_operating_quality" | "response_event_context" | "response_market_context";
-export type OutputAvailability = "available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
+export type OutputAvailability = "available" | "stage_available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
 export interface ObservedCountDTO { value: number | null; completeness: "complete" | "known_lower_bound" | "not_recorded" | "unavailable"; basis: string }
 export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO; focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null }
 export interface ReaderRoleDTO {
@@ -2389,6 +2406,8 @@ export interface SynthesisProposalV3DTO extends SynthesisProposalDTO, Investment
 export interface ResponsesProposalDTO { responses: ResearchResponseProposalDTO[] }
 export interface ReaderAgentDTO {
   schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;
+  /** Qualified stage material without an assessment; never a published report. */
+  stage_record?: ResearchRecordV1DTO | null;
   proposal: SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalDTO | SynthesisProposalV3DTO | ResponsesProposalDTO | FocusProposalDTO | null;
   relations: Array<{entity_id: string; kind: "claim" | "challenge"; in_record: boolean; is_key: boolean; dimensions: string[]; challenge_ids: string[]}>;
   claim_ids: string[]; input_fact_ids: string[]; challenge_ids: string[]; code_sections: Array<"facts" | "sources" | "checks" | "verifications" | "publication">;

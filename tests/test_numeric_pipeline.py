@@ -38,7 +38,8 @@ def test_numeric_retained_summary_never_truncates_a_quantity(monkeypatch):
 
     from tradingagents.research import report_delivery
 
-    statement = "经营观察 " + "持续核查 " * 45 + "18.40%（同比）"
+    statement = "经营观察 " + "持续核查 " * 85 + "18.40%（同比）"
+    assert len("已保存基础观察：" + statement) > 400
     record = SimpleNamespace(
         claims=(SimpleNamespace(claim_id="fact.1", kind="fact", statement=statement),),
         hypotheses=(),
@@ -193,6 +194,27 @@ def test_numeric_whole_chain_publication_replay_and_old_bytes(tmp_path):
     projected = project_research_record(journal.observer.store, record.run_id)
     assert projected["state"] == "ready"
     assert projected["record"] == record.model_dump(mode="json")
+
+
+@pytest.mark.parametrize("damage", [None, "duplicate", "missing", "changed"])
+def test_final_numeric_field_bindings_use_paths_not_process_iteration_order(tmp_path, damage):
+    journal, seed = numeric_setup(tmp_path)
+    record = run(journal, seed, NumericCaller())
+    raw = record.model_dump(mode="json")
+    fields = raw["numeric_attribution"]["final_fields"]
+    fields.reverse()  # Historic processes emitted different set iteration orders.
+    if damage == "duplicate":
+        fields.append(copy.deepcopy(fields[0]))
+    elif damage == "missing":
+        fields.pop()
+    elif damage == "changed":
+        fields[0]["text_sha256"] = "0" * 64
+    if damage is None:
+        restored = ResearchRecordV1.model_validate(raw)
+        assert restored.model_dump(mode="json") == raw  # Do not rewrite history.
+    else:
+        with pytest.raises(ValueError, match="numeric final field binding changed"):
+            ResearchRecordV1.model_validate(raw)
 
 
 @pytest.mark.parametrize("stage", ["operating_quality", "challenge", "response_operating_quality", "synthesis"])
