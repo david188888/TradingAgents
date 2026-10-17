@@ -60,6 +60,7 @@ tradingagents web --port 8765 --open
 The install command explicitly uses official PyPI to avoid mirror access failures. The default A-share installation excludes mootdx because its dependencies conflict with Web; see [A-share data capabilities](docs/operations/a-share-data-capabilities.md) for existing-environment repair and TDX supplements.
 
 After subscription sign-in, model choices follow the account’s official catalog; permissions and limits are confirmed by the official service. See [ChatGPT subscription configuration](docs/operations/chatgpt-subscription.md).
+Fresh ChatGPT studies support explicit reasoning-effort configuration while historical recovery preserves its original request semantics; token refresh uses per-account backoff for transient failures.
 
 Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at runtime. Run records live under `~/.tradingagents/`. Keep credentials in ignored local configuration. Data entitlements and configuration are described in [.env.example](.env.example) and [Web operations](docs/operations/evidence-research.md).
 

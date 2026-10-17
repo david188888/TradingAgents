@@ -44,6 +44,10 @@ from tradingagents.graph.catalyst_workflow import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+from tradingagents.llm_clients.chatgpt_policy import (
+    validate_reasoning_effort,
+    validate_request_policy,
+)
 from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.research.native_versions import (
     COMPANY_RESEARCH_POLICY,
@@ -130,6 +134,15 @@ class NativeModelCaller:
         self.run_id, self.ledger = run_id, ledger
         self.cancelled, self.deadline = cancelled, deadline
         self.chatgpt_auth = chatgpt_auth
+        try:
+            self.chatgpt_request_policy = validate_request_policy(
+                ledger.journal.state.get("identity", {}).get("chatgpt_request_policy"))
+        except ValueError as exc:
+            raise CatalystCheckpointConflict("native ChatGPT request policy mismatch") from exc
+        if self.chatgpt_request_policy is not None:
+            if self.config.get("llm_provider") != "chatgpt":
+                raise CatalystCheckpointConflict("native ChatGPT provider mismatch")
+            validate_reasoning_effort(self.config.get("openai_reasoning_effort"))
         from tradingagents.runtime.native_observation import establish_sdk_observation
 
         establish_sdk_observation(ledger)
@@ -572,7 +585,8 @@ class NativeModelCaller:
             task="native." + stage.removeprefix("response_"), prompt=prompt,
             client_factory=create_llm_client, slots=global_model_slots(), ensure_active=self._ensure_active,
             cancelled=self.cancelled, deadline=self.deadline, dispatch=dispatch,
-            on_error=on_error, on_usage=on_usage, chatgpt_auth=self.chatgpt_auth)
+            on_error=on_error, on_usage=on_usage, chatgpt_auth=self.chatgpt_auth,
+            chatgpt_request_policy=self.chatgpt_request_policy)
 
     def _record_failure(self, stage: str, exc: ChatGPTError) -> None:
         diagnostic = exc.diagnostic.model_copy(update={"stage": stage}).model_dump(mode="json")

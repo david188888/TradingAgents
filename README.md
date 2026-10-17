@@ -60,6 +60,7 @@ tradingagents web --port 8765 --open
 安装命令显式使用官方 PyPI，避免镜像访问异常。默认 A 股安装不包含与 Web 依赖冲突的 mootdx；既有环境修复与通达信补充能力见 [A 股数据能力](docs/operations/a-share-data-capabilities.md)。
 
 订阅登录后，模型列表随账户官方目录更新；权限和额度由官方服务确认。详见 [ChatGPT 订阅配置](docs/operations/chatgpt-subscription.md)。
+新建 ChatGPT 研究支持显式推理投入配置，并保持历史恢复的原请求语义；登录刷新具备按账户的暂时故障退避。
 
 Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记录保存在 `~/.tradingagents/`。凭据仅放在被 Git 忽略的本地配置中。数据权限与配置见 [.env.example](.env.example) 和 [Web 操作说明](docs/operations/evidence-research.md)。
 

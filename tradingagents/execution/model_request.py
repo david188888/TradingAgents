@@ -3,12 +3,14 @@
 from collections.abc import Callable
 
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+from tradingagents.llm_clients.chatgpt_policy import validate_request_policy
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 
 
 def invoke_model_request(*, config, model, task, prompt, client_factory, slots,
                          ensure_active, cancelled, deadline, dispatch,
-                         on_error: Callable, on_usage: Callable, chatgpt_auth=None):
+                         on_error: Callable, on_usage: Callable, chatgpt_auth=None,
+                         chatgpt_request_policy=None):
     ensure_active()
     while not slots.acquire(timeout=min(0.1, ensure_active())):
         ensure_active()
@@ -18,6 +20,9 @@ def invoke_model_request(*, config, model, task, prompt, client_factory, slots,
             kwargs = provider_llm_kwargs(config, task=task)
             kwargs.update(max_retries=0, timeout=remaining)
             if config["llm_provider"] == "chatgpt":
+                if validate_request_policy(chatgpt_request_policy) is None:
+                    # Unmarked frozen runs predate effort transmission.
+                    kwargs.pop("reasoning_effort", None)
                 if chatgpt_auth is None:
                     raise ChatGPTError("not_signed_in")
                 kwargs.update(auth=chatgpt_auth, account_ref=config.get("chatgpt_account_ref"),

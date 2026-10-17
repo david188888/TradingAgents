@@ -142,6 +142,36 @@ def test_bounded_repair_and_no_quota_network_retry(published, responses, count, 
     service.close()
 
 
+@pytest.mark.parametrize("marked", [False, True])
+def test_chatgpt_explanation_retry_keeps_originating_request_policy(published, marked):
+    from tradingagents.llm_clients.chatgpt_policy import CHATGPT_REQUEST_POLICY
+
+    store, record, journal = published
+    identity = dict(journal.state["identity"])
+    if marked:
+        identity["chatgpt_request_policy"] = CHATGPT_REQUEST_POLICY
+    journal.put("identity", identity)
+    snapshot = store.read_snapshot(record.run_id)
+    config = {**snapshot.metadata["effective_config"], "llm_provider": "chatgpt",
+              "chatgpt_account_ref": "cg_" + "a" * 32, "openai_reasoning_effort": "high"}
+    store.write_snapshot_atomic(snapshot.evolve(metadata={**snapshot.metadata, "effective_config": config}))
+    provider = FakeProvider([RuntimeError("temporary fixture failure")])
+    service = ExplanationService(store, lambda r: load_explanation_record(store, r),
+                                 client_factory=provider.factory, chatgpt_auth=object())
+    try:
+        service.start(record.run_id)
+        first = wait_job(service, store, record.run_id)
+        assert first.state == "failed"
+        service.start(record.run_id, retry=True)
+        second = wait_job(service, store, record.run_id)
+        assert second.state in {"available", "partial"}
+        assert first.config_sha256 == second.config_sha256 == canonical_sha256(config)
+        assert [item.get("reasoning_effort") for item in provider.factories] == (["high", "high"] if marked else [None, None])
+        assert store.read_snapshot(record.run_id).metadata["effective_config"] == config
+    finally:
+        service.close()
+
+
 def test_historical_reports_cannot_start_model_jobs(published):
     store, record, _ = published
     snap = store.read_snapshot(record.run_id)

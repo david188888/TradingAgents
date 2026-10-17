@@ -25,7 +25,7 @@ from uuid import uuid4
 import httpx
 import jwt
 
-from .chatgpt_errors import ChatGPTError, response_error
+from .chatgpt_errors import ChatGPTError, response_error, transient_refresh_error
 
 AUTH_ORIGIN = "https://auth.openai.com"
 API_ORIGIN = "https://api.openai.com/v1"
@@ -33,6 +33,16 @@ SCOPES = "openid profile email offline_access resource.invoke chatgpt.tokens.use
 PLAN_SCOPES = frozenset({"resource.invoke", "chatgpt.tokens.use.direct"})
 USAGE_URL = "https://chatgpt.com/settings/usage"
 _REF = re.compile(r"^cg_[0-9a-f]{32}$")
+REFRESH_MARGIN_SECONDS = 60
+REFRESH_BACKOFF_SECONDS = 60
+TOKEN_VALIDITY_MARGIN_SECONDS = 5
+
+
+def _refresh_time(value):
+    # Optional scheduling metadata must not discard a successfully rotated token.
+    if type(value) is int:
+        return value if value >= 0 else None
+    return value if type(value) is float and math.isfinite(value) and value >= 0 else None
 
 
 class ChatGPTAuth:
@@ -337,6 +347,7 @@ class ChatGPTAuth:
                     "email": claims.get("email", ""), "label": f"{claims.get('email') or 'ChatGPT'} · {ref[-6:]}",
                     "scopes": scopes, "access_token": token["access_token"], "refresh_token": token.get("refresh_token"),
                     "id_token": token["id_token"], "expires_at": self.clock() + token["expires_in"],
+                    "earliest_refresh_at": _refresh_time(token.get("earliest_refresh_at")),
                     "generation": previous.get("generation", 0) + 1, "token_version": 1,
                     "disabled": False, "usage_paused": False, "plan_notice_shown": notice_shown or first_plan_sign_in,
                 }
@@ -374,9 +385,17 @@ class ChatGPTAuth:
                 raise ChatGPTError("not_signed_in")
             if for_inference and item.get("usage_paused"):
                 raise ChatGPTError("subscription_sharing_usage_limit_exceeded")
-            if item["expires_at"] <= self.clock() + 60:
+            if item["expires_at"] <= self.clock() + REFRESH_MARGIN_SECONDS:
                 if not item.get("refresh_token"):
                     raise ChatGPTError("not_signed_in")
+                now = self.clock()
+                earliest = _refresh_time(item.get("earliest_refresh_at"))
+                retry_at = _refresh_time(item.get("refresh_retry_at"))
+                if ((earliest is not None and now < earliest and now < item["expires_at"])
+                        or (retry_at is not None and now < retry_at)):
+                    if item["expires_at"] > self.clock() + TOKEN_VALIDITY_MARGIN_SECONDS:
+                        return item["access_token"], item["generation"]
+                    raise ChatGPTError("refresh_temporarily_unavailable")
                 try:
                     token = self._request("POST", AUTH_ORIGIN + "/api/accounts/oauth/token", timeout=timeout, data={
                         "grant_type": "refresh_token", "client_id": item["client_id"],
@@ -388,10 +407,18 @@ class ChatGPTAuth:
                         item["disabled"] = True
                         self._clear_tokens(item)
                         self._write(state)
+                    elif transient_refresh_error(exc):
+                        item["refresh_retry_at"] = self.clock() + REFRESH_BACKOFF_SECONDS
+                        self._write(state)
+                        if item["expires_at"] > self.clock() + TOKEN_VALIDITY_MARGIN_SECONDS:
+                            return item["access_token"], item["generation"]
+                        raise ChatGPTError("refresh_temporarily_unavailable") from None
                     raise
                 item.update(access_token=token["access_token"], expires_at=self.clock() + token["expires_in"],
                             refresh_token=token.get("refresh_token") or item["refresh_token"],
+                            earliest_refresh_at=_refresh_time(token.get("earliest_refresh_at")),
                             token_version=item.get("token_version", 0) + 1)
+                item.pop("refresh_retry_at", None)
                 if "scope" in token:
                     item["scopes"] = token["scope"].split()
                 self._write(state)
@@ -419,7 +446,7 @@ class ChatGPTAuth:
             self._write(state)
 
     def _clear_tokens(self, item):
-        for key in ("access_token", "refresh_token", "id_token"):
+        for key in ("access_token", "refresh_token", "id_token", "earliest_refresh_at", "refresh_retry_at"):
             item.pop(key, None)
 
     def _revoke(self, token, client_id):

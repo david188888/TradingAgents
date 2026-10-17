@@ -219,6 +219,54 @@ def test_frozen_identity_resume_accepts_legacy_and_rejects_policy_mutation(journ
     assert MODEL_RETRY_POLICY["per_call_retries"] == 3
 
 
+def test_chatgpt_request_policy_identity_preserves_legacy_resume(journal):
+    from dataclasses import replace
+
+    from tradingagents.execution.models import AnalysisRequest
+    from tradingagents.llm_clients.chatgpt_policy import CHATGPT_REQUEST_POLICY
+
+    config = {"llm_provider": "chatgpt", "quick_think_llm": "quick", "deep_think_llm": "deep",
+              "backend_url": None, "chatgpt_account_ref": "cg_" + "a" * 32,
+              "openai_reasoning_effort": "high"}
+    request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1", effective_config=config)
+    identity = native_identity(request)
+    assert identity["chatgpt_request_policy"] == CHATGPT_REQUEST_POLICY
+    journal.put("identity", identity)
+    validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
+    with pytest.raises(CatalystCheckpointConflict):
+        validate_native_resume(journal.observer.store, journal.ledger.run_id,
+                               replace(request, effective_config={**config, "openai_reasoning_effort": "low"}))
+    identity["chatgpt_request_policy"] = "unknown"
+    journal.put("identity", identity)
+    with pytest.raises(CatalystCheckpointConflict):
+        validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
+    legacy = native_identity(request, chatgpt_request_policy=False)
+    assert "chatgpt_request_policy" not in legacy
+    journal.put("identity", legacy)
+    validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
+    assert journal.state["identity"] == legacy
+
+
+def test_new_chatgpt_identity_validates_effort_but_legacy_preserves_ignored_values(journal):
+    from tradingagents.execution.models import AnalysisRequest
+    from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+
+    request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1",
+        effective_config={"llm_provider": "chatgpt", "openai_reasoning_effort": "legacy-ignored"})
+    with pytest.raises(ChatGPTError):
+        native_identity(request)
+    legacy = native_identity(request, chatgpt_request_policy=False)
+    journal.put("identity", legacy)
+    validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
+
+
+def test_refresh_backoff_diagnostic_does_not_automatically_retry():
+    from tradingagents.execution.native_retry import transient_model_error
+    from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+
+    assert not transient_model_error(ChatGPTError("refresh_temporarily_unavailable"))
+
+
 def test_focus_keeps_single_request_even_for_transient_failure(journal, monkeypatch):
     token = journal.ledger.reserve(BudgetBucket.FOCUS_RESPONSE, stage="native.focus_response",
         logical_call_id="native.focus_response")

@@ -20,11 +20,13 @@ from tradingagents.graph.catalyst_workflow import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
+from tradingagents.llm_clients.chatgpt_policy import validate_request_policy
 from tradingagents.research.report_explanation import (
     explanation_targets,
     indicator_presentations,
     validate_explanation_entry,
 )
+from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.report_explanation import read_explanation_job, save_explanation_job
 
 
@@ -71,6 +73,11 @@ class ExplanationService:
                     "targets_sha256": canonical_sha256(targets)}
         config = dict(snapshot.metadata["effective_config"])
         frozen_config_hash = canonical_sha256(config)
+        chatgpt_policy = None
+        if config.get("llm_provider") == "chatgpt":
+            checkpoint = load_checkpoint(self.store, run_id)
+            chatgpt_policy = validate_request_policy(
+                checkpoint["identity"].get("chatgpt_request_policy") if checkpoint else None)
         if isinstance(config.get("backend_url"), dict):
             config["backend_url"] = restore_endpoint_identity(config["backend_url"])
             if config["backend_url"] is None:
@@ -90,7 +97,7 @@ class ExplanationService:
             save_explanation_job(self.store, job)
             self._active[run_id] = job.job_id
             try:
-                self._pool.submit(self._execute, job, config, targets, record)
+                self._pool.submit(self._execute, job, config, targets, record, chatgpt_policy)
             except Exception:
                 self._active.pop(run_id, None)
                 job = job.model_copy(update={"state": "failed", "reason_code": "schedule_failed"})
@@ -102,7 +109,7 @@ class ExplanationService:
             self._active.clear()
         self._pool.shutdown(wait=False, cancel_futures=True)
 
-    def _execute(self, job, config, targets, record):
+    def _execute(self, job, config, targets, record, chatgpt_request_policy=None):
         deadline = time.monotonic() + 120
 
         def active():
@@ -169,7 +176,8 @@ class ExplanationService:
                     prompt=prompt + ("\nRepair: return a valid closed JSON object using the original DATA; use only qualitative text and allowed references." if phase == "repair" else ""),
                     client_factory=self.client_factory, slots=global_model_slots(), ensure_active=active,
                     cancelled=lambda: not self.active(job.run_id, job.job_id), deadline=lambda: deadline,
-                    dispatch=dispatch, on_error=on_error, on_usage=usage, chatgpt_auth=self.chatgpt_auth)
+                    dispatch=dispatch, on_error=on_error, on_usage=usage, chatgpt_auth=self.chatgpt_auth,
+                    chatgpt_request_policy=chatgpt_request_policy)
                 save(attempts=(*job.attempts[:-1], job.attempts[-1].model_copy(update={"outcome": "received"})))
                 try:
                     content = response if isinstance(response, str) else normalize_content(response).content

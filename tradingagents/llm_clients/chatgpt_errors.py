@@ -44,6 +44,7 @@ _MESSAGES = {
     "stream_incomplete": ("模型流未完整结束，本次输出未采用。", "retry_later"),
     "cancelled": ("模型调用已取消。", "cancelled"),
     "deadline_exceeded": ("模型调用超时，本次输出未采用。", "retry_later"),
+    "refresh_temporarily_unavailable": ("ChatGPT 登录暂时无法续期，请稍后主动重新尝试。", "retry_later"),
 }
 
 
@@ -73,3 +74,16 @@ def response_error(response):
     if code == "request_failed" and response.status_code in {401, 403}:
         code = "authorization_rejected"
     return ChatGPTError(code, status=response.status_code, request_id=response.headers.get("x-request-id"))
+
+
+def transient_refresh_error(error):
+    """Only transport/generic service failures permit a still-valid token fallback."""
+    diagnostic = error.diagnostic
+    if diagnostic.category != "request_failed":
+        return False
+    if diagnostic.upstream_code in {"transport_timeout", "transport_connection_error"}:
+        return True
+    status = diagnostic.upstream_status
+    return (diagnostic.upstream_code in {None, "request_failed", "server_error", "internal_server_error",
+                                        "temporarily_unavailable", "rate_limit_exceeded"}
+            and type(status) is int and (status in {408, 429} or 500 <= status <= 599))
