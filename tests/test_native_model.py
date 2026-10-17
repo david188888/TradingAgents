@@ -150,6 +150,33 @@ def test_stage_effort_and_repair_keep_one_frozen_policy(journal, monkeypatch, st
     assert len(stub.factories) == count
 
 
+@pytest.mark.parametrize("marked", [False, True])
+def test_chatgpt_effort_and_repair_follow_saved_request_policy(journal, monkeypatch, marked):
+    from tradingagents.llm_clients.chatgpt_policy import CHATGPT_REQUEST_POLICY
+
+    if marked:
+        journal.put("identity", {"chatgpt_request_policy": CHATGPT_REQUEST_POLICY})
+    main(journal)
+    stub, _ = sdk(monkeypatch, ["invalid JSON", valid("operating_quality")])
+    config = {**CONFIG, "llm_provider": "chatgpt", "backend_url": None,
+              "chatgpt_account_ref": "cg_" + "a" * 32, "openai_reasoning_effort": "high"}
+    model = caller(journal, effective_config=config, chatgpt_auth=object())
+    config["openai_reasoning_effort"] = "low"
+    result = model("operating_quality", {"facts": []})
+    assert [item.get("reasoning_effort") for item in stub.factories] == (["high", "high"] if marked else [None, None])
+    assert all(item["max_retries"] == 0 for item in stub.factories)
+    assert model.recover_cached("operating_quality", {"facts": []}) == result
+    assert len(stub.factories) == 2
+
+
+def test_unknown_chatgpt_request_policy_fails_before_dispatch(journal, monkeypatch):
+    journal.put("identity", {"chatgpt_request_policy": "unknown"})
+    stub, _ = sdk(monkeypatch, [])
+    with pytest.raises(CatalystCheckpointConflict, match="ChatGPT request policy"):
+        caller(journal)
+    assert stub.factories == []
+
+
 def test_parallel_native_stages_do_not_share_effort_kwargs(journal, monkeypatch):
     for stage in ("operating_quality", "market_context"):
         main(journal, stage)

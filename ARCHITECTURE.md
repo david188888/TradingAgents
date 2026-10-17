@@ -34,6 +34,11 @@ protected registrations, refresh rotation and account-specific model catalogs;
 `chatgpt_client.py` owns the fixed streamed Responses route. Runs freeze only a
 non-secret account reference. Credentials live outside run artifacts; safe
 failure diagnostics and measured token usage are checkpointed for projections.
+Fresh ChatGPT native identities freeze `siwc-reasoning-v1` for explicit Responses
+effort transmission; old unmarked resumes and their explanation retries retain
+omission. The authentication service persists earliest-refresh metadata and
+per-registration transient backoff under the existing rotation lock; valid-token
+fallback never bypasses semantic permission/quota failures or dispatch guards.
 See [ChatGPT subscription operations](docs/operations/chatgpt-subscription.md).
 The frontend `useChatGPT` hook serializes local status → account catalog reads
 after entry, account mutations and login completion, with stale-response guards.

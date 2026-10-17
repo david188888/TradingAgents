@@ -16,6 +16,8 @@
 
 `docs/reviews/` — 交付验收、发布说明与定点调查记录。
 
+- [Upstream v0.7.0 selective review](../reviews/2026-10-17-upstream-v070-review.md): ChatGPT 参数与刷新韧性、发布包完整性及不引入的边界。
+- [ChatGPT upstream adaptation validation](../reviews/2026-10-17-chatgpt-upstream-adaptation-validation.md): 用户排除安装包发布后的两项适配与离线回归记录。
 - [v3.5.0 release notes](../reviews/2026-10-16-v3.5.0-release-notes.md)
 - [v3.4.0 release notes](../reviews/2026-10-13-v3.4.0-release-notes.md)
 - [v3.3.2 release notes](../reviews/2026-10-12-v3.3.2-release-notes.md)
@@ -50,6 +52,8 @@
 
 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` — 已交付或已冻结的设计与实施计划。
 它们描述当时的范围与约束；当前行为属于对应的契约与运维页面。
+
+- [ChatGPT upstream adaptation design](../superpowers/specs/2026-10-17-chatgpt-upstream-adaptation-design.md) and [implementation plan](../superpowers/plans/2026-10-17-chatgpt-upstream-adaptation.md): 显式推理参数与令牌刷新韧性；用户明确排除安装包发布。
 
 - [Plain-language report design](../superpowers/specs/2026-10-15-plain-language-report-design.md) and [stage output review design](../superpowers/specs/2026-10-15-stage-output-review-design.md): 白话解读补充与可独立阅读的阶段产出。
 - [ChatGPT recovery and sidebar design](../superpowers/specs/2026-10-14-chatgpt-sidebar-recovery-design.md)

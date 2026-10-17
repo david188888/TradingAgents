@@ -9,6 +9,16 @@ account-specific dynamic models. It has no API-key fallback and does not send
 DeepSeek task-effort or sampling parameters. See [subscription configuration](chatgpt-subscription.md)
 for connection, quota, failure and credential-storage behavior.
 
+For fresh native ChatGPT studies, `openai_reasoning_effort` /
+`TRADINGAGENTS_OPENAI_REASONING_EFFORT` controls Responses `reasoning.effort` when
+explicitly set. Omission sends no reasoning field. Valid syntax is
+`none/minimal/low/medium/high/xhigh/max`; support remains model-dependent, with no
+automatic substitution. The checkpoint's `siwc-reasoning-v1` request policy
+freezes this behavior for all native stages, repairs, focus and saved-report
+explanations. Historical unmarked same-run recovery retains omission; unknown
+policies or changed frozen effort refuse recovery. This does not introduce
+per-stage ChatGPT overrides or change the default DeepSeek effort.
+
 ## Official DeepSeek API
 
 The `deepseek` provider uses Chat Completions at `https://api.deepseek.com`

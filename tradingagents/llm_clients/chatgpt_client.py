@@ -11,11 +11,13 @@ from langchain_core.runnables import RunnableLambda
 from .base_client import BaseLLMClient
 from .chatgpt_auth import API_ORIGIN
 from .chatgpt_errors import ChatGPTError, response_error
+from .chatgpt_policy import validate_reasoning_effort
 
 
 class ChatGPTClient(BaseLLMClient):
     def __init__(self, model, base_url=None, *, auth, account_ref, cancelled=lambda: False,
-                 deadline=None, stream_transport=None, before_request=lambda: None, **kwargs):
+                 deadline=None, stream_transport=None, before_request=lambda: None,
+                 reasoning_effort=None, **kwargs):
         super().__init__(model, base_url, **kwargs)
         if base_url:
             raise ChatGPTError("subscription_sharing_route_not_supported")
@@ -23,6 +25,7 @@ class ChatGPTClient(BaseLLMClient):
         self.deadline = deadline or (lambda: time.monotonic() + 300)
         self.stream_transport = stream_transport
         self.before_request = before_request
+        self.reasoning_effort = validate_reasoning_effort(reasoning_effort)
         self.provider = "chatgpt"
 
     def validate_model(self):
@@ -79,10 +82,13 @@ class ChatGPTClient(BaseLLMClient):
                 raise ChatGPTError("deadline_exceeded")
             self.before_request()
             timeout = max(0.001, end - time.monotonic())
+            payload = {"model": self.model, "input": [{"role": "user", "content": prompt}],
+                       "store": False, "stream": True}
+            if self.reasoning_effort is not None:
+                payload["reasoning"] = {"effort": self.reasoning_effort}
             async with httpx.AsyncClient(transport=self.stream_transport, follow_redirects=False, timeout=timeout) as client, client.stream("POST", API_ORIGIN + "/responses",
                                          headers={"Authorization": "Bearer " + access},
-                                         json={"model": self.model, "input": [{"role": "user", "content": prompt}],
-                                               "store": False, "stream": True}) as response:
+                                         json=payload) as response:
                 if response.status_code >= 300:
                     await response.aread()
                     raise response_error(response)

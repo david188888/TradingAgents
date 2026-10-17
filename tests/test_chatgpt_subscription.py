@@ -111,12 +111,14 @@ def oauth(tmp_path):
         assert path.endswith("/oauth/token")
         data = parse_qs(request.content.decode())
         if data["grant_type"] == ["refresh_token"]:
+            if options.get("on_refresh"):
+                options["on_refresh"]()
             if options.get("refresh_entered"):
                 options["refresh_entered"].set()
                 assert options["refresh_release"].wait(2)
             if options.get("refresh_error"):
                 return httpx.Response(
-                    400, json={"error": options.get("refresh_error_body", {"code": "invalid_grant", "message": "SECRET"})}
+                    options.get("refresh_status", 400), json={"error": options.get("refresh_error_body", {"code": "invalid_grant", "message": "SECRET"})}
                 )
             return httpx.Response(
                 200,
@@ -125,6 +127,7 @@ def oauth(tmp_path):
                     "refresh_token": "refresh-rotated",
                     "token_type": "Bearer",
                     "expires_in": 3600,
+                    "earliest_refresh_at": options.get("refresh_earliest"),
                 },
             )
         assert data["client_id"] == ["issued-client"]
@@ -154,6 +157,7 @@ def oauth(tmp_path):
                 "token_type": "Bearer",
                 "scope": options.get("scope", SCOPES),
                 "expires_in": 3600,
+                "earliest_refresh_at": options.get("login_earliest"),
             },
         )
 
@@ -275,6 +279,193 @@ def test_refresh_invalid_grant_disables_and_failed_revocation_clears(oauth):
     assert not account["signed_in"] and account["revocation_unconfirmed"]
 
 
+def _near_expiry(auth, ref, *, expires=1050, earliest=None):
+    clock = [1000]
+    auth.clock = lambda: clock[0]
+    with auth._locked():
+        state = auth._read()
+        state["accounts"][ref].update(expires_at=expires, earliest_refresh_at=earliest)
+        auth._write(state)
+    return clock
+
+
+def _refresh_count(calls):
+    return sum(r.url.path.endswith("/oauth/token")
+               and parse_qs(r.content.decode()).get("grant_type") == ["refresh_token"] for r in calls)
+
+
+def test_earliest_refresh_is_saved_and_honored_until_expiry(oauth):
+    auth, calls, options, _, connect = oauth
+    options["login_earliest"] = 1040
+    ref = connect()
+    assert auth._read()["accounts"][ref]["earliest_refresh_at"] == 1040
+    clock = _near_expiry(auth, ref, earliest=1040)
+    assert auth.access(ref)[0] == "access-private"
+    assert _refresh_count(calls) == 0
+    clock[0] = 1041
+    options["refresh_earliest"] = 4500
+    assert auth.access(ref)[0] == "access-rotated"
+    assert _refresh_count(calls) == 1
+    assert auth._read()["accounts"][ref]["earliest_refresh_at"] == 4500
+
+
+@pytest.mark.parametrize("earliest", [None, True, "later", -1])
+def test_absent_or_malformed_earliest_does_not_block_refresh(oauth, earliest):
+    auth, calls, options, _, connect = oauth
+    options["login_earliest"] = earliest
+    ref = connect()
+    assert auth._read()["accounts"][ref]["earliest_refresh_at"] is None
+    _near_expiry(auth, ref)
+    assert auth.access(ref)[0] == "access-rotated"
+    assert _refresh_count(calls) == 1
+
+
+def test_large_optional_refresh_timestamp_does_not_lose_rotated_credentials(oauth):
+    auth, _, options, _, connect = oauth
+    ref = connect()
+    _near_expiry(auth, ref)
+    options["refresh_earliest"] = 10 ** 400
+    assert auth.access(ref)[0] == "access-rotated"
+    item = auth._read()["accounts"][ref]
+    assert item["refresh_token"] == "refresh-rotated"
+    assert item["earliest_refresh_at"] == 10 ** 400
+
+
+def test_future_earliest_never_returns_an_expired_or_nearly_expired_token(oauth):
+    auth, calls, _, _, connect = oauth
+    ref = connect()
+    clock = _near_expiry(auth, ref, expires=1004, earliest=1100)
+    with pytest.raises(ChatGPTError) as error:
+        auth.access(ref)
+    assert error.value.diagnostic.category == "refresh_temporarily_unavailable"
+    assert _refresh_count(calls) == 0
+    clock[0] = 1005
+    assert auth.access(ref)[0] == "access-rotated"
+    assert _refresh_count(calls) == 1
+
+
+@pytest.mark.parametrize("status,code", [(408, "request_failed"), (429, "rate_limit_exceeded"),
+                                         (500, "server_error"), (503, "temporarily_unavailable")])
+def test_transient_refresh_fallback_and_backoff_are_shared_across_instances(oauth, status, code):
+    auth, calls, options, _, connect = oauth
+    ref = connect()
+    clock = _near_expiry(auth, ref)
+    options.update(refresh_error=True, refresh_status=status, refresh_error_body={"code": code, "message": "SECRET"})
+    assert auth.access(ref)[0] == "access-private"
+    second = ChatGPTAuth(auth.root, transport=auth.transport, clock=lambda: clock[0])
+    assert second.access(ref)[0] == "access-private"
+    assert _refresh_count(calls) == 1
+    assert auth._read()["accounts"][ref]["refresh_retry_at"] == 1060
+    assert "SECRET" not in (auth.root / "registrations.json").read_text()
+    clock[0] = 1051
+    with pytest.raises(ChatGPTError) as error:
+        second.access(ref)
+    assert error.value.diagnostic.action == "retry_later"
+    assert _refresh_count(calls) == 1
+    clock[0] = 1061
+    options["refresh_error"] = False
+    assert second.access(ref)[0] == "access-rotated"
+    item = auth._read()["accounts"][ref]
+    assert item["refresh_token"] == "refresh-rotated" and "refresh_retry_at" not in item
+    assert _refresh_count(calls) == 2
+
+
+def test_transport_failure_checks_remaining_validity_after_refresh_attempt(oauth):
+    auth, calls, options, _, connect = oauth
+    ref = connect()
+    clock = _near_expiry(auth, ref)
+
+    def timeout():
+        clock[0] = 1048
+        raise httpx.ReadTimeout("SECRET")
+
+    options["on_refresh"] = timeout
+    with pytest.raises(ChatGPTError) as error:
+        auth.access(ref)
+    assert error.value.diagnostic.category == "refresh_temporarily_unavailable"
+    assert _refresh_count(calls) == 1
+    assert auth._read()["accounts"][ref]["refresh_retry_at"] == 1108
+
+
+@pytest.mark.parametrize("failure", [httpx.ReadTimeout, httpx.ConnectError])
+def test_transport_failure_can_reuse_a_still_valid_token(oauth, failure):
+    auth, calls, options, _, connect = oauth
+    ref = connect()
+    _near_expiry(auth, ref)
+
+    def fail():
+        raise failure("SECRET")
+
+    options["on_refresh"] = fail
+    assert auth.access(ref)[0] == "access-private"
+    assert auth.access(ref)[0] == "access-private"
+    assert _refresh_count(calls) == 1
+
+
+def test_cancel_during_refresh_fallback_never_dispatches_inference(oauth):
+    auth, auth_calls, options, _, connect = oauth
+    ref = connect()
+    _near_expiry(auth, ref)
+    cancelled, dispatched = [], []
+
+    def fail_after_cancel():
+        cancelled.append(True)
+        raise httpx.ReadTimeout("SECRET")
+
+    options["on_refresh"] = fail_after_cancel
+    client, calls = client_for(auth, ref, [completed()], cancelled=lambda: bool(cancelled),
+                              before_request=lambda: dispatched.append(True))
+    with pytest.raises(ChatGPTError) as error:
+        client.get_llm().invoke("prompt")
+    assert error.value.diagnostic.category == "cancelled"
+    assert _refresh_count(auth_calls) == 1
+    assert calls == dispatched == []
+
+
+@pytest.mark.parametrize("status,code", [(400, "invalid_grant"), (400, "invalid_client"),
+    (401, "request_failed"), (403, "chatpass_v2_scope_not_authorized"),
+    (429, "subscription_sharing_usage_limit_exceeded"), (429, "insufficient_quota"),
+    (503, "subscription_sharing_usage_unavailable"), (500, "unknown_permission_error")])
+def test_semantic_or_permanent_refresh_errors_never_fall_back(oauth, status, code):
+    auth, calls, options, _, connect = oauth
+    ref = connect()
+    _near_expiry(auth, ref)
+    options.update(refresh_error=True, refresh_status=status, refresh_error_body={"code": code})
+    with pytest.raises(ChatGPTError):
+        auth.access(ref)
+    assert "refresh_retry_at" not in auth._read()["accounts"][ref]
+    assert _refresh_count(calls) == 1
+
+
+def test_refresh_backoff_is_per_registration_and_logout_clears_it(oauth):
+    auth, calls, options, _, connect = oauth
+    first, second = connect(), connect()
+    _near_expiry(auth, first)
+    _near_expiry(auth, second)
+    options.update(refresh_error=True, refresh_status=503, refresh_error_body="server_error")
+    assert auth.access(first)[0] == "access-private"
+    options["refresh_error"] = False
+    assert auth.access(second)[0] == "access-rotated"
+    assert _refresh_count(calls) == 2
+    auth.logout(first)
+    item = auth._read()["accounts"][first]
+    assert "refresh_retry_at" not in item and "access_token" not in item
+    with pytest.raises(ChatGPTError):
+        auth.access(first)
+
+
+def test_reauthorization_clears_old_refresh_backoff(oauth):
+    auth, _, options, begin, connect = oauth
+    ref = connect()
+    _near_expiry(auth, ref)
+    options.update(refresh_error=True, refresh_status=503, refresh_error_body="server_error")
+    assert auth.access(ref)[0] == "access-private"
+    options["refresh_error"] = False
+    attempt, query = begin(ref)
+    assert auth.complete_login(attempt, query)
+    assert "refresh_retry_at" not in auth._read()["accounts"][ref]
+
+
 def completed():
     return {
         "type": "response.completed",
@@ -332,6 +523,27 @@ def test_responses_payload_completion_and_usage(oauth):
         "store": False,
         "stream": True,
     }
+
+
+@pytest.mark.parametrize("effort", ["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+def test_explicit_effort_reaches_responses_without_extra_requests(oauth, effort):
+    auth, _, _, _, connect = oauth
+    client, calls = client_for(auth, connect(), [completed()], reasoning_effort=effort)
+    assert client.get_llm().invoke("explicit history").content
+    assert len(calls) == 1
+    payload = json.loads(calls[0].content)
+    assert payload["reasoning"] == {"effort": effort}
+    assert payload["store"] is False and payload["stream"] is True
+    assert "reasoning_effort" not in payload
+
+
+@pytest.mark.parametrize("effort", [False, True, 1, [], {}, "", "HIGH", "ultra"])
+def test_invalid_effort_stops_before_auth_or_inference(oauth, effort):
+    auth, calls, _, _, _ = oauth
+    with pytest.raises(ChatGPTError) as error:
+        ChatGPTClient("future-model-z", auth=auth, account_ref="unused", reasoning_effort=effort)
+    assert error.value.diagnostic.action == "check_capability"
+    assert calls == []
 
 
 @pytest.mark.parametrize("error,expected", [

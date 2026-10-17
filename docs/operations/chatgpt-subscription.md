@@ -54,6 +54,22 @@ credentials, the browser reconciles account status without losing the error.
 
 ## Usage and failure behavior
 
+Fresh native ChatGPT studies freeze `siwc-reasoning-v1` in their checkpoint
+identity. An explicitly configured `openai_reasoning_effort` (or
+`TRADINGAGENTS_OPENAI_REASONING_EFFORT` before Web startup) is sent as Responses
+`reasoning.effort`. Omission retains the provider's model-dependent default.
+The recognized syntax is `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or
+`max`; the selected model may accept only a subset. Rejected settings do not
+automatically change effort, model or account. The Web model controls have no
+new effort selector.
+
+Same-run recovery preserves the saved policy and effort; historical unmarked
+checkpoints keep omitting effort, even if their saved config contains a value
+that used to be ignored. Unknown policies and changed frozen configuration
+refuse recovery. A retry that creates a new run uses the new request policy.
+Post-publication explanations, including explicit explanation retries, use
+the originating study's policy and unchanged frozen-config binding.
+
 Eligible requests use ChatGPT plan allowance. There is no automatic switch to an
 API key, third-party proxy, another account or model. The **管理用量** link opens
 ChatGPT usage settings. Plan and application limits can be shared across SIWC
@@ -107,6 +123,25 @@ runs. Mutating `/api/chatgpt/*` routes require same-origin JSON on loopback;
 responses are not cached. Merely viewing `/api/config` does not initiate OAuth,
 create credential storage or call the upstream model endpoint.
 
+Access-token refresh begins within the existing 60-second expiry margin and
+honors a valid `earliest_refresh_at` before expiry. Missing or malformed optional
+refresh-time metadata is treated as absent. An expired token may attempt renewal
+even if that earliest time has not arrived; it is never returned for inference.
+Temporary transport failures or generic HTTP 408/429/5xx record a 60-second
+per-registration backoff under the same cross-process lock. A retained token
+with more than five seconds remaining may be used during that interval; this
+does not guarantee a whole stream will finish before token expiry. Otherwise a
+fixed retry-later message is returned without sleeping or dispatching inference.
+The backoff itself does not trigger native automatic model retries.
+
+The fallback accepts only transport timeout/connection errors or the generic
+codes `request_failed`, `server_error`, `internal_server_error`,
+`temporarily_unavailable`, `rate_limit_exceeded` (or no code) with those transient
+HTTP statuses. Semantic authentication, identity, permission and quota errors
+take precedence and cannot use this fallback. Successful refresh, reauthorization
+or logout clears stale backoff. Rotation remains atomic; cancellation, deadlines
+and session checks still guard inference dispatch after refresh.
+
 Implementation owners: `llm_clients/chatgpt_auth.py`, `chatgpt_client.py`,
 `chatgpt_errors.py`, `web/chatgpt_routes.py`, native execution and the frontend
 `useChatGPT`/`useConfig` hooks. Safe model diagnostics persist in the native
@@ -115,3 +150,5 @@ checkpoint and are projected by the read-only Reader process endpoint.
 Official protocol references: [OSS token sharing](https://developers.openai.com/siwc/token-sharing-open-source),
 [sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),
 [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
+See also [reasoning effort](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses)
+and [token refresh](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions#refreshing-tokens).

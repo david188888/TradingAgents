@@ -153,6 +153,42 @@ def test_native_saved_effort_policy_roundtrips_and_changed_policy_refuses_resume
     assert _request_from_snapshot(manager.store.read_snapshot(snapshot.run_id)).effective_config["deepseek_task_efforts"] == config["deepseek_task_efforts"]
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_chatgpt_fresh_policy_and_same_run_resume_keep_saved_semantics(runtime, monkeypatch, legacy):
+    from tradingagents.llm_clients.chatgpt_policy import CHATGPT_REQUEST_POLICY
+    from tradingagents.runtime.catalyst_checkpoint import CatalystJournal
+
+    manager, caller = runtime
+    monkeypatch.setattr("tradingagents.execution.native_runner.NativeRunner",
+        lambda observer, **kwargs: NativeRunner(observer, sources_factory=Sources,
+                                               caller_factory=lambda **kwargs: caller))
+    config = {**request().effective_config, "llm_provider": "chatgpt", "backend_url": None,
+              "chatgpt_account_ref": "cg_" + "a" * 32, "openai_reasoning_effort": "high"}
+    req = _complete_request(replace(request(), effective_config=config))
+    snapshot = manager._create_run(req, configured_keys={}, queued=False)
+    observer = DurableRunObserver(manager.store, snapshot.run_id, development_assertions=False)
+    runner = NativeRunner(observer, sources_factory=Sources, caller_factory=lambda **kwargs: caller)
+    Sources.crash_before_seed = True
+    with pytest.raises(ProcessStopped):
+        runner.run(req)
+    state = load_checkpoint(manager.store, snapshot.run_id)
+    assert state["identity"]["chatgpt_request_policy"] == CHATGPT_REQUEST_POLICY
+    frozen_config = snapshot.metadata["effective_config"]
+    if legacy:
+        journal = CatalystJournal(DurableRunObserver(manager.store, snapshot.run_id, development_assertions=False), state["identity"], require_existing=True)
+        identity = {k: v for k, v in state["identity"].items() if k != "chatgpt_request_policy"}
+        journal.put("identity", identity)
+    else:
+        identity = state["identity"]
+    recovered = SingleRunManager(RunStore(manager.store.root))
+    assert recovered.recover_startup()[0].status == "interrupted"
+    recovered.resume(snapshot.run_id)
+    resumed = recovered.wait(snapshot.run_id, timeout=10)
+    assert resumed.status == "completed", resumed.error_message
+    assert load_checkpoint(manager.store, snapshot.run_id)["identity"] == identity
+    assert resumed.metadata["effective_config"] == frozen_config
+
+
 @pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])
 def test_actual_http_manager_record_report_and_retry(runtime, mode):
     manager, caller = runtime

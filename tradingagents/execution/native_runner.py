@@ -33,6 +33,10 @@ from tradingagents.execution.native_focus_publication import publish_focus_respo
 from tradingagents.execution.native_model import NativeModelCaller
 from tradingagents.execution.native_publication import publish_native_record
 from tradingagents.graph.native_research import load_native_seed, run_native_research
+from tradingagents.llm_clients.chatgpt_policy import (
+    CHATGPT_REQUEST_POLICY,
+    validate_reasoning_effort,
+)
 from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.observability.canonical import canonical_sha256 as config_sha256
 from tradingagents.observability.events import RunEventDraft
@@ -65,9 +69,12 @@ PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 
 
-def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True):
+def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True):
     from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
 
+    subscription_policy = chatgpt_request_policy and request.effective_config.get("llm_provider") == "chatgpt"
+    if subscription_policy:
+        validate_reasoning_effort(request.effective_config.get("openai_reasoning_effort"))
     return {
         **request.profile_identity(),
         "workflow_version": workflow_version,
@@ -76,6 +83,7 @@ def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_p
         "cutoff": request.analysis_date,
         "holding_context": asdict(request.holding_context) if request.holding_context else None,
         "config": prepare_effective_config(request.effective_config),
+        **({"chatgpt_request_policy": CHATGPT_REQUEST_POLICY} if subscription_policy else {}),
         "active_timeout_seconds": request.effective_config.get("evidence_timeout_seconds", 300),
         **({"numeric_narrative_policy": NUMERIC_NARRATIVE_POLICY}
            if workflow_version == UNIFIED_WORKFLOW_VERSION and numeric_narrative_policy else {}),
@@ -106,7 +114,8 @@ def validate_native_resume(store, run_id, request):
     company_policy = state is not None and "company_research_policy" in state["identity"]
     report_policy = state is not None and "report_delivery_policy" in state["identity"]
     numeric_policy = state is not None and "numeric_narrative_policy" in state["identity"]
-    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy):
+    chatgpt_policy = state is not None and "chatgpt_request_policy" in state["identity"]
+    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -220,9 +229,10 @@ class NativeRunner:
         company_policy = not resume or "company_research_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         report_policy = not resume or "report_delivery_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         numeric_policy = not resume or "numeric_narrative_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        chatgpt_policy = not resume or "chatgpt_request_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version,
             model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy,
-            numeric_narrative_policy=numeric_policy), require_existing=resume)
+            numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy), require_existing=resume)
         if journal.state["identity"].get("numeric_narrative_policy") is not None:
             with self.observer.store.lock_for(run_id):
                 snapshot = self.observer.store.read_snapshot(run_id)
