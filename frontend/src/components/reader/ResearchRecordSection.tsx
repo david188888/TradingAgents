@@ -6,9 +6,11 @@ import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
 import { ValuationPositionCard } from "./ValuationPositionCard";
 import type { CheckObservationV1DTO, ChallengeAssessmentV2DTO, QuantitativeMetricV1DTO, ResearchRecordResponseDTO, ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
 import { limitationLabel } from "../../domain/researchCoverage";
+import { unfinishedSynthesis } from "../../domain/synthesisSections";
+import { ChallengeCheckSummary } from "./ChallengeChecks";
 
 const CONTENT_LABELS = { excerpt: "原文摘录", source_fields: "原始数据字段", saved_summary: "已保存摘要" };
-export const CHECK_LABELS = { operating_disclosures: "经营披露依据", cash_conversion: "现金流桥核对", valuation_context: "估值补充背景" };
+export const CHECK_LABELS = { operating_disclosures: "经营披露依据", cash_conversion: "现金流桥核对", valuation_context: "估值补充背景", financial_baseline: "结构化财务基础覆盖", cashflow_comparison: "利润与现金流同期比较" };
 const CHECK_STATUS = { passed: "所需证据已核对", unavailable: "所需证据不足", conflict: "数据冲突，待核查" };
 const OUTCOME_LABELS = { evidence_sufficient: "证据子问题已回答", risk_supported: "数据支持所列风险", future_observation: "保留未来观察", unresolved: "尚未解决" };
 
@@ -109,6 +111,7 @@ function ClaimEvidence({ record, claimId, onInspect }: { record: ResearchRecordV
 function NativeAssessment({ record, onInspect }: { record: ResearchRecordV1DTO; onInspect: InspectSources }): JSX.Element | null {
   const assessment = record.assessment;
   if (!assessment) return null;
+  const unfinished = unfinishedSynthesis(record);
   const primaryChallenge = record.challenges.find((item) => item.challenge_id === assessment.primary_challenge_id);
   const primaryAssessment = assessment.challenge_assessments.find((item) => item.challenge_id === assessment.primary_challenge_id);
   const criticalChallenges = record.challenges.filter((item) => item.severity === "critical");
@@ -117,7 +120,7 @@ function NativeAssessment({ record, onInspect }: { record: ResearchRecordV1DTO; 
     <p className="record-meta">截至 {record.analysis_date}{assessment.forward_window_calendar_days === 84 ? " · 展望 84 个日历日" : ""}</p>
     <p>{assessment.research_question}</p>
     <p className="record-judgement">{assessment.judgement}</p>
-    {assessment.quality === "LOW_CONFIDENCE" || assessment.completeness === "partial" ? <p role="status">证据受限：本次判断为部分研究，需继续核查。</p> : null}
+    {unfinished.size ? <p role="status">综合未完成：有效分段已保留，请核对未完成项。</p> : assessment.quality === "LOW_CONFIDENCE" || assessment.completeness === "partial" ? <p role="status">证据受限：本次判断为部分研究，需继续核查。</p> : null}
     <div className="record-limits" aria-label="本次研究缺口">
       {assessment.dimensions.filter(d => d.status === "unresolved").map(d => <span key={d.dimension}>{assessment.schema_version === "research-assessment-v3" && d.dimension === "catalyst_delivery" ? "事件影响与兑现" : DIMENSION_LABELS[d.dimension]}待核查</span>)}
       {record.limitations.filter(l => l.startsWith("native_stage_unavailable:")).map(l => <span key={l}>部分专项未形成合格输出</span>)}
@@ -132,7 +135,7 @@ function NativeAssessment({ record, onInspect }: { record: ResearchRecordV1DTO; 
 
     <details><summary>分项判断与覆盖限制</summary>
       {assessment.dimensions.map((dimension) => <section key={dimension.dimension}>
-        <h4>{assessment.schema_version === "research-assessment-v3" && dimension.dimension === "catalyst_delivery" ? "事件影响与兑现" : DIMENSION_LABELS[dimension.dimension]} · {ASSESSMENT_STATUS_LABELS[dimension.status]}</h4>
+        <h4>{assessment.schema_version === "research-assessment-v3" && dimension.dimension === "catalyst_delivery" ? "事件影响与兑现" : DIMENSION_LABELS[dimension.dimension]} · {unfinished.has(`dimension:${dimension.dimension}`) ? '未完成' : ASSESSMENT_STATUS_LABELS[dimension.status]}</h4>
         <p>{dimension.judgement}</p>
         {dimension.claim_ids.map((claimId) => <ClaimEvidence key={claimId} record={record} claimId={claimId} onInspect={onInspect} />)}
         {dimension.challenge_ids.map((challengeId) => <p key={challengeId}>未解决挑战：{record.challenges.find((item) => item.challenge_id === challengeId)?.statement}</p>)}
@@ -218,10 +221,11 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
       </article>)}
       {record.challenges.map((challenge) => <article key={challenge.challenge_id}>
         <h4>挑战</h4><p>{challenge.statement}</p><p>拟核查：{challenge.proposed_test}</p>
+        <ChallengeCheckSummary record={record} challengeId={challenge.challenge_id}/>
         {record.assessment && record.assessment.schema_version !== "research-assessment-v1" ? record.assessment.challenge_assessments.filter(item => item.challenge_id === challenge.challenge_id).map(item => <LocalChallengeResult key={item.challenge_id} item={item} />) : null}
       </article>)}
       {record.verifications.map((verification) => <article key={verification.verification_id}>
-        <h4>{verification.scope === "predicate_only" ? "条件核查" : "验证执行"} · {VERIFICATION_LABELS[verification.status]}</h4>
+        <h4>{verification.scope === "challenge_predicate_only" ? "独立命题核查" : verification.scope === "predicate_only" ? "条件核查" : "验证执行"} · {verification.scope === "challenge_predicate_only" ? verification.predicate_met === true ? "命题满足" : verification.predicate_met === false ? "命题不满足" : "无法核查" : VERIFICATION_LABELS[verification.status]}</h4>
         {verification.scope === "predicate_only" ? <>
           <p>核查条件：{verification.condition_text}</p>
           <p className="record-meta">仅核查指定条件，不证明整条假设，也不自动关闭挑战。</p>

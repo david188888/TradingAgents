@@ -39,4 +39,10 @@ def investment_fields(record, proposal, dimensions):
         fields["investment_stance"] = None if stance == "insufficient_evidence" else stance
         fields["report_status"] = "analysis_unrated" if fields["investment_stance"] is None else "synthesized"
         fields["force_insufficient"] = False
+    if proposal.synthesis_sections is not None:
+        from tradingagents.research.synthesis_sections import rating_blocked
+        fields["synthesis_sections"] = proposal.synthesis_sections
+        if rating_blocked(record, proposal.synthesis_sections):
+            fields["investment_stance"] = None
+            fields["report_status"] = "analysis_unrated"
     return fields

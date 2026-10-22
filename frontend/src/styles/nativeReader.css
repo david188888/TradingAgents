@@ -168,3 +168,5 @@
 .qr-plain-reading details { margin-block: .8rem; font-size: .9rem; }
 .qr-plain-reading summary { cursor: pointer; text-decoration: underline; text-underline-offset: .2em; }
 .qr-explanation-status { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; padding: .85rem 1rem; margin-block: 1rem; border: 1px solid var(--border, #dcded6); border-radius: .6rem; font-size: .9rem; line-height: 1.6; }
+.qr-premise-evidence { min-width: 0; overflow-wrap: anywhere; }
+.qr-premise-evidence article { margin: 12px 0; padding-left: 12px; border-left: 2px solid var(--qr-line); }

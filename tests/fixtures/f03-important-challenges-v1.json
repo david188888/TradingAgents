@@ -1,0 +1,28 @@
+{
+  "schema_version": "f03-important-challenges-v1",
+  "scope": "synthetic fixed inputs, not real-model output or investment-quality scores",
+  "cases": [
+    {
+      "case_id": "income-growth-current",
+      "target_claim_id": "i1",
+      "proposition": "同期收入是否达到所提议的增幅",
+      "severity": "critical",
+      "verifiability": "computable_now",
+      "check": {
+        "kind": "financial",
+        "operation": "growth",
+        "current": {"evidence_id": "e1", "table": "income", "field": "revenue", "report_period": "2026-06-30"},
+        "base": {"evidence_id": "e1", "table": "income", "field": "revenue", "report_period": "2025-06-30"},
+        "predicate": {"operator": "ge", "threshold": "0.1", "unit": "ratio"}
+      }
+    },
+    {
+      "case_id": "future-omitted",
+      "target_claim_id": "i1",
+      "proposition": "未提出的费用核查",
+      "severity": "material",
+      "verifiability": "future_observation",
+      "check": null
+    }
+  ]
+}

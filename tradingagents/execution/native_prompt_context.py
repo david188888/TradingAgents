@@ -3,6 +3,20 @@
 from copy import deepcopy
 
 
+def legacy_check_schema(schema):
+    """Retain the released check enum for prompts without the new policy."""
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key == "enum" and isinstance(value, list) and "financial_baseline" in value:
+                schema[key] = [item for item in value if item not in {"financial_baseline", "cashflow_comparison"}]
+            else:
+                legacy_check_schema(value)
+    elif isinstance(schema, list):
+        for value in schema:
+            legacy_check_schema(value)
+    return schema
+
+
 def compact_synthesis_context(context, *, delivery=False):
     value = deepcopy(context)
     record = value["record"]
@@ -19,7 +33,7 @@ def compact_synthesis_context(context, *, delivery=False):
     return value
 
 
-def reference_schema(schema, stage, context, *, delivery=False):
+def reference_schema(schema, stage, context, *, delivery=False, complete_sections=False):
     """Enumerate only supplied choices; never add a fact or change validation."""
     value = deepcopy(schema)
 
@@ -58,4 +72,14 @@ def reference_schema(schema, stage, context, *, delivery=False):
             choices(dimension["properties"]["claim_ids"], ids)
             dimensions.append(dimension)
         value["properties"]["dimensions"]["items"] = {"oneOf": dimensions}
+        if complete_sections:
+            value["properties"]["dimensions"].update(minItems=len(dimensions), maxItems=len(dimensions))
+            challenges = sorted(c.challenge_id for c in record.challenges)
+            for field, definition in (("adjudications", "ChallengeAdjudicationV1"),
+                                      ("challenge_assessments", "ChallengeAssessmentV1")):
+                if field not in value.get("required", []):
+                    value.setdefault("required", []).append(field)
+                value["properties"][field].update(minItems=len(challenges), maxItems=len(challenges))
+                if challenges:
+                    definitions[definition]["properties"]["challenge_id"]["enum"] = challenges
     return value

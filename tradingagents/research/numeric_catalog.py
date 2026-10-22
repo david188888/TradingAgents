@@ -19,6 +19,8 @@ from tradingagents.agents.schemas._numeric_narrative import (
     NumericMetadataV1,
 )
 from tradingagents.agents.schemas._verification_plan import (
+    DETAIL_FIELDS,
+    DETAIL_LABELS,
     FINANCIAL_FIELDS,
     FinancialOperandV1,
     canonical_sha256,
@@ -30,6 +32,7 @@ from tradingagents.research.minimum_evidence import (
     qualify_payload,
 )
 from tradingagents.research.source_families import (
+    FINANCIAL_DETAIL_SOURCES,
     FINANCIAL_SOURCES,
     OPERATING_SOURCES,
     PRICE_SOURCES,
@@ -95,7 +98,12 @@ class _Builder:
             metadata=None, basis="actual_reported", subject=None, limitations=()):
         if value is None or not facts or not sources:
             return None
-        number = _number(value)
+        # V3 host arithmetic can retain 80 significant digits (e.g. 1/3).
+        # The public anchor permits 100 characters; raw supplier values keep
+        # the existing 64-character parser and all finite/magnitude guards.
+        extended = (lineage.get("calculation_version") == "minimum-evidence-v3"
+                    and definition.startswith(("check.financial_baseline.", "check.cashflow_comparison.")))
+        number = _number(value, max_characters=100 if extended else 64)
         identity = {"version": CATALOG_VERSION, "snapshot": self.snapshot,
                     "definition": definition, "subject": subject or self.record.ticker,
                     "basis": basis, "lineage": lineage}
@@ -136,12 +144,12 @@ def _qualified_payload(record, source):
     return payload
 
 
-def _financial(builder, source, payload):
-    for table, fields in FINANCIAL_FIELDS.items():
+def _financial(builder, source, payload, *, fields=None, labels=None):
+    for table, table_fields in (fields or FINANCIAL_FIELDS).items():
         for row in payload.get(table, []):
             raw_period = row.get("end_date", "")
             period = raw_period if "-" in raw_period else raw_period[:4] + "-" + raw_period[4:6] + "-" + raw_period[6:]
-            for field in sorted(fields & row.keys()):
+            for field in sorted(table_fields & row.keys()):
                 facts = builder.matching(source.evidence_id, f"{table}[end_date={period}].{field}")
                 if not facts:
                     continue
@@ -150,7 +158,7 @@ def _financial(builder, source, payload):
                         evidence_id=source.evidence_id, table=table, field=field, report_period=period))
                 except _Unavailable:
                     continue
-                builder.add(definition=f"financial.{table}.{field}", label=FINANCIAL_LABELS[field],
+                builder.add(definition=f"financial.{table}.{field}", label=(labels or FINANCIAL_LABELS)[field],
                     value=value, unit="CNY", facts=facts, sources=[source.evidence_id],
                     metadata={"report_period": period, "source_basis": "合并报表，期间长度未另行认定"},
                     lineage=_source_lineage(source, table=table, field=field, report_period=period),
@@ -318,6 +326,22 @@ def _local_checks(builder):
                 if row.get("frequency") not in {"FY", "H1"}:
                     continue
                 meta.update(report_period=row["period"], prior_period=row["prior_period"], frequency=row["frequency"])
+            elif check.check_id in {"financial_baseline", "cashflow_comparison"}:
+                from tradingagents.research.structured_financial_checks import (
+                    observation_operands,
+                    target_period,
+                )
+                period = target_period(builder.record)
+                if period is None:
+                    raise ValueError("structured financial check period unavailable")
+                dependencies = [builder.matching(sid, f"{table}[end_date={day}].{field}")
+                    for sid in sources for table, field, day in observation_operands(observation.key, period)]
+                if not all(dependencies):
+                    continue
+                facts = tuple(sorted({fid for group in dependencies for fid in group}))
+                meta.update(report_period=period.isoformat(), prior_period=period.replace(year=period.year-1).isoformat(),
+                    frequency={3: "Q1", 6: "H1", 9: "Q3", 12: "FY"}[period.month],
+                    source_basis="合并累计结构化报表比较，非完整现金流桥")
             elif observation.key.startswith("forecast_eps"):
                 forecast_rows = [json.loads(s.content.text) for s in builder.record.evidence if s.evidence_id in sources and s.source_name in FORECAST_SOURCES]
                 years = {row["forecast_year"] for row in forecast_rows}
@@ -333,7 +357,7 @@ def _local_checks(builder):
                 meta["source_basis"] = "选取行业候选样本，不代表全行业或业务可比"
             builder.add(definition="check." + check.check_id + "." + observation.key, label=observation.label,
                 value=observation.value, unit=observation.unit, facts=facts, sources=sources,
-                basis="accounting_check" if check.check_id == "cash_conversion" else "institution_forecast" if observation.key.startswith("forecast_eps") else "computed_statistic",
+                basis="accounting_check" if check.check_id in {"cash_conversion", "financial_baseline", "cashflow_comparison"} else "institution_forecast" if observation.key.startswith("forecast_eps") else "computed_statistic",
                 metadata=meta, lineage={"kind": "calculation", "calculation_version": checks.calculation_version,
                     "input_sha256": checks.input_sha256, "source_selector": {"check_id": check.check_id, "observation_key": observation.key}},
                 limitations=(*check.limitations, *check.missing))
@@ -393,6 +417,8 @@ def build_numeric_catalog(record, *, source_only=False):
                 builder.meta("source_title", "来源标题：" + payload["title"], facts, [source.evidence_id])
             if source.source_name in FINANCIAL_SOURCES:
                 _financial(builder, source, payload)
+            elif source.source_name in FINANCIAL_DETAIL_SOURCES:
+                _financial(builder, source, payload, fields=DETAIL_FIELDS, labels=DETAIL_LABELS)
             elif source.source_name == NUMERIC_SOURCE:
                 _official(builder, source, payload)
             elif source.source_name in OPERATING_SOURCES:

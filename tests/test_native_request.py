@@ -49,3 +49,22 @@ def test_classic_request_preserves_original_context_compatibility():
     context = holding("x" * 4001, "2026-07-19")
     request = AnalysisRequest("600519.SS", "2026-07-18", mode="holding_review", holding_context=context)
     assert request.holding_context is context
+
+
+@pytest.mark.parametrize("config", [
+    {"evidence_timeout_seconds": "invalid"},
+    {"evidence_timeout_seconds": None},
+    {"evidence_timeout_seconds": 0},
+    {"evidence_timeout_seconds": float("inf")},
+    {"deepseek_task_efforts": []},
+    {"deepseek_task_efforts": {"not-a-task": "high"}},
+])
+def test_native_execution_configuration_is_typed_before_any_dispatch(config):
+    from tradingagents.execution.config_identity import SemanticConfigError
+    from tradingagents.execution.native_runner import NativeRunner
+
+    request = AnalysisRequest("600519.SS", "2026-07-18",
+                              research_profile="evidence_v1", effective_config=config)
+    # No observer/source/model can be accessed before these settings qualify.
+    with pytest.raises(SemanticConfigError):
+        NativeRunner(None).run(request)

@@ -371,7 +371,11 @@ def _build_v4_native_markdown(record: Any) -> str:
         f"研究截点：{record.analysis_date.isoformat()}。研究问题：{text(assessment.research_question)}", "",
         f"**{text(assessment.judgement)}**", "",
         f"证据完整性：{assessment.completeness}；研究质量：{assessment.quality}。运行完成不表示证据充分。", ""]
+    missing_sections = set()
     if assessment.schema_version == "research-assessment-v3":
+        from tradingagents.research.synthesis_sections import unfinished_sections
+        if assessment.synthesis_sections is not None:
+            missing_sections = unfinished_sections(assessment.synthesis_sections)
         stances = {"favorable": "偏有吸引力", "neutral": "中性", "unfavorable": "偏缺乏吸引力", "insufficient_evidence": "证据不足"}
         dispositions = {"maintained": "维持", "revised": "修正", "withdrawn": "撤回", "unanswerable": "无法回答"}
         report_status = assessment.report_status
@@ -379,6 +383,16 @@ def _build_v4_native_markdown(record: Any) -> str:
             statuses = {"synthesized": "公司报告已交付，综合判断已形成", "analysis_unrated": "公司报告已交付，暂未形成总体评级",
                         "specialist_summary": "基础报告与专项汇总已交付；综合阶段未完成", "basic_report": "基础报告已交付；综合阶段未完成"}
             lines.extend(["报告交付状态：" + statuses[report_status] + "。", ""])
+        if missing_sections:
+            lines.extend(["**综合未完成；已保留通过校验的分段。未完成项不等同于财务证据不足。**", ""])
+            for section in assessment.synthesis_sections.sections:
+                if section.status != "unavailable":
+                    continue
+                sid = section.section_id
+                label = (dimensions[sid.split(":", 1)[1]] if sid.startswith("dimension:") else
+                         "挑战裁决" if sid.startswith("adjudication:") else "总体判断" if sid == "overall" else "改变判断的条件")
+                lines.append("- " + label + " · 未完成")
+            lines.append("")
         if record.company_basics is not None:
             from tradingagents.research.company_basics import basic_claim_text
             basics = record.company_basics
@@ -400,6 +414,8 @@ def _build_v4_native_markdown(record: Any) -> str:
                 lines.append("本次未形成合格的此类理由。")
             lines.append("")
         lines.extend(["### 哪些条件会改变判断", ""])
+        if "conditions" in missing_sections:
+            lines.extend(["综合条件分段未完成；以下保留专项原失效条件供核对。", ""])
         lines.extend("- " + text(c.text) + "（原假设：" + text(c.hypothesis_id) + "）" for c in assessment.change_conditions)
         lines.extend(["", "## 一轮质疑与专项回应", ""])
         hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
@@ -411,7 +427,8 @@ def _build_v4_native_markdown(record: Any) -> str:
                 "质疑：" + text(challenge.statement), "",
                 "专项回应：" + dispositions[reply.disposition] + ("（回应缺席）" if reply.status == "unavailable" else "") + "；" + text(reply.rationale), "",
                 "回应依据：" + "、".join(text(c) for c in reply.supporting_fact_ids), "",
-                (("代码保留的回应状态：" + dispositions[adjudication.disposition] + "；") if report_status in {"specialist_summary", "basic_report"}
+                ("综合裁决 · 未完成：" if "adjudication:" + reply.challenge_id in missing_sections else
+                 ("代码保留的回应状态：" + dispositions[adjudication.disposition] + "；") if report_status in {"specialist_summary", "basic_report"}
                  else "综合意见：" if report_status else "综合裁决：" + dispositions[adjudication.disposition] + "；") + text(adjudication.rationale), "",
                 "专项回应与综合意见不等于实际核查，也不自动关闭经济挑战。", ""])
         if not record.dialogue.responses:
@@ -459,7 +476,8 @@ def _build_v4_native_markdown(record: Any) -> str:
     lines.extend(["", "## 下一步核查", "", text(assessment.next_check), ""])
     lines.extend(["", "## 判断维度", ""])
     for dimension in assessment.dimensions:
-        lines.append(f"- **{dimensions[dimension.dimension]} · {dimension.status}**：{text(dimension.judgement)}")
+        label = "未完成" if "dimension:" + dimension.dimension in missing_sections else dimension.status
+        lines.append(f"- **{dimensions[dimension.dimension]} · {label}**：{text(dimension.judgement)}")
         if dimension.claim_ids:
             lines.append("  依据：" + "、".join(text(key) for key in dimension.claim_ids))
         if dimension.limitations:
@@ -467,10 +485,15 @@ def _build_v4_native_markdown(record: Any) -> str:
     lines.extend(["", "## 未解决挑战与实际核查", ""])
     for challenge in record.challenges:
         lines.append(f"- **{challenge.severity} / {challenge.risk_type}**：{text(challenge.statement)}（{text(challenge.challenge_id)}）；待核查：{text(challenge.proposed_test)}")
+        from tradingagents.research.challenge_labels import challenge_check_lines
+        lines.extend(challenge_check_lines(record, challenge, text))
     if not record.challenges:
         lines.append("未提出挑战。")
     for verification in record.verifications:
-        lines.append(f"- 实际核查 {text(verification.verification_id)}：{verification.status}；{text(verification.result)}")
+        status = ("命题满足" if verification.predicate_met else "命题不满足") if verification.scope == "challenge_predicate_only" and verification.predicate_met is not None else verification.status
+        lines.append(f"- 实际核查 {text(verification.verification_id)}：{status}；{text(verification.result)}")
+        if verification.scope == "challenge_predicate_only":
+            lines.append(f"  仅检验独立命题「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
         if verification.scope == "predicate_only":
             lines.append(f"  仅检验条件「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
     if not record.verifications:
@@ -500,6 +523,21 @@ def _build_v4_native_markdown(record: Any) -> str:
     limitations = tuple(dict.fromkeys((*record.limitations, *assessment.limitations)))
     if limitations:
         lines.extend(["## 全局覆盖与专项待查", "", *("- " + text(limitation_label(item)) for item in limitations), ""])
+    from tradingagents.research.factual_premises import public_premises
+    premises = public_premises(record)
+    if premises:
+        lines.extend(["## 观察、解释与待验证前提", "",
+                      "以下观察可核对来源与计算；解释的含义和因果尚未证实。", ""])
+        for item in premises:
+            lines.extend(["### " + text(item["text"]), ""])
+            for observation in item["observations"]:
+                lines.extend(["- 已有观察：" + text(observation["text"]),
+                    "  来源：" + "、".join(text(e) for e in observation["evidence_ids"])])
+                lines.extend("  限制：" + text(limit) for limit in observation["limitations"])
+            if not item["observations"]:
+                lines.append("待研究问题，尚未绑定可用观察。")
+            lines.extend("- 待验证前提（不作为已发生事实）：" + text(q) for q in item["pending_questions"])
+            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -519,6 +557,8 @@ def build_markdown_from_native_record(record: Any, *, workflow_version=None, foc
         return content
     content = content.replace("。研究问题：", "。研究范围：", 1)
     summary = getattr(record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}
+    sections = getattr(record.assessment, "synthesis_sections", None)
+    summary = summary or bool(sections and any(s.status == "unavailable" for s in sections.sections))
     heading = "报告交付与待完成分析" if summary else "综合判断"
     content = content.replace(f"**{_markdown_text(record.assessment.judgement)}**", "## " + heading + "\n\n" + f"**{_markdown_text(record.assessment.judgement)}**", 1)
     if focus_response is None and focus_reason is None:
@@ -640,10 +680,15 @@ def _build_legacy_native_markdown(record: Any) -> str:
     lines.extend(["", "## 未解决挑战与实际核查", ""])
     for challenge in record.challenges:
         lines.append(f"- **{challenge.severity} / {challenge.risk_type}**：{text(challenge.statement)}（{text(challenge.challenge_id)}）；待核查：{text(challenge.proposed_test)}")
+        from tradingagents.research.challenge_labels import challenge_check_lines
+        lines.extend(challenge_check_lines(record, challenge, text))
     if not record.challenges:
         lines.append("未提出挑战。")
     for verification in record.verifications:
-        lines.append(f"- 实际核查 {text(verification.verification_id)}：{verification.status}；{text(verification.result)}")
+        status = ("命题满足" if verification.predicate_met else "命题不满足") if verification.scope == "challenge_predicate_only" and verification.predicate_met is not None else verification.status
+        lines.append(f"- 实际核查 {text(verification.verification_id)}：{status}；{text(verification.result)}")
+        if verification.scope == "challenge_predicate_only":
+            lines.append(f"  仅检验独立命题「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
         if verification.scope == "predicate_only":
             lines.append(f"  仅检验条件「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
     if not record.verifications:

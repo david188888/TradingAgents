@@ -1,4 +1,4 @@
-"""Frozen operands and closed local questions for evidence-production-v5."""
+"""Frozen operands and versioned finite evidence questions for native research."""
 
 import re
 from datetime import date, datetime
@@ -7,11 +7,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-CheckId = Literal["operating_disclosures", "cash_conversion", "valuation_context"]
+CheckId = Literal["operating_disclosures", "cash_conversion", "valuation_context", "financial_baseline", "cashflow_comparison"]
 QuestionScope = Literal[
     "operating_disclosures.current_period_coverage",
     "cash_conversion.reported_bridge",
     "valuation_context.supplementary_positioning",
+    "financial_baseline.structured_coverage",
+    "cashflow_comparison.same_period_endpoints",
 ]
 ObservedRisk = Literal["cash_conversion.cfo_yoy_decline"]
 
@@ -160,14 +162,23 @@ class EvidenceChecksV1(_Frozen):
     # persisted record is replayed against the rule that produced it, so
     # v1 records stay readable instead of loading as corrupt after a policy
     # change; new records are written under the current literal.
-    calculation_version: Literal["minimum-evidence-v1", "minimum-evidence-v2"] = "minimum-evidence-v2"
+    calculation_version: Literal["minimum-evidence-v1", "minimum-evidence-v2", "minimum-evidence-v3"] = "minimum-evidence-v2"
     run_id: str
     ticker: str
     analysis_date: date
     input_snapshot_id: str
     input_evidence_ids: tuple[str, ...]
     input_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    checks: tuple[LocalEvidenceCheckV1, ...] = Field(min_length=3, max_length=3)
+    checks: tuple[LocalEvidenceCheckV1, ...] = Field(min_length=3, max_length=5)
+
+    @model_validator(mode="after")
+    def versioned_checks(self):
+        expected = ["operating_disclosures", "cash_conversion", "valuation_context"]
+        if self.calculation_version == "minimum-evidence-v3":
+            expected += ["financial_baseline", "cashflow_comparison"]
+        if [check.check_id for check in self.checks] != expected:
+            raise ValueError("evidence check version requires exact ordered checks")
+        return self
 
 
 class ChallengeCheckBindingV1(_Frozen):

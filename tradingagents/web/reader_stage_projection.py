@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV2,
+    ChallengesProposalV3,
     SpecialistProposalV1,
     SynthesisProposalV3,
     saved_specialist_acceptance,
@@ -22,7 +23,11 @@ from tradingagents.agents.schemas._research_dialogue import (
     response_fact_ids,
 )
 from tradingagents.agents.schemas._research_record import ResearchRecordV1
-from tradingagents.agents.schemas._verification_plan import VerificationPlanV1, canonical_sha256
+from tradingagents.agents.schemas._verification_plan import (
+    VerificationPlanV1,
+    canonical_sha256,
+    parse_verification_plan,
+)
 from tradingagents.research.native_versions import (
     COMPANY_RESEARCH_POLICY,
     NUMERIC_NARRATIVE_POLICY,
@@ -70,7 +75,10 @@ def stage_seed(ctx):
     validate_record_numeric(seed, identity)
     expected = {"workflow_version": UNIFIED_KERNEL_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": UNIFIED_QUESTION}
-    for key, policy in (("company_research_policy", COMPANY_RESEARCH_POLICY),
+    from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
+    from tradingagents.agents.schemas._factual_premise import FACTUAL_PREMISE_POLICY
+    for key, policy in (("factual_premise_policy", FACTUAL_PREMISE_POLICY),
+                        ("company_research_policy", COMPANY_RESEARCH_POLICY),
                         ("report_delivery_policy", REPORT_DELIVERY_POLICY),
                         ("specialist_reference_policy", SPECIALIST_REFERENCE_POLICY),
                         ("numeric_narrative_policy", NUMERIC_NARRATIVE_POLICY)):
@@ -78,6 +86,10 @@ def stage_seed(ctx):
             if identity[key] != policy:
                 raise ValueError("stage_policy")
             expected[key] = policy
+    if identity.get("challenge_check_policy") is not None:
+        if identity["challenge_check_policy"] != CHALLENGE_CHECK_POLICY:
+            raise ValueError("stage_policy")
+        expected["challenge_check_policy"] = CHALLENGE_CHECK_POLICY
     if "native_input" in cp and cp["native_input"] != expected:
         raise ValueError("stage_input_identity")
     return seed
@@ -107,7 +119,10 @@ class StageReader:
             )
             # Rebuild from qualified material, never trust the receipt's context
             # to validate itself. This also binds catalogs, aliases and dates.
-            expected = numeric_validation_context(prepare_numeric_context(role, context, record))
+            sectioned = role == "synthesis" and self.cp.get("native.reference_schema.synthesis") == 3
+            if sectioned:
+                context = {**context, "question": UNIFIED_QUESTION}
+            expected = numeric_validation_context(prepare_numeric_context(role, context, record, identity=self.cp["identity"]), sectioned=sectioned)
             receipt = self.cp["results"].get("native.numeric.accepted." + role, {})
             if receipt.get("context") != expected:
                 raise ValueError("stage_numeric_context")
@@ -187,11 +202,25 @@ class StageReader:
         payload["claims"].sort(key=lambda c: c["claim_id"])
         payload["hypotheses"].sort(key=lambda h: h["hypothesis_id"])
         context = {"record": payload, "local_checks": self.seed.evidence_checks.model_dump(mode="json")}
-        proposal = self.proposal("challenge", ChallengesProposalV2, record, context)
+        directed = self.cp["identity"].get("challenge_check_policy")
+        if directed:
+            context["challenge_check_policy"] = directed
+        schema = ChallengesProposalV3 if directed else ChallengesProposalV2
+        proposal = self.proposal("challenge", schema, record, context)
         challenges, bindings = [], []
         hs = {h.hypothesis_id: h for h in record.hypotheses}
         if proposal:
-            for index, item in enumerate(proposal.challenges):
+            from tradingagents.agents.schemas._native_stage import saved_challenge_acceptance
+            accepted = saved_challenge_acceptance(self.cp, proposal) if directed else None
+            if accepted:
+                limits.extend(f"native_challenge_rejected:{r.code}:{r.index}" for r in accepted.rejections)
+                if accepted.rejections and not proposal.challenges:
+                    limits.append("native_stage_unavailable:challenge")
+            indices = accepted.indices if accepted else range(len(proposal.challenges))
+            for index, item in zip(indices, proposal.challenges, strict=True):
+                if directed:
+                    from tradingagents.research.challenge_checks import validate_challenge
+                    validate_challenge(record, item, conditions)
                 target = hs[item.hypothesis_id]
                 if item.condition_id and conditions.get(item.condition_id, {}).get("hypothesis_id") != item.hypothesis_id:
                     raise ValueError("stage_challenge_condition")
@@ -200,12 +229,16 @@ class StageReader:
                 challenges.append({"challenge_id": cid, "target_claim_ids": [target.claim_id],
                     "statement": item.statement, "severity": item.severity,
                     "risk_type": item.risk_type, "proposed_test": item.proposed_test})
+                if directed:
+                    from tradingagents.research.challenge_checks import challenge_test
+                    challenges[-1]["test"] = challenge_test(item).model_dump(mode="json")
                 bindings.append({"challenge_id": cid, "check_id": item.check_id,
                                  "observed_risk": item.observed_risk, "observation_date": item.observation_date})
         else:
             limits.append("native_stage_unavailable:challenge")
         record = updated(record, challenges=challenges, challenge_bindings=bindings,
-                         limitations=list(dict.fromkeys(limits)))
+                         limitations=list(dict.fromkeys(limits)),
+                         **({"challenge_check_policy": directed} if directed else {}))
         if "native_origins" in self.cp and self.cp["native_origins"] != origins:
             raise ValueError("stage_origin_binding")
         return record, proposal, origins
@@ -223,14 +256,15 @@ class StageReader:
         original = ResearchRecordV1.model_validate(frontier["record"])
         if original != record:
             raise ValueError("stage_verification_input")
-        plan = VerificationPlanV1.model_validate_json(json.dumps(frontier["plan"], allow_nan=False))
+        plan = parse_verification_plan(frontier["plan"])
         _validate_bindings(original, plan)
         critique = self.cp["results"].get("native.challenge")
-        proposed = ChallengesProposalV2.model_validate(critique["proposal"]) if critique else ChallengesProposalV2()
+        schema = ChallengesProposalV3 if original.challenge_check_policy else ChallengesProposalV2
+        proposed = schema.model_validate(critique["proposal"]) if critique else schema()
         tasks = []
         for challenge, item in zip(original.challenges, proposed.challenges, strict=True):
             bound = self.cp.get("native_conditions", {}).get(item.condition_id) if item.condition_id else None
-            if bound and bound["check"] is not None:
+            if not original.challenge_check_policy and bound and bound["check"] is not None:
                 tasks.append({"task_id": "t." + challenge.challenge_id[2:], "challenge_id": challenge.challenge_id,
                     "hypothesis_id": item.hypothesis_id, "condition_role": bound["condition_role"],
                     "condition_text": bound["text"], "check": bound["check"]})
@@ -238,6 +272,9 @@ class StageReader:
             "run_id": original.run_id, "ticker": original.ticker, "mode": original.mode,
             "analysis_date": original.analysis_date.isoformat(), "input_snapshot_id": original.snapshots[0].snapshot_id,
             "tasks": tasks}, allow_nan=False))
+        if original.challenge_check_policy:
+            from tradingagents.research.challenge_checks import make_challenge_plan
+            expected_plan = make_challenge_plan(original)
         if plan != expected_plan:
             raise ValueError("stage_verification_plan")
         if (frontier["plan_sha256"] != canonical_sha256(plan)
@@ -269,6 +306,11 @@ class StageReader:
             "assigned": assignments, "allowed_facts_by_challenge": {
                 cid: sorted(response_fact_ids(record, role, cid)) for cid in assignments},
             "local_checks": [b.model_dump(mode="json") for b in record.challenge_bindings if b.challenge_id in assignments]}
+        if record.challenge_check_policy is not None:
+            context["challenge_check_policy"] = record.challenge_check_policy
+            context["verifications"] = [v.model_dump(mode="json") for v in record.verifications if v.challenge_id in assignments]
+            context["challenge_outcomes"] = [o.model_dump(mode="json") for o in record.challenge_outcomes or ()
+                                               if o.challenge_id in assignments]
         proposal = self.proposal(stage, ResponsesProposalV1, record, context)
         if proposal is not None:
             validate_response_proposal(record, role, proposal, assignments)
@@ -291,6 +333,8 @@ class StageReader:
         record, challenge, origins = self.prerequisites()
         inputs = tuple(c.claim_id for c in record.claims if c.kind == "fact")
         if role == "challenge":
+            if "native_stage_unavailable:challenge" in record.limitations:
+                raise ValueError("stage_all_challenges_rejected")
             return (record, challenge, (), tuple(c.challenge_id for c in record.challenges), inputs) if challenge else None
         if self.cp["results"].get("verification.output") is None:
             if self.cp["results"].get("native." + role) is not None:
@@ -329,7 +373,8 @@ class StageReader:
                 raise ValueError("stage_synthesis_dimension")
         from tradingagents.research.minimum_evidence import challenge_assessments
         from tradingagents.research.unified_synthesis import investment_fields
-        dimensions = gate_dimensions(record, proposal.dimensions, scoped=True, valuation=True)
+        dimensions = gate_dimensions(record, proposal.dimensions, scoped=True, valuation=True,
+                                    sections=getattr(proposal, "synthesis_sections", None))
         fields = investment_fields(record, proposal, dimensions)
         fields.pop("force_insufficient", None)
         # Validate the complete reference graph without publishing or returning

@@ -4,6 +4,7 @@ import json
 
 from pydantic import ValidationError
 
+from tradingagents.agents.schemas._native_stage import SynthesisReferenceError
 from tradingagents.execution.budget import BudgetExhausted
 
 _BINDINGS = {
@@ -67,7 +68,11 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, response=
         code = diagnostic.upstream_code
     if isinstance(code, str) and code in _UPSTREAM_CODES:
         value["upstream_code"] = code
-    if isinstance(exc, json.JSONDecodeError):
+    if isinstance(exc, SynthesisReferenceError):
+        value.update(category="reference_validation", detail_code=exc.code,
+                     synthesis_reference_issues=[{"code": code, "path": list(path)}
+                                                 for code, path in exc.issues[:8]])
+    elif isinstance(exc, json.JSONDecodeError):
         value.update(category="invalid_json", json_error_offset=exc.pos)
     elif isinstance(exc, BudgetExhausted):
         value.update(category="budget_refused", budget_bucket=exc.hit.bucket.value,
@@ -75,7 +80,12 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, response=
     elif getattr(exc, "code", None) in {
         "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
         "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
+        "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
+        "premise_observation_scope", "premise_support_missing",
         "numeric_manifest_binding", "numeric_catalog_limit",
+        "challenge_schema_invalid", "challenge_fact_reference", "challenge_check_scope",
+        "challenge_future_date", "challenge_check_unavailable", "challenge_requirement_invalid",
+        "challenge_target_reference", "challenge_condition_reference",
     }:
         value.update(category="reference_validation", detail_code=exc.code)
     elif isinstance(exc, TimeoutError) or type(exc).__name__ in {"APITimeoutError", "ReadTimeout", "ConnectTimeout"}:

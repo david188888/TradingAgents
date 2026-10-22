@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
+from tradingagents.agents.schemas._verification_plan import VERIFIABLE_FIELDS
 from tradingagents.dataflows.catalyst_events import CatalystEventV1, classify_earnings_title
 from tradingagents.dataflows.catalyst_sources import CatalystSources
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
@@ -16,9 +17,13 @@ from tradingagents.dataflows.native_qualification import (
     CALENDAR_INDEX_SYMBOL,
     NativeSourceUnavailable,
     api_date,
+    calendar_disputes,
+    calendar_gaps,
+    index_session_dates,
     prepare_public_prices,
     qualify_identity,
     qualify_session_calendar,
+    settle_calendar_disputes,
     sina_factors,
     sina_identity,
     sina_statement,
@@ -31,6 +36,7 @@ from tradingagents.dataflows.tushare_price_history import (
     prepare_tushare_price_history,
     settled_sessions,
 )
+from tradingagents.execution.config_identity import SemanticConfigError
 from tradingagents.research.evidence_freeze import (
     CAP_EVENT_COVERAGE,
     CAP_FUNDAMENTALS,
@@ -42,6 +48,7 @@ from tradingagents.research.evidence_freeze import (
     FrozenCapability,
     PriceObservation,
 )
+from tradingagents.research.native_versions import FINANCIAL_DETAIL_POLICY
 from tradingagents.research.price_statistics import build_price_statistics
 from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
 
@@ -49,13 +56,13 @@ SOURCE_ROUTING_VERSION = "native-public-sources-v1"
 DEFAULT_CHAINS = {
     "identity": ("eastmoney", "sina", "tushare"),
     "financial": ("sina", "tushare"),
-    # The exchange session calendar walks the index daily series first.  Its
-    # keyless HTTP endpoint carries no daily quota, while the official SZSE
-    # month API only answers for .SZ and the tushare trade_cal endpoint is
-    # capped per day.  Keeping tencent in front stops a quota-exhausted vendor
-    # from removing the calendar -- and with it price, valuation and peer
-    # context -- for every later run that day.
-    "calendar": ("tencent", "szse", "tushare"),
+    # The official SZSE month calendar is authoritative for every A-share
+    # exchange (the three exchanges share one closure schedule) and carries no
+    # quota.  The index bar dates are kept as an independent witness: they
+    # cross-check settled official days, and lead only when SZSE is unreachable,
+    # with TDX package existence confirming each weekday without a bar.  The
+    # capped tushare trade_cal is the last resort, never a dispute tiebreaker.
+    "calendar": ("szse", "tencent", "tushare"),
     "price": ("tencent", "tushare"),
     "events": ("cninfo",),
 }
@@ -65,10 +72,12 @@ TENCENT_CALENDAR_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 # The index walk only needs to reach `start`, at most 500 calendar days back.
 # The endpoint caps a single response, so ask for a floor above that span.
 TENCENT_CALENDAR_REQUEST_ROWS = 1000
+# Published only for trading days (404 otherwise); existence is checked with
+# HEAD, so the ~2.7MB package itself is never downloaded.
+TDX_PACKAGE_URL = "https://www.tdx.com.cn/products/data/data/g4day/{ymd}.zip"
 STATEMENT_FIELDS = {
-    "income": "ts_code,ann_date,f_ann_date,end_date,report_type,revenue,n_income,n_income_attr_p",
-    "balancesheet": "ts_code,ann_date,f_ann_date,end_date,report_type,total_assets,total_liab",
-    "cashflow": "ts_code,ann_date,f_ann_date,end_date,report_type,n_cashflow_act",
+    table: "ts_code,ann_date,f_ann_date,end_date,report_type," + ",".join(sorted(fields))
+    for table, fields in VERIFIABLE_FIELDS.items()
 }
 
 
@@ -78,13 +87,13 @@ def source_chains(config):
     allowed = {vendor for chain in DEFAULT_CHAINS.values() for vendor in chain}
     if (not isinstance(overrides, dict) or set(overrides)-DEFAULT_CHAINS.keys()
         or not isinstance(excluded, list) or any(not isinstance(v, str) or v not in allowed for v in excluded)):
-        raise ValueError("invalid_native_source_configuration")
+        raise SemanticConfigError("invalid_native_source_configuration")
     output = {}
     for key, defaults in DEFAULT_CHAINS.items():
         chain = overrides.get(key, list(defaults))
         if (not isinstance(chain, list) or any(not isinstance(v, str) or v not in defaults for v in chain)
             or len(set(chain)) != len(chain)):
-            raise ValueError("invalid_native_source_configuration")
+            raise SemanticConfigError("invalid_native_source_configuration")
         output[key] = tuple(v for v in chain if v not in excluded)
     return output
 
@@ -93,6 +102,8 @@ class NativeSources(CatalystSources):
     def __init__(self, request, run_id, session, fetch):
         super().__init__(request, run_id, session, fetch)
         self.chains = source_chains(request.effective_config)
+        self.excluded_vendors = frozenset(request.effective_config.get("evidence_source_exclusions", []))
+        self.calendar_gaps, self.calendar_detail = [], {}
         self.attempts = {}
         self.tushare_limited = False
 
@@ -246,26 +257,80 @@ class NativeSources(CatalystSources):
                     break
             if table not in selected:
                 gaps.append(table+"_unavailable")
+        detail = getattr(self.request, "financial_detail_policy", None) == FINANCIAL_DETAIL_POLICY
         for vendor, bundle in bundles.items():
             self.evidence(inputs, CAP_FUNDAMENTALS, vendor+".financial_statements", bundle)
-        self._cap(inputs, CAP_FUNDAMENTALS, tuple(v+".financial_statements" for v in bundles),
+        if detail:
+            # One additional record per statement table keeps every evidence
+            # text under the 4,000-character SourceContentV1 limit. The baseline
+            # records above are unchanged, so frozen checks and valuation read
+            # exactly the same six fields they always did.
+            for vendor, bundle in bundles.items():
+                for table in STATEMENT_FIELDS:
+                    if table in bundle:
+                        self.evidence(inputs, CAP_FUNDAMENTALS, vendor+".financial_detail", {table: bundle[table]})
+        sources = tuple(v+".financial_statements" for v in bundles)
+        if detail:
+            sources += tuple(v+".financial_detail" for v in bundles)
+        self._cap(inputs, CAP_FUNDAMENTALS, sources,
                   partial=bool(gaps), gaps=gaps, detail={"selected_tables": selected})
 
+    def _index_sessions(self):
+        payload = self._get(TENCENT_CALENDAR_URL, params={
+            "param": f"{CALENDAR_INDEX_SYMBOL},day,,,{TENCENT_CALENDAR_REQUEST_ROWS},",
+        }, referer="https://gu.qq.com/")
+        return index_session_dates(payload, index_symbol=CALENDAR_INDEX_SYMBOL)
+
+    def _tdx_packages(self, days, control):
+        """Whether TDX published a settled daily package for each day.
+
+        TDX also answers 404 for days beyond its retention, so a 404 counts as a
+        closure only when ``control`` -- a known session before every probed day
+        -- still has its package.  Otherwise every day stays unwitnessed (None).
+        """
+        def published(day):
+            response = self.session.head(TDX_PACKAGE_URL.format(ymd=day.replace("-", "")),
+                headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+            return {200: True, 404: False}.get(response.status_code)
+        if control is None or published(control) is not True:
+            return dict.fromkeys(days)
+        return {day: published(day) for day in days}
+
+    @staticmethod
+    def _tdx_key(days, control):
+        return "calendar.tdx."+hashlib.sha256(",".join([control or "", *days]).encode()).hexdigest()[:16]
+
     def _calendar(self, inputs, ts_code, start):
+        """Session calendar plus the cross-check degradations it carries.
+
+        Sets ``self.calendar_gaps`` and ``self.calendar_detail`` for the price
+        capability.  A two-vendor contradiction of the official calendar stops
+        the chain: no later vendor is used to outvote the conflict.
+        """
+        self.calendar_gaps, self.calendar_detail = [], {}
+        captured = datetime.now(timezone.utc)
+        sessions_key = "calendar.tencent.sessions"
         for vendor in self.chains["calendar"]:
             def query(vendor=vendor):
                 if vendor == "tushare":
                     rows = self.tushare("trade_cal", "cal_date,is_open", exchange={"SZ": "SZSE", "SH": "SSE", "BJ": "BSE"}[ts_code.split(".")[1]],
                         start_date=start.replace("-", ""), end_date=inputs.cutoff.replace("-", ""))
                 elif vendor == "tencent":
-                    payload = self._get(TENCENT_CALENDAR_URL, params={
-                        "param": f"{CALENDAR_INDEX_SYMBOL},day,,,{TENCENT_CALENDAR_REQUEST_ROWS},",
-                    }, referer="https://gu.qq.com/")
-                    rows = qualify_session_calendar(payload, index_symbol=CALENDAR_INDEX_SYMBOL,
-                        start=start, cutoff=inputs.cutoff)
+                    sessions = self.fetch(SOURCE_ROUTING_VERSION+"."+sessions_key, self._index_sessions)
+                    gaps = calendar_gaps(sessions, start=start, cutoff=inputs.cutoff, captured_at=captured)
+                    closed = []
+                    if gaps:
+                        control = next((day for day in reversed(sessions) if day < gaps[0]), None)
+                        verdicts = self.fetch(SOURCE_ROUTING_VERSION+"."+self._tdx_key(gaps, control),
+                            lambda: self._tdx_packages(gaps, control))
+                        if any(verdicts.get(day) is True for day in gaps):
+                            raise NativeSourceUnavailable("calendar_index_session_missing")
+                        closed = [day for day in gaps if verdicts.get(day) is False]
+                    rows = qualify_session_calendar(sessions, closed, start=start,
+                        cutoff=inputs.cutoff, captured_at=captured)
                 else:
-                    if not ts_code.endswith(".SZ"):
-                        raise NativeSourceUnavailable("calendar_exchange_unsupported")
+                    # One closure schedule applies to SSE, SZSE and BSE, so the
+                    # official SZSE month calendar serves every A-share ticker.
                     begin, end = date.fromisoformat(start), date.fromisoformat(inputs.cutoff)
                     year, month = begin.year, begin.month
                     rows = []
@@ -273,12 +338,54 @@ class NativeSources(CatalystSources):
                         rows.extend(szse_month(self._get(SZSE_CALENDAR_URL, params={"month": f"{year}-{month}"}), year, month))
                         year, month = (year+1, 1) if month == 12 else (year, month+1)
                     rows = [row for row in rows if start.replace("-", "") <= row["cal_date"] <= inputs.cutoff.replace("-", "")]
-                settled_sessions(rows, start=start, cutoff=inputs.cutoff, captured_at=datetime.now(timezone.utc))
+                settled_sessions(rows, start=start, cutoff=inputs.cutoff, captured_at=captured)
                 return rows
             result = self._attempt(CAP_PRICE, vendor, "calendar."+vendor, query)
-            if result is not None:
-                return result
+            if result is None:
+                if self.attempts[CAP_PRICE][-1].get("code") == "calendar_sources_conflict":
+                    return None
+                continue
+            if vendor == "szse" and not self._cross_check_calendar(result, start, inputs.cutoff, captured, sessions_key):
+                return None
+            return result
         return None
+
+    def _cross_check_calendar(self, rows, start, cutoff, captured, sessions_key):
+        """Witness settled official days with the index bar dates (and TDX on dispute).
+
+        Returns False only when two independent vendors contradict the official
+        calendar.  An unavailable witness accepts the official calendar with a
+        recorded degradation; it never triggers a quota-limited fallback.
+        """
+        if "tencent" in self.excluded_vendors:
+            return True
+        sessions = self._attempt(CAP_PRICE, "tencent", sessions_key, self._index_sessions)
+        try:
+            disputes = None if sessions is None else calendar_disputes(
+                rows, sessions, start=start, cutoff=cutoff, captured_at=captured)
+        except NativeSourceUnavailable as exc:
+            self.attempts[CAP_PRICE].append({"vendor": "tencent", "key": sessions_key,
+                                             "status": "unavailable", "code": exc.code})
+            disputes = None
+        if disputes is None:
+            self.calendar_gaps.append("calendar_cross_check_unavailable")
+            return True
+        if not disputes:
+            return True
+        official = {api_date(row["cal_date"]): row["is_open"] == "1" for row in rows}
+        control = next((day for day in reversed(sessions) if day < disputes[0] and official.get(day)), None)
+        verdicts = self._attempt(CAP_PRICE, "tdx", self._tdx_key(disputes, control),
+                                 lambda: self._tdx_packages(disputes, control)) or {}
+        try:
+            unresolved = settle_calendar_disputes(rows, disputes, verdicts)
+        except NativeSourceUnavailable as exc:
+            self.attempts[CAP_PRICE].append({"vendor": "szse", "key": "calendar.szse.cross_check",
+                                             "status": "unavailable", "code": exc.code})
+            return False
+        self.calendar_detail = {"calendar_disputes": disputes, "calendar_disputes_unresolved": unresolved}
+        if unresolved:
+            self.calendar_gaps.append("calendar_cross_check_unresolved")
+        return True
 
     def _prices(self, inputs, ts_code, identity):
         if identity is None:
@@ -322,7 +429,9 @@ class NativeSources(CatalystSources):
                 self.evidence(inputs, CAP_PRICE, source, result)
                 inputs.prices.extend(PriceObservation(observed_on=row["Date"], close=row["Close"],
                     adjustment="qfq", source=vendor, pit_verified=True) for row in result["bars"])
-                self._cap(inputs, CAP_PRICE, (source,), detail=result["provenance"])
+                # A calendar accepted without a witness stays qualified but says so.
+                self._cap(inputs, CAP_PRICE, (source,), gaps=self.calendar_gaps,
+                          detail={**result["provenance"], **self.calendar_detail})
                 return
         self._cap(inputs, CAP_PRICE)
 

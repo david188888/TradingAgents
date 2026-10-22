@@ -499,13 +499,62 @@ def test_failure_terminalizes_run_and_cleans_worker_without_false_report(tmp_pat
 
 def test_condition_evidence_failure_is_not_classified_as_missing_configuration():
     from tradingagents.agents.schemas._native_stage import NativeEvidenceBindingError
+    from tradingagents.execution.config_identity import SemanticConfigError
     from tradingagents.execution.native_model import NativeModelReferenceInvalid
     from tradingagents.web.manager import _error_category
 
     assert _error_category(NativeEvidenceBindingError(
         "condition references evidence outside its hypothesis")) == "evidence_rejection"
-    assert _error_category(ValueError("missing provider config")) == "missing_configuration"
+    assert _error_category(SemanticConfigError("missing provider config")) == "missing_configuration"
+    assert _error_category(ValueError("missing provider config")) == "unexpected_internal_failure"
     assert _error_category(NativeModelReferenceInvalid("native model response invalid")) == "evidence_rejection"
+
+
+@pytest.mark.parametrize("failure,expected", [
+    ("config", "missing_configuration"),
+    ("source", "evidence_rejection"),
+    ("price", "evidence_rejection"),
+    ("numeric", "evidence_rejection"),
+    ("schema", "evidence_rejection"),
+    ("publication", "report_publication"),
+    ("value", "unexpected_internal_failure"),
+    ("key", "unexpected_internal_failure"),
+])
+def test_typed_failure_category_survives_terminal_snapshot_and_event(tmp_path, failure, expected):
+    from pydantic import ValidationError
+
+    from tradingagents.agents.schemas._native_stage import SpecialistProposalV1
+    from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
+    from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
+    from tradingagents.execution.config_identity import SemanticConfigError
+    from tradingagents.execution.native_publication import NativePublicationError
+    from tradingagents.research.numeric_narrative import NumericNarrativeError
+
+    try:
+        SpecialistProposalV1.model_validate({"hypotheses": "invalid"})
+    except ValidationError as exc:
+        schema_error = exc
+    errors = {
+        "config": SemanticConfigError("invalid native configuration"),
+        "source": NativeSourceUnavailable("source_response_unqualified"),
+        "price": PriceHistoryQualificationError("calendar_window_not_complete"),
+        "numeric": NumericNarrativeError("numeric_anchor_scope"),
+        "schema": schema_error,
+        "publication": NativePublicationError("native publication failed"),
+        "value": ValueError("numeric check input binding invalid"),
+        "key": KeyError("saved_field"),
+    }
+    runner = _ScriptedRunner(outcome="failure", error=errors[failure], release_immediately=True)
+    manager, store, _broker, _factory = _manager(tmp_path, runner)
+    started = manager.start(_request())
+    failed = manager.wait(started.run_id, timeout=3)
+
+    assert failed.status == "failed"
+    assert failed.error_category == expected
+    events = store.read_events(started.run_id)
+    terminal = next(event for event in events if event.type == "run.failed")
+    assert terminal.payload["error_category"] == expected
+    assert not (store.root / started.run_id / "reports" / "complete_report.md").exists()
 
 
 def test_failure_compensates_open_vendor_tool_turn_role_then_pending_roles(tmp_path):

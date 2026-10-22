@@ -18,8 +18,11 @@ from typing import Any
 from pydantic import BaseModel
 
 from tradingagents.agents.schemas._native_stage import (
+    ChallengeCandidateV1,
+    ChallengeRejectionV1,
     ChallengesProposalV1,
     ChallengesProposalV2,
+    ChallengesProposalV3,
     HypothesisRejectionV1,
     NativeEvidenceBindingError,
     SpecialistCandidateV1,
@@ -27,8 +30,11 @@ from tradingagents.agents.schemas._native_stage import (
     SynthesisProposalV1,
     SynthesisProposalV2,
     SynthesisProposalV3,
+    SynthesisReferenceError,
+    saved_challenge_acceptance,
     saved_specialist_acceptance,
     validate_hypothesis_references,
+    validate_synthesis_reference_surface,
 )
 from tradingagents.execution.budget import (
     AttemptPhase,
@@ -173,6 +179,25 @@ class NativeModelCaller:
             self.schemas.update(challenge=ChallengesProposalV2, synthesis=SynthesisProposalV2)
             self.instructions["challenge"] += " Select only the closed check IDs/observed risk. Economic questions remain unresolved even when a local evidence check passes."
             self.instructions["synthesis"] += " Refer to host-computed local_check_assessments and their exact scope; do not invent resolved outcomes or require optional data for a supported local statement."
+        from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
+        policy = ledger.journal.state["identity"].get("challenge_check_policy")
+        if policy is not None and (policy != CHALLENGE_CHECK_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+            raise CatalystCheckpointConflict("native challenge check policy mismatch")
+        self.directed_challenges = policy is not None
+        if self.directed_challenges:
+            self.schemas["challenge"] = ChallengesProposalV3
+            self.instructions["challenge"] += (
+                " Classify every material/critical challenge. You may propose an independent test using "
+                "qualified frozen facts, even when it is absent from the hypothesis conditions. Select "
+                "supporting_fact_ids for its inputs; never rewrite the original hypothesis or its conditions. "
+                "computable_now requires check and supporting facts; other classes require check:null. "
+                "needs_source and computable_unsupported require typed required_inputs. "
+                "Known zero/negative growth bases are input_domain_unsupported, not missing data. "
+                "Future dates must follow the analysis date. Unknown prose-source availability is only a "
+                "model-suggested requirement. A predicate result cannot close an economic challenge. "
+                "Bind challenge check operands, metrics and predicates just like hypothesis checks, with "
+                "the predicate quantity plan attached to proposed_test."
+            )
         if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
             from tradingagents.agents.schemas._research_focus import FocusProposalV1
             self.schemas["focus_response"] = FocusProposalV1
@@ -230,23 +255,45 @@ class NativeModelCaller:
             if key not in journal.state:
                 journal.put(key, value)
 
-    def _prompt(self, stage: str, context: Mapping[str, Any]) -> str:
+    def _prompt(self, stage: str, context: Mapping[str, Any], *, synthesis_targets=None) -> str:
         try:
             canonical = context
             context = self._model_context(stage, context)
             schema_value = self.schemas[stage].model_json_schema()
-            if self.ledger.journal.state.get("native.reference_schema." + stage) == 1:
+            # Additive check IDs must not alter already-frozen legacy prompts.
+            from tradingagents.research.native_versions import STRUCTURED_FINANCIAL_POLICY
+            if self.ledger.journal.state["identity"].get("structured_financial_policy") != STRUCTURED_FINANCIAL_POLICY:
+                from tradingagents.execution.native_prompt_context import legacy_check_schema
+                schema_value = legacy_check_schema(schema_value)
+            if stage == "synthesis":
+                schema_value["properties"].pop("synthesis_sections", None)
+                for name in ("SynthesisSectionsV1", "SynthesisSectionV1"):
+                    schema_value.get("$defs", {}).pop(name, None)
+            reference_version = self.ledger.journal.state.get("native.reference_schema." + stage)
+            if reference_version in {1, 2, 3}:
                 from tradingagents.execution.native_prompt_context import (
                     compact_synthesis_context,
                     reference_schema,
                 )
-                schema_value = reference_schema(schema_value, stage, canonical, delivery=self.deliver_company_report)
+                schema_value = reference_schema(schema_value, stage, canonical, delivery=self.deliver_company_report,
+                                                complete_sections=reference_version in {2, 3})
+                if reference_version == 3:
+                    from tradingagents.research.synthesis_sections import request_schema
+                    schema_value = request_schema(schema_value, canonical, synthesis_targets)
                 schema_value = _alias_schema_choices(schema_value, reference_aliases(canonical))
                 if stage == "synthesis":
                     context = compact_synthesis_context(context, delivery=self.deliver_company_report)
+                    if synthesis_targets is not None:
+                        aliases = reference_aliases(canonical)
+                        context["synthesis_repair_sections"] = {
+                            "dimension_names": [s.split(":", 1)[1] for s in synthesis_targets if s.startswith("dimension:")],
+                            "challenge_ids": [aliases.get(s.split(":", 1)[1], s.split(":", 1)[1])
+                                              for s in synthesis_targets if s.startswith("adjudication:")],
+                            "overall": "overall" in synthesis_targets, "conditions": "conditions" in synthesis_targets,
+                        }
             if self.numeric_enabled:
                 from tradingagents.research.numeric_narrative import numeric_prompt_schema
-                schema_value = numeric_prompt_schema(schema_value)
+                schema_value = numeric_prompt_schema(schema_value, premises="factual_premise_policy" in canonical)
             payload = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
             schema = json.dumps(schema_value, ensure_ascii=False, sort_keys=True)
             language = str(self.config.get("output_language", "Chinese"))
@@ -275,6 +322,29 @@ class NativeModelCaller:
                 "A plan is a proposed threshold/date, never a company fact. Existing evidence scope, "
                 "reply/argument bindings and all invocation limits remain unchanged."
             )
+        if "factual_premise_policy" in canonical:
+            prompt += (
+                "\nThe envelope MUST also contain premises: one binding per statement, rationale, judgement, "
+                "answer and alternative_explanation field, with field_path, observation_ids, pending_questions. "
+                "Select IDs only from factual_observations and only within the field's cited facts. "
+                "Observations are host-owned; never invent or rewrite them. Narrative fields are interpretations "
+                "or open questions, NOT verified facts. Separate every unsupported premise into pending_questions "
+                "phrased as a question; do not assert it happened in the interpretation. Direction claims must "
+                "use a matching comparison observation; a valid revenue reference cannot prove expense growth. "
+                "Maintain/revise, positive arguments and rated judgement require observations; overall judgement "
+                "must select key_claim_ids covering its observations. Empty observations "
+                "are only for unresolved/open questions. pending_questions are qualitative, no numeric tokens. "
+                "Do not type the host labels or claim the interpretation has been semantically verified."
+            )
+        if (stage in {"operating_quality", "event_context", "market_context"}
+                and self.ledger.journal.state["identity"].get("financial_detail_policy") is not None):
+            from tradingagents.agents.schemas._verification_plan import DETAIL_FIELDS
+            detail_fields = "; ".join(table + ": " + ", ".join(sorted(values))
+                                      for table, values in DETAIL_FIELDS.items())
+            prompt += ("\nFinancial detail sources (source name ends with financial_detail) also save "
+                       "these fields: " + detail_fields + ". A financial condition may use either the "
+                       "financial_statements or the financial_detail record, but both operands must "
+                       "come from the same evidence record.")
         if self.ledger.journal.state.get("native.binding_guidance." + stage) == 1:
             if stage in {"operating_quality", "event_context", "market_context"}:
                 prompt += (
@@ -310,6 +380,21 @@ class NativeModelCaller:
                     "For an argument using other qualified baseline claims, leave response_ids empty. "
                     "An inference claim is not a reply's supporting fact."
                 )
+        if stage == "synthesis" and reference_version == 3:
+            prompt += ("\nFill the synthesis sections in the schema independently. The host owns "
+                       "challenge_assessments and delivery status; do not output them. For EVERY "
+                       "requested saved challenge, supply exactly one adjudication with your own "
+                       "rationale, bound to its saved reply. A local check or specialist reply does "
+                       "not replace your adjudication. Never invent a missing rationale.")
+        if self.ledger.journal.state["identity"].get("structured_financial_policy") == STRUCTURED_FINANCIAL_POLICY:
+            prompt += ("\nfinancial_baseline checks structured financial field coverage only. "
+                       "cashflow_comparison checks same-period consolidated profit/CFO endpoints only. "
+                       "Neither means a complete reported cash bridge, operational disclosure coverage, "
+                       "economic causation or independent verification. Preserve each check's exact scope.")
+        if synthesis_targets is not None:
+            prompt += ("\nReturn ONLY the requested synthesis_repair_sections in the numeric envelope. "
+                       "Accepted main sections are immutable and must not be rewritten. "
+                       "Do not omit any requested adjudication. The host owns local check outcomes.")
         return prompt
 
     def _model_context(self, stage: str, context: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -326,11 +411,73 @@ class NativeModelCaller:
             if context is not None and self.ledger.journal.state.get("native.reference_aliases." + stage) in {1, 2}:
                 aliases = reference_aliases(context)
                 value = translate_references(value, {alias: identifier for identifier, alias in aliases.items()})
+            if (stage == "synthesis" and context is not None
+                    and self.ledger.journal.state.get("native.reference_schema.synthesis") == 2):
+                validate_synthesis_reference_surface(value.get("proposal") if self.numeric_enabled else value,
+                    context["dimension_claim_ids"], [c["challenge_id"] for c in context["record"]["challenges"]])
             numeric_proof = None
-            if self.numeric_enabled:
+            sectioned = stage == "synthesis" and self.ledger.journal.state.get("native.reference_schema.synthesis") == 3
+            if sectioned:
+                from tradingagents.research.synthesis_sections import (
+                    candidate_result,
+                    failure_issues,
+                    parse_sections,
+                )
+                previous = (self.ledger.cached_result("native.synthesis_sections.main")
+                    or self.ledger.journal.state.get("native.synthesis_sections.progress.main")) if phase == "repair" else None
+
+                def save_progress(candidate):
+                    candidate["prompt_sha256"] = self.ledger.journal.state["native.prompt.synthesis"]
+                    self.ledger.journal.put("native.synthesis_sections.progress." + phase, candidate)
+
+                candidate = parse_sections(value, context, phase=phase, previous=previous, on_progress=save_progress)
+                candidate["prompt_sha256"] = self.ledger.journal.state["native.prompt.synthesis"]
+                self.ledger.record_result("native.synthesis_sections." + phase, candidate)
+                if phase == "main" and candidate["failures"]:
+                    from tradingagents.agents.schemas._research_record import ResearchRecordV1
+                    raise SynthesisReferenceError(failure_issues(candidate, ResearchRecordV1.model_validate(context["record"])))
+                value, numeric_proof = candidate_result(candidate, context)
+            elif self.numeric_enabled:
                 from tradingagents.research.numeric_narrative import compile_numeric_stage
                 value, numeric_proof = compile_numeric_stage(stage, value, context, self.schemas[stage],
-                    isolate=self.isolate_specialists and stage in {"operating_quality", "event_context", "market_context"})
+                    isolate=(self.isolate_specialists and stage in {"operating_quality", "event_context", "market_context"})
+                    or (stage == "challenge" and self.directed_challenges))
+            if context is not None and stage == "challenge" and self.directed_challenges:
+                from tradingagents.agents.schemas._research_record import ResearchRecordV1
+                from tradingagents.research.challenge_checks import (
+                    ChallengeValidationError,
+                    parse_challenge_items,
+                    validate_challenge,
+                )
+                if numeric_proof is None:
+                    proposal, indices, rejected = parse_challenge_items(value)
+                else:
+                    proposal = ChallengesProposalV3.model_validate_json(json.dumps(value))
+                    indices, rejected = numeric_proof["indices"], list(numeric_proof["rejections"])
+                record = ResearchRecordV1.model_validate(context["record"])
+                accepted, accepted_indices = [], []
+                for index, item in zip(indices, proposal.challenges, strict=True):
+                    try:
+                        validate_challenge(record, item, context["conditions"])
+                    except ChallengeValidationError as exc:
+                        rejected.append({"index": index, "code": exc.code})
+                    else:
+                        accepted.append(item)
+                        accepted_indices.append(index)
+                value = ChallengesProposalV3(challenges=tuple(accepted)).model_dump(mode="json")
+                if rejected:
+                    if phase == "main":
+                        rejections = tuple(ChallengeRejectionV1(**r) for r in sorted(rejected, key=lambda r: r["index"]))
+                        candidate = ChallengeCandidateV1(prompt_sha256=self.ledger.journal.state["native.prompt.challenge"],
+                            proposal=ChallengesProposalV3.model_validate(value), indices=tuple(accepted_indices), rejections=rejections)
+                        self.ledger.record_result("native.challenge_candidate", candidate.model_dump(mode="json"))
+                        if numeric_proof is not None:
+                            from tradingagents.research.numeric_integration import (
+                                filter_numeric_proof,
+                            )
+                            filtered = filter_numeric_proof(stage, numeric_proof, accepted_indices, rejections, context, self.schemas[stage])
+                            self.ledger.record_result("native.numeric.candidate.challenge", filtered)
+                    raise ChallengeValidationError(rejected[0]["code"])
             if context is not None and stage == "synthesis" and self.deliver_company_report:
                 from tradingagents.agents.schemas._research_record import ResearchRecordV1
                 from tradingagents.research.report_delivery import normalize_synthesis_bindings
@@ -404,7 +551,8 @@ class NativeModelCaller:
                 for dimension in proposal.dimensions:
                     if not set(dimension.claim_ids) <= set(context["dimension_claim_ids"].get(dimension.dimension, [])):
                         raise ValueError("synthesis dimension references outside allowed claims")
-                gated = gate_dimensions(record, proposal.dimensions, scoped=True, valuation=True)
+                gated = gate_dimensions(record, proposal.dimensions, scoped=True, valuation=True,
+                                        sections=getattr(proposal, "synthesis_sections", None))
                 if isinstance(proposal, SynthesisProposalV3):
                     from tradingagents.research.minimum_evidence import challenge_assessments
                     from tradingagents.research.unified_synthesis import investment_fields
@@ -433,12 +581,35 @@ class NativeModelCaller:
             if isinstance(exc, (CatalystCheckpointConflict, NativeModelCancelled, TimeoutError)):
                 raise
             self._record_safe_diagnostic(stage, phase, "response_invalid", exc, response=response)
+            from tradingagents.execution.native_model_debug import capture_synthesis_failure
+            capture_synthesis_failure(self.run_id, stage, phase, response)
             if stage == "focus_response":
                 raise NativeFocusInvalid("native focus response invalid") from None
             error = NativeModelReferenceInvalid if isinstance(exc, NativeEvidenceBindingError) else NativeModelUnavailable
             raise error("native model response invalid") from None
 
     def _candidate(self, stage, digest, context):
+        if stage == "challenge" and self.directed_challenges:
+            saved = self.ledger.cached_result("native.challenge_candidate")
+            if saved is None:
+                return None
+            try:
+                from tradingagents.agents.schemas._research_record import ResearchRecordV1
+                from tradingagents.research.challenge_checks import validate_challenge
+                candidate = ChallengeCandidateV1.model_validate(saved)
+                if (candidate.prompt_sha256 != digest
+                        or not self.ledger.journal.state.get("native.model.challenge.dispatched")):
+                    raise ValueError("challenge candidate prompt mismatch")
+                record = ResearchRecordV1.model_validate(context["record"])
+                for item in candidate.proposal.challenges:
+                    validate_challenge(record, item, context["conditions"])
+                if self.numeric_enabled:
+                    from tradingagents.research.numeric_narrative import validate_numeric_stage
+                    validate_numeric_stage(stage, candidate.proposal.model_dump(mode="json"),
+                        self.ledger.cached_result("native.numeric.candidate.challenge"), context, self.schemas[stage])
+                return candidate
+            except (ValueError, KeyError, TypeError):
+                raise CatalystCheckpointConflict("native challenge candidate invalid") from None
         saved = self.ledger.cached_result("native.specialist_candidate." + stage)
         if not self.isolate_specialists or saved is None:
             return None
@@ -471,7 +642,8 @@ class NativeModelCaller:
                      else self.ledger.cached_result("native.numeric.candidate." + stage))
             remember_numeric(self.ledger.journal, stage, candidate.proposal.model_dump(mode="json"),
                 proof, context)
-        self.ledger.record_result("native.specialist_accepted." + stage, candidate.model_dump(mode="json"))
+        key = "native.challenge_accepted" if isinstance(candidate, ChallengeCandidateV1) else "native.specialist_accepted." + stage
+        self.ledger.record_result(key, candidate.model_dump(mode="json"))
         return candidate.proposal.model_dump(mode="json")
 
     def _cached(self, logical: str, digest: str, stage: str) -> dict[str, Any] | None:
@@ -486,6 +658,8 @@ class NativeModelCaller:
             )
             if isinstance(proposal, SpecialistProposalV1):
                 saved_specialist_acceptance(self.ledger.journal.state, stage, proposal)
+            if isinstance(proposal, ChallengesProposalV3):
+                saved_challenge_acceptance(self.ledger.journal.state, proposal)
             if self.numeric_enabled:
                 from tradingagents.research.numeric_integration import validate_cached_numeric
                 context = self.ledger.cached_result("native.numeric.context." + stage)
@@ -627,6 +801,24 @@ class NativeModelCaller:
             return base
         diagnostic = self.ledger.journal.state.get("native.model_diagnostics", {}).get(stage + ".main", {})
         code = diagnostic.get("detail_code")
+        if stage == "synthesis" and self.ledger.journal.state.get("native.reference_schema.synthesis") == 3:
+            candidate = self.ledger.cached_result("native.synthesis_sections.main")
+            if candidate is not None and candidate["failures"]:
+                return self._prompt(stage, context, synthesis_targets=sorted(candidate["failures"]))
+        if stage == "synthesis" and diagnostic.get("synthesis_reference_issues"):
+            model_context = self._model_context(stage, context)
+            replies = [{key: reply[key] for key in ("challenge_id", "response_id", "disposition")}
+                       for reply in model_context["record"]["dialogue"]["responses"]]
+            return base + (
+                "\nSynthesis reference sections failed. Correct ALL listed sections together; "
+                "return the complete envelope, retaining every required section. Each dimension may cite "
+                "only its own allowed claim IDs. Supply exactly one adjudication with your rationale "
+                "for EVERY saved challenge, even when unresolved. challenge_assessments is a separate "
+                "array and does not replace adjudications. The host supplies reply IDs/dispositions. "
+                "Do not invent facts or rationales for the host to fill. Failed sections:\n"
+                + json.dumps(diagnostic["synthesis_reference_issues"], sort_keys=True)
+                + "\nAllowed dimension claims:\n" + json.dumps(model_context["dimension_claim_ids"], sort_keys=True)
+                + "\nRequired challenge/reply bindings:\n" + json.dumps(replies, sort_keys=True))
         if isinstance(code, str) and code.startswith("numeric_"):
             return base + ("\nNumeric validation failed: " + code + ". Use only the exact supplied "
                 "num/meta tokens in narrative quantities. Do not copy bare numbers or guess anchors. "
@@ -695,6 +887,10 @@ class NativeModelCaller:
                 if self.ledger.journal.state.get("native.prompt." + stage + ".repair") != repair_digest:
                     raise CatalystCheckpointConflict("native model cached repair prompt mismatch")
                 return repaired
+            if stage == "synthesis":
+                sectioned = self._section_fallback(context)
+                if sectioned is not None:
+                    return sectioned
             candidate = self._candidate(stage, digest, context)
             if candidate is not None:
                 # Known valid main content survives an interrupted repair; no
@@ -706,13 +902,30 @@ class NativeModelCaller:
                 return value
             return None
 
+    def _section_fallback(self, context, *, persist=False):
+        from tradingagents.research.synthesis_sections import saved_section_candidate
+        try:
+            saved = saved_section_candidate(self.ledger.journal, context)
+            if saved is None:
+                return None
+            value, proof = saved
+            if persist:
+                from tradingagents.research.numeric_integration import remember_numeric
+                remember_numeric(self.ledger.journal, "synthesis", value, proof, context)
+            return value
+        except (ValueError, KeyError, TypeError):
+            raise CatalystCheckpointConflict("native synthesis section candidate invalid") from None
+
     def __call__(self, stage: str, context: Mapping[str, Any]) -> dict[str, Any]:
         if stage not in self.schemas:
             raise ValueError("unknown native model stage")
         self._ensure_active()
         if self.numeric_enabled:
             from tradingagents.research.numeric_narrative import numeric_validation_context
-            saved_context = numeric_validation_context(context)
+            sectioned = (stage == "synthesis" and self.scoped_references and self.deliver_company_report
+                and self.ledger.journal.state.get("native.reference_schema.synthesis",
+                    3 if "native.prompt.synthesis" not in self.ledger.journal.state else None) == 3)
+            saved_context = numeric_validation_context(context, sectioned=sectioned)
             prior = self.ledger.cached_result("native.numeric.context." + stage)
             if prior is not None and prior != saved_context:
                 raise CatalystCheckpointConflict("native numeric context changed")
@@ -732,7 +945,9 @@ class NativeModelCaller:
             self._bind("native.reference_aliases." + stage, 2)
         if (self.scoped_references and stage in {*STAGE_SCHEMAS} - {"challenge"}
                 and "native.prompt." + stage not in self.ledger.journal.state):
-            self._bind("native.reference_schema." + stage, 1)
+            key = "native.reference_schema." + stage
+            version = 3 if stage == "synthesis" and self.numeric_enabled and self.deliver_company_report else 2 if stage == "synthesis" else 1
+            self._bind(key, self.ledger.journal.state.get(key, version))
             if stage != "synthesis":
                 self._bind("native.reference_aliases." + stage, 1)
         prompt = self._prompt(stage, context)
@@ -749,6 +964,10 @@ class NativeModelCaller:
         if repaired is not None:
             return repaired
         if self.ledger.journal.state.get("native.model." + stage + ".dispatched"):
+            if stage == "synthesis":
+                sectioned = self._section_fallback(context, persist=True)
+                if sectioned is not None:
+                    return sectioned
             candidate = self._candidate(stage, digest, context)
             if candidate is not None:
                 return self._accept_candidate(stage, candidate)
@@ -769,6 +988,11 @@ class NativeModelCaller:
                 raise
             except (NativeModelUnavailable, BudgetExhausted):
                 self._ensure_active()
+                if stage == "synthesis":
+                    sectioned = self._section_fallback(context, persist=True)
+                    if sectioned is not None:
+                        self.ledger.record_result("native.adapter." + stage, {"prompt_sha256": digest, "proposal": sectioned})
+                        return sectioned
                 candidate = self._candidate(stage, digest, context)
                 if candidate is None:
                     raise
@@ -778,6 +1002,11 @@ class NativeModelCaller:
             proposal = SpecialistProposalV1.model_validate(value)
             self._accept_candidate(stage, SpecialistCandidateV1(prompt_sha256=digest, proposal=proposal,
                 indices=tuple(range(len(proposal.hypotheses))), rejections=()))
+        if (stage == "challenge" and self.directed_challenges
+                and self.ledger.cached_result("native.challenge_accepted") is None):
+            proposal = ChallengesProposalV3.model_validate_json(json.dumps(value))
+            self._accept_candidate(stage, ChallengeCandidateV1(prompt_sha256=digest, proposal=proposal,
+                indices=tuple(range(len(proposal.challenges))), rejections=()))
         self.ledger.record_result("native.adapter." + stage, {"prompt_sha256": digest, "proposal": value})
         return value
 

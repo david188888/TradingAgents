@@ -47,7 +47,7 @@ SDK 缺失或导入失败时返回带来源的 `ChinaDataUnavailableError`，不
 `python -m pip install --dry-run --ignore-installed -e ".[china,web]" --index-url https://pypi.org/simple`。
 清华等镜像在当前网络返回 403 时，切换官方源只作用于该命令，不必改全局配置。
 
-新建 `evidence_v1` 公司研究使用独立的有界多源路由：身份默认东方财富→新浪→Tushare，财务默认新浪→Tushare，价格默认腾讯→Tushare，官方公告使用巨潮。日历默认腾讯指数日期序列→深交所→Tushare，详见下方[native 交易日历](#native-证据链的交易日历)。历史 native 模式按保存身份恢复；classic/catalyst 的供应商设置保持原语义。新浪三表保留合并范围、币种、实际披露日期及更新时间，按元值准入，不沿用旧文本适配器的亿元换算；不同供应商不合并来源家族。深交所日历只准入深市标的；历史因子无归档版本仍不可用。具体候选、配置与恢复边界见 [native 来源政策](evidence-research.md#evidence-and-workflow)。
+新建 `evidence_v1` 公司研究使用独立的有界多源路由：身份默认东方财富→新浪→Tushare，财务默认新浪→Tushare，价格默认腾讯→Tushare，官方公告使用巨潮。日历默认深交所官方月历→腾讯指数日期序列→Tushare，详见下方[native 交易日历](#native-证据链的交易日历)。历史 native 模式按保存身份恢复；classic/catalyst 的供应商设置保持原语义。新浪三表保留合并范围、币种、实际披露日期及更新时间，按元值准入，不沿用旧文本适配器的亿元换算；不同供应商不合并来源家族。深交所官方月历用于沪深北全部标的；历史因子无归档版本仍不可用。具体候选、配置与恢复边界见 [native 来源政策](evidence-research.md#evidence-and-workflow)。
 
 | 能力 | 路由方法 | 当前来源 | 输入范围 |
 |---|---|---|---|
@@ -81,14 +81,26 @@ SDK 缺失或导入失败时返回带来源的 `ChinaDataUnavailableError`，不
 
 ### native 证据链的交易日历
 
-`evidence_v1` 采集不使用上面的交易所日历接口，而是走 `native_sources` 的日历链
-`("tencent", "szse", "tushare")`：先用上证指数日 K 的**日期序列**派生出窗口内每个自然日的
-`is_open` 标志（有 K 线即开市），再交给同一个 `settled_sessions` 校验。指数价不进入证据。
+`evidence_v1` 采集走 `native_sources` 的日历链 `("szse", "tencent", "tushare")`，
+产出逐自然日 `is_open` 行，再交给同一个 `settled_sessions` 校验。原则是：**缺一根 K 线不等于休市**，
+工作日缺口必须有独立证据解释；指数价格不进入证据。
 
-- 之所以不把 Tushare `trade_cal` 放首位：该接口**每天 5 次**硬配额，一旦当天用尽，
-  之后所有 run 都拿不到日历，连带 `price_history`、`valuation`、`peer_context` 全部降级。
-- 派生日历零鉴权、无配额，通用于沪深北；`.SZ` 的深交所官方整月日历作为次选，Tushare 仅兜底。
-- 若指数序列未覆盖到窗口起点，按 `calendar_window_not_complete` 报错而不是把真实交易日当休市。
+- **深交所官方整月日历为权威**，用于沪深北全部标的（三所休市安排一致）。零鉴权、无配额，
+  逐日给出交易标志，未发布或缺日直接拒绝。
+- **腾讯上证指数日 K 的日期序列是独立证人**：只核对采集时已结算的日期（当日 16:30 前不核对当天）。
+  - 一致：直接采用。
+  - 腾讯不可用、格式不合格或未覆盖窗口起点：仍采用官方日历，`price_history` 记
+    `calendar_cross_check_unavailable` 降级。
+  - 不一致：用通达信盘后包是否存在（HEAD，非交易日 404）逐日裁决。通达信支持官方则采用；
+    通达信无法确认则采用官方并记 `calendar_cross_check_unresolved`；**腾讯与通达信同时反对官方**时，
+    日历以 `calendar_sources_conflict` 拒绝，价格不可用，不再调用 Tushare 投票。
+- **深交所不可达时由腾讯日期序列派生**：周末按交易所规则休市；每个没有 K 线的已结算工作日都须由通达信
+  404 确认休市，否则拒绝（`calendar_gap_unwitnessed`，或通达信显示开市时 `calendar_index_session_missing`）。
+  未到结算时点的采集当日记为未确认，不进入已结算交易日。
+- 通达信对超出保留期的日期同样返回 404，因此只有在“争议日之前的一个已知交易日”仍能取到盘后包时，
+  404 才被当作休市证据，否则视为无法确认。
+- Tushare `trade_cal` 每天 5 次硬配额，只在前两条都不可用时兜底，不参与核对。
+- 冻结官方日历后，股票行情缺任何官方交易日都会按 `price_window_not_complete` 拒绝，不会把漏数当休市。
 
 ### baostock 调用约束
 

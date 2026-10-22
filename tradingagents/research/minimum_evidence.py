@@ -42,6 +42,7 @@ SUPPLEMENTAL_VALUATION_SOURCES = FORECAST_SOURCES | PEER_SOURCES
 # that had already been collected and frozen. Records written under v1 keep
 # their own outcomes; only new records use this rule.
 CALCULATION_VERSION = "minimum-evidence-v2"
+STRUCTURED_CALCULATION_VERSION = "minimum-evidence-v3"
 QUESTIONS = {
     "operating_disclosures": ("operating_disclosures.current_period_coverage", "当前报告期的经营判断是否有正式财务与定量运营披露支撑？"),
     "cash_conversion": ("cash_conversion.reported_bridge", "当前及上年同期间的净利润到经营现金流桥是否完整、可核对？"),
@@ -373,6 +374,9 @@ def _valuation(record):
 
 
 def compute_checks(record):
+    from tradingagents.research.native_versions import STRUCTURED_FINANCIAL_POLICY
+    version = (record.evidence_checks.calculation_version if record.evidence_checks is not None else
+               STRUCTURED_CALCULATION_VERSION if STRUCTURED_FINANCIAL_POLICY in record.limitations else CALCULATION_VERSION)
     rows = _rows(record)
     periods = [r.period for _, _, r in rows if r.frequency != "Q2" and r.period <= record.analysis_date]
     period = max(periods) if periods else None
@@ -381,8 +385,11 @@ def compute_checks(record):
               "snapshot": record.snapshots[0].snapshot_id, "sources": [s.model_dump(mode="json") for s in frozen]}
     checks = (_operating(record, rows, period), _cash(record, rows, period), _valuation(record)) if _identity_qualified(record) else tuple(
         _check(key, status="unavailable", missing=("security_identity_unqualified",)) for key in QUESTIONS)
+    if version == STRUCTURED_CALCULATION_VERSION:
+        from tradingagents.research.structured_financial_checks import compute_structured_checks
+        checks = (*checks, *compute_structured_checks(record, rows, identity_qualified=_identity_qualified(record)))
     return EvidenceChecksV1(run_id=record.run_id, ticker=record.ticker, analysis_date=record.analysis_date,
-        calculation_version=CALCULATION_VERSION,
+        calculation_version=version if version != "minimum-evidence-v1" else CALCULATION_VERSION,
         input_snapshot_id=record.snapshots[0].snapshot_id, input_evidence_ids=tuple(s.evidence_id for s in frozen), input_sha256=canonical_sha256(inputs),
         checks=checks)
 
@@ -411,7 +418,9 @@ def challenge_assessments(record):
     output = []
     for binding in record.challenge_bindings or ():
         check = checks.get(binding.check_id)
-        scope, question = QUESTIONS[binding.check_id] if binding.check_id else (None, None)
+        if binding.check_id is not None and check is None:
+            raise ValueError("challenge check binding outside saved calculation version")
+        scope, question = (check.question_scope, check.question) if check else (None, None)
         observations = check.observations if check else ()
         evidence = check.evidence_ids if check else ()
         limits = (*check.limitations, *check.missing) if check else ("economic_question_exceeds_closed_check_scope",)

@@ -85,6 +85,10 @@ class NativeFixtureSources:
     def collect(self):
         from tests.test_native_valuation import valuation_fixture
         draft, context = valuation_fixture()
+        if self.request.ticker.startswith("600519"):
+            from tests.test_native_record import fixture as structured_fixture
+            from tests.test_structured_financial_checks import payload as structured_payload
+            draft, context = structured_fixture(financial_payload=structured_payload())
         if self.request.ticker.startswith("600418"):
             from tradingagents.dataflows.company_profile import PROFILE_CAPABILITY, PROFILE_SOURCE
             from tradingagents.research.evidence_freeze import CapabilityStatus, FrozenCapability
@@ -116,11 +120,55 @@ class NativeFixtureCaller:
     def __call__(self, stage, context):
         proposal = self._proposal(stage, context)
         if context.get("numeric_narrative_policy") is not None:
-            return {"proposal": proposal, "plans": [], "structured_bindings": []}
+            value = {"proposal": proposal, "plans": [], "structured_bindings": []}
+            if stage == "challenge" and proposal["challenges"]:
+                anchors = {a["anchor_id"]: a for a in context["numeric_catalog"]["anchors"]}
+                for index, item in enumerate(proposal["challenges"]):
+                    root = f"challenges.{index}"
+                    if item.get("check"):
+                        check = item["check"]
+                        operand = check["current"]
+                        alias = next(key for key, aid in context["numeric_aliases"].items()
+                            if operand["evidence_id"] in anchors[aid]["input_evidence_ids"]
+                            and all(anchors[aid]["lineage"].get("source_selector", {}).get(k) == operand[k]
+                                    for k in ("table", "field", "report_period")))
+                        item["supporting_fact_ids"] = anchors[context["numeric_aliases"][alias]]["required_fact_ids"]
+                        item["proposed_test"] = "合成核查命题：{{plan:p_threshold}}"
+                        value["plans"].append({"alias": "p_threshold", "kind": "quantity",
+                            "field_path": root + ".proposed_test", **check["predicate"]})
+                        value["structured_bindings"].extend([
+                            {"field_path": root + ".check.current", "kind": "num", "alias": alias},
+                            {"field_path": root + ".check.predicate", "kind": "plan", "alias": "p_threshold"}])
+                    if item.get("observation_date"):
+                        value["plans"].append({"alias": "p_future", "kind": "date",
+                            "field_path": root + ".observation_date", "date": item["observation_date"]})
+                        value["structured_bindings"].append({"field_path": root + ".observation_date",
+                            "kind": "plan", "alias": "p_future"})
+            if context.get("factual_premise_policy"):
+                from tests.factual_premise_fixtures import bind
+                value = bind(stage, value, context)
+            return value
         return proposal
 
     def _proposal(self, stage, context):
         time.sleep(.25)
+        if stage == "challenge" and context.get("challenge_check_policy") and context["record"]["ticker"].startswith("600519"):
+            record = context["record"]
+            fact = next(f for f in record["claims"] if f["kind"] == "fact" and "income.revenue" in f["statement"])
+            base = {"hypothesis_id": record["hypotheses"][0]["hypothesis_id"], "severity": "material", "risk_type": "operations"}
+            return {"challenges": [
+                {**base, "statement": "合成测试：当前收入字段需要核查。", "proposed_test": "当前收入是否为正",
+                 "verifiability": "computable_now", "supporting_fact_ids": [fact["claim_id"]],
+                 "check": {"kind": "financial", "operation": "value", "current": {"evidence_id": fact["evidence_ids"][0],
+                    "table": "income", "field": "revenue", "report_period": "2026-06-30"},
+                    "predicate": {"operator": "gt", "threshold": "0", "unit": "CNY"}}},
+                {**base, "statement": "合成测试：费用变动原因需要补充说明。", "proposed_test": "补充管理层费用原因说明",
+                 "verifiability": "needs_source", "required_inputs": [{"kind": "source", "description": "管理层费用变动原因说明"}]},
+                {**base, "statement": "合成测试：经营持续性需要后续观察。", "proposed_test": "后续经营披露再核对",
+                 "verifiability": "future_observation", "observation_date": "2027-01-01"}]}
+        if stage.startswith("response_"):
+            return {"responses": [{"challenge_id": cid, "hypothesis_id": hid, "disposition": "unanswerable",
+                "rationale": "合成测试：承认经济解释仍未确定。"} for cid, hid in context["assigned"].items()]}
         if stage == "focus_response":
             return {"answer": "固定测试补充回应：已有经营数据不能证明 AI 业务关系。",
                     "answerability": "partial", "claim_ids": [context["record"]["claims"][0]["claim_id"]],
@@ -146,11 +194,20 @@ class NativeFixtureCaller:
                 dimensions.append({"dimension": dimension, "status": ceiling if refs else "unresolved",
                     "judgement": "固定测试输入，非真实研究结论。", "claim_ids": refs,
                     "limitations": [] if refs else [reason]})
-            return {"investment_stance": "neutral",
+            result = {"investment_stance": "neutral",
                 "supporting_arguments": [{"rationale": "固定测试：经营字段提供有限依据。", "claim_ids": context["dimension_claim_ids"]["operating_quality"][:1]}],
                 "judgement": "固定测试证据用于验证网页、引用和确定性估值接线。", "dimensions":dimensions,
                 "key_claim_ids": context["dimension_claim_ids"]["operating_quality"][:1],
                 "next_check": "本页全部为 synthetic fixture；需独立验证真实来源。"}
+            if context["record"].get("challenge_check_policy"):
+                record = context["record"]
+                result["primary_challenge_id"] = record["challenges"][0]["challenge_id"] if record["challenges"] else None
+                result["adjudications"] = [{"challenge_id": r["challenge_id"], "response_id": r["response_id"],
+                    "disposition": r["disposition"], "rationale": "合成测试：命题结果不确定经济成因。"}
+                    for r in record["dialogue"]["responses"]]
+                result["challenge_assessments"] = [{"challenge_id": c["challenge_id"], "rationale": "合成测试：风险仍待评估。"}
+                    for c in record["challenges"]]
+            return result
         return {"challenges":[]} if stage == "challenge" else {"hypotheses":[]}
 
 

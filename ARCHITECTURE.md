@@ -69,12 +69,37 @@ inputs remain explicit; a successful computable check cannot establish economic
 causality. The canonical boundaries are in `agents/schemas/` and `research/`;
 see the [contract index](docs/contracts/README.md) for producers and consumers.
 
+Fresh scoped synthesis requests validate section references before compiling
+numeric prose and require complete challenge/adjudication arrays in the prompt
+schema. Saved prompts retain their version; bounded repair receives all detected
+reference-section failures without weakening publication validation.
+
+`scripts/eval_benchmark.py` measures committed saved runs without constructing a
+runtime or making network/model calls. It separates synthesis delivery, formed
+stances and missing token measurements; it does not replace Reader eligibility
+validation. See the [benchmark measurement contract](docs/contracts/evidence-benchmark.md).
+
+`scripts/profile_native_inputs.py` reconstructs V7 stage inputs in memory and
+checks saved context/prompt hashes before measuring serialized sizes. Its
+`native_input_inventory.py` helper records a conservative content/scope floor,
+separate from token usage and semantic quality. These standalone diagnostics do
+not select evidence or alter production budgets. `scripts/compare_native_prompt_views.py`
+uses the offline-only `execution/native_prompt_view.py` codec to compare a reversible
+metadata representation, adopting only positive full-prompt byte savings in its
+hypothetical result. Production prompts and identities remain unchanged. See
+[input measurement](docs/contracts/native-input-measurement.md).
+
 Fresh V7 runs freeze an anchored numeric narrative policy. `numeric_catalog.py`
 qualifies saved numeric inputs, `numeric_narrative.py` compiles model references
 before entity IDs, and `numeric_integration.py` binds receipts to cached and public
 records. Reader/exports validate those receipts without new model calls. Historical
 identities retain their original behavior; numeric fragments do not certify the
 surrounding economic explanation. See [numeric narrative](docs/contracts/numeric-narrative.md).
+Fresh V7 also freezes `factual-premises-v1`: `research/factual_premises.py` builds
+source observations and bounded directions from the existing catalog, scopes
+per-field bindings and stores them in numeric receipts. Reader, stage output,
+Markdown and explanation targets preserve these boundaries. This proves binding
+and arithmetic, not whole-sentence entailment. See [factual premises](docs/contracts/factual-premises.md).
 
 New Web single and batch requests default to `evidence_v1` and route to
 `execution/native_runner.py:NativeRunner`. The React creation form offers one company investment research workflow, with an optional supplementary focus. Historical catalyst/holding modes remain read/resume only; fresh creation/retry of those modes returns 422.
@@ -97,6 +122,14 @@ checks without an extra model stage. V6 freezes the independent baseline first,
 then optionally answers the user focus once through `execution/native_focus.py`.
 The collector and core kernel never receive that focus. `research/native_versions.py`
 owns V6 frozen mode objectives and V7 investment objective/kernel/budget identity. V7 adds one bounded targeted reply per challenged specialist before synthesis, a versioned dialogue and V3 investment assessment. Fresh V7 identities freeze a company policy for timestamped current-session valuation, cautious judgement with missing valuation anchors, and role-local enumerated model references. Older identities retain their admission, prompts and judgement gates. Old V1–V6 prompts, roles, budgets and report semantics remain versioned. See the [unified research contract](docs/contracts/unified-company-research.md).
+
+Fresh V7 also selects `hypothesis-directed-checks-v1`: `_native_stage.py` owns
+challenge V3 admission; `_challenge_verification.py` owns classification and task
+outcomes; `research/challenge_checks.py` validates qualified V0 inputs and compiles
+`verification-plan-v2`. Independent propositions preserve the original hypothesis
+conditions. Their saved outcomes and numeric/F02 receipts flow through replies,
+synthesis, Reader and Markdown. History without the policy retains V1 tasks.
+See the [challenge-check contract](docs/contracts/hypothesis-directed-checks.md).
 
 Workflow `evidence-production-v4` uses `dataflows/native_valuation.py:ValuationSources`,
 which extends the v3 bounded disclosures collector with qualified valuation
@@ -262,7 +295,22 @@ Fresh V7 identities freeze a separate report-delivery policy. The optional
 to saved facts. `research/report_delivery.py` restores host-owned copied
 synthesis bindings and assembles effective saved findings after unusable
 synthesis. V3 `report_status` separates delivery from coverage; an unfinished
-synthesis report has a null stance and preserves all source/reply provenance.
+synthesis with no accepted sections has a null stance and preserves provenance.
+Fresh numeric synthesis freezes reference-schema 3 and uses
+`research/synthesis_sections.py`: four dimensions, each challenge adjudication,
+overall judgement and conditions are validated independently with durable numeric
+receipts. One targeted repair fills only failed sections. Missing overall or
+critical adjudication blocks the rating; other pending sections retain a valid
+stance and show partial/LOW_CONFIDENCE with explicit unfinished status. Host
+placeholders, publication, recovery and Reader share deterministic proof replay.
+Fresh V7 identities also freeze `structured-financial-checks-v1` and
+`financial-detail-fields-v1`. The latter saves one `*.financial_detail` record
+per statement table with 11 detail fields; the six-field financial-statements
+records, frozen checks, supplier cross-checks and valuation are unchanged.
+`research/structured_financial_checks.py` adds two finite comparisons to a
+calculation-v3 five-check pack, independently of PDF coverage. The original full
+cash-bridge question remains separate. Saved v1/v2 pack replay and legacy prompt
+choices retain their existing behavior. See the [check contract](docs/contracts/structured-financial-checks.md).
 Historical serialization and identities remain unchanged. See the
 [unified contract](docs/contracts/unified-company-research.md).
 Markdown and the single native Reader consume that same record. The desktop

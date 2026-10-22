@@ -19,9 +19,10 @@ def numeric_enabled(identity):
     return policy is not None
 
 
-def stage_schema(stage):
+def stage_schema(stage, identity=None):
     from tradingagents.agents.schemas._native_stage import (
         ChallengesProposalV2,
+        ChallengesProposalV3,
         SpecialistProposalV1,
         SynthesisProposalV3,
     )
@@ -31,7 +32,7 @@ def stage_schema(stage):
     if stage in {"operating_quality", "event_context", "market_context"}:
         return SpecialistProposalV1
     if stage == "challenge":
-        return ChallengesProposalV2
+        return ChallengesProposalV3 if (identity or {}).get("challenge_check_policy") else ChallengesProposalV2
     if stage.startswith("response_") and stage.removeprefix("response_") in {
         "operating_quality", "event_context", "market_context",
     }:
@@ -48,10 +49,10 @@ def remember_numeric(journal, stage, proposal, proof, context):
         numeric_validation_context,
         validate_numeric_stage,
     )
-    validate_numeric_stage(stage, proposal, proof, context, stage_schema(stage))
+    validate_numeric_stage(stage, proposal, proof, context, stage_schema(stage, context))
     journal.ledger.record_result("native.numeric.accepted." + stage, {
         "stage": stage, "proposal": proposal, "proof": proof,
-        "context": numeric_validation_context(context),
+        "context": numeric_validation_context(context, sectioned=proof.get("kind") == "synthesis-sections-v1"),
     })
 
 
@@ -65,6 +66,11 @@ def validate_cached_numeric(journal, stage, proposal, context, schema, *, allow_
             candidate = journal.ledger.cached_result("native.numeric.candidate." + stage)
             if candidate is not None:
                 saved = {"proposal": proposal, "proof": candidate}
+            if stage == "synthesis":
+                from tradingagents.research.synthesis_sections import saved_section_candidate
+                candidate = saved_section_candidate(journal, context)
+                if candidate is not None:
+                    saved = {"proposal": candidate[0], "proof": candidate[1]}
         if saved is None or saved["proposal"] != proposal:
             raise ValueError
         validate_numeric_stage(stage, proposal, saved["proof"], context, schema)
@@ -77,8 +83,9 @@ def filter_numeric_proof(stage, proof, accepted_indices, rejections, context, sc
     from tradingagents.research.numeric_narrative import _compile, _remap_path
     envelope = deepcopy(proof["envelope"])
     positions = [i for i, original in enumerate(proof["indices"]) if original in accepted_indices]
-    envelope["proposal"]["hypotheses"] = [envelope["proposal"]["hypotheses"][i] for i in positions]
-    for key in ("plans", "structured_bindings"):
+    collection = "challenges" if stage == "challenge" else "hypotheses"
+    envelope["proposal"][collection] = [envelope["proposal"][collection][i] for i in positions]
+    for key in ("plans", "structured_bindings", *(("premises",) if "premises" in envelope else ())):
         envelope[key] = [dict(item, field_path=path) for item in envelope[key]
             if (path := _remap_path(item["field_path"], positions, reverse=True)) is not None]
     rejected = sorted((r.model_dump(mode="json") for r in rejections), key=lambda r: r["index"])
@@ -163,7 +170,26 @@ def _field_sources(stages):
 def _final_fields(record, stages):
     sources = list(_field_sources(stages))
     result = []
+    delivery = getattr(record.assessment, "synthesis_sections", None)
+    from tradingagents.research.synthesis_sections import unfinished_sections
+    missing = unfinished_sections(delivery) if delivery else set()
+    host_paths = set()
+    if "overall" in missing:
+        host_paths.update({("assessment", "judgement"), ("assessment", "next_check")})
+    if delivery:
+        host_paths.update(("assessment", "challenge_assessments", i, "rationale")
+                          for i, _ in enumerate(record.assessment.challenge_assessments))
+        for i, d in enumerate(record.assessment.dimensions):
+            if "dimension:" + d.dimension in missing:
+                host_paths.add(("assessment", "dimensions", i, "judgement"))
+                host_paths.update(("assessment", "dimensions", i, "limitations", j) for j, _ in enumerate(d.limitations))
+        for i, a in enumerate(record.assessment.adjudications):
+            if "adjudication:" + a.challenge_id in missing:
+                host_paths.add(("assessment", "adjudications", i, "rationale"))
     for path, text in _texts(record):
+        if tuple(path) in host_paths:
+            result.append({"path": path, "text_sha256": _hash_text(text), "kind": "host", "sources": []})
+            continue
         direct = next((source for original, source in sources if original == text), None)
         selected = [direct] if direct else [source for original, source in sources
             if original and original in text and len(original) >= 2]
@@ -194,8 +220,13 @@ def attach_numeric_attribution(record, journal):
             ):
                 continue
             stages.append(accepted)
+    input_identity = dict(journal.state.get("native_input", {}))
+    from tradingagents.research.factual_premises import premise_enabled
+    if premise_enabled(journal.state["identity"]):
+        input_identity.update(factual_premise_policy=journal.state["identity"]["factual_premise_policy"],
+                              numeric_narrative_policy=NUMERIC_NARRATIVE_POLICY)
     attribution = NumericAttributionV1.model_validate({
-        "policy": NUMERIC_NARRATIVE_POLICY, "input_identity": journal.state.get("native_input", {}),
+        "policy": NUMERIC_NARRATIVE_POLICY, "input_identity": input_identity,
         "catalog": catalog,
         "stages": stages, "final_fields": _final_fields(record, stages),
     })
@@ -216,6 +247,16 @@ def _validate_public_context(record, stage, context):
         if any(item != claims.get(item.get("claim_id")) for item in context.get(field, [])):
             raise ValueError("numeric context facts changed")
     contextual = context.get("record", {})
+    if record.challenge_check_policy is not None:
+        for key in ("challenge_check_policy", "challenge_outcomes", "verifications"):
+            if key in contextual and contextual[key] != raw.get(key):
+                raise ValueError("numeric challenge result context changed")
+        if stage.startswith("response_"):
+            targets = set(context.get("assigned", {}))
+            if context.get("verifications") != [v.model_dump(mode="json") for v in record.verifications if v.challenge_id in targets]:
+                raise ValueError("numeric reply verification context changed")
+            if context.get("challenge_outcomes") != [o.model_dump(mode="json") for o in record.challenge_outcomes or () if o.challenge_id in targets]:
+                raise ValueError("numeric reply check outcome context changed")
     for key, identifier in (("claims", "claim_id"), ("hypotheses", "hypothesis_id"), ("challenges", "challenge_id")):
         actual = {item[identifier]: item for item in raw[key]}
         if any(item != actual.get(item.get(identifier)) for item in contextual.get(key, [])):
@@ -238,6 +279,13 @@ def _validate_public_context(record, stage, context):
         from tradingagents.research.native_policy import dimension_claim_ids
         if context.get("dimension_claim_ids") != {key: list(value) for key, value in dimension_claim_ids(record).items()}:
             raise ValueError("numeric dimension context changed")
+        if context.get("synthesis_sections_policy") == "synthesis-sections-v1":
+            for key in ("evidence", "metrics", "snapshots", "valuation", "company_basics", "mode",
+                        "run_id", "ticker", "evidence_checks", "challenge_bindings"):
+                if contextual.get(key) != raw.get(key):
+                    raise ValueError("numeric synthesis section context changed")
+            if record.assessment is not None and context.get("question") != record.assessment.research_question:
+                raise ValueError("numeric synthesis section question changed")
     if stage in {"synthesis", "focus_response"} and contextual.get("dialogue") != raw.get("dialogue"):
         raise ValueError("numeric dialogue context changed")
     if stage in {"operating_quality", "event_context", "market_context"}:
@@ -265,6 +313,15 @@ def validate_record_numeric(record, identity):
 
 
 def _validate_record_numeric(record, identity):
+    from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
+    challenge_policy = identity.get("challenge_check_policy")
+    if challenge_policy is not None and challenge_policy != CHALLENGE_CHECK_POLICY:
+        raise ValueError("challenge check identity invalid")
+    if (record.challenge_check_policy is not None or record.assessment is not None) and (
+            record.challenge_check_policy != challenge_policy):
+        raise ValueError("challenge check record identity mismatch")
+    from tradingagents.research.factual_premises import premise_enabled, validate_context
+    premise_enabled(identity)
     enabled = numeric_enabled(identity)
     attribution = record.numeric_attribution
     if not enabled:
@@ -283,10 +340,16 @@ def _validate_record_numeric(record, identity):
     stages = [s.model_dump(mode="json") for s in attribution.stages]
     if len({s["stage"] for s in stages}) != len(stages):
         raise ValueError("numeric duplicate stage")
+    if "factual_premise_policy" in identity and identity.get("factual_premise_policy") != attribution.input_identity.get("factual_premise_policy"):
+        raise ValueError("factual premise record identity mismatch")
+    if record.assessment is not None and challenge_policy != attribution.input_identity.get("challenge_check_policy"):
+        raise ValueError("challenge check receipt identity mismatch")
+    premise_enabled(attribution.input_identity)
     for saved in stages:
+        validate_context(record, saved["stage"], saved["context"], attribution.input_identity)
         _validate_public_context(record, saved["stage"], saved["context"])
         validate_numeric_stage(saved["stage"], saved["proposal"], saved["proof"],
-                               saved["context"], stage_schema(saved["stage"]))
+                               saved["context"], stage_schema(saved["stage"], attribution.input_identity))
     _validate_entities(record, stages, attribution.input_identity)
     saved_fields = [f.model_dump(mode="json") for f in attribution.final_fields]
     expected_fields = _final_fields(record, stages)
@@ -340,7 +403,9 @@ def _validate_entities(record, stages, identity):
                 expected_hypotheses.add(hid)
         elif stage == "challenge":
             actual = {c.challenge_id: c for c in record.challenges}
-            for index, item in enumerate(proposal["challenges"]):
+            directed = identity.get("challenge_check_policy") is not None
+            indices = saved["proof"]["indices"] if directed else range(len(proposal["challenges"]))
+            for index, item in zip(indices, proposal["challenges"], strict=True):
                 cid = "c." + canonical_sha256({"input": identity, "index": index, "challenge": item})
                 challenge = actual[cid]
                 target = hypotheses[item["hypothesis_id"]].claim_id
@@ -348,6 +413,11 @@ def _validate_entities(record, stages, identity):
                     challenge.risk_type, challenge.target_claim_ids) != (
                     item["statement"], item["proposed_test"], item["severity"], item["risk_type"], (target,)):
                     raise ValueError("numeric challenge text changed")
+                if directed:
+                    from tradingagents.agents.schemas._native_stage import ChallengeProposalV3
+                    from tradingagents.research.challenge_checks import challenge_test
+                    if challenge.test != challenge_test(ChallengeProposalV3.model_validate(item)):
+                        raise ValueError("numeric challenge proposition changed")
                 binding = next(b for b in record.challenge_bindings if b.challenge_id == cid)
                 if (binding.check_id, binding.observed_risk,
                     binding.observation_date.isoformat() if binding.observation_date else None) != (
@@ -393,7 +463,7 @@ def _validate_entities(record, stages, identity):
                 or record.assessment.next_check != "补充各章节列明的具体资料，并在后续完成综合分析。"):
             raise ValueError("numeric fallback prose changed")
         return
-    dimensions = gate_dimensions(base, synthesis.dimensions, scoped=True, valuation=True)
+    dimensions = gate_dimensions(base, synthesis.dimensions, scoped=True, valuation=True, sections=synthesis.synthesis_sections)
     fields = investment_fields(base, synthesis, dimensions)
     judgement = ("关键经营或估值依据不足，暂不能形成完整投资吸引力判断。"
                  if fields.pop("force_insufficient", False) else synthesis.judgement)

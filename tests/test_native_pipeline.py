@@ -53,7 +53,25 @@ class PipelineCaller:
                                 for k in ("table", "field", "report_period")))
                     bindings.extend([{"field_path": path + ".check.current", "kind": "num", "alias": numeric_alias},
                         {"field_path": path + ".check.predicate", "kind": "plan", "alias": alias}])
-        return {"proposal": result, "plans": plans, "structured_bindings": bindings}
+        if stage == "challenge" and context.get("challenge_check_policy"):
+            anchors = {a["anchor_id"]: a for a in context["numeric_catalog"]["anchors"]}
+            for index, item in enumerate(result["challenges"]):
+                check, root = item["check"], f"challenges.{index}"
+                alias = f"p_challenge_{index}"
+                item["proposed_test"] = "当前收入是否达到提议门槛：{{plan:" + alias + "}}"
+                plans.append({"alias": alias, "field_path": root + ".proposed_test", "kind": "quantity", **check["predicate"]})
+                operand = check["current"]
+                numeric_alias = next(key for key, aid in context["numeric_aliases"].items()
+                    if operand["evidence_id"] in anchors[aid]["input_evidence_ids"]
+                    and all(anchors[aid]["lineage"].get("source_selector", {}).get(k) == operand[k]
+                            for k in ("table", "field", "report_period")))
+                bindings.extend([{"field_path": root + ".check.current", "kind": "num", "alias": numeric_alias},
+                    {"field_path": root + ".check.predicate", "kind": "plan", "alias": alias}])
+        value = {"proposal": result, "plans": plans, "structured_bindings": bindings}
+        if context.get("factual_premise_policy"):
+            from tests.factual_premise_fixtures import bind
+            value = bind(stage, value, context)
+        return value
 
     def _proposal(self, stage, context):
         with self.lock:
@@ -84,9 +102,16 @@ class PipelineCaller:
             condition_id, condition = next((key, value) for key, value in context["conditions"].items()
                 if value["check"] is not None and value["check"]["kind"] == "financial")
             assert not any(role in condition["hypothesis_id"] for role in ("operating", "event", "market"))
-            return {"challenges": [{"hypothesis_id": condition["hypothesis_id"], "condition_id": condition_id,
+            result = {"challenges": [{"hypothesis_id": condition["hypothesis_id"], "condition_id": condition_id,
                 "statement": "收入门槛不能证明经营改善可持续。", "severity": "critical",
                 "risk_type": "operations", "proposed_test": "核对收入门槛，并补充后续经营兑现证据。"}]}
+            if context.get("challenge_check_policy"):
+                source = condition["check"]["current"]["evidence_id"]
+                facts = [f["claim_id"] for f in context["record"]["claims"]
+                         if f["kind"] == "fact" and source in f["evidence_ids"]]
+                result["challenges"][0].update(verifiability="computable_now",
+                    supporting_fact_ids=facts[:1], check=copy.deepcopy(condition["check"]))
+            return result
         if stage.startswith("response_"):
             return {"responses": [{"challenge_id":cid,"hypothesis_id":hid,"disposition":"maintained",
                 "rationale":"局部收入条件不足以证明持续性。","supporting_fact_ids":context["allowed_facts_by_challenge"][cid][:1]}
@@ -97,7 +122,8 @@ class PipelineCaller:
                     "claim_ids": [fact["claim_id"]], "limitations": ["已保存资料未提供细分业务收入。"]}
         assert stage == "synthesis"
         record = context["record"]
-        assert record["verifications"] and record["verifications"][0]["scope"] == "predicate_only"
+        assert record["verifications"] and record["verifications"][0]["scope"] == (
+            "challenge_predicate_only" if record.get("challenge_check_policy") else "predicate_only")
         sources = {item["evidence_id"]: item["source_name"] for item in record["evidence"]}
         inferences = [item for item in record["claims"] if item["kind"] == "inference"]
         financial = next(item for item in inferences if FINANCIAL_SOURCES & {sources[key] for key in item["evidence_ids"]})

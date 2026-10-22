@@ -36,6 +36,23 @@ official sign-in. Single and batch requests freeze `chatgpt_account_ref` and
 the account catalog's selected model IDs; credentials remain outside run
 configuration. See [subscription configuration](chatgpt-subscription.md).
 
+### Explicit development capture
+
+For an explicitly authorized synthesis investigation only, setting
+`TRADINGAGENTS_DEBUG_SYNTHESIS_RESPONSES=1` on the development server process
+captures rejected synthesis final text under the source checkout's ignored
+`output/v8-synthesis-debug/<run_id>/`. The default is off. Only main/repair
+synthesis failures are captured, with content hashes and owner-only file access;
+reasoning blocks, response metadata, request configuration and exception text
+are excluded. These files are local debugging material, never run artifacts,
+checkpoint fields, API diagnostics or Git fixtures. Capture failure does not
+change the research result. Stop the dedicated development process after the
+authorized investigation; ordinary runs should use the default setting.
+Offline saved-run accounting and input reconstruction are described in the
+[benchmark contract](../contracts/evidence-benchmark.md).
+
+### Create a study
+
 Submit one run through `POST /api/runs`. This example contains no credentials;
 replace the cutoff and model IDs with the values for the intended research and
 the configured provider. A historical cutoff can leave price evidence
@@ -138,17 +155,26 @@ Sina financial admission requires consolidated scope, CNY yuan fields and real
 publication dates; an update timestamp after cutoff is excluded. Provider
 metadata is saved with the normalized source response. Qualified tables survive
 other table failures. Providers remain separate source families, and C1 numeric
-comparisons still require the same exact family. Tencent raw requests include
+comparisons still require the same exact family. New v7 runs additionally save
+one `sina.financial_detail` or `tushare.financial_detail` record per statement
+table with 11 detail fields (operating cost, selling/admin/R&D/finance
+expenses; receivables and notes-receivable totals, inventory, payables and
+notes-payable totals; capital expenditure). The six-field financial-statements
+records are unchanged, so frozen checks, supplier cross-checks and valuation
+keep reading exactly those fields; hypothesis conditions may cite either
+source, but one comparison must draw both periods from the same record. Tencent raw requests include
 the mandatory empty adjustment field. Public adjustment applies Sina's divisor
 to all OHLC and re-anchors to the last settled session, checking the complete
 calendar, current-cutoff capture and input hash. Generic Tencent qfq remains
-unqualified; older cutoffs still need an archived factor vintage. The exchange
-session calendar is derived first from the SSE composite daily series, whose
-bar dates are the open days; only the dates are read and no index price enters
-evidence. The official SZSE month API and Tushare `trade_cal` remain as ordered
-fallbacks. The SZSE calendar is not borrowed for Shanghai/Beijing securities,
-and because the derived calendar is keyless it no longer depends on a vendor
-with a daily request cap.
+unqualified; older cutoffs still need an archived factor vintage. The official
+SZSE month calendar is authoritative for every A-share exchange. The SSE
+composite bar dates witness its settled days (dates only; no index price enters
+evidence). TDX daily-package existence settles a disagreement; two vendors
+contradicting the official calendar reject it, and an unavailable witness keeps
+it with a `price_history` degradation. When SZSE is unreachable the index dates
+lead, and every settled weekday without a bar must be witnessed closed by TDX.
+Quota-capped Tushare `trade_cal` is the last fallback, never a tiebreaker. See
+[the native calendar](a-share-data-capabilities.md#native-证据链的交易日历).
 
 Programmatic `effective_config.evidence_source_vendors` can replace any of
 `identity`, `financial`, `calendar`, `price`, `events`, `valuation`, `forecasts`, `peers` with an ordered subset of
@@ -217,7 +243,7 @@ remain unavailable; a source gap never proves an event did not occur.
 qualified saved source fields -> facts-only V0
   -> operating quality / event context / market context specialists
   -> one independent challenge stage (zero to three challenges)
-  -> bounded condition verification (up to three checks)
+  -> bounded proposition/condition verification (up to three checks)
   -> one dimension-gated synthesis -> durably frozen independent baseline
   -> optional saved-evidence focus response
   -> authorized baseline publication -> optional supplement -> Markdown
@@ -229,6 +255,13 @@ workers. Context isolation is not statistical independence. Hypotheses cite
 facts and retain invalidation conditions and alternative explanations. The
 challenge stage sees anonymous hypotheses; it need not manufacture opposing
 positions when evidence is clear.
+
+Fresh V7 runs classify important challenges under `hypothesis-directed-checks-v1`.
+Independent propositions can use additional qualified frozen facts while original
+hypotheses and conditions remain unchanged. Saved task outcomes distinguish
+not generated, completed, cancelled, budget refused and unknown dispatch; tool
+failure does not count as a successful predicate result. Historical identities
+keep their original-condition tasks. See the [challenge-check contract](../contracts/hypothesis-directed-checks.md).
 
 The model adapter checks specialist fact IDs before saving a proposal. A
 schema-valid fabricated reference can use the existing single structured
@@ -263,6 +296,14 @@ can use the known valid main candidate after interruption, including an unknown
 repair dispatch, without issuing another request. Saved valid repairs take
 precedence. Older identities without this policy retain their adapter behavior;
 unknown policies and invalid acceptance bindings are incompatible checkpoints.
+
+Runtime failures use typed causes: invalid semantic configuration, native source
+routing settings and native execution settings use `missing_configuration`.
+Known native source/price qualification, numeric narrative and domain-schema
+failures use `evidence_rejection`; native record publication failures use
+`report_publication`. A generic `ValueError` or `KeyError` is an internal failure,
+not evidence that the user omitted configuration. Classification does not parse
+exception messages or rewrite saved historical failures.
 
 Verification is a closed local operation on saved financial fields or metrics.
 It is not an unrestricted model tool loop or additional data search. Checks
@@ -522,6 +563,14 @@ baseline authorship. Reads never call a model/provider or mutate saved state.
 
 ## V7 unified company investment research
 
+Fresh V7 runs freeze `structured_financial_policy=structured-financial-checks-v1`.
+Qualified structured statements can independently answer financial-field coverage
+and same-period consolidated profit/CFO comparison questions. The original full
+operating-disclosure and cash-bridge checks keep their stricter scopes and can
+remain unavailable beside passed comparisons. No extra data/model calls occur.
+Saved v1/v2 calculations, prompt choices and recovery remain unchanged; see the
+[structured financial contract](../contracts/structured-financial-checks.md).
+
 New single/batch studies use `evidence-production-v7` / `native-research-kernel-v6`. Three specialists, one critic and existing checks are followed by zero to three targeted reply calls and one synthesis. No-target replies are skipped; failed replies are saved as unavailable and require partial/LOW_CONFIDENCE. The eight/one/twelve budget, four-dimensional investment gates, referenced reasons, original change conditions and separate adjudications are defined in the [current contract](../contracts/unified-company-research.md). V1–V6 recovery uses its saved identity without acquiring V7 stages. Reader/Markdown share the saved stance and dialogue; reading never issues research calls.
 
 Fresh V7 identities freeze `report_delivery_policy=company-basics-local-gaps-delivery-v1`.
@@ -531,5 +580,12 @@ delivery is distinct from `completeness`/`quality`: unusable synthesis retains
 qualified basics and effective specialist findings with a null overall stance
 and an explicit unfinished synthesis status. It does not publish a fabricated
 model decision or change cancellation/deadline/persistence failure semantics.
+Fresh numeric report-delivery synthesis uses schema-3 section receipts. A single
+repair targets failed sections, preserving validated siblings and saved progress.
+An unfinished overall section or critical challenge adjudication suppresses the
+overall rating. Other failures preserve a valid rating under existing evidence
+gates; all pending sections remain visibly “综合未完成” and partial/LOW_CONFIDENCE.
+This identifies execution/validation failure separately from missing financial
+evidence. See the [section contract](../contracts/unified-company-research.md).
 Recovery without the marker retains historical source attempts, prompts and
 serialized output; do not rerun or rewrite old reports to apply the new policy.

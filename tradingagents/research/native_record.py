@@ -18,7 +18,12 @@ from tradingagents.agents.schemas._research_record import (
     SourceEvidenceV1,
     make_evidence_snapshot,
 )
-from tradingagents.agents.schemas._verification_plan import FINANCIAL_FIELDS, FinancialOperandV1
+from tradingagents.agents.schemas._verification_plan import (
+    DETAIL_FIELDS,
+    DETAIL_LABELS,
+    FINANCIAL_FIELDS,
+    FinancialOperandV1,
+)
 from tradingagents.dataflows.company_profile import PROFILE_CAPABILITY, PROFILE_SOURCE
 from tradingagents.dataflows.ticker_utils import to_tushare_symbol
 from tradingagents.research.evidence_freeze import (
@@ -37,6 +42,7 @@ from tradingagents.research.native_valuation import (
 from tradingagents.research.record_assembly import _catalyst_content, _price_metrics, _safe_url
 from tradingagents.research.source_families import (
     BODY_SOURCES,
+    FINANCIAL_DETAIL_SOURCES,
     FINANCIAL_SOURCES,
     IDENTITY_SOURCES,
     OPERATING_SOURCES,
@@ -55,6 +61,7 @@ _SOURCE_CAPABILITIES = {
     PROFILE_SOURCE: PROFILE_CAPABILITY,
     **dict.fromkeys(IDENTITY_SOURCES, CAP_IDENTITY),
     **dict.fromkeys(FINANCIAL_SOURCES, CAP_FUNDAMENTALS),
+    **dict.fromkeys(FINANCIAL_DETAIL_SOURCES, CAP_FUNDAMENTALS),
     "cninfo": CAP_EVENT_COVERAGE,
     **dict.fromkeys(BODY_SOURCES, "announcement_bodies"),
     **dict.fromkeys(OPERATING_SOURCES, "operating_detail"),
@@ -108,6 +115,39 @@ def _financial_content(payload, ticker: str) -> SourceContentV1 | None:
     return _content(selected, "已保存各表最多八期合并财务字段；金额 CNY，日期为披露/报告日期")
 
 
+def _financial_detail_content(payload, ticker: str) -> SourceContentV1 | None:
+    """One table of detail fields; the baseline record keeps its own contract."""
+    if not isinstance(payload, dict):
+        return None
+    selected = {}
+    for table, fields in DETAIL_FIELDS.items():
+        rows = payload.get(table)
+        if not isinstance(rows, list):
+            continue
+        admitted = []
+        for row in rows[:8]:
+            if not isinstance(row, dict) or row.get("ts_code") != ticker:
+                continue
+            if isinstance(row.get("report_type"), bool) or str(row.get("report_type")) != "1":
+                continue
+            try:
+                for key in ("end_date", "ann_date", "f_ann_date"):
+                    if row.get(key) is not None:
+                        _date(row[key])
+            except _Unavailable:
+                continue
+            saved = {key: row[key] for key in ("end_date", "ann_date", "f_ann_date")
+                if key in row and isinstance(row[key], str)}
+            for key in sorted(fields):
+                if key in row:
+                    with suppress(_Unavailable):
+                        saved[key] = str(_number(row[key]))
+            admitted.append(saved)
+        if admitted:
+            selected[table] = admitted
+    return _content(selected, "已保存单表最多八期财务明细字段；金额 CNY，日期为披露/报告日期")
+
+
 def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceContentV1 | None:
     if item.source_name == PROFILE_SOURCE:
         from tradingagents.research.company_basics import PROFILE_LABELS
@@ -146,6 +186,8 @@ def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceConte
         return _content(payload, label[:200])
     if item.source_name in FINANCIAL_SOURCES:
         return _financial_content(payload, ticker)
+    if item.source_name in FINANCIAL_DETAIL_SOURCES:
+        return _financial_detail_content(payload, ticker)
     if item.source_name in IDENTITY_SOURCES:
         return _catalyst_content("tushare.stock_basic", payload)
     if item.source_name in PRICE_SOURCES:
@@ -243,7 +285,8 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                         original_thesis: str | None = None,
                         holding_facts_as_of: str | None = None,
                         include_coverage: bool = False, include_valuation: bool = False,
-                        include_minimum: bool = False, include_basics: bool = False) -> ResearchRecordV1:
+                        include_minimum: bool = False, include_basics: bool = False,
+                        include_structured_financial: bool = False) -> ResearchRecordV1:
     """Retain proven fields only; source coverage gaps never prove absence.
 
     Context bytes are bound to the collector's source-family digest before any
@@ -308,10 +351,12 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     identity_limits = () if identity_ok else ("security_identity_unqualified",)
     from tradingagents.research.native_versions import REPORT_DELIVERY_POLICY
     delivery_limits = (REPORT_DELIVERY_POLICY,) if include_basics else ()
+    from tradingagents.research.native_versions import STRUCTURED_FINANCIAL_POLICY
+    structured_limits = (STRUCTURED_FINANCIAL_POLICY,) if include_structured_financial else ()
     seed = ResearchRecordV1(run_id=draft.run_id, ticker=draft.ticker, mode=mode,
         analysis_date=cutoff, construction="native", evidence=evidence,
         snapshots=(make_evidence_snapshot(evidence),),
-        limitations=(*coverage, *gaps, *identity_limits, *delivery_limits))
+        limitations=(*coverage, *gaps, *identity_limits, *delivery_limits, *structured_limits))
     if not identity_ok:
         if include_minimum:
             from tradingagents.research.minimum_evidence import compute_checks
@@ -349,6 +394,24 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                             continue
                         facts.append(_fact(source, "operating_quality", f"{table}[end_date={period}].{field}",
                             f"合并财务字段：报告期 {period}，{table}.{field} = {value} CNY。"))
+        elif source.source_name in FINANCIAL_DETAIL_SOURCES:
+            selected = json.loads(source.content.text)
+            for table, rows in selected.items():
+                for row in rows:
+                    try:
+                        period = _date(row.get("end_date")).isoformat()
+                    except _Unavailable:
+                        continue
+                    for field in sorted(DETAIL_FIELDS[table]):
+                        if field not in row:
+                            continue
+                        try:
+                            value, _ = _financial_operand(seed, FinancialOperandV1(evidence_id=source.evidence_id,
+                                table=table, field=field, report_period=period))
+                        except _Unavailable:
+                            continue
+                        facts.append(_fact(source, "operating_quality", f"{table}[end_date={period}].{field}",
+                            f"合并财务明细：报告期 {period}，{DETAIL_LABELS[field]}（{table}.{field}）= {value} CNY。"))
         elif source.source_name in BODY_SOURCES:
             payload = payloads[source.evidence_id]
             dimension = "operating_quality" if payload.get("report_period") else "event_context"

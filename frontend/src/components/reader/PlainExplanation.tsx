@@ -1,3 +1,4 @@
+import { FactualPremises } from "./FactualPremises";
 import { createContext, useContext } from "react";
 import type { ReportExplanationDTO } from "../../api/contracts";
 
@@ -13,7 +14,11 @@ export function useReadableReference() {
   return (target: string, fallback: string) => readableReference(data, target, fallback);
 }
 
-export function ExplainedText({ target, text, className }: { target: string; text: string; className?: string }) {
+export function ExplainedText(props: { target: string; text: string; className?: string }) {
+  return <><ExplanationTextBody {...props}/><FactualPremises text={props.text}/></>;
+}
+
+function ExplanationTextBody({ target, text, className }: { target: string; text: string; className?: string }) {
   const data = useContext(ExplanationContext);
   const indicator = data?.indicators[target];
   const model = data && ["available","partial"].includes(data.state) ? data.entries[target] : undefined;

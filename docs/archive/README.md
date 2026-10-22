@@ -16,6 +16,19 @@
 
 `docs/reviews/` — 交付验收、发布说明与定点调查记录。
 
+- [v3.6.0 release notes](../reviews/2026-10-23-v3.6.0-release-notes.md): 事实前提、假设导向核查、财务比较、分段综合及可逆元数据离线对照；生产压缩未启用。
+- [Architecture and workflow review](../reviews/2026-10-20-architecture-workflow-review.md): 当前工作区多维审查，含日历负向复现、语义支撑缺口、真实记录计量及定向验证。
+- [Remediation handoff validation](../reviews/2026-10-22-remediation-handoff-validation.md): F01–F07/P3 进度复核、获批的两项 F02 修复、最终 Agent 身份拒绝及下一阶段决策边界。
+- [F04 read-only input measurement](../reviews/2026-10-22-f04-input-measurement.md): 哈希核对的旧策略输入与用量、新策略合成清单、负向保留反例及待确认的下一步。
+- [F04 reversible metadata view](../plans/2026-10-22-f04-lossless-metadata-view.md): 复用既有元数据别名的已批准设计、离线收益探测与生产接入边界。
+- [F04 metadata view validation](../reviews/2026-10-23-f04-metadata-view-validation.md): 纯 codec、完整 prompt 净收益、篡改/校验反例与历史/合成样本对照，生产未启用。
+- [Remediation knowledge closeout](../reviews/2026-10-23-remediation-knowledge-closeout.md): F02／F04 现役入口对齐、规则与技能依赖核对、复验及保留现场，发布和清场未执行。
+- [F03 implementation and offline validation](../reviews/2026-10-21-f03-implementation-validation.md): 独立命题、分类与任务去向、保存阶段/恢复及固定分母验收，含两类 F02 既有失败和历史日期缺口。
+- [V8 Phase 0 live replay](../reviews/2026-10-19-v8-phase0-live-replay.md): 服务重启、宁德时代与江淮汽车真实 Luna 中途验收，含未完成分段、用量与解释失败边界。
+- [V8 Phase 0 offline baseline](../reviews/2026-10-18-v8-phase0-baseline.md): 只读基线、计量口径与 8/8 综合输入哈希复现，尚未完成 Phase 0。
+- [V8 Phase 0 synthesis capture](../reviews/2026-10-18-v8-phase0-synthesis-capture.md): 单次 Luna 采集、逐字段复现及引用入口修复的历史快照。
+- [V8 Phase 0 sectioned synthesis](../reviews/2026-10-18-v8-phase0-sectioned-synthesis.md): 已确认的分段发布语义、离线原始响应重放与分层验收边界。
+- [V8 Phase 0 structured financial checks](../reviews/2026-10-18-v8-phase0-structured-financial-checks.md): 有限财务子问题独立交付、完整现金流桥边界与历史兼容验证。
 - [Upstream v0.7.0 selective review](../reviews/2026-10-17-upstream-v070-review.md): ChatGPT 参数与刷新韧性、发布包完整性及不引入的边界。
 - [ChatGPT upstream adaptation validation](../reviews/2026-10-17-chatgpt-upstream-adaptation-validation.md): 用户排除安装包发布后的两项适配与离线回归记录。
 - [v3.5.0 release notes](../reviews/2026-10-16-v3.5.0-release-notes.md)
@@ -53,6 +66,8 @@
 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` — 已交付或已冻结的设计与实施计划。
 它们描述当时的范围与约束；当前行为属于对应的契约与运维页面。
 
+- [架构审查整改状态与待办（2026-10-21）](../plans/2026-10-21-review-remediation-backlog.md)：F03–F05、F07 与批次模型迁移的状态快照、依赖、待办和验收条件，含 F02 剩余边界。
+- [V8 evidence reasoning proposal](../plans/2026-10-17-evidence-reasoning-architecture-v8.md): 六阶段提案；预算、接口和额外调试运行仍有待确认项。
 - [ChatGPT upstream adaptation design](../superpowers/specs/2026-10-17-chatgpt-upstream-adaptation-design.md) and [implementation plan](../superpowers/plans/2026-10-17-chatgpt-upstream-adaptation.md): 显式推理参数与令牌刷新韧性；用户明确排除安装包发布。
 
 - [Plain-language report design](../superpowers/specs/2026-10-15-plain-language-report-design.md) and [stage output review design](../superpowers/specs/2026-10-15-stage-output-review-design.md): 白话解读补充与可独立阅读的阶段产出。
@@ -103,3 +118,5 @@
 - [Upstream v0.5 correctness batch](../archive/plans/2026-09-18-upstream-v0.5-correctness-batch.md) and [prompt/evidence batch](../archive/plans/2026-09-19-upstream-v0.5-prompt-evidence-batch.md)
 - [Upstream v0.6.0 review](../archive/reviews/2026-10-04-upstream-v060-review.md)
 - [DeepSeek effort audit](../archive/reviews/2026-10-04-deepseek-effort-audit.md), [task effort validation](../archive/reviews/2026-10-04-deepseek-task-effort-validation.md) and [task effort design](../archive/designs/2026-10-04-deepseek-task-effort-design.md)
+
+- [F02 实施与离线验收（2026-10-21）](../reviews/2026-10-21-f02-implementation-validation.md)：结构化观察绑定及其语义保证边界。

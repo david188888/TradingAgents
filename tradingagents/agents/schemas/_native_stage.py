@@ -4,7 +4,7 @@ from collections.abc import Iterable, Mapping
 from datetime import date
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from tradingagents.agents.schemas._evidence_checks import CheckId, ObservedRisk
 from tradingagents.agents.schemas._research_assessment import (
@@ -13,11 +13,13 @@ from tradingagents.agents.schemas._research_assessment import (
 )
 from tradingagents.agents.schemas._verification_plan import VerificationConditionV1
 
+from ._challenge_verification import ChallengeTestV1
 from ._research_dialogue import (
     ChallengeAdjudicationV1,
     InvestmentArgumentV1,
     JudgementConditionV1,
 )
+from ._synthesis_sections import SynthesisSectionsV1
 
 
 class _Proposal(BaseModel):
@@ -60,11 +62,51 @@ class NativeEvidenceBindingError(ValueError):
         self.code = code
 
 
+class SynthesisReferenceError(NativeEvidenceBindingError):
+    """Host-generated section paths and closed codes; never rejected prose."""
+
+    def __init__(self, issues):
+        super().__init__("synthesis reference surface invalid", code=issues[0][0])
+        self.issues = tuple(issues)
+
+
+def validate_synthesis_reference_surface(proposal, dimension_claim_ids, challenge_ids):
+    """Check independent reference sections together before numeric rendering.
+
+    Shape errors remain owned by the proposal schema. This does not normalize
+    references, supply a missing model rationale or admit a partial proposal.
+    """
+    if not isinstance(proposal, dict):
+        return
+    issues = []
+    dimensions = proposal.get("dimensions", [])
+    if isinstance(dimensions, list):
+        for index, item in enumerate(dimensions[:4]):
+            if not isinstance(item, dict):
+                continue
+            ids = item.get("claim_ids", [])
+            if (isinstance(item.get("dimension"), str) and isinstance(ids, list)
+                    and all(isinstance(key, str) for key in ids)
+                    and not set(ids) <= set(dimension_claim_ids.get(item["dimension"], []))):
+                issues.append(("dimension_claim_reference", ("dimensions", index, "claim_ids")))
+    expected = set(challenge_ids)
+    for name, code in (("adjudications", "adjudication_coverage"),
+                       ("challenge_assessments", "challenge_coverage")):
+        items = proposal.get(name, [])
+        if (isinstance(items, list) and all(isinstance(item, dict)
+                and isinstance(item.get("challenge_id"), str) for item in items)
+                and (len(items) != len(expected) or {item["challenge_id"] for item in items} != expected)):
+            issues.append((code, (name,)))
+    if issues:
+        raise SynthesisReferenceError(issues)
+
+
 ReferenceCode = Literal[
     "specialist_fact_reference", "condition_evidence_reference", "condition_metric_reference",
     "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
     "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
-    "numeric_manifest_binding", "numeric_catalog_limit",
+    "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
+        "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit",
 ]
 
 
@@ -185,6 +227,64 @@ class ChallengesProposalV2(_Proposal):
     challenges: tuple[ChallengeProposalV2, ...] = Field(default=(), max_length=3)
 
 
+class ChallengeProposalV3(ChallengeProposalV2, ChallengeTestV1):
+    @model_validator(mode="after")
+    def important_challenge_is_classified(self):
+        if self.severity in {"material", "critical"} and self.verifiability is None:
+            raise ValueError("important challenge requires verifiability")
+        return self
+
+
+class ChallengesProposalV3(_Proposal):
+    challenges: tuple[ChallengeProposalV3, ...] = Field(default=(), max_length=3)
+
+
+class ChallengeRejectionV1(_Proposal):
+    index: int = Field(ge=0, le=2, strict=True)
+    code: ReferenceCode | Literal[
+        "challenge_schema_invalid", "challenge_fact_reference", "challenge_check_scope",
+        "challenge_future_date", "challenge_check_unavailable", "challenge_requirement_invalid",
+        "challenge_target_reference", "challenge_condition_reference",
+    ]
+
+
+class ChallengeCandidateV1(_Proposal):
+    prompt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    proposal: ChallengesProposalV3
+    indices: tuple[Annotated[int, Field(strict=True, ge=0, le=2)], ...] = Field(max_length=3)
+    rejections: tuple[ChallengeRejectionV1, ...] = Field(max_length=3)
+
+    @model_validator(mode="after")
+    def closed_indices(self):
+        all_indices = [*self.indices, *(r.index for r in self.rejections)]
+        if (len(self.indices) != len(self.proposal.challenges)
+                or list(self.indices) != sorted(set(self.indices))
+                or sorted(all_indices) != list(range(len(all_indices))) or len(all_indices) > 3):
+            raise ValueError("challenge candidate indices invalid")
+        return self
+
+
+def saved_challenge_acceptance(checkpoint, proposal):
+    from ._challenge_verification import CHALLENGE_CHECK_POLICY
+    if checkpoint.get("identity", {}).get("challenge_check_policy") is None:
+        return None
+    if checkpoint["identity"]["challenge_check_policy"] != CHALLENGE_CHECK_POLICY:
+        raise ValueError("challenge check policy mismatch")
+    results = checkpoint["results"]
+    saved = results.get("native.challenge_accepted") or results.get("native.challenge_candidate")
+    if saved is None:
+        return None
+    candidate = ChallengeCandidateV1.model_validate(saved)
+    if candidate.proposal != proposal:
+        repaired = results.get("native.challenge.repair")
+        if repaired is not None and repaired.get("proposal") == proposal.model_dump(mode="json"):
+            return None
+        raise ValueError("challenge acceptance proposal mismatch")
+    if candidate.prompt_sha256 != checkpoint.get("native.prompt.challenge"):
+        raise ValueError("challenge acceptance prompt mismatch")
+    return candidate
+
+
 class SynthesisProposalV2(SynthesisProposalV1):
     # Narrative rationales remain proposals. The host generates v2 outcomes.
     pass
@@ -199,3 +299,11 @@ class SynthesisProposalV3(SynthesisProposalV2):
     opposing_arguments: tuple[InvestmentArgumentV1, ...] = Field(default=(), max_length=3)
     change_conditions: tuple[JudgementConditionV1, ...] = Field(default=(), max_length=3)
     adjudications: tuple[ChallengeAdjudicationV1, ...] = Field(default=(), max_length=3)
+    synthesis_sections: SynthesisSectionsV1 | None = None
+
+    @model_serializer(mode="wrap")
+    def compatible_sections(self, handler):
+        value = handler(self)
+        if self.synthesis_sections is None:
+            value.pop("synthesis_sections", None)
+        return value

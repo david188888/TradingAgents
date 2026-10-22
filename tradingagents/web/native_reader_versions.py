@@ -25,6 +25,7 @@ class SavedPolicy:
 
 
 FINANCIAL = frozenset({"tushare.financial_statements", "sina.financial_statements"})
+FINANCIAL_DETAIL = frozenset({"tushare.financial_detail", "sina.financial_detail"})
 PRICES = frozenset({"tushare.adjusted_daily", "tencent.qfq", "tencent.sina_adjusted_daily"})
 OPERATING = FINANCIAL | {"cninfo.operating_detail"}
 BODIES = frozenset({"cninfo.document_excerpt"})
@@ -47,7 +48,7 @@ POLICIES = {
     "evidence-production-v4": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
     "evidence-production-v5": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
     "evidence-production-v6": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
-    "evidence-production-v7": SavedPolicy(OPERATING, PRICES, BODIES, VALUATION, True),
+    "evidence-production-v7": SavedPolicy(OPERATING | FINANCIAL_DETAIL, PRICES, BODIES, VALUATION, True),
 }
 
 
@@ -238,6 +239,10 @@ def _dimensions(record, proposed, version, *, initial_v1=False):
 
 
 def saved_dimensions_match(record, proposed, version):
+    sections = getattr(record.assessment, "synthesis_sections", None)
+    if version == "evidence-production-v7" and sections is not None:
+        from tradingagents.research.native_policy import gate_dimensions
+        return gate_dimensions(record, proposed, scoped=True, valuation=True, sections=sections) == record.assessment.dimensions
     if _dimensions(record, proposed, version) == record.assessment.dimensions:
         return True
     return version == "evidence-production-v1" and (

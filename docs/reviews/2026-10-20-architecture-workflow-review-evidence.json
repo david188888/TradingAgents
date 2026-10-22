@@ -1,0 +1,1016 @@
+{
+  "schema_version": "architecture-review-evidence-v1",
+  "review_date": "2026-10-20",
+  "timezone": "Asia/Shanghai",
+  "baseline": {
+    "head": "e8c283de8734a1bdbc6aa67158eb58f9702524c3",
+    "captured_utc": "2026-10-20T06:38:50.512887+00:00",
+    "file_count": 956,
+    "file_hash_manifest_sha256": "6838a2353b1f1b548f3f61e8c9be01e00639edd7776a521b02e8a4eeec5b3557",
+    "reviewed_source_sha256": {
+      "tradingagents/agents/schemas/_native_stage.py": "b3e752e0eaa3eb0f51166baee2b7c803fa941e6c43b89e50133875f8bcfe4658",
+      "tradingagents/dataflows/native_qualification.py": "1cf27b1f6c4b2f0ce56ddef4985930e05d91c843114939ada36288def4223047",
+      "tradingagents/dataflows/native_sources.py": "458635b5eabe0afe034591ebf4d5e8b7f3376a43fcf7165d7ed4b1b7830eff74",
+      "tradingagents/execution/native_model.py": "aebfec955de4385700305cb581ee26e0ee7b395019f1ec1c231ba13a734dbde4",
+      "tradingagents/execution/native_prompt_context.py": "16aa655a58eeb2c5076daaa0d80c07db20a8ef9a57ff582809f4b1318a10a20a",
+      "tradingagents/graph/native_research.py": "0227b092771ac2d21e5656d94c75ea5c3ac899a8ee5727e03385ccf0c51a2641",
+      "tradingagents/research/numeric_narrative.py": "a7294a37a16249ea11e123c2119d4debc8f389c6ebe12b64001eb40ac640d56a",
+      "tradingagents/research/structured_financial_checks.py": "07ed8e4dfa58b9afcd8bc15b9d72f48dbb62e7320be225d8a5b404742b7fe429",
+      "tradingagents/research/synthesis_sections.py": "a49863d675e2afb86f77e96d0c98592e3200e7103fab047381eaea206f7db288",
+      "tradingagents/runtime/catalyst_checkpoint.py": "170061a9e415ae145ed0cdd73908fe8109ac37ee975ec9434f383b6d703eab58",
+      "tradingagents/web/manager.py": "9f6eaf0695ec3e60cf8bcc5746df3d69beab1fac0ab3d82bda2cfc497e8e0eff"
+    }
+  },
+  "calendar_probes": [
+    {
+      "case": "weekend cutoff with full preceding weekday bars",
+      "admitted": false,
+      "code": "calendar_window_not_complete"
+    },
+    {
+      "case": "Monday before market open",
+      "admitted": false,
+      "code": "calendar_window_not_complete"
+    },
+    {
+      "case": "internal weekday bar missing but boundaries present",
+      "admitted": true,
+      "rows": [
+        {
+          "cal_date": "20261015",
+          "is_open": "1"
+        },
+        {
+          "cal_date": "20261016",
+          "is_open": "0"
+        },
+        {
+          "cal_date": "20261017",
+          "is_open": "0"
+        },
+        {
+          "cal_date": "20261018",
+          "is_open": "0"
+        },
+        {
+          "cal_date": "20261019",
+          "is_open": "1"
+        }
+      ],
+      "settled": [
+        "2026-10-15",
+        "2026-10-19"
+      ]
+    }
+  ],
+  "calendar_probe_source": "import json\nfrom tradingagents.dataflows.native_qualification import qualify_session_calendar,CALENDAR_INDEX_SYMBOL,NativeSourceUnavailable\nfrom tradingagents.dataflows.tushare_price_history import settled_sessions\nfrom datetime import datetime\n\ndef probe(label,bars,cutoff,capture):\n    payload={'data':{CALENDAR_INDEX_SYMBOL:{'day':[[day,'1','1','1','1','1'] for day in bars]}}}\n    try:\n        rows=qualify_session_calendar(payload,index_symbol=CALENDAR_INDEX_SYMBOL,start='2026-10-15',cutoff=cutoff)\n        result={'admitted':True,'rows':rows,'settled':settled_sessions(rows,start='2026-10-15',cutoff=cutoff,captured_at=datetime.fromisoformat(capture))}\n    except NativeSourceUnavailable as e:result={'admitted':False,'code':e.code}\n    return {'case':label,**result}\nresults=[probe('weekend cutoff with full preceding weekday bars',['2026-10-15','2026-10-16'],'2026-10-18','2026-10-18T12:00:00+08:00'),probe('Monday before market open',['2026-10-15','2026-10-16'],'2026-10-19','2026-10-19T00:08:00+08:00'),probe('internal weekday bar missing but boundaries present',['2026-10-15','2026-10-19'],'2026-10-19','2026-10-19T16:00:00+08:00')]\nprint(json.dumps(results,ensure_ascii=False,indent=2))\n",
+  "samples": [
+    {
+      "run_id": "run_20261018T160807562817Z_6ae06213",
+      "record_sha256": "6e74863f82ef5325c7b5ba5adb3e88c7e709827c2c35b4bc4223da85db9090a6",
+      "canonical_schema_and_numeric_validation": "passed",
+      "record_bytes": 1567372,
+      "checkpoint_files": 267,
+      "checkpoint_bytes": 227697927,
+      "latest_checkpoint_bytes": 6636948,
+      "total_run_bytes": 229714475,
+      "model_usage": {
+        "challenge": {
+          "input_tokens": 162304,
+          "output_tokens": 281,
+          "total_tokens": 162585
+        },
+        "event_context": {
+          "input_tokens": 39795,
+          "output_tokens": 464,
+          "total_tokens": 40259
+        },
+        "market_context": {
+          "input_tokens": 12493,
+          "output_tokens": 827,
+          "total_tokens": 13320
+        },
+        "market_context.repair": {
+          "input_tokens": 12585,
+          "output_tokens": 675,
+          "total_tokens": 13260
+        },
+        "operating_quality": {
+          "input_tokens": 104342,
+          "output_tokens": 824,
+          "total_tokens": 105166
+        },
+        "operating_quality.repair": {
+          "input_tokens": 104434,
+          "output_tokens": 491,
+          "total_tokens": 104925
+        },
+        "synthesis": {
+          "input_tokens": 101102,
+          "output_tokens": 1146,
+          "total_tokens": 102248
+        }
+      },
+      "price_admission": [
+        {
+          "status": "qualified",
+          "attempts": [
+            {
+              "code": "calendar_window_not_complete",
+              "key": "calendar.tencent",
+              "status": "unavailable",
+              "vendor": "tencent"
+            },
+            {
+              "code": "source_transport_unavailable",
+              "key": "calendar.szse",
+              "status": "unavailable",
+              "vendor": "szse"
+            },
+            {
+              "key": "calendar.tushare",
+              "status": "qualified",
+              "vendor": "tushare"
+            },
+            {
+              "key": "price.tencent.prepared",
+              "status": "qualified",
+              "vendor": "tencent"
+            }
+          ]
+        }
+      ],
+      "specialist_conditions": {
+        "native.event_context": {
+          "hypotheses": 1,
+          "executable_checks": 0
+        },
+        "native.market_context": {
+          "hypotheses": 2,
+          "executable_checks": 0
+        },
+        "native.operating_quality": {
+          "hypotheses": 1,
+          "executable_checks": 0
+        }
+      },
+      "explanation": {
+        "state": "failed",
+        "reason_code": "request_failed",
+        "attempts": [
+          {
+            "dispatched_at": "2026-10-18T16:10:29.106866+00:00",
+            "input_tokens": null,
+            "outcome": "unknown",
+            "output_tokens": null,
+            "phase": "main"
+          }
+        ]
+      },
+      "frozen_policies": {
+        "chatgpt_request_policy": "siwc-reasoning-v1",
+        "company_research_policy": "timestamped-quote-cautious-judgement-v1",
+        "evidence_policy": {
+          "event_lookback_calendar_days": [
+            7,
+            30,
+            90
+          ],
+          "fundamentals_quarters": 8,
+          "policy_version": "evidence-policy-v1",
+          "price_history_trading_days": 250,
+          "profile": "evidence_v1"
+        },
+        "focus_budget_policy": {
+          "focus_response": 1,
+          "main_analysis": 8,
+          "model_attempts": 12
+        },
+        "model_retry_policy": {
+          "delays_seconds": [
+            2,
+            5,
+            10
+          ],
+          "model_attempts": 12,
+          "per_call_retries": 3,
+          "run_retries": 3,
+          "version": "native-network-retry-v1"
+        },
+        "numeric_narrative_policy": "anchored-narrative-v1",
+        "report_delivery_policy": "company-basics-local-gaps-delivery-v1",
+        "specialist_reference_policy": "bounded-repair-then-isolate-v1",
+        "structured_financial_policy": "structured-financial-checks-v1",
+        "workflow_version": "evidence-production-v7"
+      }
+    },
+    {
+      "run_id": "run_20261018T161117240227Z_021254c5",
+      "record_sha256": "0ab221ec7c4ed0f0481d690345aa0cfbc9556534bd5a35edbeea3b1fd56e489c",
+      "canonical_schema_and_numeric_validation": "passed",
+      "record_bytes": 2003154,
+      "checkpoint_files": 214,
+      "checkpoint_bytes": 273053133,
+      "latest_checkpoint_bytes": 8103576,
+      "total_run_bytes": 275437453,
+      "model_usage": {
+        "challenge": {
+          "input_tokens": 174935,
+          "output_tokens": 610,
+          "total_tokens": 175545
+        },
+        "event_context": {
+          "input_tokens": 17861,
+          "output_tokens": 484,
+          "total_tokens": 18345
+        },
+        "operating_quality": {
+          "input_tokens": 132842,
+          "output_tokens": 995,
+          "total_tokens": 133837
+        },
+        "operating_quality.repair": {
+          "input_tokens": 132934,
+          "output_tokens": 835,
+          "total_tokens": 133769
+        },
+        "response_operating_quality": {
+          "input_tokens": 152347,
+          "output_tokens": 850,
+          "total_tokens": 153197
+        },
+        "response_operating_quality.repair": {
+          "input_tokens": 152439,
+          "output_tokens": 747,
+          "total_tokens": 153186
+        },
+        "synthesis": {
+          "input_tokens": 109778,
+          "output_tokens": 1256,
+          "total_tokens": 111034
+        }
+      },
+      "price_admission": [
+        {
+          "status": "unavailable",
+          "attempts": [
+            {
+              "code": "calendar_window_not_complete",
+              "key": "calendar.tencent",
+              "status": "unavailable",
+              "vendor": "tencent"
+            },
+            {
+              "code": "calendar_exchange_unsupported",
+              "key": "calendar.szse",
+              "status": "unavailable",
+              "vendor": "szse"
+            },
+            {
+              "code": "tushare_rate_limited",
+              "key": "calendar.tushare",
+              "status": "unavailable",
+              "vendor": "tushare"
+            }
+          ]
+        }
+      ],
+      "specialist_conditions": {
+        "native.event_context": {
+          "hypotheses": 1,
+          "executable_checks": 0
+        },
+        "native.operating_quality": {
+          "hypotheses": 3,
+          "executable_checks": 0
+        }
+      },
+      "explanation": {
+        "state": "failed",
+        "reason_code": "request_failed",
+        "attempts": [
+          {
+            "dispatched_at": "2026-10-18T16:14:29.995109+00:00",
+            "input_tokens": null,
+            "outcome": "unknown",
+            "output_tokens": null,
+            "phase": "main"
+          }
+        ]
+      },
+      "frozen_policies": {
+        "chatgpt_request_policy": "siwc-reasoning-v1",
+        "company_research_policy": "timestamped-quote-cautious-judgement-v1",
+        "evidence_policy": {
+          "event_lookback_calendar_days": [
+            7,
+            30,
+            90
+          ],
+          "fundamentals_quarters": 8,
+          "policy_version": "evidence-policy-v1",
+          "price_history_trading_days": 250,
+          "profile": "evidence_v1"
+        },
+        "focus_budget_policy": {
+          "focus_response": 1,
+          "main_analysis": 8,
+          "model_attempts": 12
+        },
+        "model_retry_policy": {
+          "delays_seconds": [
+            2,
+            5,
+            10
+          ],
+          "model_attempts": 12,
+          "per_call_retries": 3,
+          "run_retries": 3,
+          "version": "native-network-retry-v1"
+        },
+        "numeric_narrative_policy": "anchored-narrative-v1",
+        "report_delivery_policy": "company-basics-local-gaps-delivery-v1",
+        "specialist_reference_policy": "bounded-repair-then-isolate-v1",
+        "structured_financial_policy": "structured-financial-checks-v1",
+        "workflow_version": "evidence-production-v7"
+      },
+      "unsupported_narrative_example": {
+        "hypothesis_id": "h.34f8213d6e10774fd8c6bb7ed5f0e82ca2b2a062550369548eb7c548b536c880",
+        "claim_id": "i.34f8213d6e10774fd8c6bb7ed5f0e82ca2b2a062550369548eb7c548b536c880",
+        "statement": "收入扩张与亏损并存，且销售费用增加可能抵消部分规模收益；需进一步检验费用增长是否伴随可持续的销量、产品结构或盈利改善。",
+        "supporting_facts": [
+          {
+            "claim_id": "f.a258f3629b77240c8e460abc00c88bd5",
+            "statement": "公司披露 2026-06-30（H1）其中：营业收入：本期 22130027990.11，上年同期间 19359903999.02 CNY；PDF 第 34 页，原表单位 元。",
+            "evidence_ids": [
+              "e.operating_detail.d611ebb83e3f17f89"
+            ],
+            "row_fields": [
+              "revenue"
+            ]
+          },
+          {
+            "claim_id": "f.675e4e22cca88c3779f19504542ddbea",
+            "statement": "公司披露 2026-06-30（H1）归属于上市公司股东的净利润：本期 -748926742.94，上年同期间 -772811725.52 CNY；PDF 第 7 页，原表单位 元。",
+            "evidence_ids": [
+              "e.operating_detail.dccc11ed5a6028196"
+            ],
+            "row_fields": [
+              "parent_net_income"
+            ]
+          },
+          {
+            "claim_id": "f.9615b28f0de2631a7cb9eaa1512920e8",
+            "statement": "公司披露 2026-06-30（H1）五、净利润（净亏损以“-”号填列）：本期 -723892706.73，上年同期间 -854378168.28 CNY；PDF 第 35 页，原表单位 元。",
+            "evidence_ids": [
+              "e.operating_detail.d077caf83c44980a9"
+            ],
+            "row_fields": [
+              "consolidated_net_income"
+            ]
+          },
+          {
+            "claim_id": "f.f67bd1bcad20b31f4d06886950fc806d",
+            "statement": "公司披露 2026-06-30（H1）经营活动产生的现金流量净额：本期 -5287925232.41，上年同期间 -3146938908.36 CNY；PDF 第 7 页，原表单位 元。",
+            "evidence_ids": [
+              "e.operating_detail.d902bbf569ccd6555"
+            ],
+            "row_fields": [
+              "cfo"
+            ]
+          }
+        ],
+        "sales_expense_fact_count": 0,
+        "targeted_by_challenge": false
+      }
+    }
+  ],
+  "benchmark": {
+    "schema_version": "evidence-benchmark-v1",
+    "rubric_version": "hypothesis-quality-v1",
+    "validation_scope": "committed_event_and_artifact_integrity_only",
+    "runs": [
+      {
+        "run_id": "run_20261011T111547929814Z_c6acb6ac",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-11",
+        "run_status": "failed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6.1-sol",
+        "synthesis_model": "gpt-6.1-sol",
+        "record_available": false,
+        "report_status": null,
+        "synthesis_success": null,
+        "stance": null,
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 4,
+        "repair_retry_attempts": 1,
+        "repair_retry_ratio": 0.25,
+        "measured_usage_entries": 4,
+        "usage_complete": true,
+        "measured_input_tokens": 139198,
+        "measured_output_tokens": 6375,
+        "synthesis_measured_token_share": null,
+        "created_to_completed_seconds": null,
+        "fact_count": null,
+        "hypothesis_referenced_fact_count": null,
+        "hypothesis_fact_ratio": null,
+        "saved_metric_count": null,
+        "derived_metric_count": null,
+        "verification_record_count": null,
+        "executed_verification_count": null,
+        "local_evidence_check_count": null,
+        "challenge_count": null,
+        "record_bytes": null,
+        "synthesis_diagnostics": {},
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261012T063510642090Z_ed080e23",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-12",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": null,
+        "synthesis_success": false,
+        "stance": "insufficient_evidence",
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 10,
+        "repair_retry_attempts": 2,
+        "repair_retry_ratio": 0.2,
+        "measured_usage_entries": 10,
+        "usage_complete": true,
+        "measured_input_tokens": 601209,
+        "measured_output_tokens": 11681,
+        "synthesis_measured_token_share": 0.5254841815007587,
+        "created_to_completed_seconds": 233.218,
+        "fact_count": 122,
+        "hypothesis_referenced_fact_count": 15,
+        "hypothesis_fact_ratio": 0.12295081967213115,
+        "saved_metric_count": 6,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 3,
+        "record_bytes": 265053,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          },
+          "synthesis.repair": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261012T083131610549Z_6aa5cb54",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-12",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": null,
+        "synthesis_success": false,
+        "stance": "insufficient_evidence",
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 7,
+        "repair_retry_attempts": 2,
+        "repair_retry_ratio": 0.2857142857142857,
+        "measured_usage_entries": 7,
+        "usage_complete": true,
+        "measured_input_tokens": 555296,
+        "measured_output_tokens": 9854,
+        "synthesis_measured_token_share": 0.5321932230381314,
+        "created_to_completed_seconds": 288.251,
+        "fact_count": 114,
+        "hypothesis_referenced_fact_count": 10,
+        "hypothesis_fact_ratio": 0.08771929824561403,
+        "saved_metric_count": 0,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 2,
+        "record_bytes": 247883,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          },
+          "synthesis.repair": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261012T084117275670Z_e02eb806",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-12",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": null,
+        "synthesis_success": false,
+        "stance": "insufficient_evidence",
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 8,
+        "repair_retry_attempts": 2,
+        "repair_retry_ratio": 0.25,
+        "measured_usage_entries": 8,
+        "usage_complete": true,
+        "measured_input_tokens": 435587,
+        "measured_output_tokens": 8558,
+        "synthesis_measured_token_share": 0.34315595132220333,
+        "created_to_completed_seconds": 158.243,
+        "fact_count": 114,
+        "hypothesis_referenced_fact_count": 11,
+        "hypothesis_fact_ratio": 0.09649122807017543,
+        "saved_metric_count": 0,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 3,
+        "record_bytes": 252489,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          },
+          "synthesis.repair": {
+            "category": "budget_refused"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261012T084657117927Z_e7e64d35",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-12",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": null,
+        "synthesis_success": false,
+        "stance": "insufficient_evidence",
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 6,
+        "repair_retry_attempts": 1,
+        "repair_retry_ratio": 0.16666666666666666,
+        "measured_usage_entries": 6,
+        "usage_complete": true,
+        "measured_input_tokens": 507570,
+        "measured_output_tokens": 7945,
+        "synthesis_measured_token_share": 0.5956043956043956,
+        "created_to_completed_seconds": 213.737,
+        "fact_count": 114,
+        "hypothesis_referenced_fact_count": 9,
+        "hypothesis_fact_ratio": 0.07894736842105263,
+        "saved_metric_count": 0,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 2,
+        "record_bytes": 250573,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "schema_validation"
+          },
+          "synthesis.repair": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261013T033927051053Z_4f4bc126",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-13",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": null,
+        "synthesis_success": false,
+        "stance": "insufficient_evidence",
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 9,
+        "repair_retry_attempts": 2,
+        "repair_retry_ratio": 0.2222222222222222,
+        "measured_usage_entries": 9,
+        "usage_complete": true,
+        "measured_input_tokens": 563557,
+        "measured_output_tokens": 8820,
+        "synthesis_measured_token_share": 0.48773098849185065,
+        "created_to_completed_seconds": 162.388,
+        "fact_count": 123,
+        "hypothesis_referenced_fact_count": 14,
+        "hypothesis_fact_ratio": 0.11382113821138211,
+        "saved_metric_count": 6,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 2,
+        "record_bytes": 268974,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          },
+          "synthesis.repair": {
+            "category": "reference_validation",
+            "detail_code": "dimension_claim_reference"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261013T035856658686Z_497cd6e7",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-13",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": null,
+        "synthesis_success": false,
+        "stance": "insufficient_evidence",
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 7,
+        "repair_retry_attempts": 1,
+        "repair_retry_ratio": 0.14285714285714285,
+        "measured_usage_entries": 7,
+        "usage_complete": true,
+        "measured_input_tokens": 304740,
+        "measured_output_tokens": 7876,
+        "synthesis_measured_token_share": 0.27520024566880774,
+        "created_to_completed_seconds": 163.886,
+        "fact_count": 128,
+        "hypothesis_referenced_fact_count": 11,
+        "hypothesis_fact_ratio": 0.0859375,
+        "saved_metric_count": 6,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 2,
+        "record_bytes": 278146,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "schema_validation"
+          },
+          "synthesis.repair": {
+            "category": "schema_validation"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261015T063526060533Z_c8e16c69",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-15",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6.1-sol",
+        "synthesis_model": "gpt-6.1-sol",
+        "record_available": true,
+        "report_status": "specialist_summary",
+        "synthesis_success": false,
+        "stance": null,
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 8,
+        "repair_retry_attempts": 2,
+        "repair_retry_ratio": 0.25,
+        "measured_usage_entries": 8,
+        "usage_complete": true,
+        "measured_input_tokens": 834682,
+        "measured_output_tokens": 11057,
+        "synthesis_measured_token_share": 0.16280554639197198,
+        "created_to_completed_seconds": 278.9,
+        "fact_count": 132,
+        "hypothesis_referenced_fact_count": 27,
+        "hypothesis_fact_ratio": 0.20454545454545456,
+        "saved_metric_count": 6,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 3,
+        "record_bytes": 1649092,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "reference_validation",
+            "detail_code": "numeric_anchor_scope"
+          },
+          "synthesis.repair": {
+            "category": "budget_refused"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261017T075032860279Z_107ea6cd",
+        "ticker": "300750.SZ",
+        "analysis_date": "2026-10-17",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": "specialist_summary",
+        "synthesis_success": false,
+        "stance": null,
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 10,
+        "repair_retry_attempts": 3,
+        "repair_retry_ratio": 0.3,
+        "measured_usage_entries": 9,
+        "usage_complete": false,
+        "measured_input_tokens": 710872,
+        "measured_output_tokens": 8092,
+        "synthesis_measured_token_share": 0.34145242320895064,
+        "created_to_completed_seconds": 289.959,
+        "fact_count": 175,
+        "hypothesis_referenced_fact_count": 17,
+        "hypothesis_fact_ratio": 0.09714285714285714,
+        "saved_metric_count": 6,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 3,
+        "challenge_count": 3,
+        "record_bytes": 1346553,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "reference_validation",
+            "detail_code": "numeric_anchor_scope"
+          },
+          "synthesis.repair": {
+            "category": "reference_validation",
+            "detail_code": "adjudication_coverage"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261018T160405191256Z_3149e2d5",
+        "ticker": "300750.SZ",
+        "analysis_date": "2026-10-19",
+        "run_status": "failed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": false,
+        "report_status": null,
+        "synthesis_success": null,
+        "stance": null,
+        "synthesis_accepted_sections": null,
+        "synthesis_unavailable_sections": null,
+        "synthesis_sections_complete": null,
+        "stance_formed": false,
+        "model_attempts": 0,
+        "repair_retry_attempts": 0,
+        "repair_retry_ratio": null,
+        "measured_usage_entries": 0,
+        "usage_complete": false,
+        "measured_input_tokens": null,
+        "measured_output_tokens": null,
+        "synthesis_measured_token_share": null,
+        "created_to_completed_seconds": null,
+        "fact_count": null,
+        "hypothesis_referenced_fact_count": null,
+        "hypothesis_fact_ratio": null,
+        "saved_metric_count": null,
+        "derived_metric_count": null,
+        "verification_record_count": null,
+        "executed_verification_count": null,
+        "local_evidence_check_count": null,
+        "challenge_count": null,
+        "record_bytes": null,
+        "synthesis_diagnostics": {},
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261018T160807562817Z_6ae06213",
+        "ticker": "300750.SZ",
+        "analysis_date": "2026-10-19",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": "synthesized",
+        "synthesis_success": true,
+        "stance": "neutral",
+        "synthesis_accepted_sections": 6,
+        "synthesis_unavailable_sections": 0,
+        "synthesis_sections_complete": true,
+        "stance_formed": true,
+        "model_attempts": 7,
+        "repair_retry_attempts": 2,
+        "repair_retry_ratio": 0.2857142857142857,
+        "measured_usage_entries": 7,
+        "usage_complete": true,
+        "measured_input_tokens": 537055,
+        "measured_output_tokens": 4708,
+        "synthesis_measured_token_share": 0.18873197320599597,
+        "created_to_completed_seconds": 138.079,
+        "fact_count": 174,
+        "hypothesis_referenced_fact_count": 11,
+        "hypothesis_fact_ratio": 0.06321839080459771,
+        "saved_metric_count": 6,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 5,
+        "challenge_count": 0,
+        "record_bytes": 1567372,
+        "synthesis_diagnostics": {},
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      },
+      {
+        "run_id": "run_20261018T161117240227Z_021254c5",
+        "ticker": "600418.SS",
+        "analysis_date": "2026-10-19",
+        "run_status": "completed",
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "record_available": true,
+        "report_status": "synthesized",
+        "synthesis_success": true,
+        "stance": "neutral",
+        "synthesis_accepted_sections": 7,
+        "synthesis_unavailable_sections": 1,
+        "synthesis_sections_complete": false,
+        "stance_formed": true,
+        "model_attempts": 7,
+        "repair_retry_attempts": 2,
+        "repair_retry_ratio": 0.2857142857142857,
+        "measured_usage_entries": 7,
+        "usage_complete": true,
+        "measured_input_tokens": 873136,
+        "measured_output_tokens": 5777,
+        "synthesis_measured_token_share": 0.12633104755533256,
+        "created_to_completed_seconds": 187.148,
+        "fact_count": 117,
+        "hypothesis_referenced_fact_count": 12,
+        "hypothesis_fact_ratio": 0.10256410256410256,
+        "saved_metric_count": 0,
+        "derived_metric_count": null,
+        "verification_record_count": 0,
+        "executed_verification_count": 0,
+        "local_evidence_check_count": 5,
+        "challenge_count": 2,
+        "record_bytes": 2003154,
+        "synthesis_diagnostics": {
+          "synthesis.main": {
+            "category": "reference_validation",
+            "detail_code": "numeric_anchor_scope"
+          },
+          "synthesis.repair": {
+            "category": "budget_refused"
+          }
+        },
+        "hypothesis_rubric_score": null,
+        "challenge_test_request_ratio": null
+      }
+    ],
+    "cohorts": [
+      {
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6.1-sol",
+        "synthesis_model": "gpt-6.1-sol",
+        "run_count": 2,
+        "synthesis_attempted_runs": 1,
+        "synthesis_successes": 0,
+        "synthesis_success_rate": 0.0
+      },
+      {
+        "workflow": "evidence-production-v7",
+        "provider": "chatgpt",
+        "specialist_model": "gpt-6-luna",
+        "synthesis_model": "gpt-6-luna",
+        "run_count": 10,
+        "synthesis_attempted_runs": 9,
+        "synthesis_successes": 2,
+        "synthesis_success_rate": 0.2222222222222222
+      }
+    ],
+    "errors": []
+  },
+  "replay": [
+    {
+      "run_id": "run_20261018T160807562817Z_6ae06213",
+      "saved_sha256": "5c44479785ac9a98b6d5cda0bb18437937c552fc19f672af4e87af937d21641f",
+      "reconstructed_sha256": "5c44479785ac9a98b6d5cda0bb18437937c552fc19f672af4e87af937d21641f",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261018T161117240227Z_021254c5",
+      "saved_sha256": "049dd2a1752832b68c9f649ba72bc5f292247ec1adf7a7165b985285c8b55cd7",
+      "reconstructed_sha256": "049dd2a1752832b68c9f649ba72bc5f292247ec1adf7a7165b985285c8b55cd7",
+      "matches": true
+    }
+  ],
+  "validation": {
+    "python_tests": 476,
+    "python_batches": [
+      186,
+      233,
+      57
+    ],
+    "frontend_tests": 387,
+    "frontend_files": 56,
+    "typecheck": "passed",
+    "build": "passed",
+    "assets_byte_identical": true,
+    "ruff": "passed",
+    "test_logs_sha256": {
+      "pytest": "720477c02b4ab78d503b58d1872a48818b67f1c79d3291c1c8e5d5ed7a9318a1",
+      "stability": "2227af5561797d519543f4136c313c6f91eaffc35a949924850e95226c0f3af6",
+      "recovery": "56bae048a0fca4ae1cf716e8bb9daf5460c5737d8b711294c7a8ec7ee04ff706",
+      "typecheck": "38bac939cb7587c6c953fbaa6a6b22c94451391ab3af23debcb792470688c8da",
+      "vitest": "8ba73103409410de4d0fe56196828247fe1c1090195c9fdcf1e54206b7748bf0",
+      "build": "c5e771ee3b4c8ebd848d74d5b590739053a9ccb6b0b2fb734043c57ec61ee4e0"
+    },
+    "limits": [
+      "focused_python_not_full_suite",
+      "no_new_live_provider_or_model_calls",
+      "no_browser_visual_or_playwright_run",
+      "no_remote_CI_or_branch_protection_verification",
+      "no_latency_load_or_disk_failure_injection"
+    ]
+  }
+}

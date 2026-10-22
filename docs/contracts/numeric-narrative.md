@@ -14,6 +14,12 @@ previously allowed a source growth of 18.4% to become 25% in model prose.
 
 ## Qualification and formatting
 
+With `hypothesis-directed-checks-v1`, challenge V3 operands and predicates have
+their own structured bindings; predicate plans target `proposed_test`. Challenge
+prose can additionally use facts explicitly bound to that challenge, and targeted
+replies retain the matching task outcomes and verification context. Original
+hypothesis scopes do not expand. See [independent proposition checks](hypothesis-directed-checks.md).
+
 Catalog anchors bind exact decimal strings, units, report periods or observation
 windows, subject, evidence/fact IDs and source selectors or calculation hashes.
 They distinguish actual reports, quotes, institution forecasts, computed
@@ -92,9 +98,18 @@ baseline and cannot change baseline research.
 Invalid quantities use the existing single bounded stage repair and shared
 attempt limits. Failed/refused repair can retain valid original specialist
 siblings with their original indices and closed rejection codes. Malformed
-JSON/schema or shared unknowns cannot be partially salvaged. Failed later stages
-retain the existing basic-report/specialist-summary delivery behavior; lifecycle,
-deadline, cancellation and persistence failures remain fail-closed.
+JSON/schema or shared unknowns cannot be partially salvaged. Fresh V7 numeric
+report-delivery synthesis with reference-schema 3 uses `synthesis-sections-v1`:
+each accepted fragment has its own ordinary numeric proof, and the composite
+proof replays fragments against a frozen complete base record and research
+question. Context numbers use the same RFC8785 normalization as durable storage.
+Main receipts are immutable; one targeted repair can fill rejected sections.
+The aggregate 64-token ceiling and per-field limits still apply. Composite
+proofs bind section status, text, IDs, context, fragment proofs and final field
+paths; host-generated unfinished text is attributed to code with no model source.
+Publication and reads rebuild the same assembly. Other failed later stages and
+zero-accepted-section synthesis retain basic-report/specialist-summary behavior;
+lifecycle, deadline, cancellation and persistence failures remain fail-closed.
 
 Records/checkpoints without the frozen policy keep their old schemas, prompts,
 IDs and absent-field serialization. They are not retroactively certified by
@@ -107,6 +122,12 @@ remain invalid. This admits historical lists generated in another Python
 process without rewriting saved artifacts or relaxing numeric qualification.
 
 ## Limits and validation evidence
+
+Calculation-v3 [structured financial comparisons](structured-financial-checks.md)
+add accounting-check anchors bound to the saved observation, status, source,
+current/prior period and version. They do not convert endpoint differences into
+reported cash-bridge components. Conflicts and missing official crosschecks
+remain visible alongside numeric fragments.
 
 The guarantee covers the host-generated numeric fragments and their bindings.
 Free surrounding prose can still contradict a correctly labeled fragment, for
@@ -124,3 +145,7 @@ live deployment; that requires a separately authorized run.
 See [unified company research](unified-company-research.md) for dialogue, delivery
 and attempt budgets, and the [documentation index](../README.md) for current
 operational references.
+
+Fresh runs also apply [factual premises](factual-premises.md). Its optional envelope
+and receipt fields are absent for old identities; the new policy is frozen in the
+input identity and revalidated at stage reads and publication.

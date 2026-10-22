@@ -1,0 +1,328 @@
+{
+  "schema_version": "evidence-checks-v1",
+  "calculation_version": "minimum-evidence-v3",
+  "run_id": "native-run",
+  "ticker": "600519",
+  "analysis_date": "2026-09-30",
+  "input_snapshot_id": "v0.50b41b321325f7d7c0a13d0ae4b02e41e2745dd6abd7298df407a729bffdbcce",
+  "input_evidence_ids": [
+    "e.security_identity.d1fc835ebdb534de3",
+    "e.fundamentals.d489077d33798df7f",
+    "e.event_coverage.de3adffa8efde1d19"
+  ],
+  "input_sha256": "e35f8f80177786a279016d464f4fc1e972dd20dab0c0f72666d97802b97f7a16",
+  "checks": [
+    {
+      "check_id": "operating_disclosures",
+      "question_scope": "operating_disclosures.current_period_coverage",
+      "question": "当前报告期的经营判断是否有正式财务与定量运营披露支撑？",
+      "status": "unavailable",
+      "satisfied": [],
+      "missing": [
+        "official_current_period"
+      ],
+      "evidence_ids": [],
+      "observations": [],
+      "limitations": []
+    },
+    {
+      "check_id": "cash_conversion",
+      "question_scope": "cash_conversion.reported_bridge",
+      "question": "当前及上年同期间的净利润到经营现金流桥是否完整、可核对？",
+      "status": "unavailable",
+      "satisfied": [],
+      "missing": [
+        "official_current_period"
+      ],
+      "evidence_ids": [],
+      "observations": [],
+      "limitations": []
+    },
+    {
+      "check_id": "valuation_context",
+      "question_scope": "valuation_context.supplementary_positioning",
+      "question": "当前估值定位是否有同日同行样本或带日期的机构预测作为补充？",
+      "status": "unavailable",
+      "satisfied": [],
+      "missing": [
+        "dated_institution_forecast_unavailable",
+        "peers_fewer_than_three",
+        "qualified_target_snapshot"
+      ],
+      "evidence_ids": [],
+      "observations": [],
+      "limitations": [
+        "supplementary_positioning_not_fair_value_proof",
+        "industry_candidates_not_business_equivalence",
+        "sample_not_complete_population_or_consensus",
+        "qualified_target_snapshot",
+        "peers_fewer_than_three",
+        "dated_institution_forecast_unavailable"
+      ]
+    },
+    {
+      "check_id": "financial_baseline",
+      "question_scope": "financial_baseline.structured_coverage",
+      "question": "同期间合并营业收入、归母净利润与经营现金流是否具有合格结构化字段？",
+      "status": "passed",
+      "satisfied": [
+        "complete_same_supplier_structured_pair"
+      ],
+      "missing": [],
+      "evidence_ids": [
+        "e.fundamentals.d489077d33798df7f"
+      ],
+      "observations": [
+        {
+          "key": "revenue_current",
+          "label": "2026-06-30 营业收入",
+          "value": "120.125",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "revenue_previous",
+          "label": "2025-06-30 营业收入",
+          "value": "120.125",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "revenue_change",
+          "label": "营业收入同比金额变化",
+          "value": "0.000",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "revenue_yoy_percent",
+          "label": "营业收入同比变化",
+          "value": "0",
+          "unit": "%",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_income_attr_p_current",
+          "label": "2026-06-30 归母净利润",
+          "value": "9",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_income_attr_p_previous",
+          "label": "2025-06-30 归母净利润",
+          "value": "9",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_income_attr_p_change",
+          "label": "归母净利润同比金额变化",
+          "value": "0",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_income_attr_p_yoy_percent",
+          "label": "归母净利润同比变化",
+          "value": "0",
+          "unit": "%",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_current",
+          "label": "2026-06-30 经营现金流净额",
+          "value": "30",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_previous",
+          "label": "2025-06-30 经营现金流净额",
+          "value": "60",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_change",
+          "label": "经营现金流净额同比金额变化",
+          "value": "-30",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_yoy_percent",
+          "label": "经营现金流净额同比变化",
+          "value": "-50.0",
+          "unit": "%",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        }
+      ],
+      "limitations": [
+        "structured_financial_comparison_not_reported_cash_bridge",
+        "structured_financial_coverage_not_quantitative_operations",
+        "two_periods_not_structural_persistence",
+        "structured_without_official_table_crosscheck",
+        "single_structured_supplier"
+      ]
+    },
+    {
+      "check_id": "cashflow_comparison",
+      "question_scope": "cashflow_comparison.same_period_endpoints",
+      "question": "同期间合并净利润与经营现金流的金额、差额和变化是否可核对？",
+      "status": "passed",
+      "satisfied": [
+        "complete_same_supplier_structured_pair"
+      ],
+      "missing": [],
+      "evidence_ids": [
+        "e.fundamentals.d489077d33798df7f"
+      ],
+      "observations": [
+        {
+          "key": "n_income_current",
+          "label": "2026-06-30 合并净利润",
+          "value": "10",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_income_previous",
+          "label": "2025-06-30 合并净利润",
+          "value": "20",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_income_change",
+          "label": "合并净利润同比金额变化",
+          "value": "-10",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_income_yoy_percent",
+          "label": "合并净利润同比变化",
+          "value": "-50.0",
+          "unit": "%",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_current",
+          "label": "2026-06-30 经营现金流净额",
+          "value": "30",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_previous",
+          "label": "2025-06-30 经营现金流净额",
+          "value": "60",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_change",
+          "label": "经营现金流净额同比金额变化",
+          "value": "-30",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "n_cashflow_act_yoy_percent",
+          "label": "经营现金流净额同比变化",
+          "value": "-50.0",
+          "unit": "%",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "cfo_minus_net_income_current",
+          "label": "经营现金流减合并净利润（本期）",
+          "value": "20",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。差额不是调节桥组件或因果归因。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        },
+        {
+          "key": "cfo_minus_net_income_previous",
+          "label": "经营现金流减合并净利润（上年同期）",
+          "value": "40",
+          "unit": "CNY",
+          "method": "2026-06-30 对 2025-06-30；同供应商、合并累计口径；金额 CNY；未证明经济原因或完整现金流桥。差额不是调节桥组件或因果归因。",
+          "evidence_ids": [
+            "e.fundamentals.d489077d33798df7f"
+          ]
+        }
+      ],
+      "limitations": [
+        "structured_financial_comparison_not_reported_cash_bridge",
+        "structured_financial_coverage_not_quantitative_operations",
+        "two_periods_not_structural_persistence",
+        "structured_without_official_table_crosscheck",
+        "single_structured_supplier"
+      ]
+    }
+  ]
+}

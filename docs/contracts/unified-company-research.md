@@ -28,6 +28,21 @@ force partial/LOW_CONFIDENCE and retain original indices plus closed reasons
 for kernel/Reader binding. See [Web evidence research](../operations/evidence-research.md)
 for persistence, cancellation and legacy recovery boundaries.
 
+Fresh identities also freeze `financial_detail_policy=financial-detail-fields-v1`.
+Each statement table is saved as its own `sina.financial_detail` or
+`tushare.financial_detail` record with 11 additional fields; the six-field
+financial-statements record is byte-identical. Conditions may reference either
+record, but a financial comparison must take both operands from one record.
+Fixed structured checks, supplier cross-checks and valuation keep reading only
+the six-field record. Identities without the marker never collect detail records.
+
+Fresh identities also freeze `challenge_check_policy=hypothesis-directed-checks-v1`.
+Important challenges classify verifiability and may propose independent checks
+using qualified V0 facts. Code saves task outcomes while preserving original
+hypothesis conditions. Replies can use explicitly bound facts from assigned
+challenges; predicate outcomes never automatically settle economic risks.
+See [classification and recovery boundaries](hypothesis-directed-checks.md).
+
 `ResearchDialogueV1` binds every original hypothesis to its specialist, the final
 input snapshot and exactly one reply per challenge. Replies may maintain, revise,
 withdraw or admit they cannot answer. Each uses only the specialist's qualified
@@ -142,6 +157,32 @@ when an argument cites a response, every cited claim must be one of that
 response's supporting facts, including for maintained replies. A fixed
 allowlisted diagnostic can supply these saved bindings to bounded repair;
 raw response text and arbitrary validator messages are never included.
+Fresh numeric V7 report-delivery synthesis prompts freeze reference-schema
+version 3. One main call fills four dimension sections, one adjudication per
+saved challenge, an overall section and a conditions section. Code checks each
+section's references, numeric bindings and complete-record constraints before
+saving its receipt. Dimension references are checked before numeric rendering.
+The existing single repair requests only failed sections; accepted main sections
+are immutable. The shared twelve-attempt limit is unchanged.
+
+`synthesis_sections` records accepted/unavailable status, main/repair origin and
+closed failure reasons. Invalid shared JSON/envelopes cannot be salvaged; saved
+accepted progress can survive an interrupted dispatch without repeating it.
+Missing sections use fixed host status text, never invented model reasoning.
+Overall failure or an unavailable critical-challenge adjudication forces a null
+stance and `analysis_unrated`. Other unavailable sections preserve a valid
+overall stance under existing investment gates. Every partial section delivery
+is `partial / LOW_CONFIDENCE` and visibly “综合未完成”; execution/validation failure
+does not mean financial evidence is missing. Zero accepted sections retains the
+existing basic-report/specialist-summary fallback. Cancellation, deadline and
+persistence failures remain fail-closed. Publication, Reader, Agent projections
+and Markdown replay the same receipts; reads never repair them.
+
+Saved version-1/2 prompts retain their schema, prompt hashes, whole-proposal
+validation and absent-field serialization. Version 2 requires complete challenge
+assessment/adjudication arrays and supplies combined reference diagnostics to
+bounded repair. Fresh nonnumeric scoped synthesis retains version 2. Code-owned
+local evidence checks remain separate from model challenge adjudications.
 V6 keeps its original five/one/twelve policy. Stable reservation/merge order,
 checkpoint caching and unknown-dispatch non-replay apply to replies too.
 Reply tasks reuse the corresponding specialist's configured model effort.

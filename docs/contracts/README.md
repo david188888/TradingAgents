@@ -4,6 +4,10 @@
 
 This page is a map, not a second schema. Python and TypeScript definitions remain the machine-owned truth; do not copy complete field lists into Markdown.
 
+- [Factual premises](factual-premises.md): observations, interpretations, pending questions and replay boundaries.
+- [Hypothesis-directed challenge checks](hypothesis-directed-checks.md): classification, independent propositions and execution outcomes.
+- [Native input measurement](native-input-measurement.md): read-only prompt reconstruction, size/usage boundaries, conservative content-preservation inventory and offline reversible metadata comparison.
+
 ## Canonical Sources
 
 | Surface | Canonical source | Consumers and adapters |
@@ -15,6 +19,7 @@ This page is a map, not a second schema. Python and TypeScript definitions remai
 | Shared research record and native assessment | [`agents/schemas/_research_record.py`](../../tradingagents/agents/schemas/_research_record.py), [`agents/schemas/_research_assessment.py`](../../tradingagents/agents/schemas/_research_assessment.py), [`research/native_record.py`](../../tradingagents/research/native_record.py), [`execution/native_publication.py`](../../tradingagents/execution/native_publication.py) | Native mandatory publication, classic/catalyst compatibility producers, `/reader/record`, same-record Reader/Markdown |
 | V5 bounded evidence checks and challenge outcomes | [`agents/schemas/_evidence_checks.py`](../../tradingagents/agents/schemas/_evidence_checks.py), [`agents/schemas/_native_stage.py`](../../tradingagents/agents/schemas/_native_stage.py), [`research/minimum_evidence.py`](../../tradingagents/research/minimum_evidence.py) | Record recomputation, assessment v2, saved Reader and Markdown; [scope and compatibility](research-record.md#native-v5-bounded-evidence-checks) |
 | Runtime compatibility and replay contracts | [`tradingagents/runtime/`](../../tradingagents/runtime/) | Runner, observer, checkpoint and resume paths |
+| Structured financial comparisons | [`research/structured_financial_checks.py`](../../tradingagents/research/structured_financial_checks.py), [`agents/schemas/_evidence_checks.py`](../../tradingagents/agents/schemas/_evidence_checks.py) | Numeric catalog, scoped challenges, publication/Reader/Markdown; [finite scope and compatibility](structured-financial-checks.md) |
 | Web request and response models | [`tradingagents/web/schemas.py`](../../tradingagents/web/schemas.py), [`reader_models.py`](../../tradingagents/web/reader_models.py), [`audit_models.py`](../../tradingagents/web/audit_models.py), [`batch_models.py`](../../tradingagents/web/batch_models.py) | FastAPI routes (including `/api/batches`), projections, API clients |
 | ChatGPT registration binding and safe model failures | [`web/chatgpt_routes.py`](../../tradingagents/web/chatgpt_routes.py), [`llm_clients/chatgpt_errors.py`](../../tradingagents/llm_clients/chatgpt_errors.py), [`web/schemas.py`](../../tradingagents/web/schemas.py) | Single/batch account binding, native execution, Reader process DTO and [`frontend/src/api/chatgpt.ts`](../../frontend/src/api/chatgpt.ts); [credential ownership](../operations/chatgpt-subscription.md) |
 | Reader and Companion projection | [`tradingagents/web/reader_models.py`](../../tradingagents/web/reader_models.py), [`reader_projection.py`](../../tradingagents/web/reader_projection.py) | `/api/runs/{run_id}/reader` and `/reader/companion` |

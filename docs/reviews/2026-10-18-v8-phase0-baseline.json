@@ -1,0 +1,482 @@
+{
+  "schema_version": "evidence-benchmark-v1",
+  "rubric_version": "hypothesis-quality-v1",
+  "validation_scope": "committed_event_and_artifact_integrity_only",
+  "runs": [
+    {
+      "run_id": "run_20261011T111547929814Z_c6acb6ac",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-11",
+      "run_status": "failed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6.1-sol",
+      "synthesis_model": "gpt-6.1-sol",
+      "record_available": false,
+      "report_status": null,
+      "synthesis_success": null,
+      "stance": null,
+      "stance_formed": false,
+      "model_attempts": 4,
+      "repair_retry_attempts": 1,
+      "repair_retry_ratio": 0.25,
+      "measured_usage_entries": 4,
+      "usage_complete": true,
+      "measured_input_tokens": 139198,
+      "measured_output_tokens": 6375,
+      "synthesis_measured_token_share": null,
+      "created_to_completed_seconds": null,
+      "fact_count": null,
+      "hypothesis_referenced_fact_count": null,
+      "hypothesis_fact_ratio": null,
+      "saved_metric_count": null,
+      "derived_metric_count": null,
+      "verification_record_count": null,
+      "executed_verification_count": null,
+      "local_evidence_check_count": null,
+      "challenge_count": null,
+      "record_bytes": null,
+      "synthesis_diagnostics": {},
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261012T063510642090Z_ed080e23",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-12",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": null,
+      "synthesis_success": false,
+      "stance": "insufficient_evidence",
+      "stance_formed": false,
+      "model_attempts": 10,
+      "repair_retry_attempts": 2,
+      "repair_retry_ratio": 0.2,
+      "measured_usage_entries": 10,
+      "usage_complete": true,
+      "measured_input_tokens": 601209,
+      "measured_output_tokens": 11681,
+      "synthesis_measured_token_share": 0.5254841815007587,
+      "created_to_completed_seconds": 233.218,
+      "fact_count": 122,
+      "hypothesis_referenced_fact_count": 15,
+      "hypothesis_fact_ratio": 0.12295081967213115,
+      "saved_metric_count": 6,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 3,
+      "record_bytes": 265053,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        },
+        "synthesis.repair": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261012T083131610549Z_6aa5cb54",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-12",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": null,
+      "synthesis_success": false,
+      "stance": "insufficient_evidence",
+      "stance_formed": false,
+      "model_attempts": 7,
+      "repair_retry_attempts": 2,
+      "repair_retry_ratio": 0.2857142857142857,
+      "measured_usage_entries": 7,
+      "usage_complete": true,
+      "measured_input_tokens": 555296,
+      "measured_output_tokens": 9854,
+      "synthesis_measured_token_share": 0.5321932230381314,
+      "created_to_completed_seconds": 288.251,
+      "fact_count": 114,
+      "hypothesis_referenced_fact_count": 10,
+      "hypothesis_fact_ratio": 0.08771929824561403,
+      "saved_metric_count": 0,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 2,
+      "record_bytes": 247883,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        },
+        "synthesis.repair": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261012T084117275670Z_e02eb806",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-12",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": null,
+      "synthesis_success": false,
+      "stance": "insufficient_evidence",
+      "stance_formed": false,
+      "model_attempts": 8,
+      "repair_retry_attempts": 2,
+      "repair_retry_ratio": 0.25,
+      "measured_usage_entries": 8,
+      "usage_complete": true,
+      "measured_input_tokens": 435587,
+      "measured_output_tokens": 8558,
+      "synthesis_measured_token_share": 0.34315595132220333,
+      "created_to_completed_seconds": 158.243,
+      "fact_count": 114,
+      "hypothesis_referenced_fact_count": 11,
+      "hypothesis_fact_ratio": 0.09649122807017543,
+      "saved_metric_count": 0,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 3,
+      "record_bytes": 252489,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        },
+        "synthesis.repair": {
+          "category": "budget_refused"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261012T084657117927Z_e7e64d35",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-12",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": null,
+      "synthesis_success": false,
+      "stance": "insufficient_evidence",
+      "stance_formed": false,
+      "model_attempts": 6,
+      "repair_retry_attempts": 1,
+      "repair_retry_ratio": 0.16666666666666666,
+      "measured_usage_entries": 6,
+      "usage_complete": true,
+      "measured_input_tokens": 507570,
+      "measured_output_tokens": 7945,
+      "synthesis_measured_token_share": 0.5956043956043956,
+      "created_to_completed_seconds": 213.737,
+      "fact_count": 114,
+      "hypothesis_referenced_fact_count": 9,
+      "hypothesis_fact_ratio": 0.07894736842105263,
+      "saved_metric_count": 0,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 2,
+      "record_bytes": 250573,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "schema_validation"
+        },
+        "synthesis.repair": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261013T033927051053Z_4f4bc126",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-13",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": null,
+      "synthesis_success": false,
+      "stance": "insufficient_evidence",
+      "stance_formed": false,
+      "model_attempts": 9,
+      "repair_retry_attempts": 2,
+      "repair_retry_ratio": 0.2222222222222222,
+      "measured_usage_entries": 9,
+      "usage_complete": true,
+      "measured_input_tokens": 563557,
+      "measured_output_tokens": 8820,
+      "synthesis_measured_token_share": 0.48773098849185065,
+      "created_to_completed_seconds": 162.388,
+      "fact_count": 123,
+      "hypothesis_referenced_fact_count": 14,
+      "hypothesis_fact_ratio": 0.11382113821138211,
+      "saved_metric_count": 6,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 2,
+      "record_bytes": 268974,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        },
+        "synthesis.repair": {
+          "category": "reference_validation",
+          "detail_code": "dimension_claim_reference"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261013T035856658686Z_497cd6e7",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-13",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": null,
+      "synthesis_success": false,
+      "stance": "insufficient_evidence",
+      "stance_formed": false,
+      "model_attempts": 7,
+      "repair_retry_attempts": 1,
+      "repair_retry_ratio": 0.14285714285714285,
+      "measured_usage_entries": 7,
+      "usage_complete": true,
+      "measured_input_tokens": 304740,
+      "measured_output_tokens": 7876,
+      "synthesis_measured_token_share": 0.27520024566880774,
+      "created_to_completed_seconds": 163.886,
+      "fact_count": 128,
+      "hypothesis_referenced_fact_count": 11,
+      "hypothesis_fact_ratio": 0.0859375,
+      "saved_metric_count": 6,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 2,
+      "record_bytes": 278146,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "schema_validation"
+        },
+        "synthesis.repair": {
+          "category": "schema_validation"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261015T063526060533Z_c8e16c69",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-15",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6.1-sol",
+      "synthesis_model": "gpt-6.1-sol",
+      "record_available": true,
+      "report_status": "specialist_summary",
+      "synthesis_success": false,
+      "stance": null,
+      "stance_formed": false,
+      "model_attempts": 8,
+      "repair_retry_attempts": 2,
+      "repair_retry_ratio": 0.25,
+      "measured_usage_entries": 8,
+      "usage_complete": true,
+      "measured_input_tokens": 834682,
+      "measured_output_tokens": 11057,
+      "synthesis_measured_token_share": 0.16280554639197198,
+      "created_to_completed_seconds": 278.9,
+      "fact_count": 132,
+      "hypothesis_referenced_fact_count": 27,
+      "hypothesis_fact_ratio": 0.20454545454545456,
+      "saved_metric_count": 6,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 3,
+      "record_bytes": 1649092,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_anchor_scope"
+        },
+        "synthesis.repair": {
+          "category": "budget_refused"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261017T075032860279Z_107ea6cd",
+      "ticker": "300750.SZ",
+      "analysis_date": "2026-10-17",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": "specialist_summary",
+      "synthesis_success": false,
+      "stance": null,
+      "stance_formed": false,
+      "model_attempts": 10,
+      "repair_retry_attempts": 3,
+      "repair_retry_ratio": 0.3,
+      "measured_usage_entries": 9,
+      "usage_complete": false,
+      "measured_input_tokens": 710872,
+      "measured_output_tokens": 8092,
+      "synthesis_measured_token_share": 0.34145242320895064,
+      "created_to_completed_seconds": 289.959,
+      "fact_count": 175,
+      "hypothesis_referenced_fact_count": 17,
+      "hypothesis_fact_ratio": 0.09714285714285714,
+      "saved_metric_count": 6,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 3,
+      "challenge_count": 3,
+      "record_bytes": 1346553,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_anchor_scope"
+        },
+        "synthesis.repair": {
+          "category": "reference_validation",
+          "detail_code": "adjudication_coverage"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    }
+  ],
+  "cohorts": [
+    {
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6.1-sol",
+      "synthesis_model": "gpt-6.1-sol",
+      "run_count": 2,
+      "synthesis_attempted_runs": 1,
+      "synthesis_successes": 0,
+      "synthesis_success_rate": 0.0
+    },
+    {
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "run_count": 7,
+      "synthesis_attempted_runs": 7,
+      "synthesis_successes": 0,
+      "synthesis_success_rate": 0.0
+    }
+  ],
+  "errors": [],
+  "synthesis_input_reconstruction": [
+    {
+      "run_id": "run_20261012T063510642090Z_ed080e23",
+      "saved_sha256": "6b60147a41c0cb91bcc7661f049ac1d36aecdc8371610e91c9bbeb6c94b72955",
+      "reconstructed_sha256": "6b60147a41c0cb91bcc7661f049ac1d36aecdc8371610e91c9bbeb6c94b72955",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261012T083131610549Z_6aa5cb54",
+      "saved_sha256": "8092df62444d592f6f288b9d5235aee8bfa71acae00df3857293c70dde9cc744",
+      "reconstructed_sha256": "8092df62444d592f6f288b9d5235aee8bfa71acae00df3857293c70dde9cc744",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261012T084117275670Z_e02eb806",
+      "saved_sha256": "616d4cdd4bb85f53a7f4244312760b42b44c219672191121d1a441bb488b0de6",
+      "reconstructed_sha256": "616d4cdd4bb85f53a7f4244312760b42b44c219672191121d1a441bb488b0de6",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261012T084657117927Z_e7e64d35",
+      "saved_sha256": "768d05a11f20dab5445f24a8f7048f0306c136e7beeb4b3a7f8db93df3ec70ef",
+      "reconstructed_sha256": "768d05a11f20dab5445f24a8f7048f0306c136e7beeb4b3a7f8db93df3ec70ef",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261013T033927051053Z_4f4bc126",
+      "saved_sha256": "68f406e267e5fa4bd4369cb225063d6cddddbb51cd9582819d570487cfd34c3a",
+      "reconstructed_sha256": "68f406e267e5fa4bd4369cb225063d6cddddbb51cd9582819d570487cfd34c3a",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261013T035856658686Z_497cd6e7",
+      "saved_sha256": "48a3678892b45cc0faeca55b512d1fa015d9390d25b89c319656da5bd3eafe01",
+      "reconstructed_sha256": "48a3678892b45cc0faeca55b512d1fa015d9390d25b89c319656da5bd3eafe01",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261015T063526060533Z_c8e16c69",
+      "saved_sha256": "73ec2b1c06fcb1d4532823a51a29a07bf1c8e627e576f734aef38c91e7202675",
+      "reconstructed_sha256": "73ec2b1c06fcb1d4532823a51a29a07bf1c8e627e576f734aef38c91e7202675",
+      "matches": true
+    },
+    {
+      "run_id": "run_20261017T075032860279Z_107ea6cd",
+      "saved_sha256": "05498fd497c590f080a7f12b65f68fa2244e3de5f83ac88753c5150b8bd901aa",
+      "reconstructed_sha256": "05498fd497c590f080a7f12b65f68fa2244e3de5f83ac88753c5150b8bd901aa",
+      "matches": true
+    }
+  ],
+  "snapshot_date": "2026-10-18",
+  "code_baseline": "e8c283d"
+}

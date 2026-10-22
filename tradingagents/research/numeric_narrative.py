@@ -5,12 +5,14 @@ natural-language causality, implications, or implicit quantities/metaphors.
 """
 
 import hashlib
+import json
 import re
 import unicodedata
 from copy import deepcopy
 from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 
+import rfc8785
 from pydantic import ValidationError
 
 from tradingagents.agents.schemas._numeric_narrative import NumericCatalogV1
@@ -43,11 +45,13 @@ _TEXT_FIELDS = {
     "statement", "text", "alternative_explanation", "unknowns", "proposed_test",
     "rationale", "remaining_unknowns", "judgement", "next_check", "limitations",
     "answer", "suggested_next_check",
+    "description",
 }
 _CODES = {
     "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
     "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
-    "numeric_manifest_binding", "numeric_catalog_limit",
+    "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
+        "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit",
 }
 
 
@@ -100,7 +104,7 @@ def _stage_fact_ids(stage, context):
     return {f["claim_id"] for f in record.get("claims", []) if f.get("kind") != "unknown"}
 
 
-def prepare_numeric_context(stage, context, record):
+def prepare_numeric_context(stage, context, record, *, identity=None):
     """Freeze a stage view; foundation metadata never grants fact permission."""
     value = deepcopy(context)
     catalog = build_numeric_catalog(record)
@@ -114,11 +118,18 @@ def prepare_numeric_context(stage, context, record):
     value["numeric_meta"] = {
         f"m_{index:04d}": m for index, m in enumerate(value["numeric_catalog"]["metadata"])
     }
-    return value
+    from tradingagents.research.factual_premises import prepare_premise_context
+    return prepare_premise_context(stage, value, record, identity)
 
 
-def numeric_prompt_schema(base_schema):
+def numeric_prompt_schema(base_schema, *, premises=False):
     schema = NumericStageEnvelopeV1.model_json_schema()
+    if not premises:
+        schema["properties"].pop("premises", None)
+        for name in ("PremiseBindingV1",):
+            schema.get("$defs", {}).pop(name, None)
+    else:
+        schema.setdefault("required", []).append("premises")
     proposal = deepcopy(base_schema)
     definitions = proposal.pop("$defs", {})
     schema.setdefault("$defs", {}).update(definitions)
@@ -170,7 +181,8 @@ def _challenge_facts(cid, context):
     challenge = next((c for c in record.get("challenges", []) if c["challenge_id"] == cid), None)
     if challenge is None:
         challenge = next((c for c in context.get("challenges", []) if c["challenge_id"] == cid), {})
-    return _dependencies(challenge.get("target_claim_ids", []), context)
+    return (_dependencies(challenge.get("target_claim_ids", []), context)
+            | _dependencies((challenge.get("test") or {}).get("supporting_fact_ids", []), context))
 
 
 def _reply_facts(rid, context):
@@ -185,7 +197,8 @@ def _field_scope(stage, path, proposal, context):
     if parent == "hypotheses":
         return _dependencies(proposal[parent][index]["supporting_fact_ids"], context)
     if parent == "challenges":
-        return _target_facts(proposal[parent][index]["hypothesis_id"], context)
+        item = proposal[parent][index]
+        return _target_facts(item["hypothesis_id"], context) | _dependencies(item.get("supporting_fact_ids", []), context)
     if parent == "responses":
         reply = proposal[parent][index]
         allowed = set(context.get("allowed_facts_by_challenge", {}).get(reply["challenge_id"], []))
@@ -344,20 +357,36 @@ def _compile_field(stage, path, template, proposal, context, plans, counts):
     return text, {"path": path, "segments": segments, "text_sha256": _text_hash(text), "lexer_version": NUMERIC_LEXER_VERSION}
 
 
-def numeric_validation_context(context):
+def numeric_validation_context(context, *, sectioned=False):
     """Public data actually needed for replay, without prompts or recursive output."""
     keys = {
         "numeric_narrative_policy", "numeric_catalog", "numeric_aliases", "numeric_meta",
+        "factual_premise_policy", "factual_observations",
         "numeric_analysis_date", "facts", "assertions", "hypotheses", "challenges",
         "allowed_facts_by_challenge", "assigned", "dimension_claim_ids", "local_checks",
+        "challenge_check_policy",
     }
     value = {key: deepcopy(context[key]) for key in keys if key in context}
+    if context.get("challenge_check_policy"):
+        for key in ("verifications", "challenge_outcomes"):
+            if key in context:
+                value[key] = deepcopy(context[key])
     if "record" in context:
         record = _record(context)
         value["record"] = {key: record[key] for key in (
             "analysis_date", "claims", "hypotheses", "challenges", "dialogue",
         ) if key in record}
-    return value
+        if record.get("challenge_check_policy"):
+            for key in ("challenge_check_policy", "challenge_outcomes", "verifications"):
+                if key in record:
+                    value["record"][key] = deepcopy(record[key])
+        if sectioned:
+            value["record"] = record
+            value["record"].pop("assessment", None)
+            value["record"].pop("numeric_attribution", None)
+            value["question"] = context["question"]
+            value["synthesis_sections_policy"] = "synthesis-sections-v1"
+    return json.loads(rfc8785.dumps(value)) if sectioned else value
 
 
 def validate_numeric_field(field, catalog, *, metadata=None):
@@ -423,6 +452,16 @@ def _required_bindings(proposal):
                 result[root+".metric_id"] = ("metric", check["metric_id"], check)
             result[root+".predicate"] = ("predicate", check["predicate"], check)
     for ci, challenge in enumerate(proposal.get("challenges", [])):
+        check = challenge.get("check")
+        if check is not None:
+            root = f"challenges.{ci}.check"
+            if check["kind"] == "financial":
+                result[root+".current"] = ("operand", check["current"], check)
+                if check.get("base") is not None:
+                    result[root+".base"] = ("operand", check["base"], check)
+            else:
+                result[root+".metric_id"] = ("metric", check["metric_id"], check)
+            result[root+".predicate"] = ("predicate", check["predicate"], check)
         if challenge.get("observation_date") is not None:
             result[f"challenges.{ci}.observation_date"] = ("date", challenge["observation_date"], challenge)
     return result
@@ -454,8 +493,12 @@ def _check_frequency(current, base, path, operation):
 
 def _validate_bindings(stage, proposal, envelope, context, *, prefix=None):
     expected = _required_bindings(proposal)
-    bindings = {b["field_path"]: b for b in envelope["structured_bindings"]}
-    if len(bindings) != len(envelope["structured_bindings"]) or bindings.keys() != expected.keys():
+    entries = envelope["structured_bindings"]
+    if prefix is not None and stage == "challenge" and context.get("challenge_check_policy"):
+        expected = {p: value for p, value in expected.items() if p.startswith(prefix)}
+        entries = [b for b in entries if b["field_path"].startswith(prefix)]
+    bindings = {b["field_path"]: b for b in entries}
+    if len(bindings) != len(entries) or bindings.keys() != expected.keys():
         raise NumericNarrativeError("numeric_plan_mismatch")
     anchors = {a["anchor_id"]: a for a in context["numeric_catalog"]["anchors"]}
     aliases = context.get("numeric_aliases", {})
@@ -468,7 +511,8 @@ def _validate_bindings(stage, proposal, envelope, context, *, prefix=None):
         scope = _field_scope(stage, path, proposal, context)
         if kind == "predicate":
             plan = plans.get(binding["alias"]) if binding["kind"] == "plan" else None
-            text_path = path.rsplit(".check.predicate", 1)[0] + ".text"
+            text_path = path.rsplit(".check.predicate", 1)[0] + (
+                ".proposed_test" if path.startswith("challenges.") else ".text")
             if (plan is None or plan["kind"] != "quantity" or plan["field_path"] != text_path
                     or any(plan[key] != value[key] for key in ("threshold", "unit", "operator"))):
                 raise NumericNarrativeError("numeric_plan_mismatch", path)
@@ -525,14 +569,14 @@ def _canonical_envelope(envelope, schema):
 
 
 def _remap_path(path, indices, *, reverse=False):
-    match = re.match(r"^hypotheses\.(\d+)(\..*)$", path)
+    match = re.match(r"^(hypotheses|challenges)\.(\d+)(\..*)$", path)
     if not match:
         return path
-    index = int(match[1])
+    index = int(match[2])
     mapping = {old: new for new, old in enumerate(indices)} if reverse else dict(enumerate(indices))
     if index not in mapping:
         return None
-    return f"hypotheses.{mapping[index]}{match[2]}"
+    return f"{match[1]}.{mapping[index]}{match[3]}"
 
 
 def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, rejections=None):
@@ -558,30 +602,39 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
     envelope = _canonical_envelope(envelope, schema)
     proposal, compiled = envelope["proposal"], deepcopy(envelope["proposal"])
     plans = {p["alias"]: p for p in envelope["plans"]}
+    from tradingagents.research.factual_premises import bind_field, prepare_bindings
+    premise_bindings = prepare_bindings(envelope, context, [p for p, _ in _fields(proposal)])
+    def compile_field(path, template):
+        text, field = _compile_field(stage, path, template, proposal, context, plans, counts)
+        return bind_field(stage, path, text, field, proposal, context, premise_bindings)
     counts, fields, accepted, rejected = [0], [], [], list(rejections or [])
-    specialist = stage in _SPECIALISTS
+    collection = ("hypotheses" if stage in _SPECIALISTS else "challenges"
+                  if stage == "challenge" and context.get("challenge_check_policy") else None)
     # Binding shape errors and malformed main schemas are never isolated.
     expected_paths = _required_bindings(proposal).keys()
     binding_paths = [b["field_path"] for b in envelope["structured_bindings"]]
-    if len(set(binding_paths)) != len(binding_paths) or set(binding_paths) != set(expected_paths):
+    if collection == "challenges" and isolate:
+        if any(not re.match(r"^challenges\.\d+\.", path) for path in binding_paths):
+            raise NumericNarrativeError("numeric_plan_mismatch")
+    elif len(set(binding_paths)) != len(binding_paths) or set(binding_paths) != set(expected_paths):
         raise NumericNarrativeError("numeric_plan_mismatch")
-    if specialist:
+    if collection:
         # Shared unknowns are validated first; a bad shared field rejects all.
         for path, template in _fields(proposal):
-            if not path.startswith("hypotheses."):
-                text, field = _compile_field(stage, path, template, proposal, context, plans, counts)
+            if not path.startswith(collection + "."):
+                text, field = compile_field(path, template)
                 _set_path(compiled, path, text)
                 fields.append(field)
-        for index, hypothesis in enumerate(proposal["hypotheses"]):
+        for index, hypothesis in enumerate(proposal[collection]):
             local_fields, prior_count = [], counts[0]
             try:
-                _validate_bindings(stage, proposal, envelope, context, prefix=f"hypotheses.{index}.")
-                for path, template in _fields(hypothesis, f"hypotheses.{index}"):
-                    text, field = _compile_field(stage, path, template, proposal, context, plans, counts)
+                _validate_bindings(stage, proposal, envelope, context, prefix=f"{collection}.{index}.")
+                for path, template in _fields(hypothesis, f"{collection}.{index}"):
+                    text, field = compile_field(path, template)
                     _set_path(compiled, path, text)
                     local_fields.append(field)
                 # Validate expanded hypothesis lengths before accepting siblings.
-                local_proposal = {**compiled, "hypotheses": [compiled["hypotheses"][index]]}
+                local_proposal = {**compiled, collection: [compiled[collection][index]]}
                 _schema_validate(schema, local_proposal)
             except NumericNarrativeError as exc:
                 counts[0] = prior_count
@@ -593,10 +646,10 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
             else:
                 accepted.append(index)
                 fields.extend(local_fields)
-        compiled["hypotheses"] = [compiled["hypotheses"][i] for i in accepted]
+        compiled[collection] = [compiled[collection][i] for i in accepted]
         saved = deepcopy(envelope)
-        saved["proposal"]["hypotheses"] = [proposal["hypotheses"][i] for i in accepted]
-        for name in ("plans", "structured_bindings"):
+        saved["proposal"][collection] = [proposal[collection][i] for i in accepted]
+        for name in ("plans", "structured_bindings", *(("premises",) if "premises" in saved else ())):
             saved[name] = [dict(item, field_path=mapped) for item in saved[name]
                            if (mapped := _remap_path(item["field_path"], accepted, reverse=True)) is not None]
         if indices is None:
@@ -606,7 +659,7 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
     else:
         _validate_bindings(stage, proposal, envelope, context)
         for path, template in _fields(proposal):
-            text, field = _compile_field(stage, path, template, proposal, context, plans, counts)
+            text, field = compile_field(path, template)
             _set_path(compiled, path, text)
             fields.append(field)
         saved = envelope
@@ -625,17 +678,38 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
 
 def compile_numeric_stage(stage, envelope, context, schema, *, isolate=False):
     """Compile a full stage or lawful specialist siblings with original indices."""
+    if stage == "challenge" and context.get("challenge_check_policy") and isolate:
+        from tradingagents.research.challenge_checks import parse_challenge_items
+        envelope = NumericStageEnvelopeV1.model_validate(envelope).model_dump(mode="json")
+        proposal, indices, rejections = parse_challenge_items(envelope["proposal"])
+        envelope["proposal"] = proposal.model_dump(mode="json")
+        for key in ("plans", "structured_bindings", *(("premises",) if "premises" in envelope else ())):
+            envelope[key] = [dict(item, field_path=path) for item in envelope[key]
+                if (path := _remap_path(item["field_path"], indices, reverse=True)) is not None]
+        compiled, proof = _compile(stage, envelope, context, schema, isolate=True)
+        original_indices = [indices[i] for i in proof["indices"]]
+        rejected = [*rejections, *({**r, "index": indices[r["index"]]} for r in proof["rejections"])]
+        return _compile(stage, proof["envelope"], context, schema,
+            indices=original_indices, rejections=sorted(rejected, key=lambda r: r["index"]))
     return _compile(stage, envelope, context, schema, isolate=isolate)
 
 
 def validate_numeric_stage(stage, proposal, proof, context, schema):
     """Saved output must rebuild exactly; no repair calls or missing-proof fallback."""
+    if isinstance(proof, dict) and proof.get("kind") == "synthesis-sections-v1":
+        from tradingagents.agents.schemas._native_stage import SynthesisProposalV3
+        from tradingagents.research.synthesis_sections import validate_sectioned_proof
+        if stage != "synthesis" or schema is not SynthesisProposalV3:
+            raise NumericNarrativeError("numeric_manifest_binding")
+        validate_sectioned_proof(proposal, proof, context)
+        return
     try:
         saved = NumericStageProofV1.model_validate(proof).model_dump(mode="json")
         indices, rejections = saved["indices"], saved["rejections"]
-        if stage in _SPECIALISTS:
+        if stage in _SPECIALISTS or stage == "challenge" and context.get("challenge_check_policy"):
+            collection = "challenges" if stage == "challenge" else "hypotheses"
             all_indices = [*indices, *(r["index"] for r in rejections)]
-            if (len(indices) != len(saved["envelope"]["proposal"]["hypotheses"])
+            if (len(indices) != len(saved["envelope"]["proposal"][collection])
                     or indices != sorted(set(indices)) or sorted(all_indices) != list(range(len(all_indices)))
                     or len(all_indices) > 3):
                 raise NumericNarrativeError("numeric_manifest_binding")

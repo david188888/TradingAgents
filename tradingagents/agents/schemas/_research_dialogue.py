@@ -96,6 +96,9 @@ def response_fact_ids(record, role, challenge_id):
     baseline = set(record.snapshots[0].evidence_ids)
     allowed = {f.claim_id for f in fact_views(record, valuation=True)[role]
                if set(f.evidence_ids) <= baseline}
+    challenge = next((c for c in record.challenges if c.challenge_id == challenge_id), None)
+    if challenge is not None and challenge.test is not None:
+        allowed.update(challenge.test.supporting_fact_ids)
     verification_evidence = {e for v in record.verifications if v.challenge_id == challenge_id
                              for e in v.evidence_ids}
     sources = {s.evidence_id: s for s in record.evidence}

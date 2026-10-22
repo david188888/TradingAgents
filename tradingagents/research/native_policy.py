@@ -8,6 +8,7 @@ from tradingagents.research.native_valuation import VALUATION_SOURCES
 from tradingagents.research.native_versions import UNIFIED_DIMENSIONS, assessment_dimensions
 from tradingagents.research.source_families import (
     BODY_SOURCES,
+    FINANCIAL_DETAIL_SOURCES,
     FINANCIAL_SOURCES,
     OPERATING_SOURCES,
     PRICE_SOURCES,
@@ -36,8 +37,8 @@ def _valuation_sources(record):
 def _operating_sources(record):
     if record.evidence_checks is not None:
         from tradingagents.dataflows.disclosure_documents_v2 import NUMERIC_SOURCE
-        return FINANCIAL_SOURCES | OPERATING_SOURCES | {NUMERIC_SOURCE}
-    return FINANCIAL_SOURCES | OPERATING_SOURCES
+        return FINANCIAL_SOURCES | FINANCIAL_DETAIL_SOURCES | OPERATING_SOURCES | {NUMERIC_SOURCE}
+    return FINANCIAL_SOURCES | FINANCIAL_DETAIL_SOURCES | OPERATING_SOURCES
 
 
 def fact_views(record, *, valuation=False):
@@ -134,7 +135,7 @@ def dimension_claim_ids(record):
     return {name: [key for key in ids if key not in excluded] for name, ids in output.items()}
 
 
-def gate_dimensions(record, proposed, *, scoped=False, valuation=False):
+def gate_dimensions(record, proposed, *, scoped=False, valuation=False, sections=None):
     """Propagate challenged dependencies, never permit narrative to raise a ceiling."""
     order = record_dimensions(record)
     excluded = excluded_support(record)
@@ -150,6 +151,14 @@ def gate_dimensions(record, proposed, *, scoped=False, valuation=False):
     output = []
     for name in order:
         item = supplied[name]
+        if sections is not None and any(s.section_id == "dimension:" + name and s.status == "unavailable"
+                                        for s in sections.sections):
+            from tradingagents.research.synthesis_sections import UNFINISHED_DIMENSION
+            if (item.status != "unresolved" or item.claim_ids or item.challenge_ids
+                    or item.judgement != UNFINISHED_DIMENSION or item.limitations != ("synthesis_section_unavailable",)):
+                raise ValueError("unfinished dimension must be host-owned")
+            output.append(item)
+            continue
         if len(set(item.claim_ids)) != len(item.claim_ids) or not set(item.claim_ids) <= claims.keys():
             raise ValueError("synthesis contains an invalid claim reference")
         ceiling, missing = dimension_policy(record, scoped=scoped, valuation=valuation)[item.dimension]

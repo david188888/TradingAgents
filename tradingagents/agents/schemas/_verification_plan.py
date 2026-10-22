@@ -15,10 +15,46 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+# Baseline six fields: the frozen financial-statements evidence contract.
+BASELINE_FIELD_REGISTRY = {
+    "revenue": ("income", "营业收入", "BIZINCO"),
+    "n_income": ("income", "净利润", "NETPROFIT"),
+    "n_income_attr_p": ("income", "归母净利润", "PARENETP"),
+    "total_assets": ("balancesheet", "总资产", "TOTASSET"),
+    "total_liab": ("balancesheet", "总负债", "TOTLIAB"),
+    "n_cashflow_act": ("cashflow", "经营现金流净额", "MANANETR"),
+}
 FINANCIAL_FIELDS = {
-    "income": frozenset({"revenue", "n_income", "n_income_attr_p"}),
-    "balancesheet": frozenset({"total_assets", "total_liab"}),
-    "cashflow": frozenset({"n_cashflow_act"}),
+    table: frozenset(f for f, (t, _, _) in BASELINE_FIELD_REGISTRY.items() if t == table)
+    for table in ("income", "balancesheet", "cashflow")
+}
+BASELINE_LABELS = {field: label for field, (_, label, _) in BASELINE_FIELD_REGISTRY.items()}
+
+# financial-detail-fields-v1: one registry for collection, content, catalog and
+# checks. field -> (table, label, Sina item code). Names follow Tushare.
+DETAIL_FIELD_REGISTRY = {
+    "oper_cost": ("income", "营业成本", "BIZCOST"),
+    "sell_exp": ("income", "销售费用", "SALESEXPE"),
+    "admin_exp": ("income", "管理费用", "MANAEXPE"),
+    "rd_exp": ("income", "研发费用", "DEVEEXPE"),
+    "fin_exp": ("income", "财务费用", "FINEXPE"),
+    "accounts_receiv": ("balancesheet", "应收账款", "ACCORECE"),
+    "accounts_receiv_bill": ("balancesheet", "应收票据及应收账款", "NOTESACCORECE"),
+    "inventories": ("balancesheet", "存货", "INVE"),
+    "acct_payable": ("balancesheet", "应付账款", "ACCOPAYA"),
+    "accounts_pay": ("balancesheet", "应付票据及应付账款", "NOTESACCOPAYA"),
+    "c_pay_acq_const_fiolta": ("cashflow", "购建长期资产支付的现金", "ACQUASSETCASH"),
+}
+DETAIL_FIELDS = {
+    table: frozenset(f for f, (t, _, _) in DETAIL_FIELD_REGISTRY.items() if t == table)
+    for table in FINANCIAL_FIELDS
+}
+DETAIL_LABELS = {field: label for field, (_, label, _) in DETAIL_FIELD_REGISTRY.items()}
+VERIFIABLE_FIELDS = {table: FINANCIAL_FIELDS[table] | DETAIL_FIELDS[table] for table in FINANCIAL_FIELDS}
+# Single Sina code map for both baseline and detail collection.
+SINA_FIELDS = {
+    table: {code: field for field, (t, _, code) in (*BASELINE_FIELD_REGISTRY.items(), *DETAIL_FIELD_REGISTRY.items()) if t == table}
+    for table in ("income", "balancesheet", "cashflow")
 }
 
 
@@ -41,7 +77,7 @@ class FinancialOperandV1(_PlanModel):
 
     @model_validator(mode="after")
     def allowlisted_field_and_date(self):
-        if self.field not in FINANCIAL_FIELDS[self.table]:
+        if self.field not in VERIFIABLE_FIELDS[self.table]:
             raise ValueError("financial field is not allowlisted for table")
         date.fromisoformat(self.report_period)
         return self
@@ -110,6 +146,25 @@ class VerificationPlanV1(_PlanModel):
         if len({task.challenge_id for task in self.tasks}) != len(self.tasks):
             raise ValueError("one verification task per challenge")
         return self
+
+
+class ChallengeVerificationTaskV1(_PlanModel):
+    task_id: str = Field(min_length=1, max_length=120)
+    challenge_id: str = Field(min_length=1, max_length=512)
+    hypothesis_id: str = Field(min_length=1, max_length=512)
+    proposition: str = Field(min_length=1, max_length=300)
+    challenge_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    check: VerificationConditionV1
+
+
+class VerificationPlanV2(VerificationPlanV1):
+    schema_version: Literal["verification-plan-v2"] = "verification-plan-v2"
+    tasks: tuple[ChallengeVerificationTaskV1, ...] = Field(default=(), max_length=3)
+
+
+def parse_verification_plan(value):
+    schema = VerificationPlanV2 if value.get("schema_version") == "verification-plan-v2" else VerificationPlanV1
+    return schema.model_validate_json(json.dumps(value, allow_nan=False))
 
 
 def canonical_sha256(value: BaseModel | dict) -> str:
