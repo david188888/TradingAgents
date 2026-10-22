@@ -1,0 +1,390 @@
+{
+  "schema_version": "evidence-benchmark-v1",
+  "rubric_version": "hypothesis-quality-v1",
+  "validation_scope": "committed_event_and_artifact_integrity_only",
+  "runs": [
+    {
+      "run_id": "run_20261018T160405191256Z_3149e2d5",
+      "ticker": "300750.SZ",
+      "analysis_date": "2026-10-19",
+      "run_status": "failed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": false,
+      "report_status": null,
+      "synthesis_success": null,
+      "stance": null,
+      "synthesis_accepted_sections": null,
+      "synthesis_unavailable_sections": null,
+      "synthesis_sections_complete": null,
+      "stance_formed": false,
+      "model_attempts": 0,
+      "repair_retry_attempts": 0,
+      "repair_retry_ratio": null,
+      "measured_usage_entries": 0,
+      "usage_complete": false,
+      "measured_input_tokens": null,
+      "measured_output_tokens": null,
+      "synthesis_measured_token_share": null,
+      "created_to_completed_seconds": null,
+      "fact_count": null,
+      "hypothesis_referenced_fact_count": null,
+      "hypothesis_fact_ratio": null,
+      "saved_metric_count": null,
+      "derived_metric_count": null,
+      "verification_record_count": null,
+      "executed_verification_count": null,
+      "local_evidence_check_count": null,
+      "challenge_count": null,
+      "record_bytes": null,
+      "synthesis_diagnostics": {},
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261018T160807562817Z_6ae06213",
+      "ticker": "300750.SZ",
+      "analysis_date": "2026-10-19",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": "synthesized",
+      "synthesis_success": true,
+      "stance": "neutral",
+      "synthesis_accepted_sections": 6,
+      "synthesis_unavailable_sections": 0,
+      "synthesis_sections_complete": true,
+      "stance_formed": true,
+      "model_attempts": 7,
+      "repair_retry_attempts": 2,
+      "repair_retry_ratio": 0.2857142857142857,
+      "measured_usage_entries": 7,
+      "usage_complete": true,
+      "measured_input_tokens": 537055,
+      "measured_output_tokens": 4708,
+      "synthesis_measured_token_share": 0.18873197320599597,
+      "created_to_completed_seconds": 138.079,
+      "fact_count": 174,
+      "hypothesis_referenced_fact_count": 11,
+      "hypothesis_fact_ratio": 0.06321839080459771,
+      "saved_metric_count": 6,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 5,
+      "challenge_count": 0,
+      "record_bytes": 1567372,
+      "synthesis_diagnostics": {},
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    },
+    {
+      "run_id": "run_20261018T161117240227Z_021254c5",
+      "ticker": "600418.SS",
+      "analysis_date": "2026-10-19",
+      "run_status": "completed",
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "record_available": true,
+      "report_status": "synthesized",
+      "synthesis_success": true,
+      "stance": "neutral",
+      "synthesis_accepted_sections": 7,
+      "synthesis_unavailable_sections": 1,
+      "synthesis_sections_complete": false,
+      "stance_formed": true,
+      "model_attempts": 7,
+      "repair_retry_attempts": 2,
+      "repair_retry_ratio": 0.2857142857142857,
+      "measured_usage_entries": 7,
+      "usage_complete": true,
+      "measured_input_tokens": 873136,
+      "measured_output_tokens": 5777,
+      "synthesis_measured_token_share": 0.12633104755533256,
+      "created_to_completed_seconds": 187.148,
+      "fact_count": 117,
+      "hypothesis_referenced_fact_count": 12,
+      "hypothesis_fact_ratio": 0.10256410256410256,
+      "saved_metric_count": 0,
+      "derived_metric_count": null,
+      "verification_record_count": 0,
+      "executed_verification_count": 0,
+      "local_evidence_check_count": 5,
+      "challenge_count": 2,
+      "record_bytes": 2003154,
+      "synthesis_diagnostics": {
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_anchor_scope"
+        },
+        "synthesis.repair": {
+          "category": "budget_refused"
+        }
+      },
+      "hypothesis_rubric_score": null,
+      "challenge_test_request_ratio": null
+    }
+  ],
+  "cohorts": [
+    {
+      "workflow": "evidence-production-v7",
+      "provider": "chatgpt",
+      "specialist_model": "gpt-6-luna",
+      "synthesis_model": "gpt-6-luna",
+      "run_count": 3,
+      "synthesis_attempted_runs": 2,
+      "synthesis_successes": 2,
+      "synthesis_success_rate": 1.0
+    }
+  ],
+  "errors": [],
+  "additional_audit": [
+    {
+      "run_id": "run_20261018T160807562817Z_6ae06213",
+      "quality": "LOW_CONFIDENCE",
+      "completeness": "partial",
+      "hypothesis_count": 4,
+      "challenge_severities": [],
+      "checks": [
+        {
+          "id": "operating_disclosures",
+          "status": "unavailable"
+        },
+        {
+          "id": "cash_conversion",
+          "status": "unavailable"
+        },
+        {
+          "id": "valuation_context",
+          "status": "passed"
+        },
+        {
+          "id": "financial_baseline",
+          "status": "passed"
+        },
+        {
+          "id": "cashflow_comparison",
+          "status": "passed"
+        }
+      ],
+      "sections": {
+        "policy": "synthesis-sections-v1",
+        "sections": [
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "dimension:operating_quality",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "dimension:valuation",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "dimension:catalyst_delivery",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "dimension:market_context",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "overall",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "conditions",
+            "status": "accepted"
+          }
+        ]
+      },
+      "diagnostics": {
+        "market_context.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_plan_mismatch",
+          "phase": "main",
+          "stage": "market_context",
+          "version": 1
+        },
+        "operating_quality.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_literal_unbound",
+          "phase": "main",
+          "stage": "operating_quality",
+          "version": 1
+        },
+        "operating_quality.repair": {
+          "category": "reference_validation",
+          "detail_code": "numeric_literal_unbound",
+          "phase": "repair",
+          "stage": "operating_quality",
+          "version": 1
+        }
+      },
+      "explanation": {
+        "state": "failed",
+        "reason_code": "request_failed",
+        "attempt_count": 1
+      }
+    },
+    {
+      "run_id": "run_20261018T161117240227Z_021254c5",
+      "quality": "LOW_CONFIDENCE",
+      "completeness": "partial",
+      "hypothesis_count": 4,
+      "challenge_severities": [
+        "material",
+        "material"
+      ],
+      "checks": [
+        {
+          "id": "operating_disclosures",
+          "status": "unavailable"
+        },
+        {
+          "id": "cash_conversion",
+          "status": "passed"
+        },
+        {
+          "id": "valuation_context",
+          "status": "passed"
+        },
+        {
+          "id": "financial_baseline",
+          "status": "passed"
+        },
+        {
+          "id": "cashflow_comparison",
+          "status": "passed"
+        }
+      ],
+      "sections": {
+        "policy": "synthesis-sections-v1",
+        "sections": [
+          {
+            "phase": null,
+            "reason_code": "numeric_anchor_scope",
+            "section_id": "dimension:operating_quality",
+            "status": "unavailable"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "dimension:valuation",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "dimension:catalyst_delivery",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "dimension:market_context",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "adjudication:c.0c4ae21eea1d12b588a29751e416558fc78f99bc95137d5a2ec03f390aebf77f",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "adjudication:c.d79e770b93ec1a6dcb2d63fa3d8cdfd3ab5225e5eef0ebcbde7edfa14777d42f",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "overall",
+            "status": "accepted"
+          },
+          {
+            "phase": "main",
+            "reason_code": null,
+            "section_id": "conditions",
+            "status": "accepted"
+          }
+        ]
+      },
+      "diagnostics": {
+        "operating_quality.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_plan_mismatch",
+          "phase": "main",
+          "stage": "operating_quality",
+          "version": 1
+        },
+        "response_operating_quality.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_literal_unbound",
+          "phase": "main",
+          "stage": "response_operating_quality",
+          "version": 1
+        },
+        "synthesis.main": {
+          "category": "reference_validation",
+          "detail_code": "numeric_anchor_scope",
+          "phase": "main",
+          "stage": "synthesis",
+          "synthesis_reference_issues": [
+            {
+              "code": "numeric_anchor_scope",
+              "path": [
+                "dimensions",
+                0
+              ]
+            }
+          ],
+          "version": 1
+        },
+        "synthesis.repair": {
+          "budget_bucket": "structured_repair",
+          "budget_consumed": 2,
+          "budget_limit": 2,
+          "category": "budget_refused",
+          "phase": "repair",
+          "stage": "synthesis",
+          "version": 1
+        }
+      },
+      "explanation": {
+        "state": "failed",
+        "reason_code": "request_failed",
+        "attempt_count": 1
+      }
+    }
+  ],
+  "history_integrity": {
+    "existing_file_count": 5969,
+    "unchanged": 5965,
+    "changed": [
+      "batches/batch_20260821T103108352832Z_2364ef20.json",
+      "batches/batch_20260821T115857529324Z_95394826.json",
+      "batches/batch_20260908T103013120165Z_7ddc84d7.json",
+      "batches/batch_20260908T120139230825Z_af12be08.json"
+    ],
+    "missing": []
+  }
+}

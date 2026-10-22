@@ -8,6 +8,7 @@ from tradingagents.dataflows.native_disclosures import DisclosureSources
 from tradingagents.dataflows.native_qualification import NativeSourceUnavailable, api_date
 from tradingagents.dataflows.tushare_price_history import settled_sessions
 from tradingagents.execution.budget import BudgetExhausted
+from tradingagents.execution.config_identity import SemanticConfigError
 from tradingagents.research.evidence_freeze import CapabilityStatus, FrozenCapability
 
 CAP_VALUATION = "valuation"
@@ -89,11 +90,13 @@ class ValuationSources(DisclosureSources):
         from types import SimpleNamespace
         config = deepcopy(request.effective_config)
         overrides = config.get("evidence_source_vendors", {})
+        if not isinstance(overrides, dict):
+            raise SemanticConfigError("invalid_native_source_configuration")
         self.valuation_vendors = overrides.pop("valuation", ["tencent", "tushare"])
         if (not isinstance(self.valuation_vendors, list)
                 or any(not isinstance(v, str) or v not in {"tencent", "tushare"} for v in self.valuation_vendors)
                 or len(set(self.valuation_vendors)) != len(self.valuation_vendors)):
-            raise ValueError("invalid_native_source_configuration")
+            raise SemanticConfigError("invalid_native_source_configuration")
         super().__init__(SimpleNamespace(**{**vars(request), "effective_config": config}), run_id, session, fetch)
         excluded = config.get("evidence_source_exclusions", [])
         self.valuation_vendors = [v for v in self.valuation_vendors if v not in excluded]

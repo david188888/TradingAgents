@@ -32,6 +32,7 @@ from tradingagents.dataflows.supplemental_valuation import (
     ths_forecasts,
 )
 from tradingagents.execution.budget import BudgetExhausted
+from tradingagents.execution.config_identity import SemanticConfigError
 from tradingagents.research.evidence_freeze import CapabilityStatus, FrozenCapability
 
 
@@ -40,15 +41,15 @@ class MinimumEvidenceSources(ValuationSources):
         config = deepcopy(request.effective_config)
         overrides = config.get("evidence_source_vendors", {})
         if not isinstance(overrides, dict):
-            raise ValueError("invalid_native_source_configuration")
+            raise SemanticConfigError("invalid_native_source_configuration")
         self.forecast_vendors = overrides.pop("forecasts", ["ths", "eastmoney"])
         self.peer_vendors = overrides.pop("peers", ["eastmoney", "tencent"])
         excluded = config.get("evidence_source_exclusions", [])
         if not isinstance(excluded, list):
-            raise ValueError("invalid_native_source_configuration")
+            raise SemanticConfigError("invalid_native_source_configuration")
         for vendors, allowed in ((self.forecast_vendors, {"ths", "eastmoney"}), (self.peer_vendors, {"eastmoney", "tencent"})):
             if not isinstance(vendors, list) or any(not isinstance(v, str) or v not in allowed for v in vendors) or len(set(vendors)) != len(vendors):
-                raise ValueError("invalid_native_source_configuration")
+                raise SemanticConfigError("invalid_native_source_configuration")
         self.forecast_vendors = [v for v in self.forecast_vendors if v not in excluded]
         self.peer_vendors = [v for v in self.peer_vendors if v not in excluded]
         config["evidence_source_exclusions"] = [v for v in excluded if v != "ths"]

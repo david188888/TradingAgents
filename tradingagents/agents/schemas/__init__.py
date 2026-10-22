@@ -54,6 +54,15 @@ from ._catalyst_research import (  # noqa: F401  - facade re-export
     SpecialistFinding,
     brief_character_count,
 )
+from ._challenge_verification import (  # noqa: F401 - facade re-export
+    CHALLENGE_CHECK_POLICY,
+    ChallengeCheckOutcomeV1,
+    ChallengeInputAvailabilityV1,
+    ChallengeTestV1,
+    FinancialRequirementV1,
+    MetricRequirementV1,
+    SourceRequirementV1,
+)
 from ._common import (  # noqa: F401  - facade re-export
     ModelClaimInput,
     PortfolioRating,
@@ -132,10 +141,12 @@ from ._sentiment import (  # noqa: F401  - facade re-export
     render_sentiment_report,
 )
 from ._verification_plan import (  # noqa: F401 - facade re-export
+    ChallengeVerificationTaskV1,
     FinancialConditionV1,
     FinancialOperandV1,
     MetricConditionV1,
     NumericPredicateV1,
     VerificationPlanV1,
+    VerificationPlanV2,
     VerificationTaskV1,
 )

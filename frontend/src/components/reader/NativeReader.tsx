@@ -1,3 +1,4 @@
+import { PremiseContext, premiseEntries } from "./FactualPremises";
 import { ExplanationContext, ExplanationStatus, ExplainedText, readableReference } from "./PlainExplanation";
 import { useReportExplanation } from "../../hooks/useReportExplanation";
 import { CompanyBasics } from "./CompanyBasics";
@@ -10,11 +11,13 @@ import { AGENT_LABELS, dimensionLabel, STANCE_LABELS, TERMS } from "../../domain
 import { limitationLabel } from "../../domain/researchCoverage";
 import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
 import { claimText, LocalChallengeResult, LocalEvidenceChecks, MetricCard } from "./ResearchRecordSection";
+import { ChallengeCheckSummary } from "./ChallengeChecks";
 import { ReaderEvidence, SavedSource, type EvidenceSelection } from "./ReaderEvidence";
 import { ReaderAgentOutput } from "./ReaderAgentOutput";
 import { ResearchFlow } from "./ResearchFlow";
 import { ValuationPositionCard } from "./ValuationPositionCard";
 import { FocusResponse } from "./FocusResponse";
+import { unfinishedSynthesis } from "../../domain/synthesisSections";
 import "../../styles/nativeReader.css";
 
 type View = "report" | "evidence" | "process" | "agents" | "full";
@@ -41,6 +44,8 @@ export function NativeReader({ runId, record, process, processError, retryProces
   const supplemental = useReaderFocus(runId, process);
   const unified = assessment.schema_version === "research-assessment-v3";
   const retainedSummary = unified && ["specialist_summary", "basic_report"].includes(assessment.report_status ?? "");
+  const unfinished = unfinishedSynthesis(record);
+  const missingOverall = retainedSummary || unfinished.has("overall");
   const delivery = unified && !!assessment.report_status;
   const independent = unified || process?.workflow_version === "evidence-production-v6";
   const hasFocus = process?.roles.some(r=>r.role_key === "focus_response");
@@ -107,14 +112,14 @@ export function NativeReader({ runId, record, process, processError, retryProces
   const inspectButton = (value: EvidenceSelection, label="核对依据 →") => <button className="qr-text-button" onClick={e => select(value,e.currentTarget)}>{label}</button>;
   const sectionHead = (number: string, title: string, description: string) => <header className="qr-section-head"><span>{number}</span><div><h2>{title}</h2><p className="qr-meta">{description}</p></div></header>;
   const evidence = <ReaderEvidence record={record} selected={selected} term={term} onTerm={t => {setTerm(t);setPinned(true);}}/>;
-  return <ExplanationContext.Provider value={explanation.response}><section className="question-reader" ref={root} aria-label={independent ? "独立研究报告" : "问题优先研究报告"}>
+  return <PremiseContext.Provider value={premiseEntries(record.numeric_attribution?.stages ?? [])}><ExplanationContext.Provider value={explanation.response}><section className="question-reader" ref={root} aria-label={independent ? "独立研究报告" : "问题优先研究报告"}>
     <nav className="qr-nav" aria-label="报告导航">{([["report","研究报告"],["evidence","证据目录"],["process","研究过程"],["agents","Agent 产物"],["full","完整记录"]] as [View,string][]).map(([key,label]) => <button key={key} aria-current={view === key ? "page" : undefined} onClick={() => changeView(key)}>{label}</button>)}</nav>
     {hasReturn && view !== "report" ? <button className="qr-return" onClick={returnToReading}>← 返回刚才的阅读位置</button> : null}
     <div className={`qr-reading-grid${narrow ? " qr-narrow" : ""}${view === "process" ? " qr-flow-reading" : ""}`}>
       <div className="qr-reading-main">
         {view === "report" ? <>
           <header className="qr-question"><span className="qr-eyebrow">{independent ? "本次研究范围" : process?.question_origin === "user" ? "你的研究问题" : "本次研究问题"}</span><h2>{assessment.research_question}</h2><p className="qr-meta">{!independent && process?.workflow_version ? "历史运行：研究问题参与了当时的基础分析。 " : ""}证据截至 {record.analysis_date}{assessment.forward_window_calendar_days ? ` · 展望 ${assessment.forward_window_calendar_days} 个日历日` : ""}</p></header>
-          <article className="qr-answer"><span className={`qr-tag${assessment.quality === "LOW_CONFIDENCE" ? " warn" : ""}`}>{assessment.quality === "LOW_CONFIDENCE" ? "结论仍需核查" : "通过当前质量门槛"}</span><h3>{unified ? assessment.investment_stance === null ? "公司报告 · 暂未形成总体评级" : `投资吸引力 · ${STANCE_LABELS[assessment.investment_stance]}` : independent ? "综合判断" : "当前回答"}</h3><ExplainedText target="assessment:judgement" text={assessment.judgement} className="qr-judgement"/><p className="qr-boundary">{retainedSummary ? "报告已交付 · 综合阶段未完成" : delivery ? "报告已交付 · 综合分析已形成" : "研究流程已完成"} · 分析覆盖{assessment.completeness === "complete" ? "完整" : "部分"} · {assessment.quality === "LOW_CONFIDENCE" ? "证据或挑战仍有保留；不确定不等于否定。" : "仍需在已保存依据与适用范围内理解。"}</p>{retainedSummary ? <span className="qr-meta">依据已保存资料与专项产物汇总。</span> : contribution("synthesis")}</article>
+          <article className="qr-answer"><span className={`qr-tag${assessment.quality === "LOW_CONFIDENCE" ? " warn" : ""}`}>{assessment.quality === "LOW_CONFIDENCE" ? "结论仍需核查" : "通过当前质量门槛"}</span><h3>{unified ? assessment.investment_stance === null ? "公司报告 · 暂未形成总体评级" : `投资吸引力 · ${STANCE_LABELS[assessment.investment_stance]}` : independent ? "综合判断" : "当前回答"}</h3><ExplainedText target="assessment:judgement" text={assessment.judgement} className="qr-judgement"/><p className="qr-boundary">{unfinished.size ? "报告已交付 · 综合未完成" : retainedSummary ? "报告已交付 · 综合阶段未完成" : delivery ? "报告已交付 · 综合分析已形成" : "研究流程已完成"} · 分析覆盖{assessment.completeness === "complete" ? "完整" : "部分"} · {assessment.quality === "LOW_CONFIDENCE" ? "证据或挑战仍有保留；不确定不等于否定。" : "仍需在已保存依据与适用范围内理解。"}</p>{missingOverall ? <span className="qr-meta">已保留有效分析；总体判断尚未完成。</span> : contribution("synthesis")}</article>
           <ExplanationStatus value={explanation.response} error={explanation.error} submitting={explanation.submitting} retry={()=>void explanation.retry()} reload={explanation.reload}/>
           <CompanyBasics record={record} onInspect={(v,trigger)=>select(v,trigger)}/>
           {unified ? <InvestmentJudgement record={record} onInspect={(v,trigger)=>select(v,trigger)}/> : null}
@@ -124,15 +129,15 @@ export function NativeReader({ runId, record, process, processError, retryProces
             {!assessment.key_claim_ids.length ? <p>综合环节未选出重点依据；可在完整记录中检查已有事实。</p> : null}
           </section>
           <section className="qr-report-section" id="qr-doubt" data-follow-kind="challenge" data-follow-id={primary?.challenge_id ?? ""}>{sectionHead("02","最大的疑点，下一步怎么查","区分待验证的经济问题、模型建议和已经执行的检查。")}
-            <article className="qr-next-box"><span className="qr-tag warn">主要疑点</span><ExplainedText target={`challenge:${primary?.challenge_id}`} text={primary?.statement ?? "本次未选出主要挑战；不代表不存在风险。"}/>{primary ? <><h4>挑战提出的核查办法 · 尚非执行结果</h4><ExplainedText target={`test:${primary.challenge_id}`} text={primary.proposed_test}/><footer className="qr-actions">{inspectButton({kind:"challenge",id:primary.challenge_id})}{contribution("challenge",primary.challenge_id)}</footer></> : null}
-              <h4>{retainedSummary ? "后续待完成事项" : "综合给出的完整下一步"}</h4><ExplainedText target="assessment:next_check" text={assessment.next_check}/>{retainedSummary ? <span className="qr-meta">根据保存章节和执行状态列示。</span> : contribution("synthesis")}
+            <article className="qr-next-box"><span className="qr-tag warn">主要疑点</span><ExplainedText target={`challenge:${primary?.challenge_id}`} text={primary?.statement ?? "本次未选出主要挑战；不代表不存在风险。"}/>{primary ? <><h4>挑战提出的核查办法 · 尚非执行结果</h4><ExplainedText target={`test:${primary.challenge_id}`} text={primary.proposed_test}/><ChallengeCheckSummary record={record} challengeId={primary.challenge_id}/><footer className="qr-actions">{inspectButton({kind:"challenge",id:primary.challenge_id})}{contribution("challenge",primary.challenge_id)}</footer></> : null}
+              <h4>{missingOverall ? "后续待完成事项" : "综合给出的完整下一步"}</h4><ExplainedText target="assessment:next_check" text={assessment.next_check}/>{missingOverall ? <span className="qr-meta">根据保存章节和执行状态列示。</span> : contribution("synthesis")}
               <p className="qr-boundary">{process?.primary_selection === "code" ? "主要疑点由挑战环节提出，代码关键级别规则置顶。" : process?.primary_selection === "synthesis" ? "主要疑点由挑战环节提出，综合环节选择。" : "主要疑点的选择归属尚未核验。"} 下一步是建议，是否已执行需查看下方记录。</p>
             </article>
             {record.challenges.length > 1 ? <button className="qr-text-button" onClick={() => changeView("full")}>查看全部 {record.challenges.length} 条挑战 →</button> : null}
           </section>
           <section className="qr-report-section" id="qr-checks">{sectionHead("03","已经核对了什么","这些检查核对指定资料和数字；通过检查仍不能证明业务联系、增长能否持续或价格是否合理。")}
             {process?.source_failures.includes("document_parser_not_installed") ? <div className="qr-fault"><h3>本次部分公告正文未能解析</h3><p>运行时缺少 PDF 解析依赖，影响正文核对。这是程序读取问题，不表示公司没有披露。</p></div> : null}
-            {record.evidence_checks?.checks.map(c => <article className="qr-check" key={c.check_id} data-follow-kind="check" data-follow-id={c.check_id}><span className={`qr-tag${c.status === "passed" ? "" : " warn"}`}>{c.status === "passed" ? "证据子问题已核对" : c.status === "conflict" ? "存在数据冲突" : delivery ? "此项资料待补" : "所需证据不足"}</span><h3>{c.question}</h3>{c.observations.map((o,i) => <div key={i}><strong>{o.label}</strong><ExplainedText target={`check:${c.check_id}:${o.key}`} text={`${o.value} ${o.unit}`}/></div>)}{c.missing.map((m,i) => <p className="qr-meta" key={i}>{limitationLabel(m)}</p>)}{inspectButton({kind:"check",id:c.check_id})}</article>)}
+            {record.evidence_checks?.checks.map(c => <article className="qr-check" key={c.check_id} data-follow-kind="check" data-follow-id={c.check_id}><span className={`qr-tag${c.status === "passed" ? "" : " warn"}`}>{c.status === "passed" ? "证据子问题已核对" : c.status === "conflict" ? "存在数据冲突" : delivery ? "此项资料待补" : "所需证据不足"}</span><h3>{c.question}</h3>{c.observations.map((o,i) => <div key={i}><strong>{o.label}</strong><ExplainedText target={`check:${c.check_id}:${o.key}`} text={`${o.value} ${o.unit}`}/></div>)}{["financial_baseline", "cashflow_comparison"].includes(c.check_id) ? c.limitations.map((limit,i) => <p className="qr-meta" key={`scope-${i}`}>{limitationLabel(limit)}</p>) : null}{c.missing.map((m,i) => <p className="qr-meta" key={i}>{limitationLabel(m)}</p>)}{inspectButton({kind:"check",id:c.check_id})}</article>)}
             <p className="qr-meta">额外条件验证：{record.verifications.length} 次。{!record.verifications.length ? "本次未执行新增来源的独立验证。" : "执行范围和结果见完整记录。"}</p>{contribution("code_checks")}
           </section>
           {unified ? <ResearchDialogue record={record} onInspect={(v,trigger)=>select(v,trigger)}/> : null}
@@ -160,7 +165,7 @@ export function NativeReader({ runId, record, process, processError, retryProces
           <h3>全部分项判断</h3>{assessment.dimensions.map(d=><article className="qr-output-card" key={d.dimension}><h4>{dimensionLabel(d.dimension,unified)} · {d.status === "unresolved" ? "待核查" : "有条件判断"}</h4><p>{d.judgement}</p>{d.claim_ids.map(id=><button key={id} onClick={e=>select({kind:"claim",id},e.currentTarget)}>{readableReference(explanation.response,`claim:${id}`,claimText(record.claims.find(c=>c.claim_id===id)?.statement ?? id))} →</button>)}{d.limitations.map((l,i)=><p className="qr-meta" key={i}>{limitationLabel(l)}</p>)}</article>)}
           {unified ? <ResearchDialogue record={record} onInspect={(v,trigger)=>select(v,trigger)}/> : null}
           <h3>全部假设与推翻条件</h3>{record.hypotheses.map(h=><article className="qr-output-card" key={h.hypothesis_id} data-entity={h.claim_id}><p>{record.claims.find(c=>c.claim_id===h.claim_id)?.statement}</p><h4>必要条件</h4>{h.assumptions.map((s,i)=><p key={i}>{s}</p>)}<h4>推翻条件</h4>{h.invalidation_conditions.map((s,i)=><p key={i}>{s}</p>)}{h.limitations.map((s,i)=><p className="qr-meta" key={i}>{limitationLabel(s)}</p>)}<footer className="qr-actions">{inspectButton({kind:"claim",id:h.claim_id})}{origin(h.claim_id) ? contribution(origin(h.claim_id)!,h.claim_id) : <span className="qr-meta">作者未记录</span>}</footer></article>)}
-          <h3>全部挑战与最终核查结果</h3>{record.challenges.map(c=><article className="qr-output-card" key={c.challenge_id} data-entity={c.challenge_id}><h4>{c.severity === "critical" ? "关键挑战" : "挑战"}</h4><p>{c.statement}</p><h4>建议核查 · 不等于执行</h4><p>{c.proposed_test}</p>{assessment.schema_version !== "research-assessment-v1" ? assessment.challenge_assessments.filter(a=>a.challenge_id===c.challenge_id).map(a=><LocalChallengeResult key={a.challenge_id} item={a}/>) : assessment.challenge_assessments.filter(a=>a.challenge_id===c.challenge_id).map(a=><p key={a.challenge_id}>{a.rationale}</p>)}<footer className="qr-actions">{inspectButton({kind:"challenge",id:c.challenge_id})}{contribution("challenge",c.challenge_id)}</footer></article>)}
+          <h3>全部挑战与最终核查结果</h3>{record.challenges.map(c=><article className="qr-output-card" key={c.challenge_id} data-entity={c.challenge_id}><h4>{c.severity === "critical" ? "关键挑战" : "挑战"}</h4><p>{c.statement}</p><h4>建议核查 · 不等于执行</h4><p>{c.proposed_test}</p><ChallengeCheckSummary record={record} challengeId={c.challenge_id}/>{assessment.schema_version !== "research-assessment-v1" ? assessment.challenge_assessments.filter(a=>a.challenge_id===c.challenge_id).map(a=><LocalChallengeResult key={a.challenge_id} item={a}/>) : assessment.challenge_assessments.filter(a=>a.challenge_id===c.challenge_id).map(a=><p key={a.challenge_id}>{a.rationale}</p>)}<footer className="qr-actions">{inspectButton({kind:"challenge",id:c.challenge_id})}{contribution("challenge",c.challenge_id)}</footer></article>)}
           <LocalEvidenceChecks record={record} onInspect={(sources,_label,trigger)=>{if(sources[0])select({kind:"source",id:sources[0].evidence_id},trigger);}}/>
           <h3>全部条件验证（{record.verifications.length}）</h3>{record.verifications.map(v=><article className="qr-output-card" key={v.verification_id}><p>{v.condition_text}</p><p>{v.result}</p><p className="qr-meta">{v.status} · {v.scope}</p></article>)}
           <h3>全部事实与推断（{record.claims.length}）</h3>{record.claims.map(c=><article className="qr-fact" key={c.claim_id} data-entity={record.hypotheses.some(h=>h.claim_id===c.claim_id) ? undefined:c.claim_id}><span className="qr-tag">{c.kind === "fact" ? "事实" : c.kind === "inference" ? "推断" : "待查"}</span><ExplainedText target={`claim:${c.claim_id}`} text={claimText(c.statement)}/>{inspectButton({kind:"claim",id:c.claim_id})}</article>)}
@@ -174,7 +179,7 @@ export function NativeReader({ runId, record, process, processError, retryProces
     <button className="qr-evidence-entry" onClick={e=>showModal(e.currentTarget)}>{narrow ? "打开相关依据与概念解释" : "打开当前依据"}</button>
     {modal ? <EvidenceDialog onClose={closeModal}>{evidence}</EvidenceDialog> : null}
     <div className="qr-terms-footer"><span>常用概念</span>{Object.keys(TERMS).map(t=><button key={t} onClick={e=>{setTerm(t);setPinned(true);if(narrow || view === "process")showModal(e.currentTarget);}}>{t} ?</button>)}</div>
-  </section></ExplanationContext.Provider>;
+  </section></ExplanationContext.Provider></PremiseContext.Provider>;
 }
 
 function EvidenceDialog({ onClose, children }: {onClose(): void;children:React.ReactNode}) {

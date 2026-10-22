@@ -132,6 +132,8 @@ def indicator_presentations(record):
 
 def explanation_targets(record, indicators, focus=None):
     """Stable, whole targets, with each target's own dependency closure."""
+    from tradingagents.research.factual_premises import public_premises
+    premise_entries = public_premises(record)
     targets = {}
     claim_states = {}
     if record.dialogue:
@@ -154,10 +156,17 @@ def explanation_targets(record, indicators, focus=None):
         refs = sorted(set(dependencies) | set(evidence) | {eid for c in dependencies.values() for eid in c["evidence_ids"]})
         targets[key] = {"target": key, "text": text, "text_sha256": text_hash(text),
                         "references": refs, "facts": list(dependencies.values())}
+        bindings = [p for p in premise_entries if p["text"] == text]
+        if bindings:
+            targets[key]["factual_premises"] = bindings
 
     a = record.assessment
+    from tradingagents.research.synthesis_sections import unfinished_sections
+    section_delivery = getattr(a, "synthesis_sections", None)
+    unfinished = unfinished_sections(section_delivery) if section_delivery else set()
     if a:
-        add("assessment:judgement", a.judgement, a.key_claim_ids)
+        if "overall" not in unfinished:
+            add("assessment:judgement", a.judgement, a.key_claim_ids)
         for field in ("supporting_arguments", "opposing_arguments"):
             for i, item in enumerate(getattr(a, field, ())):
                 add(f"assessment:{field}:{i}", item.rationale, item.claim_ids)
@@ -165,8 +174,10 @@ def explanation_targets(record, indicators, focus=None):
             h = next((h for h in record.hypotheses if h.hypothesis_id == item.hypothesis_id), None)
             add(f"assessment:change_conditions:{i}", item.text, (h.claim_id,) if h else ())
         for d in a.dimensions:
-            add("dimension:" + d.dimension, d.judgement, d.claim_ids)
-        add("assessment:next_check", a.next_check, a.key_claim_ids)
+            if "dimension:" + d.dimension not in unfinished:
+                add("dimension:" + d.dimension, d.judgement, d.claim_ids)
+        if "overall" not in unfinished:
+            add("assessment:next_check", a.next_check, a.key_claim_ids)
         for cid in a.key_claim_ids:
             if cid in claims:
                 add("claim:" + cid, claims[cid].statement, (cid,))
@@ -177,6 +188,8 @@ def explanation_targets(record, indicators, focus=None):
         for r in record.dialogue.responses:
             add("reply:" + r.response_id, r.rationale, r.supporting_fact_ids)
         for item in getattr(a, "adjudications", ()):
+            if "adjudication:" + item.challenge_id in unfinished:
+                continue
             challenge = next((c for c in record.challenges if c.challenge_id == item.challenge_id), None)
             add("adjudication:" + item.response_id, item.rationale, challenge.target_claim_ids if challenge else ())
     if record.valuation:

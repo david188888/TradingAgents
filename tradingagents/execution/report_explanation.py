@@ -147,6 +147,11 @@ class ExplanationService:
                 "quality": record.assessment.quality}, ensure_ascii=False) + "\nSchema: "
             + json.dumps(ExplanationProposal.model_json_schema(), ensure_ascii=False)
             + "\nDATA:\n" + json.dumps(list(targets.values()), ensure_ascii=False))
+        if any("factual_premises" in t for t in targets.values()):
+            prompt += ("\nPreserve factual_premises: observations are source statements or bounded calculations; "
+                       "the professional prose is an unverified interpretation. Keep pending_questions "
+                       "explicitly unknown; never restate them as events that happened or verified causes.")
+
         reason = "invalid_response"
         try:
             if not targets:

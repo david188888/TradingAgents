@@ -64,11 +64,11 @@ def _qualified_source(record: ResearchRecordV1, evidence_id: str) -> SourceEvide
     return source
 
 
-def _number(value) -> Decimal:
+def _number(value, *, max_characters=64) -> Decimal:
     if isinstance(value, bool) or not isinstance(value, (Decimal, int, float, str)):
         raise _Unavailable("invalid_fields")
     text = str(value)
-    if len(text) > 64:
+    if len(text) > max_characters:
         raise _Unavailable("invalid_fields")
     try:
         result = Decimal(text)
@@ -110,11 +110,11 @@ def _invalid_constant(_):
 def _financial_operand(
     record: ResearchRecordV1, operand: FinancialOperandV1
 ) -> tuple[Decimal, dict]:
-    from tradingagents.research.source_families import FINANCIAL_SOURCES
+    from tradingagents.research.source_families import FINANCIAL_DETAIL_SOURCES, FINANCIAL_SOURCES
 
     source = _qualified_source(record, operand.evidence_id)
     if (
-        source.source_name not in FINANCIAL_SOURCES
+        source.source_name not in FINANCIAL_SOURCES | FINANCIAL_DETAIL_SOURCES
         or source.source_kind not in {"official", "vendor"}
         or not source.source_family_id
     ):
@@ -159,8 +159,12 @@ def evaluate_condition(
     record: ResearchRecordV1, task: VerificationTaskV1
 ) -> VerificationToolResultV1:
     """Evaluate exactly the saved predicate, never the economic hypothesis itself."""
+    return inspect_predicate(record, task.check, invalidation=getattr(task, "condition_role", None) == "invalidation")
+
+
+def inspect_predicate(record: ResearchRecordV1, check, *, invalidation=False) -> VerificationToolResultV1:
+    """Pure arithmetic replay for admission and saved-result validation; no dispatch."""
     try:
-        check = task.check
         if isinstance(check, FinancialConditionV1):
             current, current_input = _financial_operand(record, check.current)
             operands = [current_input]
@@ -213,7 +217,7 @@ def evaluate_condition(
         met = predicate_matches(value, check.predicate)
         status = (
             ("supports" if met else "contradicts")
-            if task.condition_role == "necessary"
+            if not invalidation
             else ("contradicts" if met else "inconclusive")
         )
         calculation.update(

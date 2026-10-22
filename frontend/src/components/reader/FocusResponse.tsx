@@ -1,3 +1,4 @@
+import { PremiseContext, premiseEntries } from "./FactualPremises";
 import { ExplainedText } from "./PlainExplanation";
 import type { FocusProposalDTO, ReaderFocusDTO } from "../../api/contracts";
 import type { EvidenceSelection } from "./ReaderEvidence";
@@ -33,7 +34,7 @@ export function FocusResponse({ value, error, retry, onInspect }: {value: Reader
     {value?.focus ? <h3>{value.focus}</h3> : null}
     {error ? <p role="status">补充回应暂时无法读取。<button onClick={retry}>重试读取补充回应</button></p>
       : !value || value.state === "pending" ? <p role="status">正在等待补充回应的保存与发布。</p>
-      : response?.status === "available" && response.proposal ? <FocusAnswer proposal={response.proposal} onInspect={onInspect}/>
+      : response?.status === "available" && response.proposal ? <PremiseContext.Provider value={premiseEntries(response.numeric_attribution ? [response.numeric_attribution] : [])}><FocusAnswer proposal={response.proposal} onInspect={onInspect}/></PremiseContext.Provider>
       : <p role="status">{FOCUS_REASONS[response?.reason_code ?? value.reason_code ?? ""] ?? "本次没有有效补充回应。"} 基础研究按独立保存记录呈现。</p>}
   </section>;
 }

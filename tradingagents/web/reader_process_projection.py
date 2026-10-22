@@ -8,6 +8,7 @@ from typing import Any
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
     ChallengesProposalV2,
+    ChallengesProposalV3,
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
@@ -290,6 +291,16 @@ def _context(store, run_id, through=None):
         if numeric_enabled(cp["identity"]):
             from tradingagents.research.native_versions import NUMERIC_NARRATIVE_POLICY
             expected_input["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
+        from tradingagents.research.factual_premises import premise_enabled
+        if premise_enabled(cp["identity"]):
+            if version != UNIFIED_WORKFLOW_VERSION:
+                raise ValueError("factual_premise_policy")
+            expected_input["factual_premise_policy"] = cp["identity"]["factual_premise_policy"]
+        if cp["identity"].get("challenge_check_policy") is not None:
+            from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
+            if cp["identity"]["challenge_check_policy"] != CHALLENGE_CHECK_POLICY:
+                raise ValueError("challenge_policy")
+            expected_input["challenge_check_policy"] = CHALLENGE_CHECK_POLICY
         validate_record_numeric(seed, cp["identity"])
         validate_record_numeric(record, cp["identity"])
         if native_input != expected_input:
@@ -341,7 +352,7 @@ def _proposal(ctx, role):
         ResponsesProposalV1 if role in RESPONSE_ROLES else
         SpecialistProposalV1
         if role in {"operating_quality", "event_context", "market_context"}
-        else (ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else ChallengesProposalV1)
+        else (ChallengesProposalV3 if cp["identity"].get("challenge_check_policy") else ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else ChallengesProposalV1)
         if role == "challenge"
         else (SynthesisProposalV3 if version == UNIFIED_WORKFLOW_VERSION else SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else SynthesisProposalV1)
     )
@@ -437,9 +448,12 @@ def _proposal(ctx, role):
                 ):
                     raise ValueError("condition_binding")
             cids.append(cid)
-    elif isinstance(proposal, (ChallengesProposalV1, ChallengesProposalV2)):
+    elif isinstance(proposal, (ChallengesProposalV1, ChallengesProposalV2, ChallengesProposalV3)):
         challenges = {c.challenge_id: c for c in record.challenges}
-        for index, item in enumerate(proposal.challenges):
+        from tradingagents.agents.schemas._native_stage import saved_challenge_acceptance
+        accepted = saved_challenge_acceptance(cp, proposal) if isinstance(proposal, ChallengesProposalV3) else None
+        indices = accepted.indices if accepted else range(len(proposal.challenges))
+        for index, item in zip(indices, proposal.challenges, strict=True):
             cid = "c." + canonical_sha256(
                 {
                     "input": cp["native_input"],
@@ -448,6 +462,10 @@ def _proposal(ctx, role):
                 }
             )
             target, challenge = hypotheses[item.hypothesis_id], challenges[cid]
+            if isinstance(proposal, ChallengesProposalV3):
+                from tradingagents.research.challenge_checks import challenge_test
+                if challenge.test != challenge_test(item):
+                    raise ValueError("challenge_test_binding")
             if (
                 challenge.statement,
                 challenge.severity,
@@ -521,6 +539,7 @@ def _proposal(ctx, role):
 
 
 def _agent(ctx, role):
+    from tradingagents.research.factual_premises import stage_premises
     origin = "code" if role in {"evidence", "code_checks"} else "model"
     base = {
         "run_id": ctx.snapshot.run_id,
@@ -529,6 +548,9 @@ def _agent(ctx, role):
         "origin": origin,
         "input_description": ROLE_INFO[role][2],
     }
+    if ctx.reason is None and ctx.record is not None and ctx.record.numeric_attribution is not None:
+        base["factual_premises"] = tuple(p for s in ctx.record.numeric_attribution.stages
+                                         if s.stage == role for p in stage_premises(s.proof))
     if role in RESPONSE_ROLES and (ctx.checkpoint is None or ctx.checkpoint["identity"].get("workflow_version") != UNIFIED_WORKFLOW_VERSION):
         return ReaderAgentDTO(**base, availability="not_applicable", reason_code="workflow_has_no_reply_stage")
     if role == "focus_response":
@@ -537,6 +559,7 @@ def _agent(ctx, role):
         if focus["state"] == "ready" and response["status"] == "available":
             from tradingagents.agents.schemas._research_focus import FocusProposalV1
             proposal = FocusProposalV1.model_validate(response["proposal"])
+            base["factual_premises"] = stage_premises((response.get("numeric_attribution") or {}).get("proof", {}))
             return ReaderAgentDTO(**base, availability="available", proposal=proposal, claim_ids=proposal.claim_ids)
         return ReaderAgentDTO(**base, availability="not_applicable" if focus["state"] == "not_applicable"
                               else "pending_publication" if focus["state"] == "pending" else "unavailable",
@@ -554,6 +577,8 @@ def _agent(ctx, role):
                 material = ctx.stage_reader.read(role)
                 if material is not None:
                     record, proposal, claims, challenges, inputs = material
+                    receipt = ctx.checkpoint["results"].get("native.numeric.accepted." + role, {})
+                    base["factual_premises"] = stage_premises(receipt.get("proof", {}))
                     return ReaderAgentDTO(**base, availability="stage_available", reason_code="stage_qualified",
                         stage_record=record, proposal=proposal, claim_ids=claims, challenge_ids=challenges,
                         input_fact_ids=inputs, code_sections=("facts", "sources", "checks") if role == "evidence"
@@ -618,6 +643,9 @@ def _agent(ctx, role):
         record = ctx.record
         if (isinstance(proposal, SpecialistProposalV1) and not proposal.hypotheses
                 and "native_stage_unavailable:" + role in record.limitations):
+            return ReaderAgentDTO(**base, availability="unavailable", reason_code="native_stage_unavailable")
+        if (isinstance(proposal, ChallengesProposalV3) and not proposal.challenges
+                and "native_stage_unavailable:challenge" in record.limitations):
             return ReaderAgentDTO(**base, availability="unavailable", reason_code="native_stage_unavailable")
         relations = [
             OutputRelation(

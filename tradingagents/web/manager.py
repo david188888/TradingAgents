@@ -1750,13 +1750,25 @@ def _checkpoint_sequence(events: list[PersistedEvent]) -> int:
 
 
 def _error_category(error: BaseException | None) -> str:
+    from pydantic import ValidationError
+
+    from tradingagents.agents.schemas._native_stage import NativeEvidenceBindingError
+    from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
+    from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
+    from tradingagents.execution.config_identity import SemanticConfigError
     from tradingagents.execution.native_model import NativeModelReferenceInvalid
+    from tradingagents.execution.native_publication import NativePublicationError
+    from tradingagents.research.numeric_narrative import NumericNarrativeError
 
     if error is None:
         return "unexpected_internal_failure"
-    if isinstance(error, ReportPublicationError):
+    if isinstance(error, (ReportPublicationError, NativePublicationError)):
         return "report_publication"
-    if isinstance(error, NativeModelReferenceInvalid):
+    if isinstance(error, SemanticConfigError):
+        return "missing_configuration"
+    if isinstance(error, (NativeModelReferenceInvalid, NativeEvidenceBindingError,
+                          NativeSourceUnavailable, PriceHistoryQualificationError,
+                          NumericNarrativeError, ValidationError)):
         return "evidence_rejection"
     name = type(error).__name__.lower()
     if "checkpoint" in name or "fingerprint" in name:
@@ -1769,8 +1781,8 @@ def _error_category(error: BaseException | None) -> str:
         return "vendor_rate_limit"
     if "evidence" in name:
         return "evidence_rejection"
-    if isinstance(error, (ValueError, KeyError)):
-        return "missing_configuration"
+    # ValueError/KeyError also arise from data parsing and internal invariants.
+    # Only a typed configuration failure can instruct the user to fix settings.
     return "unexpected_internal_failure"
 
 

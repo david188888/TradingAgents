@@ -2,7 +2,9 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+
+from ._factual_premise import PremiseBindingV1, PremiseReceiptV1
 
 NUMERIC_NARRATIVE_POLICY = "anchored-narrative-v1"
 NUMERIC_LEXER_VERSION = "quantity-lexer-v1"
@@ -41,6 +43,14 @@ class NumericStageEnvelopeV1(_NumericModel):
     proposal: dict
     plans: tuple[NumericPlanV1, ...] = Field(default=(), max_length=64)
     structured_bindings: tuple[NumericStructuredBindingV1, ...] = Field(default=(), max_length=64)
+    premises: tuple[PremiseBindingV1, ...] | None = Field(default=None, max_length=64)
+
+    @model_serializer(mode="wrap")
+    def legacy_shape(self, handler):
+        value = handler(self)
+        if self.premises is None:
+            value.pop("premises", None)
+        return value
 
 
 class NumericSegmentV1(_NumericModel):
@@ -56,6 +66,14 @@ class NumericFieldProofV1(_NumericModel):
     segments: tuple[NumericSegmentV1, ...]
     text_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     lexer_version: Literal["quantity-lexer-v1"] = NUMERIC_LEXER_VERSION
+    premise: PremiseReceiptV1 | None = None
+
+    @model_serializer(mode="wrap")
+    def legacy_shape(self, handler):
+        value = handler(self)
+        if self.premise is None:
+            value.pop("premise", None)
+        return value
 
 
 class NumericRejectionV1(_NumericModel):
@@ -64,7 +82,11 @@ class NumericRejectionV1(_NumericModel):
         "specialist_fact_reference", "condition_evidence_reference", "condition_metric_reference",
         "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
         "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
-        "numeric_manifest_binding", "numeric_catalog_limit",
+        "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
+        "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit",
+        "challenge_schema_invalid", "challenge_fact_reference", "challenge_check_scope",
+        "challenge_future_date", "challenge_check_unavailable", "challenge_requirement_invalid",
+        "challenge_target_reference", "challenge_condition_reference",
     ]
 
 

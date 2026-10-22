@@ -106,3 +106,32 @@ def validate_unified_assessment(record):
         assessment.completeness != "partial" or assessment.quality != "LOW_CONFIDENCE"
     ):
         raise ValueError("missing specialist replies require partial low-confidence research")
+    if assessment.synthesis_sections is not None:
+        from tradingagents.research.synthesis_sections import (
+            UNFINISHED_ADJUDICATION,
+            UNFINISHED_DIMENSION,
+            UNFINISHED_JUDGEMENT,
+            UNFINISHED_NEXT,
+            rating_blocked,
+            section_ids,
+            unfinished_sections,
+        )
+        sections = assessment.synthesis_sections
+        if not delivery or [s.section_id for s in sections.sections] != section_ids(record):
+            raise ValueError("synthesis section ownership mismatch")
+        missing = unfinished_sections(sections)
+        if missing and (assessment.completeness != "partial" or assessment.quality != "LOW_CONFIDENCE"):
+            raise ValueError("unfinished synthesis requires partial low-confidence delivery")
+        if rating_blocked(record, sections) and (assessment.investment_stance is not None or assessment.report_status != "analysis_unrated"):
+            raise ValueError("unfinished overall or critical adjudication prohibits rating")
+        if "overall" in missing and (assessment.judgement != UNFINISHED_JUDGEMENT or assessment.next_check != UNFINISHED_NEXT
+                or assessment.key_claim_ids or assessment.supporting_arguments or assessment.opposing_arguments):
+            raise ValueError("unfinished overall must be host-owned")
+        for item in assessment.adjudications:
+            if "adjudication:" + item.challenge_id in missing and item.rationale != UNFINISHED_ADJUDICATION:
+                raise ValueError("unfinished adjudication must be host-owned")
+        for item in assessment.dimensions:
+            if "dimension:" + item.dimension in missing and (
+                    item.judgement != UNFINISHED_DIMENSION or item.status != "unresolved"
+                    or item.claim_ids or item.challenge_ids or item.limitations != ("synthesis_section_unavailable",)):
+                raise ValueError("unfinished dimension must be host-owned")

@@ -41,6 +41,10 @@ rules here in focused documents rather than duplicating them in the README.
 - [Valuation assessment](contracts/valuation-assessment.md): deterministic price-position and reference-range chain behind the reader's 估值定位 card (`valuation-assessment-v1`).
 - [Local price statistics](contracts/local-price-statistics.md): deterministic return-risk/ATR methods and frozen price evidence, separate from valuation.
 - [Frozen numeric narrative](contracts/numeric-narrative.md): fresh V7 host-owned numeric fragments, scoped templates, structural bindings, cache/publication replay, focus isolation and historical compatibility.
+- [Structured financial checks](contracts/structured-financial-checks.md): independent statement coverage and profit/CFO comparison, exact scopes, five-check versioning and saved-history compatibility.
+- [Hypothesis-directed challenge checks](contracts/hypothesis-directed-checks.md): typed verifiability, independent propositions, task outcomes, bounded isolation and frozen-denominator measurement.
+- [Saved evidence benchmark](contracts/evidence-benchmark.md): read-only Phase 0 measurements, token-accounting limits and versioned manual hypothesis rubric.
+- [Native input measurement](contracts/native-input-measurement.md): hash-verified stage prompt sizes, unknown usage, conservative inventories and offline reversible metadata comparison without runtime changes.
 - [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, native three-mode workflow and bounded verification, mandatory publication, read-only Reader and compatibility limits.
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.

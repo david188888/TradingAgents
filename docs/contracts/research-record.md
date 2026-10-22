@@ -33,6 +33,12 @@ executed verification lists; evidence_v1 executes bounded native checks. Model c
 
 ## Programmatic verification
 
+Fresh V7 identities select [hypothesis-directed challenge checks](hypothesis-directed-checks.md),
+challenge V3 proposals and `verification-plan-v2`. Tasks bind independent
+challenge propositions; results use `challenge_predicate_only`. Classification
+and task outcomes are additive, version-gated fields. The V1 behavior below
+remains for identities without `hypothesis-directed-checks-v1`.
+
 `agents/schemas/_verification_plan.py` owns `verification-plan-v1`.
 `execution/verification_executor.py::execute_verification` accepts a validated
 V0 native record, a bounded plan and that run's existing `DurableBudgetLedger`.
@@ -51,7 +57,7 @@ uses the unit `ratio`. Metric units must match. Tools cannot fetch documents,
 query vendors, run models or execute free expressions. Missing or future data
 remains unavailable. A saved metric threshold check does not recompute raw prices.
 
-Every new result has `scope=predicate_only` and binds its condition and plan
+Every V1 result has `scope=predicate_only` and binds its condition and plan
 digest. Necessary-condition truth supports that condition; falsehood contradicts
 it. An invalidation condition that is false stays inconclusive. These results
 neither prove the whole hypothesis nor close a critical challenge. Text binding
@@ -221,6 +227,12 @@ Reader and Markdown use this same validated record. Reading performs no external
 retrieval or model generation. The standalone 600803 HTML acceptance preview is
 an artifact produced from that record, not a new runtime HTML-export endpoint.
 V1–V4 recovery never acquires V5 source views, prompts, checks or outcomes.
+
+Fresh V7 runs may additionally freeze the [structured financial check policy](structured-financial-checks.md).
+Its calculation-v3 pack keeps the original three scopes and adds two independent
+structured comparisons. A passed endpoint comparison is not a passed full cash
+bridge. Calculation-v2 records retain exact three-check replay; v1 keeps its
+existing saved-result read policy.
 
 
 ## Native v6 supplementary focus contract

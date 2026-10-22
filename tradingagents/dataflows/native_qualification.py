@@ -6,10 +6,11 @@ import calendar
 import hashlib
 import json
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 
+from tradingagents.agents.schemas._verification_plan import SINA_FIELDS
 from tradingagents.dataflows.tushare_price_history import (
     SHANGHAI,
     PriceHistoryQualificationError,
@@ -17,11 +18,14 @@ from tradingagents.dataflows.tushare_price_history import (
     settled_sessions,
 )
 
-# Keyless, quota-free session index.  The SSE composite is fetched here only to
-# read its bar dates back as the exchange session calendar: a bar exists if and
-# only if the exchange traded that day, which is the same fact a vendor calendar
-# endpoint reports.  No price from this series enters research evidence.
+# Keyless, quota-free session witness.  Only the SSE composite's bar dates are
+# read; no index price enters research evidence.  A present bar proves a session
+# traded, but a missing weekday bar cannot by itself distinguish a holiday from
+# a vendor gap, so such a day is closed only when an independent witness agrees.
 CALENDAR_INDEX_SYMBOL = "sh000001"
+# A daily-bar witness can attest a session only once it settled.  The TDX
+# after-market package is published around 16:10 local time.
+_WITNESS_SETTLED_AT = time(16, 30)
 
 
 class NativeSourceUnavailable(ValueError):
@@ -100,13 +104,6 @@ def sina_identity(text, *, ts_code, cutoff):
     listed = fields.get("上市日期", "").replace("-", "")
     return qualify_identity({"ts_code": ts_code, "name": title[1], "list_date": listed},
                             ts_code=ts_code, cutoff=cutoff)
-
-
-SINA_FIELDS = {
-    "income": {"BIZINCO": "revenue", "NETPROFIT": "n_income", "PARENETP": "n_income_attr_p"},
-    "balancesheet": {"TOTASSET": "total_assets", "TOTLIAB": "total_liab"},
-    "cashflow": {"MANANETR": "n_cashflow_act"},
-}
 
 
 def sina_statement(payload, *, table, ts_code, cutoff):
@@ -196,20 +193,22 @@ def szse_month(payload, year, month):
     return rows
 
 
-def qualify_session_calendar(payload, *, index_symbol, start, cutoff):
-    """Derive the daily session calendar from one index daily-bar response.
-
-    A dated bar on a broad index exists only for a session the exchange traded,
-    so the bar dates are the open days of the requested window.  The returned
-    shape matches ``szse_month`` so ``settled_sessions`` can consume either
-    source without branching.  Only bar dates are read; no price is admitted.
-    """
+def _calendar_window(start, cutoff):
     try:
         begin, end = date.fromisoformat(start), date.fromisoformat(cutoff)
     except (TypeError, ValueError):
         raise NativeSourceUnavailable("calendar_window_invalid") from None
     if end < begin or (end - begin).days > 500:
         raise NativeSourceUnavailable("calendar_window_invalid")
+    return begin, end
+
+
+def _window_days(begin, end):
+    return [(begin + timedelta(days=offset)).isoformat() for offset in range((end - begin).days + 1)]
+
+
+def index_session_dates(payload, *, index_symbol):
+    """Read only the bar dates of one index daily-bar response."""
     data = payload.get("data") if isinstance(payload, dict) else None
     node = data.get(index_symbol) if isinstance(data, dict) else None
     if not isinstance(node, dict):
@@ -224,17 +223,88 @@ def qualify_session_calendar(payload, *, index_symbol, start, cutoff):
         day = bar[0] if isinstance(bar, (list, tuple)) and bar else None
         if not isinstance(day, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
             raise NativeSourceUnavailable("calendar_invalid_row")
+        try:
+            weekday = date.fromisoformat(day).weekday()
+        except ValueError:
+            raise NativeSourceUnavailable("calendar_invalid_row") from None
+        if day in sessions:
+            raise NativeSourceUnavailable("calendar_duplicate_row")
+        # A-share exchanges never trade on Saturday or Sunday, including the
+        # weekend make-up workdays, so a weekend bar is a malformed series.
+        if weekday >= 5:
+            raise NativeSourceUnavailable("calendar_invalid_row")
         sessions.add(day)
-    # A truncated index series would silently mark real sessions as closed, so
-    # require the walk to reach the requested start before trusting the set.
-    if min(sessions) > start or max(sessions) < cutoff:
+    return sorted(sessions)
+
+
+def witness_horizon(captured_at: datetime) -> str:
+    """Last day a settled daily-bar witness can attest at capture time."""
+    if captured_at.tzinfo is None:
+        raise NativeSourceUnavailable("calendar_capture_timezone_required")
+    local = captured_at.astimezone(SHANGHAI)
+    day = local.date() if local.time() >= _WITNESS_SETTLED_AT else local.date() - timedelta(days=1)
+    return day.isoformat()
+
+
+def calendar_gaps(sessions, *, start, cutoff, captured_at: datetime):
+    """Weekdays with no index bar that need an independent closure witness.
+
+    The index series must reach ``start``; a truncated walk would otherwise
+    turn real sessions into gaps.  Weekends are closed by exchange rule.  A
+    capture day that has not settled yet is not a gap: it stays unconfirmed.
+    """
+    begin, end = _calendar_window(start, cutoff)
+    if not sessions or min(sessions) > start:
         raise NativeSourceUnavailable("calendar_window_not_complete")
-    rows, cursor = [], begin
-    while cursor <= end:
-        iso = cursor.isoformat()
-        rows.append({"cal_date": iso.replace("-", ""), "is_open": "1" if iso in sessions else "0"})
-        cursor += timedelta(days=1)
-    return rows
+    present, horizon = set(sessions), witness_horizon(captured_at)
+    return [day for day in _window_days(begin, end) if day <= horizon
+            and date.fromisoformat(day).weekday() < 5 and day not in present]
+
+
+def qualify_session_calendar(sessions, closed, *, start, cutoff, captured_at: datetime):
+    """Build the ``szse_month`` row shape from index sessions plus witnessed closures.
+
+    ``closed`` must cover every gap from :func:`calendar_gaps`: an index bar
+    proves a session, and only an independent witness may prove a missing
+    weekday was a holiday rather than a vendor omission.  The unsettled capture
+    day without a bar is written as closed, so it is never a settled session.
+    """
+    gaps = calendar_gaps(sessions, start=start, cutoff=cutoff, captured_at=captured_at)
+    if set(gaps) - set(closed):
+        raise NativeSourceUnavailable("calendar_gap_unwitnessed")
+    present = set(sessions)
+    return [{"cal_date": day.replace("-", ""), "is_open": "1" if day in present else "0"}
+            for day in _window_days(*_calendar_window(start, cutoff))]
+
+
+def calendar_disputes(rows, sessions, *, start, cutoff, captured_at: datetime):
+    """Settled days where an official calendar and the index bar dates disagree."""
+    begin, end = _calendar_window(start, cutoff)
+    if not sessions or min(sessions) > start:
+        raise NativeSourceUnavailable("calendar_window_not_complete")
+    official = {api_date(row.get("cal_date")): str(row.get("is_open")) == "1" for row in rows}
+    present, horizon = set(sessions), witness_horizon(captured_at)
+    return [day for day in _window_days(begin, end)
+            if day <= horizon and day in official and official[day] != (day in present)]
+
+
+def settle_calendar_disputes(rows, disputes, verdicts):
+    """Resolve official-vs-index disputes with a third, independent witness.
+
+    ``verdicts`` maps a day to True (session), False (closed) or None (not
+    witnessed).  The official calendar stands when the witness agrees with it.
+    When two independent vendors both contradict it the calendar is rejected
+    rather than repaired.  Returns the days that stayed unwitnessed.
+    """
+    official = {api_date(row.get("cal_date")): str(row.get("is_open")) == "1" for row in rows}
+    unresolved = []
+    for day in disputes:
+        verdict = verdicts.get(day)
+        if verdict is None:
+            unresolved.append(day)
+        elif verdict != official[day]:
+            raise NativeSourceUnavailable("calendar_sources_conflict")
+    return unresolved
 
 
 def sina_factors(text, *, symbol):

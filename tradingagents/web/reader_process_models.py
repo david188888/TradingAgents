@@ -4,9 +4,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from tradingagents.agents.schemas._factual_premise import PublicPremiseV1
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
     ChallengesProposalV2,
+    ChallengesProposalV3,
     SpecialistProposalV1,
     SynthesisProposalV1,
     SynthesisProposalV2,
@@ -110,7 +112,10 @@ class OutputRelation(_ReaderModel):
     challenge_ids: tuple[str, ...] = ()
 
 
+
+
 class ReaderAgentDTO(_ReaderModel):
+    factual_premises: tuple[PublicPremiseV1, ...] = ()
     schema_version: Literal[1] = 1
     run_id: str
     source_sequence: int = Field(ge=0)
@@ -124,6 +129,7 @@ class ReaderAgentDTO(_ReaderModel):
     # Closed schema fields only: never an adapter, prompt, response or checkpoint.
     proposal: (
         SpecialistProposalV1
+        | ChallengesProposalV3
         | ChallengesProposalV2
         | ChallengesProposalV1
         | SynthesisProposalV3

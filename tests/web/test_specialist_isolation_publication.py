@@ -39,7 +39,7 @@ def test_bad_reference_is_isolated_in_actual_adapter_and_published_reader(tmp_pa
         if stage == "operating_quality":
             proposal = value["proposal"]
             bad = deepcopy(proposal["hypotheses"][0])
-            bad["supporting_fact_ids"] = ["f.fabricated"]
+            bad["supporting_fact_ids"].append("f.fabricated")
             # Isolate the original reference gate. An unbound numeric operand
             # is now rejected earlier by the separate numeric scope gate.
             bad["conditions"] = [{"condition_role": "invalidation", "text": "后续经营恶化", "check": None}]
@@ -48,6 +48,11 @@ def test_bad_reference_is_isolated_in_actual_adapter_and_published_reader(tmp_pa
                 value[key] = [] if all_invalid else [
                     {**item, "field_path": item["field_path"].replace("hypotheses.0.", "hypotheses.1.")}
                     for item in value[key]]
+        if context.get("factual_premise_policy"):
+            from tests.factual_premise_fixtures import bind
+            # Rebind the final array shape, keeping lawful observations on both
+            # siblings so the fabricated reference reaches its own gate.
+            value = bind(stage, value, context)
         return SimpleNamespace(content=json.dumps(value, ensure_ascii=False),
             usage_metadata={"input_tokens": 10, "output_tokens": 20})
     def forbidden(*args, **kwargs):

@@ -9,6 +9,15 @@ ROLE_LABELS = {"operating_quality": "经营专项", "event_context": "事件专�
 STATUS_LABELS = {"qualified": "合格资料可用", "partial": "部分资料可用", "unavailable": "未取得合格资料",
                  "coverage_unknown": "覆盖未确定", "covered_no_match": "查询完成且无命中", "not_applicable": "本次不适用"}
 REASON_LABELS = {
+    "structured-financial-checks-v1": "结构化财务核对独立保留，不替代完整运营披露或现金流桥",
+    "structured_financial_comparison_not_reported_cash_bridge": "仅核对报表端点及其变化，不代表完整现金流调节桥",
+    "structured_financial_coverage_not_quantitative_operations": "财务字段覆盖不代表产量、销量或产能等运营披露已完整核对",
+    "structured_current_period": "未取得合格结构化报表的已披露报告期",
+    "complete_same_supplier_structured_pair": "未取得同一供应商的完整当前及上年同期间字段",
+    "structured_without_official_table_crosscheck": "已有结构化财务核对，尚未与官方原表互证",
+    "official_crosscheck_covers_available_cells_only": "官方互证仅覆盖已取得的同期间单元格",
+    "single_structured_supplier": "目前仅由一家结构化供应商提供完整比较",
+    "multiple_structured_suppliers_not_proven_independent": "多家结构化供应商已核对，数据来源独立性未获证明",
     "selected_disclosure_coverage_not_complete_business_verification": "已核对选取披露；仍需判断经营兑现和披露覆盖限制",
     "single_disclosure_family_no_supplier_crosscheck": "当前依据来自同一公司披露，尚无供应商同口径核对",
     "reported_accounting_bridge_not_economic_causation": "现金流桥解释报表调整，不证明经济原因",
@@ -49,6 +58,7 @@ REASON_LABELS = {
     "qualified_financial_fields_missing": "未取得合格财务字段",
     "company-basics-local-gaps-delivery-v1": "基础资料与有效专项持续交付，具体缺口限制对应章节",
     "host_retained_findings_not_synthesis": "保留已保存事实或有效专项观点；综合阶段尚未完成",
+    "synthesis_section_unavailable": "本项综合分段未完成，已有事实与专项观点仍可查阅",
     "profile_historical_vintage_unverified": "未取得研究截点对应的公司介绍版本",
     "profile_identity_or_source_unavailable": "公司介绍的证券身份或来源未取得",
     "profile_budget_exhausted": "公司介绍取数额度已用尽，保留其他已有资料",
@@ -61,6 +71,8 @@ REASON_LABELS = {
     "valuation_identity_calendar_or_vintage_unqualified": "证券身份、交易日或历史版本未通过资格检查",
     "valuation_identity_unavailable": "证券身份未通过资格校验，未取得估值输入",
     "valuation_calendar_unavailable": "对应交易所的交易日历未通过资格检查，未取得估值输入",
+    "calendar_cross_check_unavailable": "交易所官方日历已采用，独立行情日期核对本次未取得",
+    "calendar_cross_check_unresolved": "交易所官方日历已采用，与行情日期的个别差异未获第三方确认",
     "valuation_historical_vintage_unverified": "历史估值版本未经验证",
     "valuation_snapshot_unavailable": "本次未取得合格估值快照",
     "valuation_history_unavailable": "本次未取得合格历史倍数",
@@ -75,6 +87,15 @@ REASON_LABELS = {
 
 
 def limitation_label(value):
+    if value.startswith("structured_supplier_incomplete:"):
+        return "部分供应商未提供完整同期字段；保留其他已取得资料"
+    structured = {"structured_pair": "未取得合格的同期间字段：", "structured_supplier_discrepancy": "结构化供应商数值不一致：",
+                  "structured_official_discrepancy": "结构化数值与官方原表不一致：", "structured_nonpositive_growth_base": "基期非正，保留金额变化而不计算增长率："}
+    prefix, _, detail = value.partition(":")
+    if prefix in structured:
+        key, _, period = detail.partition(":")
+        label = {"revenue": "营业收入", "n_income_attr_p": "归母净利润", "n_income": "合并净利润", "n_cashflow_act": "经营现金流净额"}.get(key, key)
+        return structured[prefix] + label + ({"current": "（本期）", "previous": "（上年同期）"}.get(period, ""))
     fields = {"revenue": "营业收入", "parent_net_income": "归母净利润", "consolidated_net_income": "合并净利润", "cfo": "经营现金流"}
     prefix, _, detail = value.partition(":")
     field = fields.get(detail.split(":")[0], detail)

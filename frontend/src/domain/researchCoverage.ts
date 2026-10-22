@@ -6,6 +6,15 @@ const CAPABILITIES: Record<string, string> = {
 const ROLES: Record<string, string> = { operating_quality: "经营专项", event_context: "事件专项", market_context: "市场专项" };
 const STATUSES: Record<string, string> = { qualified: "合格资料可用", partial: "部分资料可用", unavailable: "未取得合格资料", coverage_unknown: "覆盖未确定", covered_no_match: "查询完成且无命中", not_applicable: "本次不适用" };
 const REASONS: Record<string, string> = {
+  "structured-financial-checks-v1": "结构化财务核对独立保留，不替代完整运营披露或现金流桥",
+  structured_financial_comparison_not_reported_cash_bridge: "仅核对报表端点及其变化，不代表完整现金流调节桥",
+  structured_financial_coverage_not_quantitative_operations: "财务字段覆盖不代表产量、销量或产能等运营披露已完整核对",
+  structured_current_period: "未取得合格结构化报表的已披露报告期",
+  complete_same_supplier_structured_pair: "未取得同一供应商的完整当前及上年同期间字段",
+  structured_without_official_table_crosscheck: "已有结构化财务核对，尚未与官方原表互证",
+  official_crosscheck_covers_available_cells_only: "官方互证仅覆盖已取得的同期间单元格",
+  single_structured_supplier: "目前仅由一家结构化供应商提供完整比较",
+  multiple_structured_suppliers_not_proven_independent: "多家结构化供应商已核对，数据来源独立性未获证明",
   source_fields_are_not_full_document_text: "这些是已保存的数据字段，不是公告全文。",
   selected_disclosure_coverage_not_complete_business_verification: "已核对选取披露；仍需判断经营兑现和披露覆盖限制",
   single_disclosure_family_no_supplier_crosscheck: "当前依据来自同一公司披露，尚无供应商同口径核对",
@@ -49,15 +58,25 @@ const REASONS: Record<string, string> = {
   qualified_market_metrics_missing: "未取得合格市场指标",
   native_valuation_policy_v1: "估值参考由代码计算，并保留输入资格与假设限制",
   valuation_identity_or_calendar_missing: "证券身份或对应交易所的日历未通过资格检查",
+  calendar_cross_check_unavailable: "交易所官方日历已采用，独立行情日期核对本次未取得",
+  calendar_cross_check_unresolved: "交易所官方日历已采用，与行情日期的个别差异未获第三方确认",
   valuation_historical_vintage_unverified: "历史估值版本未经验证",
   valuation_snapshot_unavailable: "本次未取得合格估值快照",
   valuation_history_unavailable: "本次未取得合格历史倍数",
   valuation_budget_exhausted: "估值取数额度已用尽，保留已有合格资料",
   qualified_event_evidence_missing: "未取得合格事件证据",
+  synthesis_section_unavailable: "本项综合分段未完成，已有事实与专项观点仍可查阅",
 };
 
 export function limitationLabel(value: string): string {
   const [prefix, detail = ""] = value.split(/:(.*)/s);
+  if (prefix === "structured_supplier_incomplete") return "部分供应商未提供完整同期字段；保留其他已取得资料";
+  const structured: Record<string, string> = { structured_pair: "未取得合格的同期间字段：", structured_supplier_discrepancy: "结构化供应商数值不一致：", structured_official_discrepancy: "结构化数值与官方原表不一致：", structured_nonpositive_growth_base: "基期非正，保留金额变化而不计算增长率：" };
+  if (structured[prefix]) {
+    const [key, period] = detail.split(":");
+    const labels: Record<string, string> = { revenue: "营业收入", n_income_attr_p: "归母净利润", n_income: "合并净利润", n_cashflow_act: "经营现金流净额" };
+    return structured[prefix] + (labels[key] ?? key) + (period === "current" ? "（本期）" : period === "previous" ? "（上年同期）" : "");
+  }
   const fields: Record<string, string> = { revenue: "营业收入", parent_net_income: "归母净利润", consolidated_net_income: "合并净利润", cfo: "经营现金流" };
   const local: Record<string, string> = { official_pair: "未取得当前及上年同期间官方数字：", official_financial_conflict: "官方披露数字冲突：",
     supplier_financial_discrepancy: "供应商与官方披露口径核对不一致：", cash_bridge_required_cells_or_duplicates: "现金流桥缺少必要数字或存在重复项；文档：",

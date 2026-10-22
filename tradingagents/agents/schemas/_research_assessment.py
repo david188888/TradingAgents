@@ -10,6 +10,7 @@ from ._research_dialogue import (
     InvestmentArgumentV1,
     JudgementConditionV1,
 )
+from ._synthesis_sections import SynthesisSectionsV1
 
 DIMENSIONS_BY_MODE = {
     "company_research": ("operating_quality", "valuation", "market_context"),
@@ -30,6 +31,10 @@ class DimensionAssessmentV1(_AssessmentModel):
     claim_ids: tuple[str, ...] = ()
     challenge_ids: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
+
+
+class SynthesisDimensionV1(_AssessmentModel):
+    dimensions: tuple[DimensionAssessmentV1, ...] = Field(min_length=1, max_length=1)
 
 
 class ChallengeAssessmentV1(_AssessmentModel):
@@ -68,12 +73,15 @@ class ResearchAssessmentV3(ResearchAssessmentV2):
     opposing_arguments: tuple["InvestmentArgumentV1", ...] = Field(default=(), max_length=3)
     change_conditions: tuple["JudgementConditionV1", ...] = Field(default=(), max_length=3)
     adjudications: tuple["ChallengeAdjudicationV1", ...] = Field(default=(), max_length=3)
+    synthesis_sections: SynthesisSectionsV1 | None = None
 
     @model_serializer(mode="wrap")
     def compatible_delivery_status(self, handler):
         value = handler(self)
         if self.report_status is None:
             value.pop("report_status", None)
+        if self.synthesis_sections is None:
+            value.pop("synthesis_sections", None)
         return value
 
 

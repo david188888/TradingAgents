@@ -22,9 +22,12 @@ from tradingagents.agents.schemas._research_record import (
     make_evidence_snapshot,
 )
 from tradingagents.agents.schemas._verification_plan import (
+    ChallengeVerificationTaskV1,
     FinancialConditionV1,
     VerificationPlanV1,
+    VerificationPlanV2,
     canonical_sha256,
+    parse_verification_plan,
 )
 from tradingagents.execution.budget import (
     BudgetBucket,
@@ -71,6 +74,12 @@ class VerificationExecutionV1(BaseModel):
 
 
 def _validate_bindings(record: ResearchRecordV1, plan: VerificationPlanV1) -> None:
+    if bool(record.challenge_check_policy) != isinstance(plan, VerificationPlanV2):
+        raise ValueError("verification plan policy mismatch")
+    if isinstance(plan, VerificationPlanV2):
+        from tradingagents.research.challenge_checks import make_challenge_plan
+        if plan != make_challenge_plan(record):
+            raise ValueError("verification plan must cover every computable challenge")
     if (
         (plan.run_id, plan.ticker, plan.mode, plan.analysis_date, plan.input_snapshot_id)
         != (
@@ -98,6 +107,11 @@ def _validate_bindings(record: ResearchRecordV1, plan: VerificationPlanV1) -> No
             raise ValueError("verification requires a native V0 hypothesis")
         if challenge is None or challenge.target_claim_ids != (hypothesis.claim_id,):
             raise ValueError("verification challenge must target exactly its hypothesis")
+        if isinstance(task, ChallengeVerificationTaskV1):
+            from tradingagents.research.challenge_checks import make_challenge_task
+            if record.challenge_check_policy is None or task != make_challenge_task(record, challenge):
+                raise ValueError("verification challenge proposition binding changed")
+            continue
         conditions = (
             hypothesis.assumptions
             if task.condition_role == "necessary"
@@ -256,7 +270,11 @@ def _build_record(record, plan, outcomes, plan_sha256):
                 )
             )
             evidence_ids = (*result.evidence_ids, evidence_id)
-        if result.reason == "predicate_evaluated":
+        is_challenge = isinstance(task, ChallengeVerificationTaskV1)
+        if result.reason == "predicate_evaluated" and is_challenge:
+            label = "核查命题满足" if result.predicate_met else "核查命题不满足"
+            summary = f"{label}；计算值 {result.value} {task.check.predicate.unit}。只回答独立命题，不证明或推翻整条经济假设。"
+        elif result.reason == "predicate_evaluated":
             label = (
                 ("必要条件满足" if result.predicate_met else "必要条件不满足")
                 if task.condition_role == "necessary"
@@ -276,11 +294,13 @@ def _build_record(record, plan, outcomes, plan_sha256):
                 "evidence_ids": evidence_ids,
                 "executed_at": outcome.executed_at,
                 "result": summary,
-                "scope": "predicate_only",
+                "scope": "challenge_predicate_only" if is_challenge else "predicate_only",
                 "hypothesis_id": task.hypothesis_id,
                 "plan_sha256": plan_sha256,
-                "condition_role": task.condition_role,
-                "condition_text": task.condition_text,
+                "condition_role": None if is_challenge else task.condition_role,
+                "condition_text": task.proposition if is_challenge else task.condition_text,
+                **({"check_sha256": canonical_sha256(task.check), "result_reason": result.reason,
+                    "predicate_met": result.predicate_met, "value": result.value} if is_challenge else {}),
             }
         )
     payload = record.model_dump(mode="json")
@@ -303,6 +323,22 @@ def _build_record(record, plan, outcomes, plan_sha256):
         if item.state != "completed"
     )
     payload["limitations"] = list(dict.fromkeys(limits))
+    if isinstance(plan, VerificationPlanV2):
+        from tradingagents.agents.schemas._challenge_verification import ChallengeCheckOutcomeV1
+        from tradingagents.research.challenge_checks import validate_test
+        by_challenge = {tasks[o.task_id].challenge_id: o for o in outcomes}
+        payload["challenge_outcomes"] = []
+        for challenge in record.challenges:
+            outcome = by_challenge.get(challenge.challenge_id)
+            if outcome is None:
+                category = challenge.test.verifiability if challenge.test else None
+                item = ChallengeCheckOutcomeV1(challenge_id=challenge.challenge_id, state="not_generated",
+                    reason=category or "minor_unclassified",
+                    inputs=validate_test(record, challenge.test) if challenge.test else ())
+            else:
+                item = ChallengeCheckOutcomeV1(challenge_id=challenge.challenge_id, state=outcome.state,
+                    task_id=outcome.task_id, plan_sha256=plan_sha256)
+            payload["challenge_outcomes"].append(item.model_dump(mode="json"))
     return ResearchRecordV1.model_validate(payload)
 
 
@@ -328,7 +364,7 @@ def execute_verification(
     # Revalidate copies: nested containers can have been mutated despite frozen
     # model settings, and model_copy(update=...) does not validate its updates.
     record = ResearchRecordV1.model_validate_json(record.model_dump_json())
-    plan = VerificationPlanV1.model_validate_json(plan.model_dump_json())
+    plan = parse_verification_plan(plan.model_dump(mode="json"))
     _validate_bindings(record, plan)
     if (
         not isinstance(ledger, DurableBudgetLedger)

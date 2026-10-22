@@ -21,7 +21,7 @@ from tradingagents.dataflows.native_sources import NativeSources
 from tradingagents.dataflows.native_valuation import ValuationSources
 from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
 from tradingagents.execution.budget import BudgetBucket, BudgetConflictError, BudgetExhausted
-from tradingagents.execution.config_identity import prepare_effective_config
+from tradingagents.execution.config_identity import SemanticConfigError, prepare_effective_config
 from tradingagents.execution.models import (
     AnalysisCancelled,
     AnalysisRequest,
@@ -52,6 +52,7 @@ from tradingagents.research.native_versions import (
     NUMERIC_NARRATIVE_POLICY,
     REPORT_DELIVERY_POLICY,
     SPECIALIST_REFERENCE_POLICY,
+    STRUCTURED_FINANCIAL_POLICY,
     UNIFIED_BUDGET_POLICY,
     UNIFIED_WORKFLOW_VERSION,
 )
@@ -69,9 +70,11 @@ PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 
 
-def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True):
+def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True, structured_financial_policy=True, factual_premise_policy=True, financial_detail_policy=True, challenge_check_policy=True):
+    from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
+    from tradingagents.agents.schemas._factual_premise import FACTUAL_PREMISE_POLICY
     from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
-
+    from tradingagents.research.native_versions import FINANCIAL_DETAIL_POLICY
     subscription_policy = chatgpt_request_policy and request.effective_config.get("llm_provider") == "chatgpt"
     if subscription_policy:
         validate_reasoning_effort(request.effective_config.get("openai_reasoning_effort"))
@@ -85,6 +88,14 @@ def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_p
         "config": prepare_effective_config(request.effective_config),
         **({"chatgpt_request_policy": CHATGPT_REQUEST_POLICY} if subscription_policy else {}),
         "active_timeout_seconds": request.effective_config.get("evidence_timeout_seconds", 300),
+        **({"factual_premise_policy": FACTUAL_PREMISE_POLICY}
+           if workflow_version == UNIFIED_WORKFLOW_VERSION and numeric_narrative_policy and factual_premise_policy else {}),
+        **({"structured_financial_policy": STRUCTURED_FINANCIAL_POLICY}
+           if workflow_version == UNIFIED_WORKFLOW_VERSION and structured_financial_policy else {}),
+        **({"financial_detail_policy": FINANCIAL_DETAIL_POLICY}
+           if workflow_version == UNIFIED_WORKFLOW_VERSION and financial_detail_policy else {}),
+        **({"challenge_check_policy": CHALLENGE_CHECK_POLICY}
+           if workflow_version == UNIFIED_WORKFLOW_VERSION and challenge_check_policy else {}),
         **({"numeric_narrative_policy": NUMERIC_NARRATIVE_POLICY}
            if workflow_version == UNIFIED_WORKFLOW_VERSION and numeric_narrative_policy else {}),
         **({"company_research_policy": COMPANY_RESEARCH_POLICY}
@@ -115,7 +126,11 @@ def validate_native_resume(store, run_id, request):
     report_policy = state is not None and "report_delivery_policy" in state["identity"]
     numeric_policy = state is not None and "numeric_narrative_policy" in state["identity"]
     chatgpt_policy = state is not None and "chatgpt_request_policy" in state["identity"]
-    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy):
+    premise_policy = state is not None and "factual_premise_policy" in state["identity"]
+    structured_policy = state is not None and "structured_financial_policy" in state["identity"]
+    detail_policy = state is not None and "financial_detail_policy" in state["identity"]
+    challenge_policy = state is not None and "challenge_check_policy" in state["identity"]
+    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy, financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.agents.schemas._research_record import ResearchRecordV1
 
@@ -204,10 +219,13 @@ class NativeRunner:
         if request.research_profile != "evidence_v1" or request.evidence_policy is None:
             raise ValueError("unsupported native request")
         request = replace(request, effective_config=deepcopy(dict(request.effective_config)))
-        task_effort_overrides(request.effective_config)
-        timeout = float(request.effective_config.get("evidence_timeout_seconds", 300))
+        try:
+            task_effort_overrides(request.effective_config)
+            timeout = float(request.effective_config.get("evidence_timeout_seconds", 300))
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise SemanticConfigError("invalid native execution configuration") from exc
         if not math.isfinite(timeout) or timeout <= 0:
-            raise ValueError("native timeout must be positive")
+            raise SemanticConfigError("native timeout must be positive")
         deadline = time.monotonic() + timeout
         token = cancellation_token or CancellationToken()
 
@@ -230,9 +248,14 @@ class NativeRunner:
         report_policy = not resume or "report_delivery_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         numeric_policy = not resume or "numeric_narrative_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         chatgpt_policy = not resume or "chatgpt_request_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        premise_policy = not resume or "factual_premise_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        structured_policy = not resume or "structured_financial_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        detail_policy = not resume or "financial_detail_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        challenge_policy = not resume or "challenge_check_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version,
             model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy,
-            numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy), require_existing=resume)
+            numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy,
+            financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy), require_existing=resume)
         if journal.state["identity"].get("numeric_narrative_policy") is not None:
             with self.observer.store.lock_for(run_id):
                 snapshot = self.observer.store.read_snapshot(run_id)
@@ -303,6 +326,7 @@ class NativeRunner:
                 }
             source_fields["company_research_policy"] = journal.state["identity"].get("company_research_policy")
             source_fields["report_delivery_policy"] = journal.state["identity"].get("report_delivery_policy")
+            source_fields["financial_detail_policy"] = journal.state["identity"].get("financial_detail_policy")
             source_request = SimpleNamespace(**source_fields)
             with BudgetedSession(
                 journal.ledger, active, lambda: deadline - time.monotonic()
@@ -332,6 +356,7 @@ class NativeRunner:
                 include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
                 include_minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
                 include_basics=journal.state["identity"].get("report_delivery_policy") == REPORT_DELIVERY_POLICY,
+                include_structured_financial=journal.state["identity"].get("structured_financial_policy") == STRUCTURED_FINANCIAL_POLICY,
             )
             if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat()) != (
                 run_id,

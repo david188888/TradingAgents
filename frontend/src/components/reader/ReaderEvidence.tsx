@@ -4,13 +4,14 @@ import type { ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contrac
 import { limitationLabel } from "../../domain/researchCoverage";
 import { TERMS } from "../../domain/readerExplanation";
 import { claimText } from "./ResearchRecordSection";
+import { ChallengeCheckSummary } from "./ChallengeChecks";
 
 export type EvidenceSelection = { kind: "claim" | "challenge" | "check" | "metric" | "valuation" | "source"; id: string };
 export function selectionContent(record: ResearchRecordV1DTO, selected: EvidenceSelection | null) {
   const claimIds = new Set<string>(), evidenceIds = new Set<string>();
   let title = "选择左侧判断，核对支撑依据";
   if (selected?.kind === "claim") { const c = record.claims.find(c => c.claim_id === selected.id); if (c) { title = c.statement; claimIds.add(c.claim_id); } }
-  if (selected?.kind === "challenge") { const c = record.challenges.find(c => c.challenge_id === selected.id); if (c) { title = c.statement; c.target_claim_ids.forEach(id => claimIds.add(id)); } }
+  if (selected?.kind === "challenge") { const c = record.challenges.find(c => c.challenge_id === selected.id); if (c) { title = c.statement; c.target_claim_ids.forEach(id => claimIds.add(id)); c.test?.supporting_fact_ids.forEach(id => claimIds.add(id)); record.verifications.filter(v=>v.challenge_id===c.challenge_id).forEach(v=>v.evidence_ids.forEach(id=>evidenceIds.add(id))); } }
   if (selected?.kind === "check") { const c = record.evidence_checks?.checks.find(c => c.check_id === selected.id); if (c) { title = c.question; c.evidence_ids.forEach(id => evidenceIds.add(id)); } }
   if (selected?.kind === "metric") { const c = record.metrics.find(c => c.metric_id === selected.id); if (c) { title = c.label; c.input_evidence_ids.forEach(id => evidenceIds.add(id)); } }
   if (selected?.kind === "valuation" && record.valuation) { title = "估值的输入与来源"; record.valuation.input_evidence_ids.forEach(id => evidenceIds.add(id)); }
@@ -56,6 +57,7 @@ export function ReaderEvidence({ record, selected, term, onTerm }: {
     <span className="qr-tag">本次保存的依据</span><h3>{indicator?.label ?? (selected?.kind === "claim" ? "当前事实或判断" : selected?.kind === "challenge" ? "当前疑点与支撑事实" : content.title)}</h3>
     {selected?.kind === "claim" && !content.facts.some(f=>f.claim_id === selected.id) ? <ExplainedText target={`claim:${selected.id}`} text={content.title}/> : null}
     {selected?.kind === "challenge" ? <ExplainedText target={`challenge:${selected.id}`} text={content.title}/> : null}
+    {selected?.kind === "challenge" ? <ChallengeCheckSummary record={record} challengeId={selected.id}/> : null}
     {selected?.kind === "valuation" && record.valuation ? <ExplainedText target="valuation:reasoning" text={[record.valuation.assessment.verdict.overall_label_zh,...record.valuation.assessment.verdict.fact_notes_zh].join("\n")}/> : null}
     {content.boundClaims.filter(c => c.kind !== "fact" && selected?.kind !== "claim").map(c => <p className="qr-meta" key={c.claim_id}>待验证推断：{c.statement}</p>)}
     {content.facts.length ? <section><h4>{selected?.kind === "source" ? "此来源中的保存事实" : "绑定的支撑事实"}</h4>{content.facts.map(f => <div className="qr-fact" key={f.claim_id}><ExplainedText target={`claim:${f.claim_id}`} text={claimText(f.statement)}/>{f.limitations.length ? <details><summary>字段定位与适用范围</summary>{f.limitations.map((l, i) => <p className="qr-meta" key={i}>{limitationLabel(l)}</p>)}</details> : null}</div>)}</section> : <p className="qr-meta">该项直接绑定来源或计算输入，未逐条指定支撑事实。请结合下方来源、方法和判断范围核对。</p>}

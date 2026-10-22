@@ -19,7 +19,7 @@ LOCATION_ONLY_CONFIG_KEYS = frozenset(
 
 
 class SemanticConfigError(ValueError):
-    """A configuration cannot be represented as a safe semantic identity."""
+    """Effective configuration is invalid or has no safe semantic identity."""
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,8 @@
 
 from decimal import Decimal
 
-CHECK_LABELS = {"operating_disclosures": "经营披露依据", "cash_conversion": "现金流桥核对", "valuation_context": "估值补充背景"}
+CHECK_LABELS = {"operating_disclosures": "经营披露依据", "cash_conversion": "现金流桥核对", "valuation_context": "估值补充背景",
+                "financial_baseline": "结构化财务基础覆盖", "cashflow_comparison": "利润与现金流同期比较"}
 CHECK_STATUS = {"passed": "所需证据已核对", "unavailable": "所需证据不足", "conflict": "数据冲突，待核查"}
 OUTCOME_LABELS = {"evidence_sufficient": "证据子问题已回答", "risk_supported": "数据支持所列风险", "future_observation": "保留未来观察", "unresolved": "尚未解决"}
 

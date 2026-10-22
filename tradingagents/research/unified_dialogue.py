@@ -50,6 +50,11 @@ def run_responses(record, origins, question, *, call, caller, ledger, cancelled,
         context["hypotheses"] = [h.model_dump(mode="json") for h in record.hypotheses if h.hypothesis_id in targets.values()]
         context["challenges"] = [c.model_dump(mode="json") for c in record.challenges if c.challenge_id in targets]
         context["verifications"] = [v.model_dump(mode="json") for v in record.verifications if v.challenge_id in targets]
+        if record.challenge_check_policy is not None:
+            context["challenge_check_policy"] = record.challenge_check_policy
+            context["challenge_outcomes"] = [o.model_dump(mode="json") for o in record.challenge_outcomes or ()
+                                               if o.challenge_id in targets]
+            context["instruction"] += " 独立核查命题的满足/不满足不等于整条假设成立/失效；解释其对本次回应的影响。"
         target_claims = {h.claim_id for h in record.hypotheses if h.hypothesis_id in targets.values()}
         context["assertions"] = [c.model_dump(mode="json") for c in record.claims if c.claim_id in target_claims]
         evidence_ids = {eid for f in record.claims if f.claim_id in allowed for eid in f.evidence_ids}
@@ -63,7 +68,7 @@ def run_responses(record, origins, question, *, call, caller, ledger, cancelled,
         from tradingagents.research.numeric_integration import numeric_enabled
         if numeric_enabled(ledger.journal.state["identity"]):
             from tradingagents.research.numeric_narrative import prepare_numeric_context
-            context = prepare_numeric_context(stage, context, record)
+            context = prepare_numeric_context(stage, context, record, identity=ledger.journal.state["identity"])
         contexts[role] = context
         logical = "native." + stage
         if ledger.cached_result(logical) is None and not any(r.logical_call_id == logical and r.dispatched_at for r in ledger.records()):

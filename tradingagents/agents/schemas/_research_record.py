@@ -29,6 +29,7 @@ from tradingagents.research.valuation import (
     assess_valuation,
 )
 
+from ._challenge_verification import ChallengeCheckOutcomeV1, ChallengeTestV1
 from ._company_basics import CompanyBasicsV1
 from ._evidence_checks import ChallengeCheckBindingV1, EvidenceChecksV1
 from ._numeric_attribution import NumericAttributionV1
@@ -156,6 +157,14 @@ class ResearchChallengeV1(_RecordModel):
     proposed_test: str = Field(min_length=1, max_length=300)
     # A disposition is a model assessment, not a tool execution record.
     reported_disposition: str | None = Field(default=None, max_length=40)
+    test: ChallengeTestV1 | None = None
+
+    @model_serializer(mode="wrap")
+    def legacy_shape(self, handler):
+        value = handler(self)
+        if self.test is None:
+            value.pop("test", None)
+        return value
 
 
 class VerificationRecordV1(_RecordModel):
@@ -168,11 +177,23 @@ class VerificationRecordV1(_RecordModel):
     evidence_ids: tuple[str, ...] = ()
     executed_at: datetime
     result: str = Field(min_length=1, max_length=1200)
-    scope: Literal["unspecified", "predicate_only"] = "unspecified"
+    scope: Literal["unspecified", "predicate_only", "challenge_predicate_only"] = "unspecified"
     hypothesis_id: str | None = Field(default=None, min_length=1, max_length=512)
     plan_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     condition_role: Literal["necessary", "invalidation"] | None = None
     condition_text: str | None = Field(default=None, min_length=1, max_length=1200)
+    check_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    result_reason: str | None = Field(default=None, min_length=1, max_length=80)
+    predicate_met: bool | None = None
+    value: str | None = Field(default=None, max_length=120)
+
+    @model_serializer(mode="wrap")
+    def legacy_shape(self, handler):
+        value = handler(self)
+        if self.scope != "challenge_predicate_only":
+            for key in ("check_sha256", "result_reason", "predicate_met", "value"):
+                value.pop(key, None)
+        return value
 
     @model_validator(mode="after")
     def execution_requires_a_basis(self):
@@ -185,6 +206,13 @@ class VerificationRecordV1(_RecordModel):
             raise ValueError("predicate verification requires hypothesis and condition binding")
         if self.scope == "unspecified" and any(binding):
             raise ValueError("condition binding requires an explicit predicate scope")
+        new_binding = (self.check_sha256, self.result_reason, self.predicate_met, self.value)
+        if self.scope == "challenge_predicate_only":
+            if (not self.hypothesis_id or not self.plan_sha256 or not self.condition_text
+                    or self.condition_role is not None or not self.check_sha256 or not self.result_reason):
+                raise ValueError("challenge predicate requires its own proposition and check")
+        elif any(v is not None for v in new_binding):
+            raise ValueError("challenge result fields require challenge scope")
         return self
 
 
@@ -258,6 +286,8 @@ class ResearchRecordV1(_RecordModel):
     dialogue: ResearchDialogueV1 | None = None
     company_basics: CompanyBasicsV1 | None = None
     numeric_attribution: NumericAttributionV1 | None = None
+    challenge_check_policy: Literal["hypothesis-directed-checks-v1"] | None = None
+    challenge_outcomes: tuple[ChallengeCheckOutcomeV1, ...] | None = None
     limitations: tuple[str, ...] = ()
 
     @field_validator("assessment", mode="before")
@@ -286,6 +316,10 @@ class ResearchRecordV1(_RecordModel):
             value.pop("company_basics", None)
         if self.numeric_attribution is None:
             value.pop("numeric_attribution", None)
+        if self.challenge_check_policy is None:
+            value.pop("challenge_check_policy", None)
+        if self.challenge_outcomes is None:
+            value.pop("challenge_outcomes", None)
         return value
 
     @model_validator(mode="after")
@@ -390,15 +424,22 @@ class ResearchRecordV1(_RecordModel):
                 raise ValueError("metric window is after research cutoff")
             if metric.availability == "available" and any(evidence[eid].availability != "available" for eid in metric.input_evidence_ids):
                 raise ValueError("available metrics require available input evidence")
+        from tradingagents.research.challenge_checks import validate_challenge_record
+        validate_challenge_record(self)
         if self.evidence_checks is not None:
             from tradingagents.research.minimum_evidence import (
                 CALCULATION_VERSION,
+                STRUCTURED_CALCULATION_VERSION,
                 challenge_assessments,
                 compute_checks,
             )
             if self.construction != "native":
                 raise ValueError("local evidence checks or frozen input binding changed")
-            if self.evidence_checks.calculation_version == CALCULATION_VERSION:
+            if self.evidence_checks.calculation_version in {CALCULATION_VERSION, STRUCTURED_CALCULATION_VERSION}:
+                if self.evidence_checks.calculation_version == STRUCTURED_CALCULATION_VERSION:
+                    from tradingagents.research.native_versions import STRUCTURED_FINANCIAL_POLICY
+                    if STRUCTURED_FINANCIAL_POLICY not in self.limitations:
+                        raise ValueError("structured checks require frozen policy")
                 if self.evidence_checks != compute_checks(self):
                     raise ValueError("local evidence checks or frozen input binding changed")
             elif self.evidence_checks.calculation_version != "minimum-evidence-v1":
@@ -454,5 +495,6 @@ class ResearchRecordV1(_RecordModel):
             raise ValueError("dialogue requires V3 assessment")
         if self.numeric_attribution is not None:
             from tradingagents.research.numeric_integration import validate_record_numeric
-            validate_record_numeric(self, {"numeric_narrative_policy": self.numeric_attribution.policy})
+            validate_record_numeric(self, {"numeric_narrative_policy": self.numeric_attribution.policy,
+                **({"challenge_check_policy": self.challenge_check_policy} if self.challenge_check_policy else {})})
         return self
