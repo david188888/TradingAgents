@@ -24,7 +24,7 @@ vi.mock("../reader/AuditCenter", () => ({ AuditCenter: ({ open }: { open: boolea
 
 const RUN_ID = "run-record";
 const stored = savedRecord as ResearchRecordResponseDTO;
-if (stored.state !== "ready") throw new Error("invalid fixture");
+if (stored.state !== "ready" || stored.record.schema_version !== "research-record-v1") throw new Error("invalid fixture");
 const baseRecord = stored.record;
 
 function nativeRecord(mode: ResearchMode): ResearchRecordResponseDTO {

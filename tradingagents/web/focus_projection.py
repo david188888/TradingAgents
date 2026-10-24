@@ -5,8 +5,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from tradingagents.agents.schemas._research_focus import ResearchFocusResponseV1
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
-from tradingagents.research.native_versions import FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION
+from tradingagents.research.native_versions import (
+    FOCUS_WORKFLOW_VERSION,
+    SEARCH_WORKFLOW_VERSION,
+    UNIFIED_WORKFLOW_VERSION,
+)
+from tradingagents.research.record_codec import parse_research_record
 from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.focus_artifacts import (
     read_focus_artifact,
@@ -46,7 +50,7 @@ def project_reader_focus(store, run_id, *, through=None):
         events = store.read_events(run_id, through=sequence)
         version = cp["identity"].get("workflow_version") if cp else snapshot.metadata.get("native_workflow_version")
         base["workflow_version"] = version
-        if version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
+        if version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             if version is not None and version not in {f"evidence-production-v{i}" for i in range(1, 6)}:
                 return result("unavailable", "workflow_unsupported")
             return result("not_applicable", "legacy_question_semantics")
@@ -60,8 +64,8 @@ def project_reader_focus(store, run_id, *, through=None):
             return result("unavailable" if ended else "pending", "base_unavailable" if ended else "publication_pending")
         if cp is None:
             return result("unavailable", "corrupt")
-        saved = read_focus_artifact(store, run_id, ResearchRecordV1.model_validate(record["record"]), cp, events)
-        failure = read_focus_publication_failure(store, run_id, ResearchRecordV1.model_validate(record["record"]), cp, events)
+        saved = read_focus_artifact(store, run_id, parse_research_record(record["record"]), cp, events)
+        failure = read_focus_publication_failure(store, run_id, parse_research_record(record["record"]), cp, events)
         if failure:
             return result("unavailable", failure)
         if saved is None:

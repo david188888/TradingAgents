@@ -14,6 +14,9 @@
 
 ## Reviews And Verification Records
 
+- [v3.7.0 发布说明](../reviews/2026-10-24-v3.7.0-release-notes.md)：双路搜索、有界补证与 V2 证据版本。
+- [双路搜索实施收尾](../reviews/2026-10-24-dual-search-closeout.md)：11 项任务、独立审查修复、验证范围和知识面状态。
+
 `docs/reviews/` — 交付验收、发布说明与定点调查记录。
 
 - [v3.6.0 release notes](../reviews/2026-10-23-v3.6.0-release-notes.md): 事实前提、假设导向核查、财务比较、分段综合及可逆元数据离线对照；生产压缩未启用。
@@ -68,6 +71,7 @@
 
 - [架构审查整改状态与待办（2026-10-21）](../plans/2026-10-21-review-remediation-backlog.md)：F03–F05、F07 与批次模型迁移的状态快照、依赖、待办和验收条件，含 F02 剩余边界。
 - [V8 evidence reasoning proposal](../plans/2026-10-17-evidence-reasoning-architecture-v8.md): 六阶段提案；预算、接口和额外调试运行仍有待确认项。
+- [DeepSeek／Tavily 双路检索设计](../superpowers/specs/2026-10-23-dual-search-research-design.md) 与 [实施计划](../superpowers/plans/2026-10-23-dual-search-research.md): 设计与计划已于 2026-10-24 完成实现和离线验收；保留冻结基线，现役行为见双路搜索合同。
 - [ChatGPT upstream adaptation design](../superpowers/specs/2026-10-17-chatgpt-upstream-adaptation-design.md) and [implementation plan](../superpowers/plans/2026-10-17-chatgpt-upstream-adaptation.md): 显式推理参数与令牌刷新韧性；用户明确排除安装包发布。
 
 - [Plain-language report design](../superpowers/specs/2026-10-15-plain-language-report-design.md) and [stage output review design](../superpowers/specs/2026-10-15-stage-output-review-design.md): 白话解读补充与可独立阅读的阶段产出。

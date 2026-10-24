@@ -22,7 +22,6 @@ from tradingagents.agents.schemas._research_dialogue import (
     ResponsesProposalV1,
     response_fact_ids,
 )
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import (
     VerificationPlanV1,
     canonical_sha256,
@@ -33,6 +32,7 @@ from tradingagents.research.native_versions import (
     NUMERIC_NARRATIVE_POLICY,
     REPORT_DELIVERY_POLICY,
     RESPONSE_ROLES,
+    SEARCH_WORKFLOW_VERSION,
     SPECIALIST_REFERENCE_POLICY,
     UNIFIED_KERNEL_VERSION,
     UNIFIED_QUESTION,
@@ -43,6 +43,7 @@ from tradingagents.research.numeric_integration import (
     validate_cached_numeric,
     validate_record_numeric,
 )
+from tradingagents.research.record_codec import parse_research_record
 from tradingagents.research.unified_dialogue import validate_response_proposal
 from tradingagents.web.native_reader_versions import saved_fact_views
 
@@ -50,15 +51,15 @@ SPECIALISTS = ("operating_quality", "event_context", "market_context")
 
 
 def updated(record, **fields):
-    return ResearchRecordV1.model_validate({**record.model_dump(mode="json"), "numeric_attribution": None, **fields})
+    return parse_research_record({**record.model_dump(mode="json"), "numeric_attribution": None, **fields})
 
 
 def stage_seed(ctx):
     cp, snapshot = ctx.checkpoint, ctx.snapshot
     identity = cp["identity"]
-    if identity.get("workflow_version") != UNIFIED_WORKFLOW_VERSION:
+    if identity.get("workflow_version") not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
         raise ValueError("stage_workflow_unsupported")
-    seed = ResearchRecordV1.model_validate(cp["native_seed"])
+    seed = parse_research_record(cp["native_seed"])
     if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat(), seed.construction) != (
         snapshot.run_id, snapshot.ticker, snapshot.mode, snapshot.analysis_date, "native"
     ) or (identity.get("ticker"), identity.get("mode"), identity.get("cutoff")) != (
@@ -73,7 +74,7 @@ def stage_seed(ctx):
            for fact in seed.claims for e in fact.evidence_ids):
         raise ValueError("stage_source_qualification")
     validate_record_numeric(seed, identity)
-    expected = {"workflow_version": UNIFIED_KERNEL_VERSION, "seed_sha256": canonical_sha256(seed),
+    expected = {"workflow_version": "native-research-kernel-v7" if seed.schema_version == "research-record-v2" else UNIFIED_KERNEL_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": UNIFIED_QUESTION}
     from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
     from tradingagents.agents.schemas._factual_premise import FACTUAL_PREMISE_POLICY
@@ -99,7 +100,7 @@ class StageReader:
     def __init__(self, ctx):
         self.ctx, self.cp = ctx, ctx.checkpoint
         self.seed = stage_seed(ctx)
-        self.views = saved_fact_views(self.seed, UNIFIED_WORKFLOW_VERSION)
+        self.views = saved_fact_views(self.seed, self.cp["identity"]["workflow_version"])
         # V7 company-foundation facts are background, never specialist inputs.
         self.views = {role: tuple(f for f in facts if "native_dimension:company_introduction" not in f.limitations)
                       for role, facts in self.views.items()}
@@ -253,7 +254,7 @@ class StageReader:
             _validate_bindings,
         )
         frontier = self.cp["verification_input"]
-        original = ResearchRecordV1.model_validate(frontier["record"])
+        original = parse_research_record(frontier["record"])
         if original != record:
             raise ValueError("stage_verification_input")
         plan = parse_verification_plan(frontier["plan"])
@@ -363,6 +364,21 @@ class StageReader:
         dialogue = ResearchDialogueV1(input_snapshot_id=record.snapshots[-1].snapshot_id,
             origins=tuple({"hypothesis_id": h, "role": r} for h, r in origins.items()), responses=tuple(replies))
         record = updated(record, dialogue=dialogue.model_dump(mode="json"))
+        if record.schema_version == 'research-record-v2':
+            saved_search = self.cp['results'].get('search.reviews.output')
+            if saved_search is not None:
+                from tradingagents.agents.schemas._search import SearchGapsV1
+                stages = (*SPECIALISTS, 'challenge', *RESPONSE_ROLES)
+                gaps = tuple(dict.fromkeys(g for stage in stages if self.cp['results'].get('native.'+stage) is not None
+                    for g in SearchGapsV1.model_validate(self.cp['results'].get('native.search_gaps.'+stage) or {'gaps': []}).gaps))
+                if saved_search['input'] != canonical_sha256({'record': record, 'gaps': gaps}):
+                    raise ValueError('stage_search_frontier')
+                revised = parse_research_record(saved_search['record'])
+                if (revised.dialogue != record.dialogue or revised.hypotheses != record.hypotheses
+                        or revised.challenges != record.challenges or revised.verifications != record.verifications
+                        or revised.snapshots[:len(record.snapshots)] != record.snapshots):
+                    raise ValueError('stage_search_history')
+                record = revised
         from tradingagents.research.native_policy import dimension_claim_ids, gate_dimensions
         proposal = self.proposal(role, SynthesisProposalV3, record, {
             "record": record.model_dump(mode="json"), "dimension_claim_ids": dimension_claim_ids(record)})

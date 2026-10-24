@@ -5,6 +5,15 @@ from tradingagents.research.native_versions import UNIFIED_DIMENSIONS
 
 
 def stance_ceiling(record, dimensions):
+    if record.schema_version == 'research-record-v2':
+        from tradingagents.research.search_effective import unreviewed_roles
+        latest = {}
+        for calculation in record.revision_calculations:
+            latest[(calculation.field, calculation.period, calculation.operation)] = calculation
+        if (unreviewed_roles(record) or any(c.status == 'conflict' for c in latest.values())
+                or any(g.priority == 'critical' for g in record.search_gaps)
+                or any(r.new_risks for r in record.search_reviews)):
+            return 'no_favorable'
     by_name = {d.dimension: d for d in dimensions}
     from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
     cautious = COMPANY_RESEARCH_POLICY in record.limitations

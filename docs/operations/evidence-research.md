@@ -8,6 +8,25 @@ Historical catalyst and holding runs retain saved reading and recovery.
 `NativeRunner` owns execution. CLI analysis is outside
 continued maintenance; `tradingagents web` remains the supported launcher.
 
+## Current V8 search execution
+
+Fresh single and batch runs select `evidence-production-v8`,
+`native-research-kernel-v7` and `research-record-v2`. Dedicated APIs remain first
+for identity and numerical inputs; DeepSeek/Tavily handle news, industry and
+field-specific fallback. Configure `DEEPSEEK_API_KEY` and `TAVILY_API_KEY` (or
+`TAVILY_API_KEYS`) in ignored local configuration. Missing keys degrade without
+blocking available dedicated sources. The model provider is independent.
+
+See [dual-search research](../contracts/dual-search-research.md) for the shared
+50/50 search, 8-page, three-round, 90-second search and 21-model-attempt ceilings,
+recovery qualification and failure semantics. Effective configuration
+`evidence_search_enabled=false` disables search for new runs. Saved identities
+retain their configuration and consumed budgets on resume; old V1–V7 runs do
+not acquire V8 fields or limits. Reader and export only read saved material.
+
+The version-specific sections below document the retained collection and
+original analysis baseline; V8 extends them through the separate contract.
+
 ## Start Web research
 
 Keep model/data credentials in ignored local configuration and start:
@@ -187,7 +206,7 @@ suppresses further Tushare attempts in that run; public sources remain eligible.
 All attempts share the existing capability/HTTP ceilings and active deadline.
 Cancellation, budget exhaustion and checkpoint conflicts stop execution.
 
-The V5 collector (retained by current V7) adds the bounded minimum-evidence collector
+The V5 collector (retained by V7 and extended by V8) adds the bounded minimum-evidence collector
 and code-owned local checks described below. V4 binds valuation inputs and dimension-reference
 validation; v3 binds documents and scoped coverage. Original v1–v4 checkpoints
 recover with their original collectors and kernel/prompt inputs when V0 is
@@ -336,7 +355,7 @@ retain their source-partition checks.
 
 ## Budget, cancellation and recovery
 
-The native flow reuses the existing durable ledger and its hard limits: eight
+The retained V7 baseline uses the existing durable ledger and these hard limits: eight
 main V7 model calls (V6 retains five), at most one V6/V7 supplemental focus call, two structured repairs across the run with at most one per
 stage, and twelve model attempts in total. Data calls retain the existing
 twenty-four capability and sixty-four HTTP-attempt ceilings. One bounded
@@ -366,7 +385,8 @@ record, without a second summary model.
 
 ## Read a result
 
-`GET /api/runs/{id}/reader/record` reads the committed `research-record-v1`.
+`GET /api/runs/{id}/reader/record` reads the committed versioned research record (`research-record-v2` for V8,
+`research-record-v1` for historical identities).
 Native records require their assessment and no paired legacy case. The
 workbench routes an explicitly native run to this record as its single main
 Reader. The V7 desktop first screen shows the independent research scope and
@@ -390,7 +410,7 @@ verification results, including material omitted from the first screen.
 
 `GET /api/runs/{id}/reader/process` captures a saved sequence; the fixed-role
 `GET /api/runs/{id}/reader/agents/{role_key}?source_sequence=...` reads that boundary.
-V1–V7 outputs require version-specific identity and qualification checks.
+V1–V8 outputs require version-specific identity and qualification checks.
 Unknown versions, missing/corrupt bindings and unpublished proposals have explicit
 states, never inferred authorship or backfilled output.
 
@@ -571,7 +591,7 @@ remain unavailable beside passed comparisons. No extra data/model calls occur.
 Saved v1/v2 calculations, prompt choices and recovery remain unchanged; see the
 [structured financial contract](../contracts/structured-financial-checks.md).
 
-New single/batch studies use `evidence-production-v7` / `native-research-kernel-v6`. Three specialists, one critic and existing checks are followed by zero to three targeted reply calls and one synthesis. No-target replies are skipped; failed replies are saved as unavailable and require partial/LOW_CONFIDENCE. The eight/one/twelve budget, four-dimensional investment gates, referenced reasons, original change conditions and separate adjudications are defined in the [current contract](../contracts/unified-company-research.md). V1–V6 recovery uses its saved identity without acquiring V7 stages. Reader/Markdown share the saved stance and dialogue; reading never issues research calls.
+New single/batch studies use V8 as described at the top of this page. The retained V7 baseline uses `evidence-production-v7` / `native-research-kernel-v6`. Three specialists, one critic and existing checks are followed by zero to three targeted reply calls and one synthesis. No-target replies are skipped; failed replies are saved as unavailable and require partial/LOW_CONFIDENCE. The V7 eight/one/twelve budget, four-dimensional investment gates, referenced reasons, original change conditions and separate adjudications are defined in the [current contract](../contracts/unified-company-research.md). V1–V6 recovery uses its saved identity without acquiring V7 stages. Reader/Markdown share the saved stance and dialogue; reading never issues research calls.
 
 Fresh V7 identities freeze `report_delivery_policy=company-basics-local-gaps-delivery-v1`.
 The collector independently attempts explicitly labelled current company profile

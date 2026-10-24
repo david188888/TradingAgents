@@ -1,4 +1,4 @@
-import type { ChallengeTestV1DTO, ChallengeVerifiabilityDTO, ResearchRecordV1DTO } from "../../api/contracts";
+import type { ChallengeTestV1DTO, ChallengeVerifiabilityDTO, ResearchRecordDTO } from "../../api/contracts";
 
 const CATEGORIES: Record<ChallengeVerifiabilityDTO, string> = {
   computable_now: "当前可计算", computable_unsupported: "当前工具不支持",
@@ -25,7 +25,7 @@ const FIELDS: Record<string, string> = {
 };
 
 export function ChallengeCheckSummary({ record, challengeId, test: proposal }: {
-  record: ResearchRecordV1DTO; challengeId: string; test?: Partial<ChallengeTestV1DTO>;
+  record: ResearchRecordDTO; challengeId: string; test?: Partial<ChallengeTestV1DTO>;
 }) {
   const challenge = record.challenges.find(c => c.challenge_id === challengeId);
   const test = proposal ?? challenge?.test;

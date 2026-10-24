@@ -1,11 +1,12 @@
 import { PremiseContext, premiseEntries } from "./FactualPremises";
 import { ExplanationContext, ExplanationStatus, ExplainedText, readableReference } from "./PlainExplanation";
 import { useReportExplanation } from "../../hooks/useReportExplanation";
+import { SearchResearch } from "./SearchResearch";
 import { CompanyBasics } from "./CompanyBasics";
 import { InvestmentJudgement, ResearchDialogue } from "./InvestmentJudgement";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { AgentKey, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
+import type { AgentKey, ReaderProcessDTO, ResearchRecordDTO } from "../../api/contracts";
 import { useReaderAgent, useReaderFocus } from "../../hooks/useReaderProcess";
 import { AGENT_LABELS, dimensionLabel, STANCE_LABELS, TERMS } from "../../domain/readerExplanation";
 import { limitationLabel } from "../../domain/researchCoverage";
@@ -23,7 +24,7 @@ import "../../styles/nativeReader.css";
 type View = "report" | "evidence" | "process" | "agents" | "full";
 
 export function NativeReader({ runId, record, process, processError, retryProcess }: {
-  runId: string; record: ResearchRecordV1DTO; process: ReaderProcessDTO | null; processError: boolean; retryProcess(): void;
+  runId: string; record: ResearchRecordDTO; process: ReaderProcessDTO | null; processError: boolean; retryProcess(): void;
 }) {
   const assessment = record.assessment!;
   const explanation = useReportExplanation(runId, process?.source_sequence);
@@ -122,6 +123,7 @@ export function NativeReader({ runId, record, process, processError, retryProces
           <article className="qr-answer"><span className={`qr-tag${assessment.quality === "LOW_CONFIDENCE" ? " warn" : ""}`}>{assessment.quality === "LOW_CONFIDENCE" ? "结论仍需核查" : "通过当前质量门槛"}</span><h3>{unified ? assessment.investment_stance === null ? "公司报告 · 暂未形成总体评级" : `投资吸引力 · ${STANCE_LABELS[assessment.investment_stance]}` : independent ? "综合判断" : "当前回答"}</h3><ExplainedText target="assessment:judgement" text={assessment.judgement} className="qr-judgement"/><p className="qr-boundary">{unfinished.size ? "报告已交付 · 综合未完成" : retainedSummary ? "报告已交付 · 综合阶段未完成" : delivery ? "报告已交付 · 综合分析已形成" : "研究流程已完成"} · 分析覆盖{assessment.completeness === "complete" ? "完整" : "部分"} · {assessment.quality === "LOW_CONFIDENCE" ? "证据或挑战仍有保留；不确定不等于否定。" : "仍需在已保存依据与适用范围内理解。"}</p>{missingOverall ? <span className="qr-meta">已保留有效分析；总体判断尚未完成。</span> : contribution("synthesis")}</article>
           <ExplanationStatus value={explanation.response} error={explanation.error} submitting={explanation.submitting} retry={()=>void explanation.retry()} reload={explanation.reload}/>
           <CompanyBasics record={record} onInspect={(v,trigger)=>select(v,trigger)}/>
+          <SearchResearch record={record} onInspect={(v,trigger)=>select(v,trigger)}/>
           {unified ? <InvestmentJudgement record={record} onInspect={(v,trigger)=>select(v,trigger)}/> : null}
           <nav className="qr-jump-nav" aria-label="报告章节">{[["qr-findings","关键依据"],["qr-doubt","疑点与下一步"],["qr-checks","已经核对什么"],["qr-valuation","估值定位"],["qr-quant","量化背景"]].map(([id,label]) => <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({block:"start",behavior:"instant"})}>{label}</button>)}</nav>
           <section className="qr-report-section" id="qr-findings">{sectionHead("01",independent ? "关键研究依据" : "哪些依据支持回答","先看重点推断，再沿右侧找到绑定事实和保存来源。")}

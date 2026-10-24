@@ -263,7 +263,7 @@ class NativeValuationV1(_RecordModel):
         return self
 
 
-class ResearchRecordV1(_RecordModel):
+class ResearchRecordFields(_RecordModel):
     schema_version: Literal["research-record-v1"] = RESEARCH_RECORD_CONTRACT
     run_id: str = Field(min_length=1, max_length=128)
     ticker: str = Field(min_length=1, max_length=32)
@@ -290,6 +290,8 @@ class ResearchRecordV1(_RecordModel):
     challenge_outcomes: tuple[ChallengeCheckOutcomeV1, ...] | None = None
     limitations: tuple[str, ...] = ()
 
+
+class ResearchRecordV1(ResearchRecordFields):
     @field_validator("assessment", mode="before")
     @classmethod
     def preserve_v1_default_tag(cls, value):
@@ -345,13 +347,18 @@ class ResearchRecordV1(_RecordModel):
             raise ValueError("research must start from V0")
         for snapshot in self.snapshots:
             refs(snapshot.evidence_ids, evidence.keys())
-            expected = make_evidence_snapshot(tuple(evidence[key] for key in snapshot.evidence_ids),
+            factory = make_evidence_snapshot
+            if self.schema_version == "research-record-v2":
+                from ._research_record_v2 import make_evidence_snapshot_v2
+                factory = make_evidence_snapshot_v2
+            expected = factory(tuple(evidence[key] for key in snapshot.evidence_ids),
                 version=snapshot.version, parent_snapshot_id=snapshot.parent_snapshot_id)
             if snapshot != expected:
                 raise ValueError("evidence snapshot content or identity changed")
         if set(self.snapshots[-1].evidence_ids) != evidence.keys():
             raise ValueError("evidence is outside the recorded snapshot")
-        if len(self.snapshots) == 2:
+        revised = self.schema_version == "research-record-v2"
+        if len(self.snapshots) == 2 and not revised:
             v0, v1 = self.snapshots
             if v1.version != 1 or v1.parent_snapshot_id != v0.snapshot_id or not set(v0.evidence_ids) <= set(v1.evidence_ids):
                 raise ValueError("V1 must preserve its V0 evidence")
@@ -401,7 +408,7 @@ class ResearchRecordV1(_RecordModel):
         for verification in self.verifications:
             if verification.challenge_id not in challenges or verification.input_snapshot_id not in snapshots or verification.output_snapshot_id not in snapshots:
                 raise ValueError("verification target or snapshot missing")
-            if snapshots[verification.output_snapshot_id].version != 1 or snapshots[verification.input_snapshot_id].version != 0:
+            if not revised and (snapshots[verification.output_snapshot_id].version != 1 or snapshots[verification.input_snapshot_id].version != 0):
                 raise ValueError("verification must record V0 to V1")
             refs(verification.evidence_ids, set(snapshots[verification.output_snapshot_id].evidence_ids))
             if verification.status in {"supports", "contradicts"} and any(evidence[eid].availability != "available" for eid in verification.evidence_ids):

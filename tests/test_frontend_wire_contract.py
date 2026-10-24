@@ -246,3 +246,17 @@ def test_research_mode_horizon_and_asset_type_literals_match_models():
         assert match is not None, type_name
         frontend = set(re.findall(r'"([a-z_]+)"', match.group(1)))
         assert frontend == literals, type_name
+
+
+def test_search_record_v2_union_and_budget_bounds_match_backend():
+    from tradingagents.agents.schemas._research_record_v2 import ResearchRecordV2
+    from tradingagents.agents.schemas._search import SearchRequestV1, SearchReviewV1
+    from tradingagents.web.reader_process_models import SearchUsageV1
+    ts = _read('api/contracts.ts')
+    assert 'ResearchRecordDTO = ResearchRecordV1DTO | ResearchRecordV2DTO' in ts
+    for model in (SearchRequestV1, SearchReviewV1, SearchUsageV1):
+        block = ts.split('export interface '+model.__name__+'DTO', 1)[1].split('\n}', 1)[0]
+        assert set(model.model_fields) <= set(re.findall(r'\b([a-z_]+)\??:', block))
+    assert ResearchRecordV2.model_fields['snapshots'].metadata[1].max_length == 8
+    assert 'version: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;' in ts
+    assert 'schema_version: "research-record-v2"' in ts

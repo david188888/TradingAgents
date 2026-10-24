@@ -60,6 +60,7 @@ from tradingagents.research.native_versions import (
     FOCUS_WORKFLOW_VERSION,
     REPORT_DELIVERY_POLICY,
     RESPONSE_ROLES,
+    SEARCH_WORKFLOW_VERSION,
     SPECIALIST_REFERENCE_POLICY,
     UNIFIED_WORKFLOW_VERSION,
 )
@@ -160,28 +161,28 @@ class NativeModelCaller:
             raise CatalystCheckpointConflict("native model retry policy mismatch")
         self.retry_enabled = retry_policy == MODEL_RETRY_POLICY
         reference_policy = ledger.journal.state.get("identity", {}).get("specialist_reference_policy")
-        if reference_policy is not None and (reference_policy != SPECIALIST_REFERENCE_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+        if reference_policy is not None and (reference_policy != SPECIALIST_REFERENCE_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
             raise CatalystCheckpointConflict("native specialist reference policy mismatch")
         self.isolate_specialists = reference_policy == SPECIALIST_REFERENCE_POLICY
         company_policy = ledger.journal.state.get("identity", {}).get("company_research_policy")
-        if company_policy is not None and (company_policy != COMPANY_RESEARCH_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+        if company_policy is not None and (company_policy != COMPANY_RESEARCH_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
             raise CatalystCheckpointConflict("native company research policy mismatch")
         self.scoped_references = company_policy == COMPANY_RESEARCH_POLICY
         report_policy = ledger.journal.state.get("identity", {}).get("report_delivery_policy")
-        if report_policy is not None and (report_policy != REPORT_DELIVERY_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+        if report_policy is not None and (report_policy != REPORT_DELIVERY_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
             raise CatalystCheckpointConflict("native report delivery policy mismatch")
         self.deliver_company_report = report_policy == REPORT_DELIVERY_POLICY
         from tradingagents.research.numeric_integration import numeric_enabled
         self.numeric_enabled = numeric_enabled(ledger.journal.state["identity"])
-        if self.numeric_enabled and version != UNIFIED_WORKFLOW_VERSION:
+        if self.numeric_enabled and version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             raise CatalystCheckpointConflict("native numeric workflow mismatch")
-        if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
+        if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             self.schemas.update(challenge=ChallengesProposalV2, synthesis=SynthesisProposalV2)
             self.instructions["challenge"] += " Select only the closed check IDs/observed risk. Economic questions remain unresolved even when a local evidence check passes."
             self.instructions["synthesis"] += " Refer to host-computed local_check_assessments and their exact scope; do not invent resolved outcomes or require optional data for a supported local statement."
         from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
         policy = ledger.journal.state["identity"].get("challenge_check_policy")
-        if policy is not None and (policy != CHALLENGE_CHECK_POLICY or version != UNIFIED_WORKFLOW_VERSION):
+        if policy is not None and (policy != CHALLENGE_CHECK_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
             raise CatalystCheckpointConflict("native challenge check policy mismatch")
         self.directed_challenges = policy is not None
         if self.directed_challenges:
@@ -198,7 +199,7 @@ class NativeModelCaller:
                 "Bind challenge check operands, metrics and predicates just like hypothesis checks, with "
                 "the predicate quantity plan attached to proposed_test."
             )
-        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             from tradingagents.agents.schemas._research_focus import FocusProposalV1
             self.schemas["focus_response"] = FocusProposalV1
             self.instructions["focus_response"] = (
@@ -215,12 +216,24 @@ class NativeModelCaller:
                     "user theme. Missing inputs limit their own dimensions, not the entire company."
                 )
 
-        if version == UNIFIED_WORKFLOW_VERSION:
+        if version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
             self.schemas["synthesis"] = SynthesisProposalV3
             for stage in RESPONSE_ROLES:
                 self.schemas[stage] = ResponsesProposalV1
                 self.instructions[stage] = "Reply once to every assigned challenge. Use only supplied qualified facts and bound checks. Maintain, revise, withdraw or admit uncertainty. Never create facts or resolve economic risk by assertion."
+
+    def _register_review(self, stage, context):
+        if not stage.startswith('search_review.'):
+            return
+        import re
+        match = re.fullmatch(r'search_review\.([123])\.(operating_quality|event_context|market_context)\.([a-f0-9]{64})', stage)
+        if (not match or self.ledger.journal.state['identity'].get('workflow_version') != SEARCH_WORKFLOW_VERSION
+                or context.get('role') != match[2] or context.get('round_id') != int(match[1])):
+            raise ValueError('invalid search review stage')
+        from tradingagents.agents.schemas._search import SearchReviewProposalV1
+        self.schemas[stage] = SearchReviewProposalV1
+        self.instructions[stage] = 'Review only this role and supplied facts. State maintained/revised/withdrawn/unanswerable; never rewrite original hypotheses or conditions. Arithmetic does not prove economic causation. Provide exact actionable gaps only when necessary.'
 
     def _remaining(self) -> float:
         try:
@@ -294,6 +307,13 @@ class NativeModelCaller:
             if self.numeric_enabled:
                 from tradingagents.research.numeric_narrative import numeric_prompt_schema
                 schema_value = numeric_prompt_schema(schema_value, premises="factual_premise_policy" in canonical)
+            if (self.ledger.journal.state['identity'].get('workflow_version') == SEARCH_WORKFLOW_VERSION
+                    and stage != 'synthesis' and stage != 'focus_response'):
+                from tradingagents.agents.schemas._search import SearchGapsV1
+                gap_schema = SearchGapsV1.model_json_schema()
+                schema_value.setdefault('$defs', {}).update(gap_schema.get('$defs', {}))
+                schema_value['properties']['gaps'] = gap_schema['properties']['gaps']
+                schema_value.setdefault('required', []).append('gaps')
             payload = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
             schema = json.dumps(schema_value, ensure_ascii=False, sort_keys=True)
             language = str(self.config.get("output_language", "Chinese"))
@@ -415,6 +435,12 @@ class NativeModelCaller:
                     and self.ledger.journal.state.get("native.reference_schema.synthesis") == 2):
                 validate_synthesis_reference_surface(value.get("proposal") if self.numeric_enabled else value,
                     context["dimension_claim_ids"], [c["challenge_id"] for c in context["record"]["challenges"]])
+            stage_gaps = None
+            if (self.ledger.journal.state['identity'].get('workflow_version') == SEARCH_WORKFLOW_VERSION
+                    and stage not in {'synthesis', 'focus_response'}):
+                from tradingagents.execution.search_reviews import extract_stage_gaps
+                stage_gaps = value.get('gaps', [])
+                value = extract_stage_gaps(value, stage=stage, context=context, ledger=self.ledger, persist=False)
             numeric_proof = None
             sectioned = stage == "synthesis" and self.ledger.journal.state.get("native.reference_schema.synthesis") == 3
             if sectioned:
@@ -434,8 +460,8 @@ class NativeModelCaller:
                 candidate["prompt_sha256"] = self.ledger.journal.state["native.prompt.synthesis"]
                 self.ledger.record_result("native.synthesis_sections." + phase, candidate)
                 if phase == "main" and candidate["failures"]:
-                    from tradingagents.agents.schemas._research_record import ResearchRecordV1
-                    raise SynthesisReferenceError(failure_issues(candidate, ResearchRecordV1.model_validate(context["record"])))
+                    from tradingagents.research.record_codec import parse_research_record
+                    raise SynthesisReferenceError(failure_issues(candidate, parse_research_record(context["record"])))
                 value, numeric_proof = candidate_result(candidate, context)
             elif self.numeric_enabled:
                 from tradingagents.research.numeric_narrative import compile_numeric_stage
@@ -443,18 +469,18 @@ class NativeModelCaller:
                     isolate=(self.isolate_specialists and stage in {"operating_quality", "event_context", "market_context"})
                     or (stage == "challenge" and self.directed_challenges))
             if context is not None and stage == "challenge" and self.directed_challenges:
-                from tradingagents.agents.schemas._research_record import ResearchRecordV1
                 from tradingagents.research.challenge_checks import (
                     ChallengeValidationError,
                     parse_challenge_items,
                     validate_challenge,
                 )
+                from tradingagents.research.record_codec import parse_research_record
                 if numeric_proof is None:
                     proposal, indices, rejected = parse_challenge_items(value)
                 else:
                     proposal = ChallengesProposalV3.model_validate_json(json.dumps(value))
                     indices, rejected = numeric_proof["indices"], list(numeric_proof["rejections"])
-                record = ResearchRecordV1.model_validate(context["record"])
+                record = parse_research_record(context["record"])
                 accepted, accepted_indices = [], []
                 for index, item in zip(indices, proposal.challenges, strict=True):
                     try:
@@ -479,9 +505,9 @@ class NativeModelCaller:
                             self.ledger.record_result("native.numeric.candidate.challenge", filtered)
                     raise ChallengeValidationError(rejected[0]["code"])
             if context is not None and stage == "synthesis" and self.deliver_company_report:
-                from tradingagents.agents.schemas._research_record import ResearchRecordV1
+                from tradingagents.research.record_codec import parse_research_record
                 from tradingagents.research.report_delivery import normalize_synthesis_bindings
-                normalized = normalize_synthesis_bindings(value, ResearchRecordV1.model_validate(context["record"]))
+                normalized = normalize_synthesis_bindings(value, parse_research_record(context["record"]))
                 if normalized != value:
                     self.ledger.record_result("native.synthesis_bindings." + phase,
                         {"policy": REPORT_DELIVERY_POLICY, "restored_saved_metadata": True})
@@ -490,8 +516,8 @@ class NativeModelCaller:
             proposal = self.schemas[stage].model_validate_json(json.dumps(value, allow_nan=False))
             if context is not None and stage == "focus_response":
                 from tradingagents.agents.schemas._research_focus import validate_focus_proposal
-                from tradingagents.agents.schemas._research_record import ResearchRecordV1
-                validate_focus_proposal(ResearchRecordV1.model_validate(context["record"]), proposal)
+                from tradingagents.research.record_codec import parse_research_record
+                validate_focus_proposal(parse_research_record(context["record"]), proposal)
             if context is not None and stage in {"operating_quality", "event_context", "market_context"}:
                 facts = {fact["claim_id"]: fact.get("evidence_ids", []) for fact in context.get("facts", [])}
                 metric_evidence = {metric["metric_id"]: metric["input_evidence_ids"] for metric in context.get("metrics", [])}
@@ -507,7 +533,7 @@ class NativeModelCaller:
                     original_index = numeric_indices[index]
                     try:
                         validate_hypothesis_references(hypothesis, facts, metric_evidence,
-                            conditions=self.ledger.journal.state.get("identity", {}).get("workflow_version") == UNIFIED_WORKFLOW_VERSION)
+                            conditions=self.ledger.journal.state.get("identity", {}).get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION})
                     except NativeEvidenceBindingError as exc:
                         if not self.isolate_specialists:
                             raise
@@ -545,9 +571,9 @@ class NativeModelCaller:
                     if reply.disposition in {"maintained", "revised"} and not reply.supporting_fact_ids:
                         raise ValueError("reply requires facts")
             if context is not None and stage == "synthesis" and "dimension_claim_ids" in context:
-                from tradingagents.agents.schemas._research_record import ResearchRecordV1
                 from tradingagents.research.native_policy import gate_dimensions
-                record = ResearchRecordV1.model_validate(context["record"])
+                from tradingagents.research.record_codec import parse_research_record
+                record = parse_research_record(context["record"])
                 for dimension in proposal.dimensions:
                     if not set(dimension.claim_ids) <= set(context["dimension_claim_ids"].get(dimension.dimension, [])):
                         raise ValueError("synthesis dimension references outside allowed claims")
@@ -563,7 +589,7 @@ class NativeModelCaller:
                         "research_question": context["question"], "dimensions": [d.model_dump(mode="json") for d in gated],
                         "challenge_assessments": [a.model_dump(mode="json") for a in challenge_assessments(record)],
                         "completeness": "partial", "quality": "LOW_CONFIDENCE"}
-                    ResearchRecordV1.model_validate({**record.model_dump(mode="json"), "assessment": assessment})
+                    parse_research_record({**record.model_dump(mode="json"), "assessment": assessment})
                 claims = {c.claim_id for c in record.claims if c.kind != "unknown"}
                 challenges = {c.challenge_id for c in record.challenges}
                 if not set(proposal.key_claim_ids) <= claims:
@@ -576,6 +602,8 @@ class NativeModelCaller:
             if numeric_proof is not None:
                 from tradingagents.research.numeric_integration import remember_numeric
                 remember_numeric(self.ledger.journal, stage, value, numeric_proof, context)
+            if stage_gaps is not None:
+                extract_stage_gaps({**value, 'gaps': stage_gaps}, stage=stage, context=context, ledger=self.ledger)
             return value
         except Exception as exc:
             if isinstance(exc, (CatalystCheckpointConflict, NativeModelCancelled, TimeoutError)):
@@ -594,13 +622,13 @@ class NativeModelCaller:
             if saved is None:
                 return None
             try:
-                from tradingagents.agents.schemas._research_record import ResearchRecordV1
                 from tradingagents.research.challenge_checks import validate_challenge
+                from tradingagents.research.record_codec import parse_research_record
                 candidate = ChallengeCandidateV1.model_validate(saved)
                 if (candidate.prompt_sha256 != digest
                         or not self.ledger.journal.state.get("native.model.challenge.dispatched")):
                     raise ValueError("challenge candidate prompt mismatch")
-                record = ResearchRecordV1.model_validate(context["record"])
+                record = parse_research_record(context["record"])
                 for item in candidate.proposal.challenges:
                     validate_challenge(record, item, context["conditions"])
                 if self.numeric_enabled:
@@ -685,8 +713,12 @@ class NativeModelCaller:
         for index, delay in enumerate(MODEL_RETRY_POLICY["delays_seconds"], start=1):
             self._ensure_active()
             logical = f"native.{stage}.{phase}.retry.{index}"
-            token = self.ledger.reserve(BudgetBucket.NETWORK_RETRY,
-                stage="native." + stage, logical_call_id=logical)
+            if stage.startswith('search_review.'):
+                token = self.ledger._search_budget_owner.reserve_review(stage.split('.')[1], stage.split('.')[2],
+                    f'{stage}.{phase}.retry.{index}')
+            else:
+                token = self.ledger.reserve(BudgetBucket.NETWORK_RETRY,
+                    stage="native." + stage, logical_call_id=logical)
             if isinstance(token, BudgetLimitHit):
                 self._record_safe_diagnostic(stage, phase, "budget_refused", BudgetExhausted(token))
                 raise BudgetExhausted(token)
@@ -756,7 +788,7 @@ class NativeModelCaller:
 
         return invoke_model_request(config=self.config,
             model=self.config["deep_think_llm"] if stage == "synthesis" else self.config["quick_think_llm"],
-            task="native." + stage.removeprefix("response_"), prompt=prompt,
+            task="native." + (stage.split(".")[2] if stage.startswith("search_review.") else stage.removeprefix("response_")), prompt=prompt,
             client_factory=create_llm_client, slots=global_model_slots(), ensure_active=self._ensure_active,
             cancelled=self.cancelled, deadline=self.deadline, dispatch=dispatch,
             on_error=on_error, on_usage=on_usage, chatgpt_auth=self.chatgpt_auth,
@@ -797,7 +829,7 @@ class NativeModelCaller:
         saved = self.ledger.journal.state.get("native.prompt." + stage + ".repair")
         if saved == hashlib.sha256(base.encode()).hexdigest():
             return base
-        if self.ledger.journal.state.get("identity", {}).get("workflow_version") != UNIFIED_WORKFLOW_VERSION:
+        if self.ledger.journal.state.get("identity", {}).get("workflow_version") not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             return base
         diagnostic = self.ledger.journal.state.get("native.model_diagnostics", {}).get(stage + ".main", {})
         code = diagnostic.get("detail_code")
@@ -868,6 +900,7 @@ class NativeModelCaller:
         proposal remains usable when cancellation or deadline expiry prevents
         fresh work, including a crash before the MAIN result is persisted.
         """
+        self._register_review(stage, context)
         if stage not in self.schemas:
             raise ValueError("unknown native model stage")
         prompt = self._prompt(stage, context)
@@ -917,6 +950,7 @@ class NativeModelCaller:
             raise CatalystCheckpointConflict("native synthesis section candidate invalid") from None
 
     def __call__(self, stage: str, context: Mapping[str, Any]) -> dict[str, Any]:
+        self._register_review(stage, context)
         if stage not in self.schemas:
             raise ValueError("unknown native model stage")
         self._ensure_active()
@@ -931,15 +965,15 @@ class NativeModelCaller:
                 raise CatalystCheckpointConflict("native numeric context changed")
             self.ledger.record_result("native.numeric.context." + stage, saved_context)
         logical = "native." + stage
-        bucket = BudgetBucket.FOCUS_RESPONSE if stage == "focus_response" else BudgetBucket.MAIN_ANALYSIS
+        bucket = BudgetBucket.SEARCH_REVIEW if stage.startswith("search_review.") else BudgetBucket.FOCUS_RESPONSE if stage == "focus_response" else BudgetBucket.MAIN_ANALYSIS
         if not any(item.logical_call_id == logical and item.bucket == bucket
                    and item.phase == AttemptPhase.DISPATCHED for item in self.ledger.records()):
             raise NativeModelUnavailable("native model MAIN reservation is not dispatched")
-        if (self.ledger.journal.state.get("identity", {}).get("workflow_version") == UNIFIED_WORKFLOW_VERSION
+        if (self.ledger.journal.state.get("identity", {}).get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
                 and stage in {*STAGE_SCHEMAS} - {"challenge"}
                 and "native.prompt." + stage not in self.ledger.journal.state):
             self._bind("native.binding_guidance." + stage, 1)
-        if (self.ledger.journal.state.get("identity", {}).get("workflow_version") == UNIFIED_WORKFLOW_VERSION
+        if (self.ledger.journal.state.get("identity", {}).get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
                 and stage == "synthesis" and "native.prompt." + stage not in self.ledger.journal.state
                 and "native.reference_aliases." + stage not in self.ledger.journal.state):
             self._bind("native.reference_aliases." + stage, 2)
@@ -1017,7 +1051,10 @@ class NativeModelCaller:
         prior = [item for item in self.ledger.records() if item.logical_call_id == logical]
         if any(item.dispatched_at is not None for item in prior):
             raise NativeModelUnavailable("native model repair unavailable; dispatch cannot be repeated")
-        token = self.ledger.reserve(BudgetBucket.STRUCTURED_REPAIR, stage="native." + stage, logical_call_id=logical)
+        if stage.startswith('search_review.'):
+            token = self.ledger._search_budget_owner.reserve_review(stage.split('.')[1], stage.split('.')[2], stage+'.repair')
+        else:
+            token = self.ledger.reserve(BudgetBucket.STRUCTURED_REPAIR, stage="native." + stage, logical_call_id=logical)
         if isinstance(token, BudgetLimitHit):
             self._record_safe_diagnostic(stage, "repair", "budget_refused", BudgetExhausted(token))
             raise BudgetExhausted(token)

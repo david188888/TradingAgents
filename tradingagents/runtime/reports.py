@@ -173,15 +173,16 @@ class ReportArtifactWriter:
         )
 
     def _publish_native(self, run_id: str, value: Any, ticker: str) -> FinalReportPublication:
-        from tradingagents.agents.schemas._research_record import ResearchRecordV1
+        from tradingagents.research.record_codec import parse_research_record
 
-        record = ResearchRecordV1.model_validate(value)
+        record = parse_research_record(value)
         if record.run_id != run_id or record.ticker != ticker:
             raise ReportPublicationError("native report identity mismatch")
         if record.construction != "native" or record.assessment is None:
             raise ReportPublicationError("native report requires a native assessment")
         from tradingagents.research.native_versions import (
             FOCUS_WORKFLOW_VERSION,
+            SEARCH_WORKFLOW_VERSION,
             UNIFIED_WORKFLOW_VERSION,
         )
         from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
@@ -197,7 +198,7 @@ class ReportArtifactWriter:
             raise ReportPublicationError("native numeric report input mismatch")
         version = checkpoint["identity"].get("workflow_version") if checkpoint else None
         response, reason = None, None
-        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and checkpoint["identity"].get("research_question"):
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and checkpoint["identity"].get("research_question"):
             events = self.store.read_events(run_id)
             saved = read_focus_artifact(self.store, run_id, record, checkpoint, events)
             reason = read_focus_publication_failure(self.store, run_id, record, checkpoint, events)
@@ -350,10 +351,10 @@ def _markdown_text(value: str) -> str:
 
 def _build_v4_native_markdown(record: Any) -> str:
     """One deterministic Reader/report source; never invokes a summary model."""
-    from tradingagents.agents.schemas._research_record import ResearchRecordV1
     from tradingagents.research.coverage_labels import limitation_label
+    from tradingagents.research.record_codec import parse_research_record
 
-    record = ResearchRecordV1.model_validate(record.model_dump(mode="json"))
+    record = parse_research_record(record.model_dump(mode="json"))
     assessment = record.assessment
     if record.construction != "native" or assessment is None:
         raise ReportPublicationError("native report requires a native assessment")
@@ -551,9 +552,29 @@ def build_markdown_from_native_record(record: Any, *, workflow_version=None, foc
         content = _build_legacy_native_markdown(record)
     from tradingagents.research.native_versions import (
         FOCUS_WORKFLOW_VERSION,
+        SEARCH_WORKFLOW_VERSION,
         UNIFIED_WORKFLOW_VERSION,
     )
-    if workflow_version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
+    if record.schema_version == 'research-record-v2':
+        from tradingagents.research.search_effective import unreviewed_roles
+        from tradingagents.research.search_labels import DISPOSITION_LABELS, ROLE_LABELS, stop_label
+        rows = [content.rstrip(), '', '## 联网补证与专项复核', '',
+                '公司身份与量化数据优先使用专用接口；新闻、行业与竞争信息使用 DeepSeek 与 Tavily 双路搜索。', '']
+        for batch in record.search_batches:
+            kinds = {r.kind for r in batch.requests}
+            round_id = max((r.round_id for r in batch.requests), default=0)
+            label = f'第 {round_id} 轮补证' if 'supplement' in kinds else '接口补缺' if 'recovery' in kinds else '初始双路搜索'
+            providers = '、'.join(sorted({r.provider for r in batch.requests}))
+            rows.append('- '+label+'（'+providers+'）：已保存检索记录及来源资格限制。')
+        for review in record.search_reviews:
+            rows.append('- 第 '+str(review.round_id)+' 轮 · '+ROLE_LABELS[review.role]+'：'+DISPOSITION_LABELS[review.disposition]+'。'+_markdown_text(review.rationale))
+        for role in unreviewed_roles(record):
+            rows.append('- '+ROLE_LABELS[role]+'有新材料尚未完成复核；不能沿用旧推断作为肯定性依据。')
+        for gap in record.search_gaps:
+            rows.append('- 待查：'+_markdown_text(gap.question))
+        rows.extend('- '+stop_label(reason) for reason in record.search_stop_reasons)
+        content = '\n'.join(rows)+'\n'
+    if workflow_version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
         return content
     content = content.replace("。研究问题：", "。研究范围：", 1)
     summary = getattr(record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}
@@ -587,7 +608,6 @@ def build_markdown_from_native_record(record: Any, *, workflow_version=None, foc
 
 
 def _build_v5_native_markdown(record: Any) -> str:
-    from tradingagents.agents.schemas._research_record import ResearchRecordV1
     from tradingagents.research.check_labels import (
         CHECK_LABELS,
         CHECK_STATUS,
@@ -595,8 +615,9 @@ def _build_v5_native_markdown(record: Any) -> str:
         observation_value,
     )
     from tradingagents.research.coverage_labels import limitation_label
+    from tradingagents.research.record_codec import parse_research_record
 
-    record = ResearchRecordV1.model_validate(record.model_dump(mode="json"))
+    record = parse_research_record(record.model_dump(mode="json"))
     content = _build_v4_native_markdown(record)
     text = _markdown_text
     lines = ["## 证据核查", "", "按具体问题核对保存资料；经济原因、持续性与合理价值仍需另行判断。", ""]
@@ -625,10 +646,10 @@ def _build_v5_native_markdown(record: Any) -> str:
 
 def _build_legacy_native_markdown(record: Any) -> str:
     """One deterministic Reader/report source; never invokes a summary model."""
-    from tradingagents.agents.schemas._research_record import ResearchRecordV1
     from tradingagents.research.coverage_labels import limitation_label
+    from tradingagents.research.record_codec import parse_research_record
 
-    record = ResearchRecordV1.model_validate(record.model_dump(mode="json"))
+    record = parse_research_record(record.model_dump(mode="json"))
     assessment = record.assessment
     if record.construction != "native" or assessment is None:
         raise ReportPublicationError("native report requires a native assessment")

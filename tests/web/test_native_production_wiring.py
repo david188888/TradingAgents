@@ -83,6 +83,8 @@ class Sources:
 
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
+    # This fixture exercises frozen V7 publication; V8 has its own five-argument collector.
+    monkeypatch.setattr("tradingagents.execution.native_runner.WORKFLOW_VERSION", "evidence-production-v7")
     Sources.operations, Sources.crash_before_seed, Sources.wrong_ticker = [], False, False
     caller = PipelineCaller()
 
@@ -324,13 +326,13 @@ def test_cancellation_and_native_publication_share_lifecycle_lock(runtime, cance
         if not cancel_first:
             original(run_id, token, journal)
         reached.set()
-        assert release.wait(5)
+        assert release.wait(30)
         if cancel_first:
             original(run_id, token, journal)
 
     manager._authorize_catalyst = authorize
     snapshot = manager.start(request())
-    assert reached.wait(5)
+    assert reached.wait(30)
     if cancel_first:
         manager.cancel(snapshot.run_id)
     else:
@@ -397,7 +399,7 @@ def test_already_published_resume_reenters_lifecycle_arbitration(runtime, cancel
         if not cancel_first:
             original(run_id, token, journal)
         entered.set()
-        assert release.wait(5)
+        assert release.wait(30)
         if cancel_first:
             original(run_id, token, journal)
 

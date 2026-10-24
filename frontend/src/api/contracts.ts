@@ -281,7 +281,7 @@ export interface NumericStageProofV1DTO {
 }
 export interface NumericValidationContextV1DTO {
   factual_premise_policy?: "factual-premises-v1"; factual_observations?: FactualObservationV1DTO[];
-  numeric_narrative_policy: "anchored-narrative-v1"; numeric_analysis_date: string;
+  numeric_narrative_policy: "anchored-narrative-v1"; numeric_analysis_date: string; numeric_input_snapshot_id?: string;
   numeric_catalog: NumericCatalogV1DTO; numeric_aliases: Record<string, string>; numeric_meta: Record<string, NumericMetadataV1DTO>;
   facts?: ResearchRecordV1DTO["claims"]; assertions?: ResearchRecordV1DTO["claims"];
   hypotheses?: ResearchRecordV1DTO["hypotheses"]; challenges?: ResearchRecordV1DTO["challenges"];
@@ -331,8 +331,68 @@ export interface ResearchRecordV1DTO {
   limitations: string[];
 }
 
+/** Canonical V8 search/revision models: agents/schemas/_search.py and _research_record_v2.py. */
+export type SearchRoleDTO = "operating_quality" | "event_context" | "market_context";
+export interface FieldRequirementV1DTO {
+  ticker: string; field: string; period: string | null; window_start: string | null;
+  unit: string; currency: string | null; basis: string;
+}
+export interface QualifiedFieldV1DTO extends FieldRequirementV1DTO {
+  value: string; evidence_id: string; locator: string; source_content_sha256: string;
+}
+export interface EvidenceGapV1DTO {
+  gap_id: string; question: string; capability: string; role: SearchRoleDTO;
+  priority: "critical" | "material" | "minor"; cutoff: string; evidence_needed: string; rationale: string;
+  target_ids: string[]; requirements: FieldRequirementV1DTO[];
+}
+export interface SearchRequestV1DTO {
+  task_id: string; provider: "deepseek" | "tavily"; kind: "initial" | "recovery" | "supplement";
+  role: SearchRoleDTO; capability: string; ticker: string; company_name: string; query: string;
+  cutoff: string; start_date: string | null; round_id: 0 | 1 | 2 | 3; gap_id: string | null;
+  depth: "basic" | "advanced"; requirements: FieldRequirementV1DTO[];
+}
+export interface SearchHitV1DTO {
+  provider: "deepseek" | "tavily"; url: string; canonical_url: string; title: string; summary: string; content: string;
+  published_at: string | null; published_precision: "timestamp" | "day";
+  publisher: string | null; score: number | null; authority: number | null;
+  family_id: string | null; truncated: boolean;
+  document: {pdf_sha256: string; parser_version: "official-pdf-v2"; security_id: string; title: string;
+    page_count: number; pages: Array<{page: number; text: string; truncated: boolean}>} | null;
+}
+export interface SearchOutcomeV1DTO {
+  task_id: string; provider: "deepseek" | "tavily"; status: "ok" | "empty" | "unavailable" | "failed" | "refused";
+  hits: SearchHitV1DTO[]; reason: string | null; retryable: boolean; usage: number | null;
+}
+export interface SearchBatchV1DTO {
+  batch_id: string; input_snapshot_id: string; requests: SearchRequestV1DTO[];
+  outcomes: SearchOutcomeV1DTO[]; hits: SearchHitV1DTO[]; stop_reasons: string[];
+}
+export interface SearchReviewV1DTO {
+  review_id: string; round_id: 1 | 2 | 3; role: SearchRoleDTO; input_snapshot_id: string; target_ids: string[];
+  disposition: "maintained" | "revised" | "withdrawn" | "unanswerable"; rationale: string;
+  supporting_fact_ids: string[]; new_risks: string[]; gaps: EvidenceGapV1DTO[];
+}
+export interface RevisionCalculationV1DTO {
+  calculation_id: string; input_snapshot_id: string; inputs_sha256: string; field: string; period: string;
+  prior_period: string | null; operation: "value" | "difference" | "growth";
+  status: "available" | "conflict" | "unavailable"; value: string | null; unit: string;
+  input_evidence_ids: string[]; derived_evidence_id: string;
+}
+export interface ResearchRecordV2DTO extends Omit<ResearchRecordV1DTO, "schema_version" | "snapshots" | "mode" | "construction" | "challenge_check_policy"> {
+  challenge_check_policy: "hypothesis-directed-checks-v1" | null;
+  schema_version: "research-record-v2"; workflow_version: "evidence-production-v8";
+  mode: "company_research"; construction: "native";
+  snapshots: Array<{version: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7; snapshot_id: string;
+    parent_snapshot_id: string | null; evidence_ids: string[]; content_sha256: string}>;
+  search_batches: SearchBatchV1DTO[]; search_reviews: SearchReviewV1DTO[]; search_gaps: EvidenceGapV1DTO[];
+  search_stop_reasons: string[]; recovered_fields: QualifiedFieldV1DTO[]; revision_calculations: RevisionCalculationV1DTO[];
+  qualification_snapshots: Record<string, string>;
+  superseded_evidence: Record<string, string>; check_revisions: EvidenceChecksV1DTO[];
+}
+export type ResearchRecordDTO = ResearchRecordV1DTO | ResearchRecordV2DTO;
+
 export type ResearchRecordResponseDTO =
-  | { state: "ready"; schema_version: 1; run_id: string; record: ResearchRecordV1DTO }
+  | { state: "ready"; schema_version: 1; run_id: string; record: ResearchRecordDTO }
   | { state: "unavailable"; schema_version: 1; run_id: string; reason_code: "not_published" | "publication_failed" | "corrupt" | "source_case_mismatch" };
 
 /** SSE terminal events — the stream is closed by the server after these. */
@@ -2400,7 +2460,12 @@ export interface ReaderRoleDTO {
   main_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO;
   focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null;
 }
+export interface SearchUsageV1DTO {
+  deepseek_search: number; tavily_search: number; page_attempts: number;
+  review_attempts: number; rounds: number; active_seconds: number;
+}
 export interface ReaderProcessDTO {
+  search_usage?: SearchUsageV1DTO | null;
   schema_version: 1; run_id: string; source_sequence: number; profile: string; workflow_version: string | null;
   availability: "ready" | "partial" | "unavailable" | "not_applicable"; reason_code: string | null;
   question_origin: "user" | "default" | "not_recorded"; primary_selection: "synthesis" | "code" | "not_recorded";
@@ -2441,7 +2506,7 @@ export interface ReaderAgentDTO {
   factual_premises?: Array<PremiseReceiptV1DTO & {text: string}>;
   schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;
   /** Qualified stage material without an assessment; never a published report. */
-  stage_record?: ResearchRecordV1DTO | null;
+  stage_record?: ResearchRecordDTO | null;
   proposal: SpecialistProposalDTO | ChallengesProposalDTO | SynthesisProposalDTO | SynthesisProposalV3DTO | ResponsesProposalDTO | FocusProposalDTO | null;
   relations: Array<{entity_id: string; kind: "claim" | "challenge"; in_record: boolean; is_key: boolean; dimensions: string[]; challenge_ids: string[]}>;
   claim_ids: string[]; input_fact_ids: string[]; challenge_ids: string[]; code_sections: Array<"facts" | "sources" | "checks" | "verifications" | "publication">;

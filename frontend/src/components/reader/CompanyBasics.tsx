@@ -1,10 +1,10 @@
 import { useContext } from "react";
 import { ExplainedText, ExplanationContext } from "./PlainExplanation";
-import type { ResearchRecordV1DTO } from "../../api/contracts";
+import type { ResearchRecordDTO } from "../../api/contracts";
 import type { EvidenceSelection } from "./ReaderEvidence";
 import { claimText } from "./ResearchRecordSection";
 
-export function CompanyBasics({record,onInspect}: {record:ResearchRecordV1DTO;onInspect(value:EvidenceSelection,trigger?:HTMLElement):void}) {
+export function CompanyBasics({record,onInspect}: {record:ResearchRecordDTO;onInspect(value:EvidenceSelection,trigger?:HTMLElement):void}) {
   const basics=record.company_basics;
   const explanations=useContext(ExplanationContext);
   if (!basics) return null;

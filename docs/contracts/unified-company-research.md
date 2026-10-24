@@ -1,10 +1,13 @@
 # Unified company investment research
 
-- **Status: Current**
+- **Status: Current baseline; extended by V8**
 - Canonical: `research/native_versions.py`, `agents/schemas/_research_dialogue.py`,
   `agents/schemas/_research_assessment.py`, `research/unified_assessment.py`.
 
-New Web single and batch studies use `evidence-production-v7` /
+New Web single and batch studies now use the [V8 dual-search extension](dual-search-research.md),
+which preserves this company objective and original dialogue and adds bounded
+supplementary evidence, reviews and the distinct V2 record. The sections below
+describe the frozen V7 baseline. Historical studies use `evidence-production-v7` /
 `native-research-kernel-v6`. The sole new-study scope is `company_research`:
 assess investment attractiveness as of the analysis date using operating quality,
 current valuation, event impact/delivery and market context. There is no forced

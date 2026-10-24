@@ -15,7 +15,6 @@ from tradingagents.agents.schemas._research_assessment import (
     ResearchAssessmentV3,
     SynthesisDimensionV1,
 )
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._synthesis_sections import (
     SYNTHESIS_SECTIONS_POLICY,
     SectionedSynthesisProofV1,
@@ -25,6 +24,7 @@ from tradingagents.agents.schemas._synthesis_sections import (
     SynthesisSectionsV1,
 )
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
+from tradingagents.research.record_codec import parse_research_record
 
 UNFINISHED_JUDGEMENT = "综合未完成；已保留通过校验的分段，暂未形成总体评级。"
 UNFINISHED_NEXT = "完成标为未完成的综合分段，再复核总体判断。"
@@ -115,7 +115,7 @@ def validate_section_proposal(record, proposal, context):
         key_claim_ids=model.key_claim_ids, primary_challenge_id=model.primary_challenge_id,
         dimensions=dimensions, challenge_assessments=challenge_assessments(record),
         completeness="partial", quality="LOW_CONFIDENCE", **fields)
-    ResearchRecordV1.model_validate({**record.model_dump(mode="json"), "numeric_attribution": None,
+    parse_research_record({**record.model_dump(mode="json"), "numeric_attribution": None,
                                    "assessment": assessment.model_dump(mode="json")})
 
 
@@ -165,7 +165,7 @@ def parse_sections(envelope, context, *, phase, previous=None, on_progress=None)
     envelope = NumericStageEnvelopeV1.model_validate(envelope).model_dump(mode="json")
     if set(envelope["proposal"]) - (SynthesisProposalV3.model_fields.keys() - {"synthesis_sections"}):
         raise ValueError("unknown synthesis fields")
-    record = ResearchRecordV1.model_validate(context["record"])
+    record = parse_research_record(context["record"])
     receipts = deepcopy(previous["receipts"]) if previous else []
     accepted = {r["section_id"] for r in receipts}
     failures = dict(previous["failures"]) if previous else {}
@@ -223,7 +223,7 @@ def candidate_result(candidate, context):
     context = numeric_validation_context(context, sectioned=True)
     if candidate.get("policy") != SYNTHESIS_SECTIONS_POLICY or candidate["context_sha256"] != _context_hash(context):
         raise ValueError("synthesis section context changed")
-    record = ResearchRecordV1.model_validate(context["record"])
+    record = parse_research_record(context["record"])
     expected = section_ids(record)
     receipts = candidate["receipts"]
     if not receipts:

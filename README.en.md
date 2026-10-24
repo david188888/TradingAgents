@@ -14,6 +14,7 @@ New studies use one company investment research workflow, combining operations, 
 
 - **A-share evidence chain**: combines public company information, official disclosures, financials and prices while preserving sources, timestamps and coverage limits.
 - **Purposeful Agent roles**: operating, event and market specialists develop isolated hypotheses followed by one challenge round, actual checks, targeted specialist replies and synthesis; important challenges record verifiability and task outcomes for independently proposed tests. Code owns evidence admission, reference validation and deterministic calculations.
+- **Dual web evidence collection**: DeepSeek and Tavily discover news, industry, policy and competitor material. Dedicated APIs remain first for identity and quantitative data, with field-specific search fallback. Qualified new evidence can trigger bounded supplementary research and review of affected judgments. See the [dual-search contract](docs/contracts/dual-search-research.md).
 - **Traceable research reading**: inspect qualified saved stage outputs, facts and sources while research is running, with stage proposals clearly separated from final conclusions. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
 - **Company report delivery**: preserve public introductions, fundamentals and market observations independently. Validate synthesis by section, repair failed sections and retain valid analysis. An unfinished overall judgement or critical challenge adjudication suppresses the rating; synthesis execution failures remain distinct from financial data gaps.
 - **Verifiable numeric fragments**: new studies reference frozen numbers that code renders with units, periods and actual/forecast labels, validated through Reader and export. Qualified structured financial comparisons are checked independently, with full cash-bridge gaps kept separate. New studies separately preserve and display observations, interpretations and pending premises. Surrounding explanations still need researcher review; see the [numeric contract](docs/contracts/numeric-narrative.md).
@@ -52,7 +53,8 @@ conda activate tradingagents
 python -m pip install -e ".[china,web]" --index-url https://pypi.org/simple
 
 cp .env.example .env
-# Set DEEPSEEK_API_KEY in .env, or choose ChatGPT subscription and sign in after startup.
+# Set DEEPSEEK_API_KEY in .env; configure TAVILY_API_KEY for dual search.
+# The research model can also use ChatGPT subscription sign-in after startup.
 
 tradingagents web --port 8765 --open
 ```
@@ -79,7 +81,7 @@ Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at run
 | Research records and evidence contracts | [Contract index](docs/contracts/README.md) · [Research record](docs/contracts/research-record.md) |
 | Reader evidence tracing and presentation | [Reader architecture](docs/architecture/research-reader.md) |
 | Coding Agent and contributor workflow | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| All documentation and release records | [Documentation index](docs/README.md) · [3.6.0 release notes](docs/reviews/2026-10-23-v3.6.0-release-notes.md) |
+| All documentation and release records | [Documentation index](docs/README.md) · [3.7.0 release notes](docs/reviews/2026-10-24-v3.7.0-release-notes.md) |
 
 Coding Agents should start with [AGENTS.md](AGENTS.md). Code, contracts and current-state docs define supported behavior; historical plans are not implementation evidence.
 

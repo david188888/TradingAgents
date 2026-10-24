@@ -1,6 +1,6 @@
 # Documentation Index
 
-Current new-study contract: [Unified company investment research (V7)](contracts/unified-company-research.md).
+Current new-study contract: [Dual-search company research (V8)](contracts/dual-search-research.md), extending [unified company research (V7 baseline)](contracts/unified-company-research.md).
 
 - **Status: Current** — 本文档是 `docs/` 的唯一导航入口。其它页面若要声明“当前行为”，都必须通过本文档被找到。
 - **即时事实源是代码与 passing tests**：Markdown 只解释边界、ownership 和语义。当 prose 与实现不一致时，以代码和测试为准，并在同一改动中修复对应文档。
@@ -45,7 +45,7 @@ rules here in focused documents rather than duplicating them in the README.
 - [Hypothesis-directed challenge checks](contracts/hypothesis-directed-checks.md): typed verifiability, independent propositions, task outcomes, bounded isolation and frozen-denominator measurement.
 - [Saved evidence benchmark](contracts/evidence-benchmark.md): read-only Phase 0 measurements, token-accounting limits and versioned manual hypothesis rubric.
 - [Native input measurement](contracts/native-input-measurement.md): hash-verified stage prompt sizes, unknown usage, conservative inventories and offline reversible metadata comparison without runtime changes.
-- [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, native three-mode workflow and bounded verification, mandatory publication, read-only Reader and compatibility limits.
+- [Shared research record](contracts/research-record.md): evidence/hypothesis/metric contract, versioned native company workflow and bounded verification, mandatory publication, read-only Reader and compatibility limits.
 
 Schemas are not copied into Markdown. When a field, enum, event, artifact, or endpoint changes, update the machine-owned definition and its consumers first, then update the relevant focused explanation.
 

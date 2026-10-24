@@ -31,8 +31,26 @@ def assessment_dimensions(mode, schema_version=None):
 
 def validate_assessment_version(record, version):
     """Saved workflow identity chooses its schema; new fields cannot impersonate old runs."""
-    unified = version == UNIFIED_WORKFLOW_VERSION
+    unified = version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
+    if (version == SEARCH_WORKFLOW_VERSION) != (record.schema_version == 'research-record-v2'):
+        raise ValueError('record workflow version mismatch')
     if unified != (record.assessment.schema_version == "research-assessment-v3"):
         raise ValueError("assessment workflow version mismatch")
     if unified != (record.dialogue is not None):
         raise ValueError("dialogue workflow version mismatch")
+
+# V8 remains separately dispatched; saved V7 identities never change.
+SEARCH_WORKFLOW_VERSION = 'evidence-production-v8'
+SEARCH_KERNEL_VERSION = 'native-research-kernel-v7'
+SEARCH_RESEARCH_POLICY = {
+    'version': 'dual-search-research-v1',
+    'enabled': True,
+    'endpoints': {'deepseek_search': 'https://api.deepseek.com/v1/tools/search',
+        'deepseek_fetch': 'https://api.deepseek.com/v1/tools/fetch',
+        'tavily_search': 'https://api.tavily.com/search', 'tavily_extract': 'https://api.tavily.com/extract'},
+    'query_policy': 'identity-cutoff-preserving-v1', 'initial_topics': ['news', 'industry_policy', 'competitors'],
+    'queries_per_gap_per_provider': 2, 'gaps_per_round': 3, 'count': 8,
+    'deepseek_query_limit': 128, 'tavily_query_limit': 400, 'tavily_depth': 'basic',
+    'source_admission': 'saved-original-cutoff-v1', 'field_recovery': 'exact-original-field-v1',
+    'calculation': 'recovered-field-arithmetic-v1', 'record': 'research-record-v2',
+}

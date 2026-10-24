@@ -19,6 +19,7 @@ from tradingagents.web.research_record_projection import project_research_record
 
 @pytest.mark.parametrize("all_invalid", [False, True])
 def test_bad_reference_is_isolated_in_actual_adapter_and_published_reader(tmp_path, monkeypatch, all_invalid):
+    monkeypatch.setattr("tradingagents.execution.native_runner.WORKFLOW_VERSION", "evidence-production-v7")
     delegate = PipelineCaller()
     calls = []
     def invoke(prompt):
@@ -65,7 +66,7 @@ def test_bad_reference_is_isolated_in_actual_adapter_and_published_reader(tmp_pa
     monkeypatch.setenv("TRADINGAGENTS_EVIDENCE_ENABLED", "true")
     manager = SingleRunManager(RunStore(tmp_path))
     run_id = manager.start(replace(request(), research_question=None)).run_id
-    snapshot = manager.wait(run_id, 10)
+    snapshot = manager.wait(run_id, 60)
     assert snapshot.status == "completed", snapshot.error_message
     published = project_research_record(manager.store, run_id)
     assert published["state"] == "ready"

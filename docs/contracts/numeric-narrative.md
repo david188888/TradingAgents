@@ -5,12 +5,16 @@
   `_numeric_attribution.py`; `research/numeric_catalog.py`, `numeric_narrative.py`
   and `numeric_integration.py`.
 
-Fresh V7 studies freeze `numeric_narrative_policy=anchored-narrative-v1`.
+V7 and V8 studies freeze `numeric_narrative_policy=anchored-narrative-v1`.
 Specialists, challenges, targeted replies, synthesis and optional focus responses
 use this policy. The host builds a qualified numeric catalog from saved evidence
 and calculations. Models choose references and provide qualitative explanations;
 they cannot fill in factual numbers. This closes the case where a valid fact ID
 previously allowed a source growth of 18.4% to become 25% in model prose.
+
+V8 extends this baseline through the [dual-search contract](dual-search-research.md):
+its V2 record binds recovered field qualification to its first snapshot, preserves
+historical checks/receipts, and excludes stale arithmetic from current inputs.
 
 ## Qualification and formatting
 

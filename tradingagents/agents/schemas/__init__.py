@@ -135,6 +135,22 @@ from ._research_record import (  # noqa: F401 - facade re-export
     SourceEvidenceV1,
     VerificationRecordV1,
 )
+from ._research_record_v2 import (  # noqa: F401 - facade re-export
+    EvidenceSnapshotV2,
+    ResearchRecordV2,
+    make_evidence_snapshot_v2,
+)
+from ._search import (  # noqa: F401 - facade re-export
+    AdmissionBatchV1,
+    EvidenceGapV1,
+    FieldRequirementV1,
+    QualifiedFieldV1,
+    SearchBatchV1,
+    SearchHitV1,
+    SearchOutcomeV1,
+    SearchRequestV1,
+    SearchReviewV1,
+)
 from ._sentiment import (  # noqa: F401  - facade re-export
     SentimentBand,
     SentimentReport,

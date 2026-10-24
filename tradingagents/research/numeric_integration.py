@@ -29,6 +29,9 @@ def stage_schema(stage, identity=None):
     from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
     from tradingagents.agents.schemas._research_focus import FocusProposalV1
 
+    if stage.startswith('search_review.'):
+        from tradingagents.agents.schemas._search import SearchReviewProposalV1
+        return SearchReviewProposalV1
     if stage in {"operating_quality", "event_context", "market_context"}:
         return SpecialistProposalV1
     if stage == "challenge":
@@ -136,6 +139,10 @@ def _texts(record):
             yield ["dialogue", "responses", i, "rationale"], reply["rationale"]
             for j, text in enumerate(reply["remaining_unknowns"]):
                 yield ["dialogue", "responses", i, "remaining_unknowns", j], text
+    for i, review in enumerate(raw.get('search_reviews', [])):
+        yield ['search_reviews', i, 'rationale'], review['rationale']
+        for j, text in enumerate(review['new_risks']):
+            yield ['search_reviews', i, 'new_risks', j], text
     assessment = raw.get("assessment")
     if assessment:
         for field in ("judgement", "next_check"):
@@ -225,7 +232,20 @@ def attach_numeric_attribution(record, journal):
     if premise_enabled(journal.state["identity"]):
         input_identity.update(factual_premise_policy=journal.state["identity"]["factual_premise_policy"],
                               numeric_narrative_policy=NUMERIC_NARRATIVE_POLICY)
-    attribution = NumericAttributionV1.model_validate({
+    if record.schema_version == 'research-record-v2':
+        for review in record.search_reviews:
+            snapshot = next(s for s in record.snapshots if s.snapshot_id == review.input_snapshot_id)
+            stage = f'search_review.{review.round_id}.{review.role}.'+snapshot.content_sha256
+            accepted = journal.ledger.cached_result('native.numeric.accepted.'+stage)
+            kernel = journal.ledger.cached_result('native.'+stage)
+            if accepted is None or kernel is None or accepted['proposal'] != kernel['proposal']:
+                raise CatalystCheckpointConflict('review numeric receipt missing')
+            stages.append(accepted)
+    attribution_model = NumericAttributionV1
+    if record.schema_version == 'research-record-v2':
+        from tradingagents.agents.schemas._numeric_attribution import NumericAttributionV2
+        attribution_model = NumericAttributionV2
+    attribution = attribution_model.model_validate({
         "policy": NUMERIC_NARRATIVE_POLICY, "input_identity": input_identity,
         "catalog": catalog,
         "stages": stages, "final_fields": _final_fields(record, stages),
@@ -263,7 +283,10 @@ def _validate_public_context(record, stage, context):
             raise ValueError("numeric context public binding changed")
         if any(item != actual.get(item.get(identifier)) for item in context.get(key, []) if key != "claims"):
             raise ValueError("numeric context target changed")
-    actual_catalog = build_numeric_catalog(record)
+    snapshot_id = context.get('numeric_input_snapshot_id')
+    if record.schema_version == 'research-record-v2' and snapshot_id is None:
+        raise ValueError('numeric input snapshot missing')
+    actual_catalog = build_numeric_catalog(record, snapshot_id=snapshot_id)
     anchors = {a["anchor_id"]: a for a in actual_catalog["anchors"]}
     metadata = {m["meta_id"]: m for m in actual_catalog["metadata"]}
     catalog = context["numeric_catalog"]
@@ -288,10 +311,11 @@ def _validate_public_context(record, stage, context):
                 raise ValueError("numeric synthesis section question changed")
     if stage in {"synthesis", "focus_response"} and contextual.get("dialogue") != raw.get("dialogue"):
         raise ValueError("numeric dialogue context changed")
-    if stage in {"operating_quality", "event_context", "market_context"}:
+    if stage in {"operating_quality", "event_context", "market_context"} or stage.startswith("search_review."):
         from tradingagents.research.native_policy import fact_views
-        allowed = {f.claim_id for f in fact_views(record, valuation=True)[stage]
-                   if set(f.evidence_ids) <= set(record.snapshots[0].evidence_ids)}
+        role = stage.split(".")[2] if stage.startswith("search_review.") else stage
+        allowed = {f.claim_id for f in fact_views(record, valuation=True)[role]
+                   if set(f.evidence_ids) <= set(next(s for s in record.snapshots if s.snapshot_id == snapshot_id).evidence_ids if snapshot_id else record.snapshots[0].evidence_ids)}
         if not _stage_fact_ids(stage, context) <= allowed:
             raise ValueError("numeric specialist context outside scope")
     elif stage.startswith("response_"):
@@ -384,6 +408,7 @@ def _validate_entities(record, stages, identity):
     hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
     expected_hypotheses, expected_challenges, expected_replies = set(), set(), set()
     expected_unknowns = set()
+    expected_reviews = set()
     synthesis = None
     for saved in stages:
         stage, proposal = saved["stage"], saved["proposal"]
@@ -428,15 +453,24 @@ def _validate_entities(record, stages, identity):
             replies = {r.response_id: r for r in record.dialogue.responses}
             role = stage.removeprefix("response_")
             for item in proposal["responses"]:
-                rid = "response." + canonical_sha256({"snapshot": record.snapshots[-1].snapshot_id,
+                rid = "response." + canonical_sha256({"snapshot": record.dialogue.input_snapshot_id,
                                                        "role": role, "reply": item})
                 reply = replies[rid]
                 raw = reply.model_dump(mode="json")
                 if {k: v for k, v in raw.items() if k not in {"response_id", "role", "status", "reason_code"}} != item or reply.status != "available":
                     raise ValueError("numeric reply text changed")
                 expected_replies.add(rid)
+        elif stage.startswith('search_review.'):
+            review = next((r for r in record.search_reviews if
+                stage == f'search_review.{r.round_id}.{r.role}.'+
+                next(s.content_sha256 for s in record.snapshots if s.snapshot_id == r.input_snapshot_id)), None)
+            if review is None or review.model_dump(mode='json', include=set(stage_schema(stage).model_fields)) != proposal:
+                raise ValueError('numeric review text changed')
+            expected_reviews.add(review.review_id)
         elif stage == "synthesis":
             synthesis = stage_schema(stage).model_validate(proposal)
+    if record.schema_version == 'research-record-v2' and expected_reviews != {r.review_id for r in record.search_reviews}:
+        raise ValueError('numeric review coverage changed')
     if expected_hypotheses != set(hypotheses):
         raise ValueError("numeric hypothesis coverage changed")
     if expected_challenges != {c.challenge_id for c in record.challenges}:

@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDrawerFocus, useReturnFocus } from "../shared/drawerFocus";
 import { ValuationPositionCard } from "./ValuationPositionCard";
-import type { CheckObservationV1DTO, ChallengeAssessmentV2DTO, QuantitativeMetricV1DTO, ResearchRecordResponseDTO, ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
+import type { CheckObservationV1DTO, ChallengeAssessmentV2DTO, QuantitativeMetricV1DTO, ResearchRecordResponseDTO, ResearchRecordDTO, SourceEvidenceV1DTO } from "../../api/contracts";
 import { limitationLabel } from "../../domain/researchCoverage";
 import { unfinishedSynthesis } from "../../domain/synthesisSections";
 import { ChallengeCheckSummary } from "./ChallengeChecks";
@@ -33,7 +33,7 @@ export function LocalChallengeResult({ item }: { item: ChallengeAssessmentV2DTO 
   </section>;
 }
 
-export function LocalEvidenceChecks({ record, onInspect }: { record: ResearchRecordV1DTO; onInspect: InspectSources }): JSX.Element | null {
+export function LocalEvidenceChecks({ record, onInspect }: { record: ResearchRecordDTO; onInspect: InspectSources }): JSX.Element | null {
   const checks = record.evidence_checks;
   if (!checks) return null;
   return <section aria-label="证据核查">
@@ -87,7 +87,7 @@ export function claimText(statement: string): string {
 
 type InspectSources = (sources: SourceEvidenceV1DTO[], title: string, trigger: HTMLElement) => void;
 
-function ClaimEvidence({ record, claimId, onInspect }: { record: ResearchRecordV1DTO; claimId: string; onInspect: InspectSources }): JSX.Element | null {
+function ClaimEvidence({ record, claimId, onInspect }: { record: ResearchRecordDTO; claimId: string; onInspect: InspectSources }): JSX.Element | null {
   const claim = record.claims.find((item) => item.claim_id === claimId);
   if (!claim) return null;
   const supportingFacts = record.claims.filter((item) => claim.supporting_fact_ids.includes(item.claim_id));
@@ -108,7 +108,7 @@ function ClaimEvidence({ record, claimId, onInspect }: { record: ResearchRecordV
   </article>;
 }
 
-function NativeAssessment({ record, onInspect }: { record: ResearchRecordV1DTO; onInspect: InspectSources }): JSX.Element | null {
+function NativeAssessment({ record, onInspect }: { record: ResearchRecordDTO; onInspect: InspectSources }): JSX.Element | null {
   const assessment = record.assessment;
   if (!assessment) return null;
   const unfinished = unfinishedSynthesis(record);

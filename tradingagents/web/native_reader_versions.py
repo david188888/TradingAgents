@@ -67,6 +67,11 @@ def _policy(record, version):
 
 
 def saved_fact_views(record, version):
+    if version == 'evidence-production-v8':
+        if record.schema_version != 'research-record-v2':
+            raise ValueError('saved search contract mismatch')
+        from tradingagents.research.native_policy import fact_views
+        return fact_views(record, valuation=True)
     policy = _policy(record, version)
     sources = {s.evidence_id: s for s in record.evidence}
     metric_sources = {
@@ -239,6 +244,10 @@ def _dimensions(record, proposed, version, *, initial_v1=False):
 
 
 def saved_dimensions_match(record, proposed, version):
+    if version == 'evidence-production-v8':
+        from tradingagents.research.native_policy import gate_dimensions
+        return gate_dimensions(record, proposed, scoped=True, valuation=True,
+            sections=getattr(record.assessment, 'synthesis_sections', None)) == record.assessment.dimensions
     sections = getattr(record.assessment, "synthesis_sections", None)
     if version == "evidence-production-v7" and sections is not None:
         from tradingagents.research.native_policy import gate_dimensions

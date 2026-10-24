@@ -11,8 +11,9 @@ from pydantic import BaseModel, ConfigDict
 
 from tradingagents.agents.schemas._catalyst_research import CatalystResearchCase
 from tradingagents.agents.schemas._research_case import ResearchCaseV2
-from tradingagents.agents.schemas._research_record import RESEARCH_RECORD_CONTRACT, ResearchRecordV1
+from tradingagents.agents.schemas._research_record import RESEARCH_RECORD_CONTRACT
 from tradingagents.research.record_assembly import case_content_sha256
+from tradingagents.research.record_codec import ResearchRecord, parse_research_record
 
 
 class ResearchRecordReadyV1(BaseModel):
@@ -20,7 +21,7 @@ class ResearchRecordReadyV1(BaseModel):
     state: Literal["ready"] = "ready"
     schema_version: Literal[1] = 1
     run_id: str
-    record: ResearchRecordV1
+    record: ResearchRecord
 
 
 class ResearchRecordUnavailableV1(BaseModel):
@@ -62,12 +63,12 @@ def _validate_numeric_publication(store, run_id, event, events, record, snapshot
     try:
         checkpoint = load_checkpoint(store, run_id, through=event.sequence)
     except Exception:
-        if marker is None and attribution is None:
+        if marker is None and attribution is None and record.schema_version == 'research-record-v1':
             # Old public Reader records did not require a catalyst checkpoint.
             return
         raise
     identity = checkpoint["identity"] if checkpoint is not None else {}
-    if marker is None and "numeric_narrative_policy" not in identity:
+    if marker is None and "numeric_narrative_policy" not in identity and record.schema_version == "research-record-v1":
         validate_record_numeric(record, identity)
         return
     if marker is not None and marker != identity.get("numeric_narrative_policy"):
@@ -99,14 +100,17 @@ def project_research_record(store: Any, run_id: str, *, through: int | None = No
     if through is not None:
         events = [event for event in events if not isinstance(event.payload.get("committed_sequence"), int)
                   or event.payload["committed_sequence"] <= through]
-    event = _latest(events, RESEARCH_RECORD_CONTRACT)
+    events_by_contract = [_latest(events, version) for version in ('research-record-v1', 'research-record-v2')]
+    event = max((e for e in events_by_contract if e is not None), key=lambda e: (e.payload['committed_sequence'], e.sequence), default=None)
     reason = "not_published"
     if event is None and any(item.type == "artifact.projection_unavailable"
                             and item.payload.get("public_contract") == RESEARCH_RECORD_CONTRACT for item in events):
         reason = "publication_failed"
     if event is not None:
         try:
-            record = ResearchRecordV1.model_validate_json(_read_checked(store, run_id, event))
+            record = parse_research_record(json.loads(_read_checked(store, run_id, event)))
+            if event.payload.get('public_contract') != record.schema_version:
+                raise ValueError('research artifact schema mismatch')
             mode = "catalyst_research" if (snapshot.metadata or {}).get("research_profile") == "catalyst_v1" else snapshot.mode
             if record.run_id != run_id or record.ticker != snapshot.ticker or record.mode != mode or record.analysis_date != date.fromisoformat(snapshot.analysis_date):
                 raise ValueError("research record identity mismatch")

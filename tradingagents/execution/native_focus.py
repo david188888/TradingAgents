@@ -10,12 +10,12 @@ from tradingagents.agents.schemas._research_focus import (
     validate_focus_proposal,
     validate_focus_response,
 )
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
 from tradingagents.execution.budget import BudgetBucket, BudgetConflictError, BudgetLimitHit
 from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.execution.native_model import NativeFocusInvalid, NativeModelCancelled
 from tradingagents.research.focus_context import focus_context, focus_identity
+from tradingagents.research.record_codec import parse_research_record
 from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
 
 FOCUS_LOGICAL = "native.focus_response"
@@ -40,7 +40,7 @@ def execute_focus_response(record, focus, *, ledger, caller, cancelled, deadline
     digest = canonical_sha256(record)
     baseline = ledger.cached_result("native.output")
     if (record.assessment is None or baseline is None
-            or canonical_sha256(ResearchRecordV1.model_validate(baseline["record"])) != digest):
+            or canonical_sha256(parse_research_record(baseline["record"])) != digest):
         raise CatalystCheckpointConflict("focus requires a durable assessed baseline")
     bind_focus(journal, "native_base_record_sha256", digest)
     context = focus_context(record, focus, output_language)

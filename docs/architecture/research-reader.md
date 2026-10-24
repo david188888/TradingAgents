@@ -25,9 +25,15 @@ Classic is assembled by [`graph/setup.py`](../../tradingagents/graph/setup.py) a
 
 ## Native Research Path
 
-New studies use workflow V7, retaining the V5 source/check rules: freeze qualified sources, isolate operating/event/
+New studies use V8 (`evidence-production-v8` / `native-research-kernel-v7`),
+with dedicated APIs first, dual search, immutable qualification revisions and at
+most three shared supplementary rounds before one synthesis. Reader exposes
+search usage, field recovery, review applicability and pending gaps without new
+retrieval. See the [dual-search contract](../contracts/dual-search-research.md).
+
+V8 retains the original analysis baseline from V7: freeze qualified sources, isolate operating/event/
 market specialists, merge in fixed order, run independent challenge and bounded
-checks, collect targeted replies once, synthesize once, durably freeze the independent `research-record-v1`, optionally interpret the
+checks, collect targeted replies once, synthesize once, durably freeze the independent versioned research record (`research-record-v2` for V8), optionally interpret the
 user focus, then validate and publish the baseline followed by its supplement.
 `NativeRunner` and `graph/native_research.py` own execution; the host derives
 V2 local outcomes from admitted bindings and recomputed local results; V7 adds the V3 investment stance, referenced reasons, original falsifiers and separate adjudications.
@@ -72,7 +78,7 @@ The Research Manager emits a candidate draft. [`research/case_assembly.py`](../.
 
 The execution commit path publishes `research-case-v2` with current-run provenance and a provider-neutral `research-package-v1` fact layer. The package carries the code-owned metric dictionary, evidence labels, and explicit unknowns; it does not fabricate numeric observations when the current provider bundle cannot be transformed safely. See [`execution/runner.py`](../../tradingagents/execution/runner.py), [`research/research_package.py`](../../tradingagents/research/research_package.py), and [`execution/output_publisher.py`](../../tradingagents/execution/output_publisher.py). After `run.completed`, [`web/manager.py`](../../tradingagents/web/manager.py) may publish `thesis-diff-v1` as a best-effort derived artifact. [`research/thesis_diff.py`](../../tradingagents/research/thesis_diff.py) compares the same ticker and horizon structurally; a failed diff does not change the completed run or Research Case.
 
-This case path describes classic publication. Native publication instead requires a committed `research-record-v1` with its dimension-gated assessment, without a paired legacy case or a second summary model. Failure to publish the native record cannot become a completed run. Catalyst publishes its validated case and an additive shared record. See [shared record publication and compatibility](../contracts/research-record.md).
+This case path describes classic publication. Native publication instead requires a committed `research-record-v2` for V8 (V1 for historical workflows) with its dimension-gated assessment, without a paired legacy case or a second summary model. Failure to publish the native record cannot become a completed run. Catalyst publishes its validated case and an additive shared record. See [shared record publication and compatibility](../contracts/research-record.md).
 
 ## Reader Projection And Degradation
 
@@ -80,7 +86,7 @@ This case path describes classic publication. Native publication instead require
 
 - `typed`: a readable `ResearchCaseV2` projection with research tilt, claims, scenarios, review items, analyst cards, coverage, omissions, optional thesis diff, and bounded audit counts.
 - `research-package-v1`: a separate read-only structured package at `/api/runs/{run_id}/reader/package` for metric definitions, point-in-time observations, peer comparisons, logic edges, and portable Agent consumption. Its absence or partial unknowns never upgrades a Reader conclusion.
-- `research-record-v1`: a committed record at `/api/runs/{run_id}/reader/record`, additive for classic/catalyst and the mandatory main report for native research. It carries admitted public source content, inference dependencies and saved quantitative metrics. Converted legacy inferences are not executed verification; native checks carry explicit execution and lineage. This separate endpoint exposes public content hashes/snapshots; it excludes private locators and raw envelopes. See [contract and compatibility limits](../contracts/research-record.md).
+- `research-record-v1` / `research-record-v2`: a version-dispatched committed record at `/api/runs/{run_id}/reader/record`, additive for classic/catalyst and the mandatory main report for native research. It carries admitted public source content, inference dependencies and saved quantitative metrics. Converted legacy inferences are not executed verification; native checks carry explicit execution and lineage. This separate endpoint exposes public content hashes/snapshots; it excludes private locators and raw envelopes. See [contract and compatibility limits](../contracts/research-record.md).
 - Process and selected-role outputs at `/api/runs/{run_id}/reader/process` and `/api/runs/{run_id}/reader/agents/{role_key}`: closed DTOs in [`reader_process_models.py`](../../tradingagents/web/reader_process_models.py), projected from a captured sequence by [`reader_process_projection.py`](../../tradingagents/web/reader_process_projection.py). Roles are fixed. The selected-role request can use the process `source_sequence`; future boundaries are rejected. These routes do not execute or backfill research.
 - `legacy`: a historical run without a typed case; it remains explicitly legacy and does not fabricate typed fields.
 - `unavailable`: a typed case is missing, unreadable, or unsupported; the response carries a stable reason code and audit counts.

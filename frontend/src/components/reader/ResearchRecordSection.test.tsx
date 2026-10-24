@@ -5,7 +5,7 @@ import type { EvidenceChecksV1DTO, ResearchAssessmentV1DTO, ResearchAssessmentV2
 import { ResearchRecordSection, SourceContent } from "./ResearchRecordSection";
 
 const response = savedRecord as ResearchRecordResponseDTO;
-if (response.state !== "ready") throw new Error("invalid fixture");
+if (response.state !== "ready" || response.record.schema_version !== "research-record-v1") throw new Error("invalid fixture");
 const record = response.record;
 const assessment: ResearchAssessmentV1DTO = {
   schema_version: "research-assessment-v1",

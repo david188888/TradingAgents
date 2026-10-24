@@ -2,14 +2,19 @@
 
 Status: Current
 
-Fresh V7 identities freeze `structured_financial_policy=structured-financial-checks-v1`.
+V7 and V8 identities freeze `structured_financial_policy=structured-financial-checks-v1`.
 `research/native_record.py` applies the matching seed marker and selects
 `minimum-evidence-v3`; resumed runs without the policy keep their existing checks.
-The outer record and check pack remain `research-record-v1` / `evidence-checks-v1`.
+V7 retains `research-record-v1`; V8 uses `research-record-v2`. The check pack
+remains `evidence-checks-v1`, with snapshot-bound history in V2.
 
 Canonical contracts live in `agents/schemas/_evidence_checks.py` and
 `_research_record.py`. `research/structured_financial_checks.py` owns the new
 finite comparisons; `minimum_evidence.py` owns pack assembly and challenge outcomes.
+
+V8 extends this baseline through the [dual-search contract](dual-search-research.md):
+its V2 record binds recovered field qualification to its first snapshot, preserves
+historical checks/receipts, and excludes stale arithmetic from current inputs.
 
 ## Independent questions
 
@@ -50,7 +55,8 @@ independence. Conflicting observations retain conflict labels and provenance.
 
 ## Publication and compatibility
 
-Every check and observation is recomputed from frozen V0, including its scope,
+V7 checks and observations are recomputed from frozen V0; V8 recomputes them
+from their bound evidence/qualification snapshot. This includes scope,
 period, input hash, source IDs and method. Numeric catalog entries bind the
 observation to its check ID, status, period and calculation version. Reader,
 related evidence, explanations and Markdown share those saved observations.
