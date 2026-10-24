@@ -15,18 +15,19 @@ from tradingagents.agents.schemas._native_stage import (
     SynthesisProposalV3,
     saved_specialist_acceptance,
 )
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
 from tradingagents.research.native_versions import (
     BASE_QUESTIONS,
     FOCUS_KERNEL_VERSION,
     FOCUS_WORKFLOW_VERSION,
     RESPONSE_ROLES,
+    SEARCH_WORKFLOW_VERSION,
     SPECIALIST_REFERENCE_POLICY,
     UNIFIED_KERNEL_VERSION,
     UNIFIED_QUESTION,
     UNIFIED_WORKFLOW_VERSION,
 )
+from tradingagents.research.record_codec import ResearchRecord, parse_research_record
 from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.native_observation import SDK_OBSERVATION_KEY, NativeSDKObservationV1
 from tradingagents.web.focus_projection import project_reader_focus
@@ -51,6 +52,7 @@ VERSIONS = {
     "evidence-production-v5": "native-research-kernel-v4",
     FOCUS_WORKFLOW_VERSION: FOCUS_KERNEL_VERSION,
     UNIFIED_WORKFLOW_VERSION: UNIFIED_KERNEL_VERSION,
+    SEARCH_WORKFLOW_VERSION: "native-research-kernel-v7",
 }
 ROLE_INFO = {
     "evidence": (
@@ -164,6 +166,23 @@ def native_counts(checkpoint, *, role=None):
         repair += sum(checkpoint.get(f"native.model.{key}.repair.retry.{index}.dispatched") is True
                       for key in roles for index in range(1, 4))
 
+    if checkpoint['identity'].get('workflow_version') == SEARCH_WORKFLOW_VERSION:
+        def review_scope(key, prefix):
+            parts = key.removeprefix(prefix).split('.')
+            return len(parts) >= 3 and (role is None or parts[1] == role)
+
+        # Review main/retry authorizations use dynamic snapshot-bound stage
+        # names. Repair dispatch is recorded directly on its budget token.
+        for key, value in checkpoint.items():
+            if (key.startswith('native.model.search_review.') and key.endswith('.dispatched')
+                    and value is True and review_scope(key, 'native.model.search_review.')):
+                if '.repair.retry.' in key:
+                    repair += 1
+                else:
+                    flags += 1
+        repair += sum(r['bucket'] == 'search_review' and r['logical_call_id'].endswith('.repair')
+                      and review_scope(r['logical_call_id'], 'native.search_review.') for r in records)
+
     def sdk(value):
         return count(
             value if coverage or value else None,
@@ -172,7 +191,7 @@ def native_counts(checkpoint, *, role=None):
         )
 
     main, repairs = sdk(flags), sdk(repair)
-    has_focus = checkpoint["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
+    has_focus = checkpoint["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
     focus_flags = int(checkpoint.get("native.model.focus_response.dispatched") is True) if role in {None, "focus_response"} else 0
     focus = count(focus_flags if focus_coverage or focus_flags else None,
                   complete="complete" if focus_coverage else "known_lower_bound" if focus_flags else "not_recorded",
@@ -212,8 +231,8 @@ class Context:
     sequence: int
     events: list
     checkpoint: dict | None
-    record: ResearchRecordV1 | None
-    seed: ResearchRecordV1 | None
+    record: ResearchRecord | None
+    seed: ResearchRecord | None
     reason: str | None
     store: Any = None
     stage_reader: Any = None
@@ -249,16 +268,16 @@ def _context(store, run_id, through=None):
             raise ValueError("identity")
         published = project_research_record(store, run_id, through=sequence)
         if published["state"] != "ready":
-            if version != UNIFIED_WORKFLOW_VERSION:
+            if version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
                 return Context(snapshot, sequence, events, cp, None, None, "publication_pending", store)
             reason = "publication_pending" if published["reason_code"] in {"not_published", "publication_failed"} else "output_identity_unavailable"
             if reason != "publication_pending" or cp["results"].get("native.output") is None:
                 return Context(snapshot, sequence, events, cp, None, None, reason, store)
-        record = ResearchRecordV1.model_validate(published["record"] if published["state"] == "ready"
+        record = parse_research_record(published["record"] if published["state"] == "ready"
                                                  else cp["results"]["native.output"]["record"])
-        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and record.assessment.research_question != (UNIFIED_QUESTION if version == UNIFIED_WORKFLOW_VERSION else BASE_QUESTIONS[record.mode]):
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and record.assessment.research_question != (UNIFIED_QUESTION if version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else BASE_QUESTIONS[record.mode]):
             raise ValueError("baseline_objective")
-        seed = ResearchRecordV1.model_validate(cp["native_seed"])
+        seed = parse_research_record(cp["native_seed"])
         native_input = cp["native_input"]
         expected_input = {
             "workflow_version": VERSIONS[version],
@@ -268,20 +287,20 @@ def _context(store, run_id, through=None):
         from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
         company_policy = cp["identity"].get("company_research_policy")
         if company_policy is not None:
-            if (company_policy != COMPANY_RESEARCH_POLICY or version != UNIFIED_WORKFLOW_VERSION
+            if (company_policy != COMPANY_RESEARCH_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
                     or company_policy not in record.limitations):
                 raise ValueError("company_policy")
             expected_input["company_research_policy"] = company_policy
         from tradingagents.research.native_versions import REPORT_DELIVERY_POLICY
         report_policy = cp["identity"].get("report_delivery_policy")
         if report_policy is not None:
-            if (report_policy != REPORT_DELIVERY_POLICY or version != UNIFIED_WORKFLOW_VERSION
+            if (report_policy != REPORT_DELIVERY_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
                     or report_policy not in record.limitations):
                 raise ValueError("report_policy")
             expected_input["report_delivery_policy"] = report_policy
         policy = cp["identity"].get("specialist_reference_policy")
         if policy is not None:
-            if policy != SPECIALIST_REFERENCE_POLICY or version != UNIFIED_WORKFLOW_VERSION:
+            if policy != SPECIALIST_REFERENCE_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
                 raise ValueError("specialist_policy")
             expected_input["specialist_reference_policy"] = policy
         from tradingagents.research.numeric_integration import (
@@ -293,7 +312,7 @@ def _context(store, run_id, through=None):
             expected_input["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
         from tradingagents.research.factual_premises import premise_enabled
         if premise_enabled(cp["identity"]):
-            if version != UNIFIED_WORKFLOW_VERSION:
+            if version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
                 raise ValueError("factual_premise_policy")
             expected_input["factual_premise_policy"] = cp["identity"]["factual_premise_policy"]
         if cp["identity"].get("challenge_check_policy") is not None:
@@ -307,7 +326,7 @@ def _context(store, run_id, through=None):
             raise ValueError("input")
         output = cp["results"]["native.output"]
         if output["identity"] != native_input or canonical_sha256(
-            ResearchRecordV1.model_validate(output["record"])
+            parse_research_record(output["record"])
         ) != canonical_sha256(record):
             raise ValueError("output")
         if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date, seed.construction) != (
@@ -352,9 +371,9 @@ def _proposal(ctx, role):
         ResponsesProposalV1 if role in RESPONSE_ROLES else
         SpecialistProposalV1
         if role in {"operating_quality", "event_context", "market_context"}
-        else (ChallengesProposalV3 if cp["identity"].get("challenge_check_policy") else ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else ChallengesProposalV1)
+        else (ChallengesProposalV3 if cp["identity"].get("challenge_check_policy") else ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else ChallengesProposalV1)
         if role == "challenge"
-        else (SynthesisProposalV3 if version == UNIFIED_WORKFLOW_VERSION else SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else SynthesisProposalV1)
+        else (SynthesisProposalV3 if version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else SynthesisProposalV1)
     )
     proposal = schema.model_validate(saved["proposal"])
     from tradingagents.research.numeric_integration import validate_cached_numeric
@@ -486,7 +505,7 @@ def _proposal(ctx, role):
                 != item.hypothesis_id
             ):
                 raise ValueError("challenge_condition")
-            if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
+            if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
                 binding = next(b for b in record.challenge_bindings if b.challenge_id == cid)
                 if (binding.check_id, binding.observed_risk, binding.observation_date) != (
                     item.check_id,
@@ -500,7 +519,7 @@ def _proposal(ctx, role):
     else:
         assessment = record.assessment
         expected_judgement = proposal.judgement
-        if version == UNIFIED_WORKFLOW_VERSION:
+        if version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             from tradingagents.research.unified_synthesis import investment_fields
             extra = investment_fields(record, proposal, assessment.dimensions)
             if extra.pop("force_insufficient", False):
@@ -522,7 +541,7 @@ def _proposal(ctx, role):
         if primary != assessment.primary_challenge_id:
             raise ValueError("primary_binding")
         if (
-            version not in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
+            version not in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
             and proposal.challenge_assessments != assessment.challenge_assessments
         ):
             raise ValueError("assessment_binding")
@@ -551,7 +570,7 @@ def _agent(ctx, role):
     if ctx.reason is None and ctx.record is not None and ctx.record.numeric_attribution is not None:
         base["factual_premises"] = tuple(p for s in ctx.record.numeric_attribution.stages
                                          if s.stage == role for p in stage_premises(s.proof))
-    if role in RESPONSE_ROLES and (ctx.checkpoint is None or ctx.checkpoint["identity"].get("workflow_version") != UNIFIED_WORKFLOW_VERSION):
+    if role in RESPONSE_ROLES and (ctx.checkpoint is None or ctx.checkpoint["identity"].get("workflow_version") not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
         return ReaderAgentDTO(**base, availability="not_applicable", reason_code="workflow_has_no_reply_stage")
     if role == "focus_response":
         focus = project_reader_focus(ctx.store, ctx.snapshot.run_id, through=ctx.sequence)
@@ -566,7 +585,7 @@ def _agent(ctx, role):
                               reason_code=response["reason_code"] if response else focus["reason_code"])
     if ctx.reason:
         if (ctx.reason == "publication_pending" and ctx.checkpoint
-                and ctx.checkpoint["identity"].get("workflow_version") == UNIFIED_WORKFLOW_VERSION
+                and ctx.checkpoint["identity"].get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
                 and ctx.checkpoint.get("native_seed") is not None):
             try:
                 from tradingagents.web.reader_stage_projection import StageReader
@@ -713,11 +732,11 @@ def _process(ctx):
     roles, origins, agents = [], [], {}
     if profile == "evidence_v1":
         keys = ("evidence", "operating_quality", "event_context", "market_context", "challenge", "code_checks",
-                *RESPONSE_ROLES, "synthesis", "focus_response") if cp and cp["identity"].get("workflow_version") == UNIFIED_WORKFLOW_VERSION else tuple(ROLE_INFO)
+                *RESPONSE_ROLES, "synthesis", "focus_response") if cp and cp["identity"].get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else tuple(ROLE_INFO)
         for key in keys:
-            if key in RESPONSE_ROLES and (cp is None or cp["identity"].get("workflow_version") != UNIFIED_WORKFLOW_VERSION):
+            if key in RESPONSE_ROLES and (cp is None or cp["identity"].get("workflow_version") not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
                 continue
-            if key == "focus_response" and (cp is None or cp["identity"].get("workflow_version") not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
+            if key == "focus_response" and (cp is None or cp["identity"].get("workflow_version") not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
                                              or not metadata.get("research_question")):
                 continue
             agent = _agent(ctx, key)
@@ -756,7 +775,7 @@ def _process(ctx):
                             and e.status == "committed"
                             and isinstance(e.payload.get("committed_sequence"), int)
                             and e.payload["committed_sequence"] <= ctx.sequence
-                            and e.payload.get("public_contract") == ("research-focus-response-v1" if key == "focus_response" else "research-record-v1")
+                            and e.payload.get("public_contract") == ("research-focus-response-v1" if key == "focus_response" else ctx.record.schema_version if ctx.record else "research-record-v1")
                         ),
                         default=None,
                     )
@@ -807,7 +826,17 @@ def _process(ctx):
         if category in explanations:
             model_failures.append({"stage": stage, "category": category,
                 "safe_message": explanations[category], "action": "retry_later"})
+    search_usage = None
+    if cp and cp['identity'].get('workflow_version') == SEARCH_WORKFLOW_VERSION:
+        from tradingagents.web.reader_process_models import SearchUsageV1
+        dispatched = [r for r in cp['records'] if r.get('dispatched_at') is not None]
+        def used(bucket):
+            return sum(r['bucket'] == bucket for r in dispatched)
+        search_usage = SearchUsageV1(deepseek_search=used('deepseek_search'), tavily_search=used('tavily_search'),
+            page_attempts=used('search_page'), review_attempts=used('search_review'), rounds=used('search_rounds'),
+            active_seconds=min(90.0, cp.get('search_activity', {}).get('spent', 0.0)))
     return ReaderProcessDTO(
+        search_usage=search_usage,
         run_id=snapshot.run_id,
         source_sequence=ctx.sequence,
         profile=profile,
@@ -824,7 +853,7 @@ def _process(ctx):
         if cp
         else "unavailable",
         reason_code=ctx.reason,
-        question_origin="default" if cp and cp["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}
+        question_origin="default" if cp and cp["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
         else ("user" if metadata["research_question"] is not None else "default")
         if "research_question" in metadata
         else "not_recorded",

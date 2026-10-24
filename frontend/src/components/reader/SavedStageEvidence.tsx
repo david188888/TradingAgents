@@ -1,11 +1,11 @@
 import { useState } from "react";
-import type { ResearchRecordV1DTO } from "../../api/contracts";
+import type { ResearchRecordDTO } from "../../api/contracts";
 import { limitationLabel } from "../../domain/researchCoverage";
 import { SavedSource } from "./ReaderEvidence";
 import { claimText } from "./ResearchRecordSection";
 
 /** Actual saved material only; expanding a source never fetches new data. */
-export function SavedStageEvidence({ record, factIds }: { record: ResearchRecordV1DTO; factIds?: string[] }) {
+export function SavedStageEvidence({ record, factIds }: { record: ResearchRecordDTO; factIds?: string[] }) {
   const [query, setQuery] = useState("");
   const facts = record.claims.filter(c => c.kind === "fact" && (!factIds || factIds.includes(c.claim_id)));
   const sourceIds = new Set(facts.flatMap(f => f.evidence_ids));

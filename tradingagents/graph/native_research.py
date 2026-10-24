@@ -53,6 +53,7 @@ from tradingagents.research.native_versions import (
     UNIFIED_KERNEL_VERSION,
     UNIFIED_QUESTION,
 )
+from tradingagents.research.record_codec import parse_research_record
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
     DurableBudgetLedger,
@@ -103,6 +104,9 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
     ledger.mark_dispatched(token)
     try:
         value = caller(stage, context)
+        if ledger.journal.state['identity'].get('workflow_version') == 'evidence-production-v8':
+            from tradingagents.execution.search_reviews import extract_stage_gaps
+            value = extract_stage_gaps(value, stage=stage, context=context, ledger=ledger)
         from tradingagents.research.numeric_integration import accept_numeric_result
         value = accept_numeric_result(ledger.journal, stage, value, context, schema)
         if isinstance(value, BaseModel):
@@ -111,11 +115,11 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
             value = json.dumps(value, ensure_ascii=False, allow_nan=False)
         if stage == "synthesis" and ledger.journal.state["identity"].get("report_delivery_policy") == REPORT_DELIVERY_POLICY:
             from tradingagents.research.report_delivery import normalize_synthesis_bindings
-            value = json.dumps(normalize_synthesis_bindings(json.loads(value), ResearchRecordV1.model_validate(context["record"])), ensure_ascii=False)
+            value = json.dumps(normalize_synthesis_bindings(json.loads(value), parse_research_record(context["record"])), ensure_ascii=False)
         proposal = schema.model_validate_json(value)
         if isinstance(proposal, ChallengesProposalV3):
             from tradingagents.research.challenge_checks import validate_challenge
-            record = ResearchRecordV1.model_validate(context["record"])
+            record = parse_research_record(context["record"])
             for item in proposal.challenges:
                 validate_challenge(record, item, context["conditions"])
     except (CatalystCheckpointConflict, AnalysisCancelled, TimeoutError):
@@ -137,7 +141,7 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
 def _validated(record, **updates):
     if record.numeric_attribution is not None:
         updates.setdefault("numeric_attribution", None)
-    return ResearchRecordV1.model_validate({**record.model_dump(mode="json"), **updates})
+    return parse_research_record({**record.model_dump(mode="json"), **updates})
 
 
 def load_native_seed(ledger: DurableBudgetLedger) -> ResearchRecordV1 | None:
@@ -157,7 +161,7 @@ def load_native_seed(ledger: DurableBudgetLedger) -> ResearchRecordV1 | None:
         if saved is None:
             return None
         try:
-            record = ResearchRecordV1.model_validate(saved)
+            record = parse_research_record(saved)
             from tradingagents.research.numeric_integration import validate_record_numeric
             validate_record_numeric(record, ledger.journal.state["identity"])
         except Exception:
@@ -177,8 +181,11 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
                         ledger: DurableBudgetLedger, research_question: str | None = None,
                         cancelled: Callable[[], bool] = lambda: False,
                         concurrency: int = 2, scoped: bool = False, valuation: bool = False,
-                        minimum: bool = False, independent: bool = False, unified: bool = False) -> ResearchRecordV1:
-    seed = ResearchRecordV1.model_validate_json(seed.model_dump_json())
+                        minimum: bool = False, independent: bool = False, unified: bool = False, supplement=None) -> ResearchRecordV1:
+    seed = parse_research_record(json.loads(seed.model_dump_json()))
+    revised = seed.schema_version == 'research-record-v2'
+    if revised and (not unified or not callable(supplement)):
+        raise ValueError('V2 requires its unified supplement controller')
     if (seed.construction != "native" or len(seed.snapshots) != 1 or seed.hypotheses
             or seed.challenges or seed.verifications or seed.assessment or seed.dialogue is not None
             or any(claim.kind != "fact" for claim in seed.claims)):
@@ -201,7 +208,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     question = UNIFIED_QUESTION if unified else BASE_QUESTIONS[seed.mode] if independent else research_question if research_question is not None else QUESTIONS[seed.mode]
     if not isinstance(question, str) or not 1 <= len(question.strip()) <= 400:
         raise ValueError("research question must contain 1..400 characters")
-    identity = {"workflow_version": UNIFIED_KERNEL_VERSION if unified else FOCUS_KERNEL_VERSION if independent else "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
+    identity = {"workflow_version": "native-research-kernel-v7" if revised else UNIFIED_KERNEL_VERSION if unified else FOCUS_KERNEL_VERSION if independent else "native-research-kernel-v4" if minimum else "native-research-kernel-v3" if valuation else "native-research-kernel-v2" if scoped else WORKFLOW_VERSION, "seed_sha256": canonical_sha256(seed),
                 "research_question": question}
     from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
     directed = ledger.journal.state["identity"].get("challenge_check_policy")
@@ -242,7 +249,7 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
     if cached_final is not None:
         if cached_final["identity"] != identity:
             raise CatalystCheckpointConflict("native output identity mismatch")
-        restored = ResearchRecordV1.model_validate(cached_final["record"])
+        restored = parse_research_record(cached_final["record"])
         validate_record_numeric(restored, ledger.journal.state["identity"])
         return restored
     views = fact_views(seed, valuation=valuation)
@@ -259,6 +266,8 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             "metrics": [item.model_dump(mode="json") for item in seed.metrics
                         if set(item.input_evidence_ids) <= source_ids] if role == "market_context" else [],
             "instruction": "只提出证据绑定的假设、必要与失效条件、替代解释。不得创造事实。"}
+        if revised:
+            contexts[role].update(cutoff=str(seed.analysis_date), ticker=seed.ticker)
         if valuation and role == "operating_quality" and seed.valuation is not None:
             contexts[role]["valuation"] = {"assessment": seed.valuation.assessment.model_dump(mode="json"), "input_evidence_ids": seed.valuation.input_evidence_ids, "input_sha256": seed.valuation.input_sha256}
             contexts[role]["valuation_instruction"] = "估值只引用估值事实。倍数和历史定位不能证明内在价值；参考区间依赖已保存盈利和历史倍数假设，无锚点时不得编造合理价格。经营判断仍需财务事实。"
@@ -430,6 +439,14 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
         dialogue = run_responses(current, origins, question, call=_call, caller=caller,
             ledger=ledger, cancelled=cancelled, concurrency=concurrency)
         current = _validated(current, dialogue=dialogue.model_dump(mode="json"))
+    if revised:
+        from tradingagents.agents.schemas._search import SearchGapsV1
+        gap_stages = (*ROLE_ORDER, 'challenge', *("response_"+r for r in ROLE_ORDER))
+        gaps = tuple(dict.fromkeys(g for stage in gap_stages
+            if ledger.cached_result('native.'+stage) is not None
+            for g in SearchGapsV1.model_validate(ledger.cached_result('native.search_gaps.'+stage) or {'gaps': []}).gaps))
+        current = supplement(current, gaps)
+        limits.extend(current.limitations)
     synthesis_context = {"mode": seed.mode, "question": question,
         "record": current.model_dump(mode="json"), "verification": execution.model_dump(mode="json"),
         "dimension_policy": dimension_policy(current, scoped=scoped, valuation=valuation),

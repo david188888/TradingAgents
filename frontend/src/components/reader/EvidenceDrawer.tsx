@@ -19,7 +19,7 @@
  *    evidence.
  */
 import { useMemo } from "react";
-import type { CatalystEvidenceDTO, CatalystEventDTO, SourceEvidenceV1DTO, ResearchRecordV1DTO } from "../../api/contracts";
+import type { CatalystEvidenceDTO, CatalystEventDTO, SourceEvidenceV1DTO, ResearchRecordDTO } from "../../api/contracts";
 import { SourceContent } from "./ResearchRecordSection";
 import { useDrawerFocus, useNarrowOverlay, useReturnFocus } from "../shared/drawerFocus";
 
@@ -27,7 +27,7 @@ export interface EvidenceDrawerProps {
   runId: string;
   evidence: CatalystEvidenceDTO[];
   events?: CatalystEventDTO[];
-  sourceRecord?: { run_id: string; evidence: SourceEvidenceV1DTO[]; claims?: ResearchRecordV1DTO["claims"]; challenges?: ResearchRecordV1DTO["challenges"] };
+  sourceRecord?: { run_id: string; evidence: SourceEvidenceV1DTO[]; claims?: ResearchRecordDTO["claims"]; challenges?: ResearchRecordDTO["challenges"] };
   /** The object the reader clicked: an evidence id, event id, or challenge id. */
   openId: string | null;
   /** Short label for the clicked reference, shown as the drawer's title. */

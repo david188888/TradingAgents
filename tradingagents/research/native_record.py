@@ -286,7 +286,7 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                         holding_facts_as_of: str | None = None,
                         include_coverage: bool = False, include_valuation: bool = False,
                         include_minimum: bool = False, include_basics: bool = False,
-                        include_structured_financial: bool = False) -> ResearchRecordV1:
+                        include_structured_financial: bool = False, search_admission=None, search_batches=()):
     """Retain proven fields only; source coverage gaps never prove absence.
 
     Context bytes are bound to the collector's source-family digest before any
@@ -294,6 +294,16 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     A user thesis is retained as a declaration, never as independently verified
     economic evidence. No holdings, value range or inference is invented.
     """
+    record_model, snapshot_factory = ResearchRecordV1, make_evidence_snapshot
+    extra = {}
+    if search_admission is not None:
+        from tradingagents.agents.schemas._research_record_v2 import (
+            ResearchRecordV2,
+            make_evidence_snapshot_v2,
+        )
+        record_model, snapshot_factory = ResearchRecordV2, make_evidence_snapshot_v2
+        extra = {'recovered_fields': search_admission.fields, 'search_batches': search_batches,
+                 'claims': tuple(o.fact for o in search_admission.observations)}
     if mode not in {"company_research", "catalyst_research", "holding_review"}:
         raise ValueError("unsupported native research mode")
     if mode != "holding_review" and (original_thesis is not None or holding_facts_as_of is not None):
@@ -345,6 +355,13 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                 content_sha256=hashlib.sha256(original_thesis.encode()).hexdigest()),
             limitations=("user_declaration_not_independently_verified",)))
 
+    if search_admission is not None:
+        sources.extend(o.source for o in search_admission.observations)
+        if not identity_ok:
+            from tradingagents.research.search_recovery import recovered_identity
+            recovered = recovered_identity(search_admission.fields, ticker=draft.ticker, cutoff=draft.cutoff)
+            if recovered is not None:
+                identity_payload, identity_ok = recovered, True
     evidence = tuple(sources)
     coverage = tuple(f"global_coverage:{cap.capability}:{cap.status.value}" for cap in draft.capabilities) if include_coverage else ()
     gaps = tuple(f"global_gap:{cap.capability}:{gap}" for cap in draft.capabilities for gap in cap.degradations) if include_coverage else ()
@@ -353,16 +370,20 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     delivery_limits = (REPORT_DELIVERY_POLICY,) if include_basics else ()
     from tradingagents.research.native_versions import STRUCTURED_FINANCIAL_POLICY
     structured_limits = (STRUCTURED_FINANCIAL_POLICY,) if include_structured_financial else ()
-    seed = ResearchRecordV1(run_id=draft.run_id, ticker=draft.ticker, mode=mode,
+    snapshot = snapshot_factory(evidence)
+    if search_admission is not None:
+        from tradingagents.agents.schemas._research_record_v2 import qualification_key
+        extra['qualification_snapshots'] = {qualification_key(f): snapshot.snapshot_id for f in search_admission.fields}
+    seed = record_model(run_id=draft.run_id, ticker=draft.ticker, mode=mode,
         analysis_date=cutoff, construction="native", evidence=evidence,
-        snapshots=(make_evidence_snapshot(evidence),),
+        snapshots=(snapshot,), **extra,
         limitations=(*coverage, *gaps, *identity_limits, *delivery_limits, *structured_limits))
     if not identity_ok:
         if include_minimum:
             from tradingagents.research.minimum_evidence import compute_checks
-            seed = ResearchRecordV1.model_validate({**seed.model_dump(mode="python"), "evidence_checks": compute_checks(seed)})
+            seed = record_model.model_validate({**seed.model_dump(mode="python"), "evidence_checks": compute_checks(seed)})
         return seed
-    facts = []
+    facts = list(seed.claims)
     metrics = []
     for source in sources:
         if source.availability != "available" or source.content is None:
@@ -463,6 +484,15 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                         f"脚本计算 {metric.label} = {metric.value} {metric.unit}；样本 {metric.sample_size}，窗口 {metric.window_start} 至 {metric.window_end}；这是历史风险统计，不是价值区间。"))
         elif source.source_name == "user.original_thesis":
             facts.append(_fact(source, "holding_thesis", "original_thesis", "用户保存了原持仓论点；正文见证据摘录。这仅证明用户的原声明，不证明该论点为真。"))
+    if search_admission is not None:
+        for field in search_admission.fields:
+            source = next(s for s in sources if s.evidence_id == field.evidence_id)
+            if field.unit == 'text' and field.field in {'introduction', 'main_business', 'industry', 'business_scope'}:
+                facts.append(_fact(source, 'company_introduction', 'profile.'+field.field, field.value))
+            elif field.unit == 'CNY' and field.period is not None:
+                table = 'cashflow' if field.field == 'n_cashflow_act' else 'income'
+                facts.append(_fact(source, 'operating_quality', f'{table}[end_date={field.period}].{field.field}',
+                    f'已核对原文财务字段：{field.period} {field.field} = {field.value} CNY；不证明经济原因。'))
     if include_basics:
         from tradingagents.research.company_basics import PROFILE_LABELS, disclosed_profile_fields
         saved_fields = {field for field in PROFILE_LABELS if any("source_field:profile." + field in fact.limitations for fact in facts)}
@@ -476,17 +506,17 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
                     facts.append(_fact(source, "company_introduction", "profile." + field,
                         "公司披露 · " + PROFILE_LABELS[field] + "：" + excerpt))
                     saved_fields.add(field)
-    record = ResearchRecordV1.model_validate({**seed.model_dump(mode="python"), "claims": tuple(facts), "metrics": tuple(metrics)})
+    record = record_model.model_validate({**seed.model_dump(mode="python"), "claims": tuple(facts), "metrics": tuple(metrics)})
     if include_valuation:
-        record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "limitations": (*record.limitations, "native_valuation_policy_v1")})
+        record = record_model.model_validate({**record.model_dump(mode="python"), "limitations": (*record.limitations, "native_valuation_policy_v1")})
         valuation = assemble_valuation(record, payloads)
         if valuation is not None:
-            record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "valuation": valuation})
+            record = record_model.model_validate({**record.model_dump(mode="python"), "valuation": valuation})
     if include_minimum:
         from tradingagents.research.minimum_evidence import compute_checks
-        record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "evidence_checks": compute_checks(record)})
+        record = record_model.model_validate({**record.model_dump(mode="python"), "evidence_checks": compute_checks(record)})
     if include_basics:
         from tradingagents.research.company_basics import assemble_company_basics
         basics = assemble_company_basics(record, company_name=identity_payload.get("name") if identity_ok else None)
-        record = ResearchRecordV1.model_validate({**record.model_dump(mode="python"), "company_basics": basics})
+        record = record_model.model_validate({**record.model_dump(mode="python"), "company_basics": basics})
     return record

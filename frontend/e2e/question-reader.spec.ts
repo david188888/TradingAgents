@@ -13,7 +13,7 @@ test("desktop question, evidence, agent review and diagnostic truth",async({page
  await expect(reader.locator(".qr-answer h3")).toContainText("投资吸引力");
  const supplemental=reader.getByRole("region",{name:"补充关注点回应",exact:true});
  await expect(reader.locator('.qr-explanation-status')).toContainText('通俗解读已保存');
- const focusOriginal=supplemental.getByText("固定测试补充回应：已有经营数据不能证明 AI 业务关系。",{exact:true});
+ const focusOriginal=supplemental.getByText("解释假设：固定测试补充回应：已有经营数据不能证明 AI 业务关系。",{exact:true});
  if (!(await focusOriginal.isVisible())) await supplemental.getByText('专业原文',{exact:true}).click();
  await expect(focusOriginal).toBeVisible();
  expect(await reader.evaluate(el=>{const sections=el.querySelectorAll('.qr-report-section');return sections[sections.length-1].id;})).toBe("qr-focus");
@@ -39,7 +39,7 @@ test("desktop question, evidence, agent review and diagnostic truth",async({page
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await reader.getByRole("button",{name:"Agent 产物",exact:true}).click();
  await reader.getByRole("button",{name:"经营研究",exact:true}).click();
- await expect(reader.getByRole("heading",{name:"固定测试假设：经营改善仍需验证。",exact:true})).toBeVisible();
+ await expect(reader.getByRole("heading",{name:"解释假设：固定测试假设：经营改善仍需验证。",exact:true})).toBeVisible();
  const checkSource=reader.locator('.qr-fact-link').first();await checkSource.click();
  await expect(dialog).toBeVisible();await page.keyboard.press("Escape");await expect(checkSource).toBeFocused();
  await reader.getByRole("button",{name:"证据目录",exact:true}).click();

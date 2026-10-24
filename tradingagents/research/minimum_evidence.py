@@ -146,12 +146,16 @@ def fact_statement(name, payload):
 
 
 def _frozen_sources(record):
-    ids = set(record.snapshots[0].evidence_ids)
+    ids = set(record.snapshots[-1 if record.schema_version == "research-record-v2" else 0].evidence_ids)
     return [e for e in record.evidence if e.evidence_id in ids]
 
 
 def _identity_qualified(record):
     identities = [s for s in _frozen_sources(record) if s.source_name in IDENTITY_SOURCES and s.availability == "available" and s.content is not None]
+    if record.schema_version == 'research-record-v2' and not identities:
+        from tradingagents.research.search_recovery import recovered_identity
+        return ("security_identity_unqualified" not in record.limitations and
+                recovered_identity(record.recovered_fields, ticker=record.ticker, cutoff=record.analysis_date) is not None)
     if len(identities) != 1 or "security_identity_unqualified" in record.limitations:
         return False
     try:
@@ -166,6 +170,10 @@ def _identity_qualified(record):
 def _rows(record):
     result = []
     for source in _frozen_sources(record):
+        if record.schema_version == 'research-record-v2':
+            from tradingagents.research.search_recovery import qualified_financial_rows
+            for recovered in qualified_financial_rows(record, source):
+                result.append((source, {}, OfficialNumericRowV1.model_validate(recovered)))
         if source.source_name != NUMERIC_SOURCE or source.availability != "available" or source.content is None:
             continue
         payload = json.loads(source.content.text)
@@ -382,7 +390,7 @@ def compute_checks(record):
     period = max(periods) if periods else None
     frozen = _frozen_sources(record)
     inputs = {"run_id": record.run_id, "ticker": record.ticker, "analysis_date": record.analysis_date.isoformat(),
-              "snapshot": record.snapshots[0].snapshot_id, "sources": [s.model_dump(mode="json") for s in frozen]}
+              "snapshot": record.snapshots[-1 if record.schema_version == "research-record-v2" else 0].snapshot_id, "sources": [s.model_dump(mode="json") for s in frozen]}
     checks = (_operating(record, rows, period), _cash(record, rows, period), _valuation(record)) if _identity_qualified(record) else tuple(
         _check(key, status="unavailable", missing=("security_identity_unqualified",)) for key in QUESTIONS)
     if version == STRUCTURED_CALCULATION_VERSION:
@@ -390,7 +398,7 @@ def compute_checks(record):
         checks = (*checks, *compute_structured_checks(record, rows, identity_qualified=_identity_qualified(record)))
     return EvidenceChecksV1(run_id=record.run_id, ticker=record.ticker, analysis_date=record.analysis_date,
         calculation_version=version if version != "minimum-evidence-v1" else CALCULATION_VERSION,
-        input_snapshot_id=record.snapshots[0].snapshot_id, input_evidence_ids=tuple(s.evidence_id for s in frozen), input_sha256=canonical_sha256(inputs),
+        input_snapshot_id=record.snapshots[-1 if record.schema_version == "research-record-v2" else 0].snapshot_id, input_evidence_ids=tuple(s.evidence_id for s in frozen), input_sha256=canonical_sha256(inputs),
         checks=checks)
 
 

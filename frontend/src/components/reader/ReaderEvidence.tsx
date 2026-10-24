@@ -1,13 +1,13 @@
 import { useContext } from "react";
 import { ExplainedText, ExplanationContext } from "./PlainExplanation";
-import type { ResearchRecordV1DTO, SourceEvidenceV1DTO } from "../../api/contracts";
+import type { ResearchRecordDTO, SourceEvidenceV1DTO } from "../../api/contracts";
 import { limitationLabel } from "../../domain/researchCoverage";
 import { TERMS } from "../../domain/readerExplanation";
 import { claimText } from "./ResearchRecordSection";
 import { ChallengeCheckSummary } from "./ChallengeChecks";
 
 export type EvidenceSelection = { kind: "claim" | "challenge" | "check" | "metric" | "valuation" | "source"; id: string };
-export function selectionContent(record: ResearchRecordV1DTO, selected: EvidenceSelection | null) {
+export function selectionContent(record: ResearchRecordDTO, selected: EvidenceSelection | null) {
   const claimIds = new Set<string>(), evidenceIds = new Set<string>();
   let title = "选择左侧判断，核对支撑依据";
   if (selected?.kind === "claim") { const c = record.claims.find(c => c.claim_id === selected.id); if (c) { title = c.statement; claimIds.add(c.claim_id); } }
@@ -47,7 +47,7 @@ export function SavedSource({ source }: { source: SourceEvidenceV1DTO }) {
 }
 
 export function ReaderEvidence({ record, selected, term, onTerm }: {
-  record: ResearchRecordV1DTO; selected: EvidenceSelection | null; term: string | null; onTerm(term: string | null): void;
+  record: ResearchRecordDTO; selected: EvidenceSelection | null; term: string | null; onTerm(term: string | null): void;
 }) {
   const content = selectionContent(record, selected);
   const explanation = useContext(ExplanationContext);

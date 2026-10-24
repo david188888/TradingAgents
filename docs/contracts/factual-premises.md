@@ -3,12 +3,16 @@
 Status: Current. This policy separates source observations, bounded comparisons,
 interpretations and pending questions. It does not prove free-prose entailment.
 
-Fresh V7 research freezes `factual-premises-v1` alongside `anchored-narrative-v1`.
+V7 and V8 research freezes `factual-premises-v1` alongside `anchored-narrative-v1`.
 The canonical types are in
 [`_factual_premise.py`](../../tradingagents/agents/schemas/_factual_premise.py)
 and [`_numeric_stage.py`](../../tradingagents/agents/schemas/_numeric_stage.py).
 [`factual_premises.py`](../../tradingagents/research/factual_premises.py) owns
 compilation and public projection; the existing numeric receipts own replay.
+
+V8 extends this baseline through the [dual-search contract](dual-search-research.md):
+its V2 record binds recovered field qualification to its first snapshot, preserves
+historical checks/receipts, and excludes stale arithmetic from current inputs.
 
 ## Observation ownership
 

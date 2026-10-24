@@ -45,7 +45,7 @@ _TEXT_FIELDS = {
     "statement", "text", "alternative_explanation", "unknowns", "proposed_test",
     "rationale", "remaining_unknowns", "judgement", "next_check", "limitations",
     "answer", "suggested_next_check",
-    "description",
+    "description", "new_risks",
 }
 _CODES = {
     "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
@@ -98,7 +98,7 @@ def _dependencies(ids, context):
 
 
 def _stage_fact_ids(stage, context):
-    if stage in _SPECIALISTS or stage.startswith("response"):
+    if stage in _SPECIALISTS or stage.startswith(("response", "search_review.")):
         return {f["claim_id"] for f in context.get("facts", [])}
     record = _record(context)
     return {f["claim_id"] for f in record.get("claims", []) if f.get("kind") != "unknown"}
@@ -110,6 +110,8 @@ def prepare_numeric_context(stage, context, record, *, identity=None):
     catalog = build_numeric_catalog(record)
     value["numeric_catalog"] = project_numeric_catalog(catalog, _stage_fact_ids(stage, context))
     value["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
+    if record.schema_version == 'research-record-v2':
+        value['numeric_input_snapshot_id'] = record.snapshots[-1].snapshot_id
     value["numeric_analysis_date"] = str(_payload(record)["analysis_date"])
     value["numeric_aliases"] = {
         f"n_{index:04d}": a["anchor_id"]
@@ -192,6 +194,8 @@ def _reply_facts(rid, context):
 
 
 def _field_scope(stage, path, proposal, context):
+    if stage.startswith('search_review.'):
+        return _dependencies(proposal.get('supporting_fact_ids', []), context)
     parts = path.split(".")
     parent, index = parts[0], int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
     if parent == "hypotheses":
@@ -362,7 +366,7 @@ def numeric_validation_context(context, *, sectioned=False):
     keys = {
         "numeric_narrative_policy", "numeric_catalog", "numeric_aliases", "numeric_meta",
         "factual_premise_policy", "factual_observations",
-        "numeric_analysis_date", "facts", "assertions", "hypotheses", "challenges",
+        "numeric_analysis_date", "numeric_input_snapshot_id", "facts", "assertions", "hypotheses", "challenges",
         "allowed_facts_by_challenge", "assigned", "dimension_claim_ids", "local_checks",
         "challenge_check_policy",
     }

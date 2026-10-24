@@ -26,6 +26,13 @@ def compact_synthesis_context(context, *, delivery=False):
         "evidence_id", "source_name", "source_kind" if delivery else "source_tier", "published_at",
         "usable_as_of", "availability", "public_url", "limitations") if key in item}
         for item in record["evidence"]]
+    if record.get('schema_version') == 'research-record-v2':
+        record['search_batches'] = [{
+            'batch_id': batch['batch_id'], 'input_snapshot_id': batch['input_snapshot_id'],
+            'tasks': [{'kind': r['kind'], 'round_id': r['round_id'], 'gap_id': r['gap_id'],
+                       'capability': r['capability']} for r in batch['requests']],
+            'stop_reasons': batch['stop_reasons']}
+            for batch in record['search_batches']]
     # Verification contains a second full copy of the same record. Its actual
     # observations/outcomes are also supplied in local_check_assessments.
     if isinstance(value.get("verification"), dict):
@@ -57,10 +64,10 @@ def reference_schema(schema, stage, context, *, delivery=False, complete_section
                     target["properties"].pop(field, None)
                 target["required"] = [field for field in target.get("required", []) if field not in fields]
         from tradingagents.agents.schemas._research_dialogue import excluded_support
-        from tradingagents.agents.schemas._research_record import ResearchRecordV1
+        from tradingagents.research.record_codec import parse_research_record
         # Derive excluded IDs using the complete canonical context before it is
         # compacted; the prompt itself is not a substitute for a saved record.
-        record = ResearchRecordV1.model_validate(context["record"])
+        record = parse_research_record(context["record"])
         excluded = excluded_support(record)
         allowed = [c.claim_id for c in record.claims if c.kind != "unknown" and c.claim_id not in excluded]
         choices(value["properties"]["key_claim_ids"], allowed)

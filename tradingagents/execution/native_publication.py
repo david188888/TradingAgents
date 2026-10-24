@@ -11,9 +11,9 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from tradingagents.agents.schemas._research_record import RESEARCH_RECORD_CONTRACT, ResearchRecordV1
 from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.execution.output_publisher import promote_derived_public_artifact
+from tradingagents.research.record_codec import ResearchRecord, parse_research_record
 from tradingagents.runtime.catalyst_checkpoint import (
     CHECKPOINT_KIND,
     CatalystJournal,
@@ -34,12 +34,12 @@ def _digest(value: dict[str, Any]) -> str:
         separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
-def _existing_artifact(observer: Any, record: ResearchRecordV1) -> str | None:
+def _existing_artifact(observer: Any, record: ResearchRecord) -> str | None:
     artifact_id = None
     events = observer.store.read_events(observer.run_id)
     event_index = {event.event_id: event for event in events}
     for event in events:
-        if event.type != "artifact.written" or event.status != "committed" or event.payload.get("public_contract") != RESEARCH_RECORD_CONTRACT:
+        if event.type != "artifact.written" or event.status != "committed" or event.payload.get("public_contract") not in {"research-record-v1", "research-record-v2"}:
             continue
         try:
             raw = observer.store.read_artifact(observer.run_id, event.payload["artifact_id"])
@@ -47,7 +47,7 @@ def _existing_artifact(observer: Any, record: ResearchRecordV1) -> str | None:
             raise NativePublicationError("native publication integrity mismatch") from None
         if hashlib.sha256(raw).hexdigest() != event.payload.get("content_sha256"):
             raise NativePublicationError("native publication integrity mismatch")
-        prior = ResearchRecordV1.model_validate_json(raw)
+        prior = parse_research_record(json.loads(raw))
         if prior != record or event.payload.get("graph_task_id") != NATIVE_PUBLIC_TASK:
             raise NativePublicationError("native publication content conflict")
         barrier = event_index.get(event.parent_event_id)
@@ -67,7 +67,7 @@ def _existing_artifact(observer: Any, record: ResearchRecordV1) -> str | None:
 def publish_native_record(
     observer: Any,
     *,
-    record: ResearchRecordV1,
+    record: ResearchRecord,
     ledger: DurableBudgetLedger,
     publication_authorizer: Callable[[CatalystJournal], None],
 ) -> str:
@@ -79,7 +79,7 @@ def publish_native_record(
     verifies persisted public bytes and performs no model or provider work.
     """
     try:
-        record = ResearchRecordV1.model_validate(record.model_dump(mode="json"))
+        record = parse_research_record(record.model_dump(mode="json"))
         journal = ledger.journal
         if journal.observer.store is not observer.store or journal.observer.run_id != observer.run_id or record.run_id != observer.run_id or ledger.run_id != observer.run_id:
             raise NativePublicationError("native publication identity mismatch")
@@ -124,7 +124,7 @@ def publish_native_record(
                 return existing
             barrier = journal.last_event
             artifact_id = promote_derived_public_artifact(observer,
-                contract=RESEARCH_RECORD_CONTRACT, value=record,
+                contract=record.schema_version, value=record,
                 graph_task_id=NATIVE_PUBLIC_TASK, checkpoint_event_id=barrier.event_id,
                 committed_sequence=barrier.sequence, promoted=set())
             if artifact_id is None:

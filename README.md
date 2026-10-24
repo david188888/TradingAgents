@@ -14,6 +14,7 @@
 
 - **A 股证据链**：整合公开公司资料、官方披露、财务与行情，保留来源、时点和覆盖限制。
 - **有分工的多 Agent 研究**：经营、事件、市场专项独立形成假设，经一轮质疑、实际核查与被质疑专项回应，再形成综合判断；重要挑战登记可核查性与任务去向，核查可独立提出的具体命题；代码负责证据资格、引用校验与确定性计算。
+- **双路联网补证**：新闻、行业、政策与竞争材料由 DeepSeek/Tavily 配合检索；身份和量化数据优先使用专用接口，失败后按缺失字段补搜。材料合格后才进入研究，分析中按缺口有限补证并复核相关判断。详见[双路搜索](docs/contracts/dual-search-research.md)。
 - **可追溯的研究阅读**：研究进行中即可查看各环节通过校验的保存产物、事实与来源，阶段提议与最终结论明确区分；Reader 与 Markdown 使用同一保存记录，阅读不重新取数或调用模型。
 - **公司报告持续交付**：公开介绍、基本面与行情独立保留；综合按分段校验，失败只修复对应分段并保留有效分析。总体判断或关键挑战裁决未完成时暂不评级，明确区分综合执行失败与财务资料缺口。
 - **数值片段可核查**：新建研究引用冻结数值，由代码生成带单位、期次及实际／预测属性的片段，并校验到 Reader 与导出；合格结构化财务比较独立核对，完整现金流桥缺口单列。新研究将已有观察、解释假设和待验证前提分开保存与展示；外围解释仍需研究者复核。详见[数值合同](docs/contracts/numeric-narrative.md)。
@@ -52,7 +53,8 @@ conda activate tradingagents
 python -m pip install -e ".[china,web]" --index-url https://pypi.org/simple
 
 cp .env.example .env
-# 在 .env 中填写 DEEPSEEK_API_KEY；也可启动后选择 ChatGPT 订阅并登录。
+# 在 .env 中填写 DEEPSEEK_API_KEY；双路搜索另配 TAVILY_API_KEY。
+# 研究模型也可启动后选择 ChatGPT 订阅并登录。
 
 tradingagents web --port 8765 --open
 ```
@@ -79,7 +81,7 @@ Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记�
 | 研究记录与证据契约 | [契约索引](docs/contracts/README.md) · [研究记录](docs/contracts/research-record.md) |
 | Reader 的证据追溯与展示 | [Reader 架构](docs/architecture/research-reader.md) |
 | 编码 Agent 与贡献者如何修改项目 | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| 全部文档与发布记录 | [文档索引](docs/README.md) · [3.6.0 发布说明](docs/reviews/2026-10-23-v3.6.0-release-notes.md) |
+| 全部文档与发布记录 | [文档索引](docs/README.md) · [3.7.0 发布说明](docs/reviews/2026-10-24-v3.7.0-release-notes.md) |
 
 编码 Agent 从 [AGENTS.md](AGENTS.md) 开始；当前行为以代码、契约和当前状态文档为准，历史计划不是实现证据。
 

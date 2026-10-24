@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from tradingagents.agents.schemas._factual_premise import PublicPremiseV1
 from tradingagents.agents.schemas._native_stage import (
@@ -16,8 +16,8 @@ from tradingagents.agents.schemas._native_stage import (
 )
 from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
 from tradingagents.agents.schemas._research_focus import FocusProposalV1
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
+from tradingagents.research.record_codec import ResearchRecord
 
 AgentKey = Literal[
     "evidence",
@@ -101,6 +101,14 @@ class ReaderProcessDTO(_ReaderModel):
     claim_origins: tuple[ClaimOrigin, ...] = ()
     source_failures: tuple[str, ...] = ()
     model_failures: tuple[ModelFailureDiagnostic, ...] = ()
+    search_usage: 'SearchUsageV1 | None' = None
+
+    @model_serializer(mode='wrap')
+    def preserve_old_process_shape(self, handler):
+        value = handler(self)
+        if self.search_usage is None:
+            value.pop('search_usage', None)
+        return value
 
 
 class OutputRelation(_ReaderModel):
@@ -125,7 +133,7 @@ class ReaderAgentDTO(_ReaderModel):
     origin: Literal["model", "code"]
     input_description: str
     # Independently qualified public stage material, never a final assessment.
-    stage_record: ResearchRecordV1 | None = None
+    stage_record: ResearchRecord | None = None
     # Closed schema fields only: never an adapter, prompt, response or checkpoint.
     proposal: (
         SpecialistProposalV1
@@ -157,3 +165,15 @@ class ReaderAgentDTO(_ReaderModel):
         elif self.stage_record is not None:
             raise ValueError("stage record requires independent stage qualification")
         return self
+
+
+class SearchUsageV1(_ReaderModel):
+    deepseek_search: int = Field(ge=0, le=50)
+    tavily_search: int = Field(ge=0, le=50)
+    page_attempts: int = Field(ge=0, le=8)
+    review_attempts: int = Field(ge=0, le=9)
+    rounds: int = Field(ge=0, le=3)
+    active_seconds: float = Field(ge=0, le=90)
+
+
+ReaderProcessDTO.model_rebuild()

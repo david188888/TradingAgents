@@ -103,6 +103,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # the oldest resolved entries are pruned once this limit is exceeded.
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
+    # V8 independent Search/Fetch is separate from the configured research LLM.
+    "evidence_search_enabled": True,
     # LLM settings
     # This fork is A-share-first and defaults to DeepSeek (no OpenAI key needed).
     # Override per-environment via TRADINGAGENTS_LLM_PROVIDER / TRADINGAGENTS_*_LLM.

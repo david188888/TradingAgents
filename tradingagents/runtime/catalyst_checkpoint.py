@@ -162,6 +162,11 @@ class DurableBudgetLedger(BudgetLedger):
             if identity.get("focus_budget_policy") != policy:
                 raise CatalystCheckpointConflict("native focus budget policy mismatch")
             limits = {BudgetBucket(key): value for key, value in policy.items()}
+        if identity.get("workflow_version") == "evidence-production-v8":
+            from tradingagents.execution.search_budget import SEARCH_BUDGET_POLICY
+            if identity.get("search_budget_policy") != SEARCH_BUDGET_POLICY:
+                raise CatalystCheckpointConflict("search budget policy mismatch")
+            limits = {BudgetBucket(key): value for key, value in SEARCH_BUDGET_POLICY["limits"].items()}
         super().__init__(journal.observer.run_id, limits=limits, records=(
             _record_from_json(value) for value in journal.state["records"]
         ))

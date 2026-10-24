@@ -54,6 +54,13 @@ class BudgetBucket(str, Enum):
     analyses plus three repairs and call that within "5 main analyses".
     """
 
+    BASIC_MODEL_ATTEMPTS = "basic_model_attempts"
+    ALL_HTTP_ATTEMPTS = "all_http_attempts"
+    DEEPSEEK_SEARCH = "deepseek_search"
+    TAVILY_SEARCH = "tavily_search"
+    SEARCH_PAGE = "search_page"
+    SEARCH_REVIEW = "search_review"
+    SEARCH_ROUNDS = "search_rounds"
     MAIN_ANALYSIS = "main_analysis"
     FOCUS_RESPONSE = "focus_response"
     SEMANTIC_PREPROCESS = "semantic_preprocess"
@@ -71,6 +78,7 @@ class BudgetBucket(str, Enum):
 # roll up into the run-wide total rather than sitting beside it.
 _MODEL_BUCKETS = frozenset(
     {
+        BudgetBucket.SEARCH_REVIEW,
         BudgetBucket.MAIN_ANALYSIS,
         BudgetBucket.FOCUS_RESPONSE,
         BudgetBucket.SEMANTIC_PREPROCESS,
@@ -80,11 +88,26 @@ _MODEL_BUCKETS = frozenset(
 )
 
 
+_ROLLUP_BUCKETS = {
+    BudgetBucket.MODEL_ATTEMPTS: _MODEL_BUCKETS,
+    BudgetBucket.BASIC_MODEL_ATTEMPTS: _MODEL_BUCKETS - {BudgetBucket.SEARCH_REVIEW},
+    BudgetBucket.ALL_HTTP_ATTEMPTS: frozenset({BudgetBucket.DATA_HTTP_ATTEMPTS,
+        BudgetBucket.DEEPSEEK_SEARCH, BudgetBucket.TAVILY_SEARCH, BudgetBucket.SEARCH_PAGE}),
+}
+
+
 # Per-bucket and run-wide ceilings from design SS5.5.  These are the numbers
 # the table in the design specifies; they are defaults, not measurements, and
 # the design explicitly allows a documented adjustment but forbids removing a
 # ceiling.  ``None`` would mean "no ceiling" and is not accepted.
 DEFAULT_LIMITS: Mapping[BudgetBucket, int] = {
+    BudgetBucket.BASIC_MODEL_ATTEMPTS: 12,
+    BudgetBucket.ALL_HTTP_ATTEMPTS: 64,
+    BudgetBucket.DEEPSEEK_SEARCH: 0,
+    BudgetBucket.TAVILY_SEARCH: 0,
+    BudgetBucket.SEARCH_PAGE: 0,
+    BudgetBucket.SEARCH_REVIEW: 0,
+    BudgetBucket.SEARCH_ROUNDS: 0,
     BudgetBucket.MAIN_ANALYSIS: 5,
     BudgetBucket.FOCUS_RESPONSE: 0,
     BudgetBucket.SEMANTIC_PREPROCESS: 2,
@@ -269,6 +292,14 @@ class BudgetLedger:
         # a KeyError.
         self._limits = dict(DEFAULT_LIMITS)
         self._limits.update(limits or {})
+        # New aggregate pools must preserve explicitly configured legacy
+        # ceilings. V8 supplies its own separate base-model and HTTP totals.
+        if limits and BudgetBucket.BASIC_MODEL_ATTEMPTS not in limits:
+            self._limits[BudgetBucket.BASIC_MODEL_ATTEMPTS] = self._limits[BudgetBucket.MODEL_ATTEMPTS]
+        if limits and BudgetBucket.ALL_HTTP_ATTEMPTS not in limits:
+            self._limits[BudgetBucket.ALL_HTTP_ATTEMPTS] = sum(
+                self._limits[bucket] for bucket in _ROLLUP_BUCKETS[BudgetBucket.ALL_HTTP_ATTEMPTS]
+            )
         self._stage_limits = dict(DEFAULT_STAGE_LIMITS)
         self._stage_limits.update(stage_limits or {})
         for bucket, limit in self._limits.items():
@@ -341,10 +372,7 @@ class BudgetLedger:
         exactly the number a reader needs to audit.
         """
         with self._lock:
-            if bucket is BudgetBucket.MODEL_ATTEMPTS:
-                targets = _MODEL_BUCKETS
-            else:
-                targets = frozenset({bucket})
+            targets = _ROLLUP_BUCKETS.get(bucket, frozenset({bucket}))
             return sum(
                 1
                 for record in self._records.values()
@@ -357,17 +385,10 @@ class BudgetLedger:
         return self._limits[bucket]
 
     def remaining(self, bucket: BudgetBucket, stage: str | None = None) -> int:
-        if bucket in _MODEL_BUCKETS:
-            # A model bucket is doubly bounded: by its own ceiling and by the
-            # run-wide attempt total.  Reporting only the larger of the two
-            # would hide a run that has exhausted the total while the
-            # per-bucket counter still reads zero.
-            return min(
-                self._limits[bucket] - self.consumed(bucket, stage),
-                self._limits[BudgetBucket.MODEL_ATTEMPTS]
-                - self.consumed(BudgetBucket.MODEL_ATTEMPTS),
-            )
-        return self._limits[bucket] - self.consumed(bucket, stage)
+        values = [self._limits[bucket] - self.consumed(bucket, stage)]
+        values.extend(self._limits[parent] - self.consumed(parent)
+                      for parent, children in _ROLLUP_BUCKETS.items() if bucket in children)
+        return min(values)
 
     def records(self) -> tuple[AttemptRecord, ...]:
         """Every attempt, in reservation order, for persistence.
@@ -478,16 +499,13 @@ class BudgetLedger:
                 consumed=used,
                 reason="run_limit_reached",
             )
-        if bucket in _MODEL_BUCKETS:
-            total = self.consumed(BudgetBucket.MODEL_ATTEMPTS)
-            if total >= self._limits[BudgetBucket.MODEL_ATTEMPTS]:
-                return BudgetLimitHit(
-                    bucket=bucket,
-                    stage=stage,
-                    limit=self._limits[BudgetBucket.MODEL_ATTEMPTS],
-                    consumed=total,
-                    reason="total_model_attempts_reached",
-                )
+        for parent, children in _ROLLUP_BUCKETS.items():
+            if bucket in children:
+                total = self.consumed(parent)
+                if total >= self._limits[parent]:
+                    return BudgetLimitHit(bucket=bucket, stage=stage, limit=self._limits[parent],
+                        consumed=total, reason="total_model_attempts_reached" if parent is BudgetBucket.MODEL_ATTEMPTS
+                        else "parent_limit_reached:" + parent.value)
         return None
 
     # -- lifecycle --------------------------------------------------------

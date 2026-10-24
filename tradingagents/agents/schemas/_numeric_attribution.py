@@ -32,3 +32,12 @@ class NumericAttributionV1(_Frozen):
     catalog: NumericCatalogV1
     stages: tuple[NumericRecordedStageV1, ...] = Field(default=(), max_length=8)
     final_fields: tuple[NumericRecordFieldV1, ...] = Field(default=(), max_length=256)
+
+
+class NumericRecordedStageV2(NumericRecordedStageV1):
+    stage: str = Field(min_length=1, max_length=160)
+
+
+class NumericAttributionV2(NumericAttributionV1):
+    """V8 preserves base receipts plus up to nine supplemental reviews."""
+    stages: tuple[NumericRecordedStageV2, ...] = Field(default=(), max_length=17)

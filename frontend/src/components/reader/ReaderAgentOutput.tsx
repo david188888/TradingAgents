@@ -1,5 +1,5 @@
 import { PremiseContext, PremiseLedger } from "./FactualPremises";
-import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
+import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO, ResearchRecordDTO } from "../../api/contracts";
 import { AGENT_LABELS, DISPOSITION_LABELS, dimensionLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 import { CHECK_LABELS, LocalChallengeResult, LocalEvidenceChecks, claimText } from "./ResearchRecordSection";
 import { ReaderEvidence, type EvidenceSelection } from "./ReaderEvidence";
@@ -8,7 +8,7 @@ import { FocusAnswer } from "./FocusResponse";
 import { ChallengeCheckSummary } from "./ChallengeChecks";
 
 export function ReaderAgentOutput({ role, process, output, error, record: publishedRecord, runStatus, entity, onRole, onInspect: inspectPublished, onLocate: locatePublished, onRetry }: {
-  role: AgentKey; process: ReaderProcessDTO | null; output: ReaderAgentDTO | null; error: boolean; record: ResearchRecordV1DTO | null; runStatus?: string; entity: string | null;
+  role: AgentKey; process: ReaderProcessDTO | null; output: ReaderAgentDTO | null; error: boolean; record: ResearchRecordDTO | null; runStatus?: string; entity: string | null;
   onRole(role: AgentKey): void; onInspect(selection: EvidenceSelection, trigger?: HTMLElement): void; onLocate(selection: EvidenceSelection): void; onRetry(): void;
 }) {
   const stage = output?.availability === "stage_available";

@@ -60,7 +60,7 @@ def observation_catalog(record, catalog, fact_ids):
             continue
         if meta.get("check_status") not in {None, "passed"}:
             continue
-        official = key.startswith("official.") and key.endswith(".difference")
+        official = key.startswith(("official.", "recovered.")) and key.endswith(".difference")
         structured = key.startswith(("check.financial_baseline.", "check.cashflow_comparison."))
         change = official or (structured and key.endswith("_change"))
         sign = anchor["basis"] == "actual_reported" or (structured and key.endswith(("_current", "_previous")))
@@ -145,6 +145,8 @@ def bind_field(stage, path, text, proof, proposal, context, bindings):
         required = proposal["responses"][int(path.split(".")[1])]["disposition"] in {"maintained", "revised"}
     if path.startswith("dimensions."):
         required = proposal["dimensions"][int(path.split(".")[1])]["status"] != "unresolved"
+    if stage.startswith('search_review.') and path == 'rationale':
+        required = proposal.get('disposition') in {'maintained', 'revised'}
     if required and not selected:
         raise NumericNarrativeError("premise_support_missing", path)
     for question in binding["pending_questions"]:
@@ -166,6 +168,9 @@ def validate_context(record, stage, context, identity):
     if enabled != premise_enabled(context):
         raise ValueError("factual premise context policy mismatch")
     if enabled:
+        if record.schema_version == 'research-record-v2':
+            from tradingagents.research.record_codec import snapshot_view
+            record = snapshot_view(record, context['numeric_input_snapshot_id'])
         actual = observation_catalog(record, context["numeric_catalog"], _stage_fact_ids(stage, context))
         if context.get("factual_observations") != actual:
             raise ValueError("factual premise observations changed")

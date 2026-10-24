@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
@@ -19,9 +20,13 @@ from tradingagents.dataflows.native_disclosures import DisclosureSources
 from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
 from tradingagents.dataflows.native_sources import NativeSources
 from tradingagents.dataflows.native_valuation import ValuationSources
+from tradingagents.dataflows.search_sources import SearchEvidenceSources
 from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
 from tradingagents.execution.budget import BudgetBucket, BudgetConflictError, BudgetExhausted
-from tradingagents.execution.config_identity import SemanticConfigError, prepare_effective_config
+from tradingagents.execution.config_identity import (
+    SemanticConfigError,
+    native_effective_config,
+)
 from tradingagents.execution.models import (
     AnalysisCancelled,
     AnalysisRequest,
@@ -32,6 +37,8 @@ from tradingagents.execution.native_focus import execute_focus_response
 from tradingagents.execution.native_focus_publication import publish_focus_response
 from tradingagents.execution.native_model import NativeModelCaller
 from tradingagents.execution.native_publication import publish_native_record
+from tradingagents.execution.search_budget import SEARCH_BUDGET_POLICY
+from tradingagents.execution.search_reviews import run_search_reviews
 from tradingagents.graph.native_research import load_native_seed, run_native_research
 from tradingagents.llm_clients.chatgpt_policy import (
     CHATGPT_REQUEST_POLICY,
@@ -51,6 +58,8 @@ from tradingagents.research.native_versions import (
     FOCUS_WORKFLOW_VERSION,
     NUMERIC_NARRATIVE_POLICY,
     REPORT_DELIVERY_POLICY,
+    SEARCH_RESEARCH_POLICY,
+    SEARCH_WORKFLOW_VERSION,
     SPECIALIST_REFERENCE_POLICY,
     STRUCTURED_FINANCIAL_POLICY,
     UNIFIED_BUDGET_POLICY,
@@ -64,13 +73,14 @@ from tradingagents.runtime.catalyst_checkpoint import (
 
 VALUATION_WORKFLOW_VERSION = "evidence-production-v4"
 MINIMUM_WORKFLOW_VERSION = "evidence-production-v5"
-WORKFLOW_VERSION = UNIFIED_WORKFLOW_VERSION
+WORKFLOW_VERSION = SEARCH_WORKFLOW_VERSION
 DISCLOSURE_WORKFLOW_VERSION = "evidence-production-v3"
 PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 
 
-def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True, structured_financial_policy=True, factual_premise_policy=True, financial_detail_policy=True, challenge_check_policy=True):
+def native_identity(request, *, workflow_version=None, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True, structured_financial_policy=True, factual_premise_policy=True, financial_detail_policy=True, challenge_check_policy=True):
+    workflow_version = workflow_version or WORKFLOW_VERSION
     from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
     from tradingagents.agents.schemas._factual_premise import FACTUAL_PREMISE_POLICY
     from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
@@ -85,28 +95,32 @@ def native_identity(request, *, workflow_version=WORKFLOW_VERSION, model_retry_p
         "mode": request.mode,
         "cutoff": request.analysis_date,
         "holding_context": asdict(request.holding_context) if request.holding_context else None,
-        "config": prepare_effective_config(request.effective_config),
+        "config": native_effective_config(request.effective_config, workflow_version),
         **({"chatgpt_request_policy": CHATGPT_REQUEST_POLICY} if subscription_policy else {}),
+        **({'search_research_policy': {**deepcopy(SEARCH_RESEARCH_POLICY),
+                'enabled': request.effective_config.get('evidence_search_enabled', True)},
+            'search_budget_policy': deepcopy(SEARCH_BUDGET_POLICY)}
+           if workflow_version == SEARCH_WORKFLOW_VERSION else {}),
         "active_timeout_seconds": request.effective_config.get("evidence_timeout_seconds", 300),
         **({"factual_premise_policy": FACTUAL_PREMISE_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and numeric_narrative_policy and factual_premise_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and numeric_narrative_policy and factual_premise_policy else {}),
         **({"structured_financial_policy": STRUCTURED_FINANCIAL_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and structured_financial_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and structured_financial_policy else {}),
         **({"financial_detail_policy": FINANCIAL_DETAIL_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and financial_detail_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and financial_detail_policy else {}),
         **({"challenge_check_policy": CHALLENGE_CHECK_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and challenge_check_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and challenge_check_policy else {}),
         **({"numeric_narrative_policy": NUMERIC_NARRATIVE_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and numeric_narrative_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and numeric_narrative_policy else {}),
         **({"company_research_policy": COMPANY_RESEARCH_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and company_research_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and company_research_policy else {}),
         **({"report_delivery_policy": REPORT_DELIVERY_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and report_delivery_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and report_delivery_policy else {}),
         **({"specialist_reference_policy": SPECIALIST_REFERENCE_POLICY}
-           if workflow_version == UNIFIED_WORKFLOW_VERSION and specialist_reference_policy else {}),
+           if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and specialist_reference_policy else {}),
         **({"focus_budget_policy": dict(UNIFIED_BUDGET_POLICY if workflow_version == UNIFIED_WORKFLOW_VERSION else FOCUS_BUDGET_POLICY)} if workflow_version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else {}),
         **({"model_retry_policy": deepcopy(MODEL_RETRY_POLICY)}
-           if workflow_version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} and model_retry_policy else {}),
+           if workflow_version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and model_retry_policy else {}),
     }
 
 
@@ -130,13 +144,13 @@ def validate_native_resume(store, run_id, request):
     structured_policy = state is not None and "structured_financial_policy" in state["identity"]
     detail_policy = state is not None and "financial_detail_policy" in state["identity"]
     challenge_policy = state is not None and "challenge_check_policy" in state["identity"]
-    if version not in {UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy, financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy):
+    if version not in {SEARCH_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy, financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
-    from tradingagents.agents.schemas._research_record import ResearchRecordV1
+    from tradingagents.research.record_codec import parse_research_record
 
     for key in ("native_seed", "native_publication_candidate"):
         if key in state:
-            record = ResearchRecordV1.model_validate(state[key])
+            record = parse_research_record(state[key])
             from tradingagents.research.numeric_integration import validate_record_numeric
             validate_record_numeric(record, state["identity"])
             if (record.run_id, record.ticker, record.mode, record.analysis_date.isoformat()) != (
@@ -162,8 +176,9 @@ def validate_native_resume(store, run_id, request):
 
 class NativeRunner:
     def __init__(
-        self, observer, *, sources_factory=None, caller_factory=NativeModelCaller, chatgpt_auth=None
+        self, observer, *, sources_factory=None, caller_factory=NativeModelCaller, chatgpt_auth=None, search_session_factory=requests.Session
     ):
+        self.search_session_factory = search_session_factory
         self.observer, self.sources_factory, self.caller_factory = (
             observer,
             sources_factory,
@@ -207,13 +222,18 @@ class NativeRunner:
                 )
             )
 
-    def run(
+    def run(self, request, **kwargs):
+        with ExitStack() as resources:
+            return self._run(request, _resources=resources, **kwargs)
+
+    def _run(
         self,
         request: AnalysisRequest,
         *,
         cancellation_token=None,
         checkpoint_guard=None,
         publication_authorizer=None,
+        _resources,
         **_kwargs,
     ):
         if request.research_profile != "evidence_v1" or request.evidence_policy is None:
@@ -266,6 +286,16 @@ class NativeRunner:
                 if marker is None:
                     metadata["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
                     self.observer.store.write_snapshot_atomic(replace(snapshot, metadata=metadata))
+        coordinator = None
+        if version == SEARCH_WORKFLOW_VERSION:
+            from tradingagents.execution.search_budget import SearchBudget
+            from tradingagents.execution.search_coordinator import SearchCoordinator
+            search_session = self.search_session_factory()
+            if callable(getattr(search_session, 'close', None)):
+                _resources.callback(search_session.close)
+            search_budget = SearchBudget(journal.ledger, ensure_active=active,
+                run_remaining=lambda: deadline-time.monotonic())
+            coordinator = SearchCoordinator(search_session, search_budget, journal)
         seed = load_native_seed(journal.ledger)
         if seed is None:
             active()
@@ -318,7 +348,7 @@ class NativeRunner:
                 return value
 
             source_fields = {**vars(request), "catalyst_policy": request.evidence_policy.collector_policy()}
-            if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
+            if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
                 source_fields.pop("research_question", None)
                 source_fields["effective_config"] = {
                     key: value for key, value in request.effective_config.items()
@@ -339,25 +369,32 @@ class NativeRunner:
                     MINIMUM_WORKFLOW_VERSION: MinimumEvidenceSources,
                     FOCUS_WORKFLOW_VERSION: MinimumEvidenceSources,
                     UNIFIED_WORKFLOW_VERSION: MinimumEvidenceSources,
+                    SEARCH_WORKFLOW_VERSION: SearchEvidenceSources,
                 }[version]
-                draft, context = factory(
-                    source_request, run_id, session, fetch
-                ).collect()
-            journal.put("native_source_admission", [cap.model_dump(mode="json") for cap in draft.capabilities])
+                collector = factory(source_request, run_id, session, fetch, coordinator) if version == SEARCH_WORKFLOW_VERSION else factory(source_request, run_id, session, fetch)
+                draft, context = collector.collect()
+            capabilities = getattr(collector, 'source_admission', ()) if version == SEARCH_WORKFLOW_VERSION else draft.capabilities
+            journal.put("native_source_admission", [cap.model_dump(mode="json") for cap in capabilities])
             active()
-            holding = request.holding_context
-            seed = build_native_record(
-                draft,
-                context,
-                mode=request.mode,
-                original_thesis=holding.original_thesis if holding else None,
-                holding_facts_as_of=holding.facts_as_of if holding else None,
-                include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
-                include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
-                include_minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
-                include_basics=journal.state["identity"].get("report_delivery_policy") == REPORT_DELIVERY_POLICY,
-                include_structured_financial=journal.state["identity"].get("structured_financial_policy") == STRUCTURED_FINANCIAL_POLICY,
-            )
+            if version == SEARCH_WORKFLOW_VERSION:
+                from tradingagents.agents.schemas._research_record_v2 import ResearchRecordV2
+                if not isinstance(draft, ResearchRecordV2):
+                    raise ValueError('V8 collector must return a native V2 record')
+                seed = draft
+            else:
+                holding = request.holding_context
+                seed = build_native_record(
+                    draft,
+                    context,
+                    mode=request.mode,
+                    original_thesis=holding.original_thesis if holding else None,
+                    holding_facts_as_of=holding.facts_as_of if holding else None,
+                    include_coverage=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                    include_valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                    include_minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                    include_basics=journal.state["identity"].get("report_delivery_policy") == REPORT_DELIVERY_POLICY,
+                    include_structured_financial=journal.state["identity"].get("structured_financial_policy") == STRUCTURED_FINANCIAL_POLICY,
+                )
             if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date.isoformat()) != (
                 run_id,
                 request.ticker,
@@ -374,7 +411,7 @@ class NativeRunner:
             effective_config=request.effective_config,
             run_id=run_id,
             ledger=journal.ledger,
-            cancelled=(lambda: token.is_cancelled) if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION} else cancelled,
+            cancelled=(lambda: token.is_cancelled) if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else cancelled,
             deadline=lambda: deadline,
         )
         runner = self
@@ -385,14 +422,16 @@ class NativeRunner:
                 return recover(stage, context) if callable(recover) else None
 
             def __call__(self, stage, context):
-                runner._stage(journal, stage, "running")
+                if not stage.startswith("search_review."):
+                    runner._stage(journal, stage, "running")
                 try:
                     value = delegate(stage, context)
                 except Exception:
-                    if not journal.failed:
+                    if not journal.failed and not stage.startswith("search_review."):
                         runner._stage(journal, stage, "failed")
                     raise
-                runner._stage(journal, stage, "completed")
+                if not stage.startswith("search_review."):
+                    runner._stage(journal, stage, "completed")
                 return value
 
         record = run_native_research(
@@ -401,20 +440,23 @@ class NativeRunner:
             ledger=journal.ledger,
             research_question=request.research_question,
             cancelled=cancelled,
-            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
-            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
-            minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
-            independent=version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION},
-            unified=version == UNIFIED_WORKFLOW_VERSION,
+            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+            minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+            independent=version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+            unified=version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+            supplement=(lambda current, gaps: run_search_reviews(
+                current, gaps, coordinator=coordinator, caller=ProgressCaller(), ledger=journal.ledger, cancelled=cancelled))
+                if coordinator is not None else None,
         )
         active()
         focus_response = None
-        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION}:
+        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             focus_response = execute_focus_response(
                 record, request.research_question, ledger=journal.ledger, caller=ProgressCaller(),
                 cancelled=lambda: token.is_cancelled, deadline=lambda: deadline,
                 output_language=str(request.effective_config.get("output_language", "Chinese")),
-                model_policy_sha256=config_sha256(prepare_effective_config(request.effective_config)),
+                model_policy_sha256=config_sha256(native_effective_config(request.effective_config, version)),
             )
             token.raise_if_cancelled()
             if focus_response is not None:

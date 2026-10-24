@@ -55,6 +55,11 @@ def fact_views(record, *, valuation=False):
                or sources[key].usable_as_of is None for key in fact.evidence_ids):
             continue
         names = [sources[key].source_name for key in fact.evidence_ids]
+        if record.schema_version == 'research-record-v2' and any(name.startswith(('web.', 'derived.web_fields.')) for name in names):
+            roles = [r for r in ROLE_ORDER if 'native_dimension:'+r in fact.limitations]
+            if len(roles) == 1:
+                views[roles[0]].append(fact)
+            continue
         if valuation and any(name in _valuation_sources(record) for name in names) or any(name in _operating_sources(record) for name in names):
             views["operating_quality"].append(fact)
         elif any(name in BODY_SOURCES for name in names):
@@ -92,6 +97,9 @@ def dimension_policy(record, *, scoped=False, valuation=False):
     financial = any(any(source.source_name in _operating_sources(record)
                         for source in record.evidence if source.evidence_id in fact.evidence_ids)
                     for fact in views["operating_quality"])
+    if record.schema_version == 'research-record-v2':
+        scope = {e for f in views['operating_quality'] for e in f.evidence_ids}
+        financial = financial or any(f.unit == 'CNY' and f.field in {'revenue', 'n_income_attr_p', 'n_income', 'n_cashflow_act'} and f.evidence_id in scope for f in record.recovered_fields)
     policies = {
         "operating_quality": ("conditional" if financial else "unresolved", "qualified_financial_fields_missing"),
         "valuation": ("conditional" if valuation and record.valuation is not None else "unresolved", "qualified_valuation_inputs_missing"),
@@ -125,7 +133,11 @@ def dimension_claim_ids(record):
                 continue
             names = {sources[key] for dep in deps for key in facts[dep].evidence_ids}
             if dimension in {"operating_quality", "holding_thesis"}:
-                if not _operating_sources(record) & names:
+                recovered = (record.schema_version == 'research-record-v2' and any(
+                    f.field in {'revenue', 'n_income_attr_p', 'n_income', 'n_cashflow_act'} and
+                    f.evidence_id in {e for dep in deps for e in facts[dep].evidence_ids}
+                    for f in record.recovered_fields))
+                if not _operating_sources(record) & names and not recovered:
                     continue
                 if dimension == "holding_thesis" and "user.original_thesis" not in names:
                     continue
@@ -188,7 +200,11 @@ def gate_dimensions(record, proposed, *, scoped=False, valuation=False, sections
         names = {source.source_name for fact in cited_facts for source in record.evidence
                  if source.evidence_id in fact.evidence_ids}
         if item.dimension in {"operating_quality", "holding_thesis"} and item.claim_ids:
-            if not _operating_sources(record) & names:
+            recovered = (record.schema_version == 'research-record-v2' and any(
+                f.field in {'revenue', 'n_income_attr_p', 'n_income', 'n_cashflow_act'}
+                and f.evidence_id in {e for fact in cited_facts for e in fact.evidence_ids}
+                for f in record.recovered_fields))
+            if not _operating_sources(record) & names and not recovered:
                 raise ValueError("operating judgement requires cited financial evidence")
             if item.dimension == "holding_thesis" and "user.original_thesis" not in names:
                 raise ValueError("holding judgement requires cited original thesis")

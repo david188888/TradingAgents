@@ -1,5 +1,5 @@
 import { ExplainedText, useReadableReference } from "./PlainExplanation";
-import type { ResearchRecordV1DTO } from "../../api/contracts";
+import type { ResearchRecordDTO } from "../../api/contracts";
 import { AGENT_LABELS, DISPOSITION_LABELS, STANCE_LABELS, dimensionLabel } from "../../domain/readerExplanation";
 import type { EvidenceSelection } from "./ReaderEvidence";
 import { LocalChallengeResult, claimText } from "./ResearchRecordSection";
@@ -7,7 +7,7 @@ import { ChallengeCheckSummary } from "./ChallengeChecks";
 import { synthesisSectionLabel, unfinishedSynthesis } from "../../domain/synthesisSections";
 
 /** Public saved fields only: reasons, falsifiers and the bounded reply chain. */
-export function InvestmentJudgement({record,onInspect}: {record:ResearchRecordV1DTO;onInspect(value:EvidenceSelection,trigger?:HTMLElement):void}) {
+export function InvestmentJudgement({record,onInspect}: {record:ResearchRecordDTO;onInspect(value:EvidenceSelection,trigger?:HTMLElement):void}) {
   const assessment=record.assessment;
   const readable=useReadableReference();
   if (assessment?.schema_version !== "research-assessment-v3") return null;
@@ -27,7 +27,7 @@ export function InvestmentJudgement({record,onInspect}: {record:ResearchRecordV1
   </section>;
 }
 
-export function ResearchDialogue({record,onInspect}: {record:ResearchRecordV1DTO;onInspect(value:EvidenceSelection,trigger?:HTMLElement):void}) {
+export function ResearchDialogue({record,onInspect}: {record:ResearchRecordDTO;onInspect(value:EvidenceSelection,trigger?:HTMLElement):void}) {
   const assessment=record.assessment;
   const readable=useReadableReference();
   if (assessment?.schema_version !== "research-assessment-v3" || !record.dialogue) return null;

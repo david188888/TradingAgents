@@ -21,6 +21,7 @@ from tradingagents.agents.schemas._research_record import (
     VerificationRecordV1,
     make_evidence_snapshot,
 )
+from tradingagents.agents.schemas._research_record_v2 import ResearchRecordV2
 from tradingagents.agents.schemas._verification_plan import (
     ChallengeVerificationTaskV1,
     FinancialConditionV1,
@@ -33,6 +34,7 @@ from tradingagents.execution.budget import (
     BudgetBucket,
     BudgetLimitHit,
 )
+from tradingagents.research.record_codec import parse_research_record
 from tradingagents.research.verification_tools import VerificationToolResultV1, evaluate_condition
 from tradingagents.runtime.catalyst_checkpoint import (
     CatalystCheckpointConflict,
@@ -63,7 +65,7 @@ class VerificationExecutionV1(BaseModel):
     plan_sha256: str
     input_record_sha256: str
     output_record_sha256: str
-    record: ResearchRecordV1
+    record: ResearchRecordV1 | ResearchRecordV2
     outcomes: tuple[VerificationTaskOutcomeV1, ...]
 
     @model_validator(mode="after")
@@ -225,6 +227,11 @@ def _task_outcome(record, task, logical_id, *, ledger, identity_sha256, cancelle
 
 def _build_record(record, plan, outcomes, plan_sha256):
     evidence = list(record.evidence)
+    calculated = None
+    if record.schema_version == 'research-record-v2':
+        from tradingagents.research.evidence_revisions import recompute_revision
+        calculated = recompute_revision(record, journal=None)
+        evidence = list(calculated.evidence)
     executions = []
     tasks = {task.task_id: task for task in plan.tasks}
     for outcome in outcomes:
@@ -304,8 +311,15 @@ def _build_record(record, plan, outcomes, plan_sha256):
             }
         )
     payload = record.model_dump(mode="json")
-    if executions:
-        v1 = make_evidence_snapshot(
+    if calculated is not None:
+        payload['claims'] = [c.model_dump(mode='json') for c in calculated.claims]
+        payload['revision_calculations'] = [c.model_dump(mode='json') for c in calculated.revision_calculations]
+    if executions or len(evidence) > len(record.evidence):
+        factory = make_evidence_snapshot
+        if record.schema_version == 'research-record-v2':
+            from tradingagents.agents.schemas._research_record_v2 import make_evidence_snapshot_v2
+            factory = make_evidence_snapshot_v2
+        v1 = factory(
             tuple(evidence), version=1, parent_snapshot_id=plan.input_snapshot_id
         )
         payload["evidence"] = [item.model_dump(mode="json") for item in evidence]
@@ -339,7 +353,10 @@ def _build_record(record, plan, outcomes, plan_sha256):
                 item = ChallengeCheckOutcomeV1(challenge_id=challenge.challenge_id, state=outcome.state,
                     task_id=outcome.task_id, plan_sha256=plan_sha256)
             payload["challenge_outcomes"].append(item.model_dump(mode="json"))
-    return ResearchRecordV1.model_validate(payload)
+    if record.schema_version == 'research-record-v2' and len(payload['snapshots']) > len(record.snapshots):
+        from tradingagents.research.evidence_revisions import _updated
+        return _updated(record, **payload)
+    return parse_research_record(payload)
 
 
 def canonical_content_hash(text):
@@ -363,7 +380,7 @@ def execute_verification(
     """
     # Revalidate copies: nested containers can have been mutated despite frozen
     # model settings, and model_copy(update=...) does not validate its updates.
-    record = ResearchRecordV1.model_validate_json(record.model_dump_json())
+    record = parse_research_record(json.loads(record.model_dump_json()))
     plan = parse_verification_plan(plan.model_dump(mode="json"))
     _validate_bindings(record, plan)
     if (

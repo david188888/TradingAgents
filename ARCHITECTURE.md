@@ -51,8 +51,20 @@ catalog readiness and actual inference permission remain distinct.
 ```text
 Web form / API -> manager and scheduler -> NativeRunner
   -> qualified, frozen source evidence -> native research kernel
-  -> validated research-record-v1 -> local run store -> Reader / Markdown
+  -> validated research-record-v2 -> local run store -> Reader / Markdown
+  (historical identities retain research-record-v1)
 ```
+
+Fresh runs use `evidence-production-v8` / `native-research-kernel-v7`.
+`search_sources.py` keeps dedicated APIs first and coordinates DeepSeek/Tavily
+for open-ended context and missing-field recovery. `search_budget.py` shares
+durable search, page, review and time pools; `search_reviews.py` adds up to three
+gap-directed rounds after original replies and before one synthesis.
+`evidence_revisions.py` appends immutable material/derived snapshots and
+recomputes qualified values without rebinding old numeric receipts. Explicit
+`record_codec.py` dispatch preserves V1 recovery and read-only projections.
+See the [dual-search contract](docs/contracts/dual-search-research.md) for limits
+and currently supported recovery formats.
 
 The maintained kernel is `graph/native_research.py`. Operating, event and
 market specialists receive separate frozen fact views and cannot read each
@@ -108,7 +120,7 @@ Roles and challenge count are code-owned. Old-profile creation and retry return
 disables fresh native work without disabling reads or existing recovery.
 
 The `evidence-policy-v1` fixes source windows separately from outlook and runtime
-horizon policy. New workflow `evidence-production-v7` retains V5 collection through
+horizon policy. The historical `evidence-production-v7` baseline retains V5 collection through
 `dataflows/minimum_sources.py:MinimumEvidenceSources`, an isolated extension of
 the native collector. `disclosure_documents_v2.py` admits bounded official
 reports/summary/operating notices and explicit numeric rows; supplementary
@@ -288,7 +300,8 @@ Reader counts include retry authorizations. Historical identities without this
 policy retain their original behavior, and the optional focus remains one call.
 See [retry accounting](docs/operations/observability-replay.md#原生模型有限网络重试).
 
-Native publication requires an assessed `research-record-v1` and its durable
+Native publication requires an assessed `research-record-v2` (V8), or the saved
+`research-record-v1` for historical identities, and its durable
 authorization barrier; failure cannot complete the run or fall back to a case.
 Fresh V7 identities freeze a separate report-delivery policy. The optional
 `company_basics` pack binds public profile, fundamental and quantitative fields

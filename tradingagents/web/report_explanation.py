@@ -8,8 +8,8 @@ from tradingagents.agents.schemas._report_explanation import (
     ReportExplanationView,
 )
 from tradingagents.agents.schemas._research_focus import ResearchFocusResponseV1
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
+from tradingagents.research.record_codec import parse_research_record
 from tradingagents.research.report_explanation import (
     explanation_targets,
     indicator_presentations,
@@ -24,7 +24,7 @@ def load_explanation_record(store, run_id):
     projected = project_research_record(store, run_id)
     if projected["state"] != "ready":
         raise ValueError("base_unavailable")
-    record = ResearchRecordV1.model_validate(projected["record"])
+    record = parse_research_record(projected["record"])
     focus = project_reader_focus(store, run_id)
     return record, ResearchFocusResponseV1.model_validate(focus["response"]) if focus["state"] == "ready" else None
 

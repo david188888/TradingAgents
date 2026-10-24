@@ -213,6 +213,9 @@ class NativeFixtureCaller:
 
 def build_app():
     from scripts.e2e_server import _fake_runner_factory, _stub_summary_llm
+    from tradingagents.execution import native_runner
+    # The synthetic source and caller below model the frozen V7 protocol.
+    native_runner.WORKFLOW_VERSION = "evidence-production-v7"
     root = os.environ.get("TRADINGAGENTS_E2E_RUN_ROOT") or tempfile.mkdtemp(prefix="catalyst-e2e-")
     store = RunStore(root)
     broker = EventBroker(store)
@@ -229,7 +232,7 @@ def build_app():
     from types import SimpleNamespace
 
     def explain_fixture(prompt):
-        targets = json.loads(prompt.split("\nDATA:\n")[1].split("\nRepair:")[0])
+        targets, _ = json.JSONDecoder().raw_decode(prompt.split("\nDATA:\n", 1)[1])
         return SimpleNamespace(content=json.dumps({"entries": [{"target": t["target"],
             "explanation": "这是保存分析的通俗说明，判断仍需结合对应证据和限定条件理解。",
             "uncertainty": "现有资料不能保证未来结果。", "references": t["references"][:1]} for t in targets]}, ensure_ascii=False))

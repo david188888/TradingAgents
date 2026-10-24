@@ -1,5 +1,6 @@
+import { SearchResearch } from "./SearchResearch";
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import type { AgentKey, ReaderProcessDTO, ReaderRoleDTO, ResearchRecordV1DTO } from "../../api/contracts";
+import type { AgentKey, ReaderProcessDTO, ReaderRoleDTO, ResearchRecordDTO } from "../../api/contracts";
 import { rolesForProfile, type ReducerState } from "../../state/model";
 import { AGENT_LABELS, AGENT_PURPOSE, isTerminalRun, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 
@@ -10,12 +11,12 @@ type Group = { id: string; label: string; keys: AgentKey[] };
 export function ResearchFlow({ process, workflowVersion, state, runStatus, record, selectedRole,
   onSelect, onClose, children }: {
   process: ReaderProcessDTO | null; workflowVersion?: string; state?: ReducerState | null;
-  runStatus: string; record?: ResearchRecordV1DTO | null; selectedRole: AgentKey | null;
+  runStatus: string; record?: ResearchRecordDTO | null; selectedRole: AgentKey | null;
   onSelect(role: AgentKey): void; onClose(): void; children?: ReactNode;
 }) {
   const version = process?.workflow_version ?? workflowVersion;
-  const known = /^evidence-production-v[1-7]$/.test(version ?? "");
-  const unified = version === "evidence-production-v7";
+  const known = /^evidence-production-v[1-8]$/.test(version ?? "");
+  const unified = version === "evidence-production-v7" || version === "evidence-production-v8";
   const terminal = isTerminalRun(runStatus);
   const activeRun = !terminal && runStatus !== "cancel_requested";
   const roles: FlowRole[] = process ? process.roles.map(r => ({ key: r.role_key,
@@ -51,6 +52,7 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, recor
   const close = () => { onClose(); trigger.current?.focus(); };
 
   return <section className="research-flow" aria-label="研究流程与环节详情">
+    {record ? <SearchResearch record={record}/> : null}
     <div className="rf-workspace" data-detail={selectedRole ? "open" : "closed"}>
       <section className="rf-map" aria-label="研究依赖流程">
         <header className="rf-panel-head"><h2>研究如何推进</h2><span>执行状态与产物状态分别记录</span></header>

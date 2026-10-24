@@ -2,6 +2,16 @@
 
 Status: Current — compatibility publication and evidence_v1 native research execution.
 
+New V8 runs use `research-record-v2`, owned by
+`agents/schemas/_research_record_v2.py`; `_search.py` owns closed search, field
+recovery and review types. V2 permits eight append-only material/derived
+snapshots, preserves historical checks and snapshot-specific numeric receipts,
+and saves batches, review applicability, pending gaps and stop reasons.
+`research/record_codec.py` dispatches by the explicit schema discriminator;
+projections, reports and the frontend consume the union without network calls.
+See [dual-search research](dual-search-research.md).
+
+The remainder describes the retained V1 baseline.
 `agents/schemas/_research_record.py` owns `research-record-v1`.
 New V7 report-delivery identities may add `company_basics` (typed claim-bound
 public introduction, fundamental and quantitative fields) and V3 `report_status`.
@@ -267,4 +277,4 @@ errors retain existing terminal behavior.
 
 ## Native V7 investment assessment and dialogue
 
-Current new studies use the closed V3 investment assessment and optional-on-the-outer-record V1 dialogue. V7 requires both; absent dialogue stays omitted from old serialization. Four ordered dimensions, bounded referenced reasons, original falsifiers, targeted specialist responses and separate adjudications are code-validated. Revised/withdrawn inference support is excluded. Missing operating/valuation support forces insufficient evidence; critical unresolved challenges or absent cited valuation anchors prohibit favorable. Version-specific publication and Reader qualification retain V1–V6 behavior. See the [unified company contract](unified-company-research.md) for workflow, failure and budget ownership.
+The V7 baseline retained by V8 uses the closed V3 investment assessment and optional-on-the-outer-record V1 dialogue. V7 requires both; absent dialogue stays omitted from old serialization. Four ordered dimensions, bounded referenced reasons, original falsifiers, targeted specialist responses and separate adjudications are code-validated. Revised/withdrawn inference support is excluded. Missing operating/valuation support forces insufficient evidence; critical unresolved challenges or absent cited valuation anchors prohibit favorable. Version-specific publication and Reader qualification retain V1–V6 behavior. See the [unified company contract](unified-company-research.md) for workflow, failure and budget ownership.

@@ -79,15 +79,17 @@ class JudgementConditionV1(_DialogueModel):
 
 def excluded_support(record):
     """Preserve original assertions for tracing, exclude retracted support."""
+    from tradingagents.research.search_effective import excluded_search_claims
+    excluded = excluded_search_claims(record)
     if record.dialogue is None:
-        return set()
+        return excluded
     changed = {r.hypothesis_id for r in record.dialogue.responses
                if r.status == "available" and r.disposition in {"revised", "withdrawn"}}
     replies = {r.response_id: r for r in record.dialogue.responses}
     changed.update(replies[a.response_id].hypothesis_id
                    for a in getattr(record.assessment, "adjudications", ())
                    if a.disposition in {"revised", "withdrawn"} and a.response_id in replies)
-    return {h.claim_id for h in record.hypotheses if h.hypothesis_id in changed}
+    return excluded | {h.claim_id for h in record.hypotheses if h.hypothesis_id in changed}
 
 
 def response_fact_ids(record, role, challenge_id):
@@ -116,7 +118,8 @@ def validate_dialogue(record):
         return
     if record.construction != "native" or record.mode != "company_research":
         raise ValueError("unified dialogue requires native company research")
-    if dialogue.input_snapshot_id != record.snapshots[-1].snapshot_id:
+    if (dialogue.input_snapshot_id not in {s.snapshot_id for s in record.snapshots} if record.schema_version == 'research-record-v2'
+            else dialogue.input_snapshot_id != record.snapshots[-1].snapshot_id):
         raise ValueError("dialogue snapshot mismatch")
     origins = {o.hypothesis_id: o.role for o in dialogue.origins}
     hypotheses = {h.hypothesis_id: h for h in record.hypotheses}

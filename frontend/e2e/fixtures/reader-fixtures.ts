@@ -729,3 +729,6 @@ export function terminalEvent(fixture: ScenarioFixture): string {
   };
   return `id: 1\nevent: ${eventType}\ndata: ${JSON.stringify(event)}\n\n`;
 }
+
+/** Backend-validated V8 record; presentation tests never invoke search. */
+export { default as dualSearchRecordFixture } from '../../src/test/fixtures/dual-search-research-v8.json' with {type:'json'};

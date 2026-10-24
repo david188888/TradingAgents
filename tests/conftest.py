@@ -118,3 +118,16 @@ def _no_live_report_explanation_provider(monkeypatch):
         raise RuntimeError("supplement provider disabled in offline tests")
 
     monkeypatch.setattr("tradingagents.execution.report_explanation.create_llm_client", disabled)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_search_transport(monkeypatch):
+    """Offline tests must explicitly mock paid standalone search transports."""
+    import requests
+    original = requests.sessions.Session.request
+    endpoints = ('https://api.deepseek.com/v1/tools/', 'https://api.tavily.com/search', 'https://api.tavily.com/extract')
+    def guarded(session, method, url, *args, **kwargs):
+        if str(url).startswith(endpoints):
+            raise AssertionError('offline test attempted an unmocked paid search transport')
+        return original(session, method, url, *args, **kwargs)
+    monkeypatch.setattr(requests.sessions.Session, 'request', guarded)

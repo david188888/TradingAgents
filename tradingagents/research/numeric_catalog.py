@@ -71,7 +71,7 @@ class _CatalogLimit(Exception):
 class _Builder:
     def __init__(self, record):
         self.record = record
-        self.snapshot = record.snapshots[0].snapshot_id
+        self.snapshot = record.snapshots[-1 if record.schema_version == 'research-record-v2' else 0].snapshot_id
         self.anchors = {}
         self.metadata = {}
         self.source_facts = defaultdict(list)
@@ -400,8 +400,53 @@ def _valuation(builder):
                 lineage={**lineage, "source_selector": {"component": "synthesis", "field": field}}, limitations=value.limitations)
 
 
-def build_numeric_catalog(record, *, source_only=False):
+def _recovered(builder):
+    """Expose replayed host arithmetic, preserving the original web lineage."""
+    record = builder.record
+    evidence_ids = {s.evidence_id for s in record.evidence}
+    latest = {}
+    for calculation in record.revision_calculations:
+        if calculation.derived_evidence_id in evidence_ids:
+            latest[(calculation.field, calculation.period, calculation.operation)] = calculation
+    from tradingagents.research.evidence_revisions import _descriptions, _groups
+    groups = _groups(record, evidence_ids)
+    current_inputs = {(key[0], key[1]): _descriptions(record, key, fields, record.snapshots[-1].snapshot_id)[0]
+                      for key, fields in groups.items()}
+    latest = {key: calculation for key, calculation in latest.items()
+              if (current := current_inputs.get(key[:2])) is not None
+              and current.status == 'available' and current.inputs_sha256 == calculation.inputs_sha256}
+    for key, fields in groups.items():
+        if (key[0], key[1], 'value') in latest or len({Decimal(f.value) for f in fields}) != 1:
+            continue
+        field = fields[0]
+        source = next(s for s in record.evidence if s.evidence_id == field.evidence_id)
+        builder.add(definition=f'recovered.{field.field}.value', label=FINANCIAL_LABELS.get(field.field, field.field),
+            value=field.value, unit=field.unit, facts=builder.all_facts([source.evidence_id]), sources=[source.evidence_id],
+            metadata={'report_period': key[1], 'source_basis': field.basis},
+            lineage=_source_lineage(source, field=field.field, report_period=key[1]), limitations=source.limitations)
+    for calculation in latest.values():
+        if calculation.status != 'available':
+            continue
+        facts = builder.all_facts(calculation.input_evidence_ids)
+        metadata = {'report_period': calculation.period, 'source_basis': '已核对原文的合并报表字段'}
+        if calculation.prior_period:
+            metadata['prior_period'] = calculation.prior_period
+        builder.add(definition=f'recovered.{calculation.field}.{calculation.operation}',
+            label=FINANCIAL_LABELS.get(calculation.field, calculation.field) +
+                {'value': '', 'difference': '同比变化', 'growth': '同比增速'}[calculation.operation],
+            value=calculation.value, unit=calculation.unit, facts=facts,
+            sources=calculation.input_evidence_ids, metadata=metadata,
+            basis='actual_reported' if calculation.operation == 'value' else 'computed_statistic',
+            lineage={'kind': 'calculation', 'calculation_version': 'recovered-field-arithmetic-v1',
+                'input_sha256': calculation.inputs_sha256, 'operands': list(calculation.input_evidence_ids)},
+            limitations=('calculation_not_economic_causality', 'derived_not_an_independent_source'))
+
+
+def build_numeric_catalog(record, *, source_only=False, snapshot_id=None):
     """Build without I/O or re-validating the containing record model."""
+    if snapshot_id is not None:
+        from tradingagents.research.record_codec import snapshot_view
+        record = snapshot_view(record, snapshot_id)
     builder = _Builder(record)
     try:
         builder.meta("identity", "证券身份：" + record.ticker)
@@ -431,6 +476,8 @@ def build_numeric_catalog(record, *, source_only=False):
                 _forecast(builder, source, payload)
             elif source.source_name in PRICE_SOURCES:
                 _prices(builder, source, payload)
+        if record.schema_version == 'research-record-v2':
+            _recovered(builder)
         _metrics(builder)
         if not source_only:
             _local_checks(builder)
