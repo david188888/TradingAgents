@@ -54,7 +54,7 @@ function install(status = "completed", profileInView = true): void {
 
 describe("evidence_v1 owns its single native Reader", () => {
   beforeEach(() => {
-    vi.mocked(useRunHistory).mockReturnValue({ runs: [], loading: false, error: null, refresh: vi.fn(), removeRun: vi.fn(), clearAll: vi.fn() });
+    vi.mocked(useRunHistory).mockReturnValue({ runs: [], loading: false, error: null, hasMore: false, loadingMore: false, loadMore: vi.fn(), refresh: vi.fn(), removeRun: vi.fn(), clearAll: vi.fn() });
     // An old contract read cannot override the producer profile.
     vi.mocked(useCatalyst).mockReturnValue({ state: { state: "ready" }, loading: false, error: null, kase: null,
       screen: null, stageStatus: null, stageDurations: null, stageCounts: null, uncommittedCandidates: 0 } as unknown as ReturnType<typeof useCatalyst>);

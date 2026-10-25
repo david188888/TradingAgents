@@ -42,6 +42,37 @@ def _plain(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
+def test_launcher_rejects_second_writer_even_on_another_port_and_releases_owner():
+    from tradingagents.web.cli import launch_web
+
+    composed = []
+
+    def factory(**kwargs):
+        composed.append(kwargs)
+        return object()
+
+    def second_server(_app, **_kwargs):
+        raise AssertionError("second server must not start")
+
+    def first_server(_app, **_kwargs):
+        with pytest.raises(RuntimeError, match="already owned"):
+            launch_web(
+                port=8766, ensure_runtime=lambda: SimpleNamespace(ok=True),
+                app_factory=factory, server_runner=second_server, output=lambda _: None,
+            )
+
+    launch_web(
+        port=8765, ensure_runtime=lambda: SimpleNamespace(ok=True),
+        app_factory=factory, server_runner=first_server, output=lambda _: None,
+    )
+    assert len(composed) == 1
+    launch_web(
+        port=8766, ensure_runtime=lambda: SimpleNamespace(ok=True),
+        app_factory=factory, server_runner=lambda *_a, **_k: None, output=lambda _: None,
+    )
+    assert len(composed) == 2
+
+
 def test_importing_cli_and_web_launcher_does_not_import_optional_web_stack():
     """Help and legacy commands must remain usable without the web extra."""
     script = r"""

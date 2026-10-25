@@ -212,3 +212,51 @@ def test_pdf_checkpoint_conflict_is_never_degraded(monkeypatch):
     monkeypatch.setattr('tradingagents.execution.search_coordinator.download_public_document', fail)
     with pytest.raises(CatalystCheckpointConflict):
         c.collect((make_search_request(requirements=(demand(),)),), input_snapshot_id='v0')
+
+
+@pytest.mark.parametrize('financial_first', [False, True])
+@pytest.mark.parametrize('shared_url', [False, True])
+def test_batch_pdf_recovery_uses_matching_demands(monkeypatch, financial_first, shared_url):
+    from types import SimpleNamespace
+
+    from tests.test_search_recovery import demand
+    from tradingagents.agents.schemas._search import SearchDocumentV1
+    from tradingagents.execution.budget import BudgetBucket
+
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'not-real')
+    financial_url = 'https://example.com/financial.pdf'
+    background_url = financial_url if shared_url else 'https://example.com/background.pdf'
+    class ByQuery(Session):
+        def post(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            hit_url = financial_url if kwargs['json']['query'] == 'financial' else background_url
+            return SimpleNamespace(status_code=200, json=lambda: {'results': [
+                {'url': hit_url, 'title': '报告', 'content': '发现阶段已有部分原文'}]})
+    journal = Journal()
+    budget = SearchBudget(journal.ledger)
+    coordinator = SearchCoordinator(ByQuery(), budget, journal)
+    background = make_search_request(task_id='background', query='background', role='event_context')
+    financial = make_search_request(task_id='financial', query='financial', role='operating_quality',
+                                    requirements=(demand(),))
+    requests = (financial, background) if financial_first else (background, financial)
+    downloads = []
+    def download(url, *, task_id, budget):
+        reservation = budget.reserve_page(task_id)
+        journal.ledger.mark_dispatched(reservation)
+        journal.ledger.settle(reservation, ok=True)
+        downloads.append(url)
+        return b'pdf', url
+    monkeypatch.setattr('tradingagents.execution.search_coordinator.download_public_document', download)
+    document = SearchDocumentV1(parser_version='official-pdf-v2', pdf_sha256='a'*64,
+        security_id='600519.SH', title='2025年年度报告', page_count=1,
+        pages=({'page': 1, 'text': '原始财务表'},))
+    monkeypatch.setattr('tradingagents.execution.search_coordinator.parse_search_document', lambda *a, **kw: document)
+    batch = coordinator.collect(requests, input_snapshot_id='v0')
+    hits = {hit.canonical_url: hit for hit in batch.hits}
+    assert hits[financial_url].document == document
+    assert downloads == [financial_url]
+    assert {request.role for request in batch.requests} == {'event_context', 'operating_quality'}
+    assert journal.ledger.consumed(BudgetBucket.DEEPSEEK_SEARCH) == 2
+    assert journal.ledger.consumed(BudgetBucket.SEARCH_PAGE) == 1
+    coordinator.collect(requests, input_snapshot_id='v0')
+    assert downloads == [financial_url]

@@ -107,14 +107,16 @@ export function useRunView(runId: string | null, refreshKey = 0): UseRunViewResu
 
   // Delayed refetch while the debate summary is still pending.
   useEffect(() => {
-    if (!view || !summaryPending(view)) return;
+    if (!view || view.view.run.run_id !== runId || !summaryPending(view)) return;
     const attempt = refreshAttempt.current;
     if (attempt >= SUMMARY_REFRESH_DELAYS_MS.length) return;
     const delay = SUMMARY_REFRESH_DELAYS_MS[attempt];
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
       refreshAttempt.current += 1;
-      getRunView(view.view.run.run_id)
+      getRunView(view.view.run.run_id, controller.signal)
         .then((next) => {
+          if (controller.signal.aborted) return;
           cacheView(next);
           setView(next);
         })
@@ -122,8 +124,11 @@ export function useRunView(runId: string | null, refreshKey = 0): UseRunViewResu
           // Leave the pending state; the user can still read L3/full report.
         });
     }, delay);
-    return () => window.clearTimeout(timer);
-  }, [view]);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [view, runId, refreshKey]);
 
   return { view, loading, error };
 }

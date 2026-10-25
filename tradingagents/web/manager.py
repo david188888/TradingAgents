@@ -174,6 +174,17 @@ class SingleRunManager:
     def set_concurrency(self, value: int) -> int:
         return self.scheduler.set_concurrency(value)
 
+    @contextlib.contextmanager
+    def deletion_guard(self):
+        """Keep deletion policy and disk mutation atomic with worker admission."""
+        with self._guard:
+            protected = set(self.active_run_ids)
+            protected.update(self.scheduler.pending)
+            for batch in self.store.list_batches():
+                if batch.status in {"queued", "running"}:
+                    protected.update(item.run_id for item in batch.items)
+            yield protected
+
     @property
     def _pending(self) -> deque[str]:
         """Compatibility handle for the frozen manager test suite, which

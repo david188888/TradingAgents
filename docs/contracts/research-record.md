@@ -1,280 +1,197 @@
-# Shared research record
+# Research record and execution contract
 
-Status: Current — compatibility publication and evidence_v1 native research execution.
+Status: Current
 
-New V8 runs use `research-record-v2`, owned by
-`agents/schemas/_research_record_v2.py`; `_search.py` owns closed search, field
-recovery and review types. V2 permits eight append-only material/derived
-snapshots, preserves historical checks and snapshot-specific numeric receipts,
-and saves batches, review applicability, pending gaps and stop reasons.
-`research/record_codec.py` dispatches by the explicit schema discriminator;
-projections, reports and the frontend consume the union without network calls.
-See [dual-search research](dual-search-research.md).
+This reference owns the important research invariants; complete fields and enums remain in code.
+Use [architecture](../../ARCHITECTURE.md) for responsibilities and
+[Web operations](../operations/evidence-research.md) for user actions.
 
-The remainder describes the retained V1 baseline.
-`agents/schemas/_research_record.py` owns `research-record-v1`.
-New V7 report-delivery identities may add `company_basics` (typed claim-bound
-public introduction, fundamental and quantitative fields) and V3 `report_status`.
-Only these identities allow an unrated/null investment stance. Absent new fields
-remain omitted for exact legacy serialization. The [unified company contract](unified-company-research.md)
-owns delivery, local-gap and synthesis-fallback semantics.
-Fresh numeric-policy V7 identities also carry `numeric_attribution`, validated
-against frozen inputs and compiled model fields. Historical records omit it;
-see [numeric narrative](numeric-narrative.md) for qualification and replay limits.
-`research/record_assembly.py` adapts committed company research, holding review
-and catalyst cases without model calls or provider requests. The original case
-remains authoritative for its conclusion, quality and research eligibility.
-This record does not establish that a conclusion is more accurate.
+## Versions and canonical sources
+
+| Surface | Canonical owner |
+| --- | --- |
+| Request/result | [execution/models.py](../../tradingagents/execution/models.py); Web admission in [web/schemas.py](../../tradingagents/web/schemas.py) and [api.py](../../tradingagents/web/api.py) |
+| Workflow and frozen policy | [native_versions.py](../../tradingagents/research/native_versions.py), [native_runner.py](../../tradingagents/execution/native_runner.py) |
+| Public record and version dispatch | [V1 schema](../../tradingagents/agents/schemas/_research_record.py), [V2 schema](../../tradingagents/agents/schemas/_research_record_v2.py), [record_codec.py](../../tradingagents/research/record_codec.py) |
+| Model proposals and acceptance | [agents/schemas](../../tradingagents/agents/schemas/), [native_model.py](../../tradingagents/execution/native_model.py), [native_research.py](../../tradingagents/graph/native_research.py) |
+| Publication and read qualification | [native_publication.py](../../tradingagents/execution/native_publication.py), [web/native_reader_versions.py](../../tradingagents/web/native_reader_versions.py) |
+| Browser wire shape | [frontend/src/api/contracts.ts](../../frontend/src/api/contracts.ts), mirroring backend DTOs |
+
+Fresh Web company research is `evidence-production-v8` / `native-research-kernel-v7` /
+`research-record-v2`. Historical V1–V7 workflows retain V1 records and their saved identities, prompts,
+budgets and qualification rules. Never infer a workflow version from a model label or optional field.
+Classic/catalyst case adapters are compatibility producers, not the current new-study path.
 
 ## Evidence and inference
 
-The record distinguishes source evidence, fact/inference/unknown claims,
-hypotheses, challenges, executed verifications and code-computed metrics.
-References are run-local and validated; inference dependencies must point to
-facts. A native hypothesis requires an explicit falsification condition.
-Existing inferences are labelled `adapted_inference`; the adapter does not
-invent assumptions, falsifiers or an original holding thesis.
+A record distinguishes sources, facts, inference/unknown claims, hypotheses, challenges, executed
+checks, metrics and assessment. References are run-local and snapshot-bound. A hypothesis needs
+cited facts, original falsifiers and alternatives; a title or management plan is not proof of delivery.
+Source availability, evidence qualification and economic conclusion are separate questions.
 
-V0 hashes the saved public evidence content and metadata. V1 preserves that
-content and adds verification evidence; it requires an execution record. A
-hypothesis cannot depend on evidence absent from its input snapshot. These are
-contract constraints. The classic and catalyst_v1 compatibility workflows still publish empty
-executed verification lists; evidence_v1 executes bounded native checks. Model challenge dispositions remain reported assessments.
+Models propose; code validates source/date/period/unit/identity, reference scope and calculations.
+Unknown or unavailable values never become zero. Reposts or derived calculations do not create new
+independent source families. User holding facts are declarations only in retained historical modes.
 
-## Programmatic verification
+V2 supports at most eight append-only material/derived snapshots. Field qualification records its
+first effective snapshot; later qualification cannot retroactively enter old numeric catalogs or
+receipts. New conflicts or invalid comparison bases disable stale derived inputs in current views.
+Original facts, checks and proofs remain replayable. V1 retains its original two-snapshot boundary.
 
-Fresh V7 identities select [hypothesis-directed challenge checks](hypothesis-directed-checks.md),
-challenge V3 proposals and `verification-plan-v2`. Tasks bind independent
-challenge propositions; results use `challenge_predicate_only`. Classification
-and task outcomes are additive, version-gated fields. The V1 behavior below
-remains for identities without `hypothesis-directed-checks-v1`.
+## Numeric and factual support
 
-`agents/schemas/_verification_plan.py` owns `verification-plan-v1`.
-`execution/verification_executor.py::execute_verification` accepts a validated
-V0 native record, a bounded plan and that run's existing `DurableBudgetLedger`.
-Company, catalyst and holding records use the same function. Compatibility
-inferences cannot be verified through it because they have no saved native
-falsification condition. The evidence_v1 shared kernel calls it before final synthesis; old production
-graphs do not call it.
+[Numeric catalog](../../tradingagents/research/numeric_catalog.py),
+[narrative compiler](../../tradingagents/research/numeric_narrative.py) and
+[integration](../../tradingagents/research/numeric_integration.py) own `anchored-narrative-v1`.
+The model selects scoped references; code renders numeric fragments with units, periods and
+actual/forecast labels before assigning public IDs. Literal unbound quantities are rejected.
+Receipts bind catalog/context, original proposal, compiled text and final field paths; cache,
+publication, Reader and Markdown replay the same proof without model work.
 
-The plan binds a single-target challenge, native hypothesis and exact saved
-assumption or invalidation text. Code accepts at most three allowlisted checks
-in one supplementary round, critical challenges first. Pure tools read saved,
-untruncated, qualified Sina/Tushare financial fields or compare a saved metric to an
-explicit threshold. Financial operands require matching fields/report periods,
-disclosure qualification and CNY amounts; growth requires a positive base and
-uses the unit `ratio`. Metric units must match. Tools cannot fetch documents,
-query vendors, run models or execute free expressions. Missing or future data
-remains unavailable. A saved metric threshold check does not recompute raw prices.
+[factual_premises.py](../../tradingagents/research/factual_premises.py) adds host-owned source and
+comparable-direction observations, interpretations and pending questions. Observations must stay
+within each field's allowed facts; key/overall support has additional binding gates.
+These mechanisms certify bindings and bounded arithmetic, not arbitrary sentence entailment.
+A correct revenue reference can still accompany an unsupported free-prose causal claim.
 
-Every V1 result has `scope=predicate_only` and binds its condition and plan
-digest. Necessary-condition truth supports that condition; falsehood contradicts
-it. An invalidation condition that is false stays inconclusive. These results
-neither prove the whole hypothesis nor close a critical challenge. Text binding
-also does not establish the economic sufficiency of its numeric translation.
-Older records omit these additive fields and retain `scope=unspecified`.
+Malformed shared JSON/schema cannot be salvaged as free text. Within existing repair budgets,
+independently valid original specialist siblings can survive reference rejection with original
+indices and closed reasons; effective rejection forces partial/LOW_CONFIDENCE. Valid repairs replace
+whole proposals rather than combining incompatible main/repair responses.
 
-The executor uses the caller's durable journal and original supplement/data
-budgets, including existing consumption. Local execution spends no HTTP/model
-attempts. Input identity reaches disk before dispatch. Changed input/plan is a
-conflict. Saved task/output caches replay without work; dispatch without saved
-result remains unknown and consumed, with no automatic retry. Persistence
-failure forbids further dispatch. Cancelled/refused tasks have no execution
-timestamp or verification record. Once the output is saved it is terminal,
-including unresolved tasks; calling again does not reset the round.
+## Challenge and verification
 
-Actual checks append V1 while preserving V0, claims, hypotheses, challenges and
-metrics. Successful arithmetic adds derived evidence with input lineage; it
-retains its source family and never becomes an independent source. An executed
-unavailable check may add V1 without new evidence; zero execution creates no
-V1. The validated output and operation outcomes are stored in the checkpoint.
-The native kernel publishes this output through the mandatory publication
-gate below. The default Web evidence_v1 request/profile and RunManager integration
-cover all three modes and batch company research. The Reader accepts committed native records without a paired case;
-the paired-case check applies only to compatibility records.
+Important challenges under `hypothesis-directed-checks-v1` classify verifiability and may propose an
+independent check using additional qualified frozen facts. They do not change the target hypothesis
+or its original conditions. [challenge_checks.py](../../tradingagents/research/challenge_checks.py)
+compiles `verification-plan-v2`; [verification_executor.py](../../tradingagents/execution/verification_executor.py)
+uses the existing durable ledger for at most three local tasks in one bounded round.
 
-## Native shared kernel
+Checks compare allowed financial operands or saved metrics; they do not execute free expressions,
+fetch sources or call models. Financial comparisons require the same evidence record, matching
+fields/periods/units and qualified disclosure dates; a shared supplier name alone is insufficient.
+Percentage growth needs a positive base. Future observations remain future, not missing past data.
 
-`research/native_record.py::build_native_record` derives V0 facts from saved,
-qualified source fields. It binds source identity and context digests, retains
-source families, labels title-only disclosures and user thesis declarations,
-and uses the same financial operand parser as C1. It performs no retrieval.
+Task outcomes distinguish no generated task, completion, cancellation, budget refusal and unknown
+dispatch. Tool failure is executed but unavailable. `challenge_predicate_only` supports/contradicts
+only the concrete proposition, never automatically resolves an economic challenge. Original-condition
+plans remain for saved identities without the new policy. Canonical classification/outcome types are
+[_challenge_verification.py](../../tradingagents/agents/schemas/_challenge_verification.py).
 
-`graph/native_research.py::run_native_research` accepts this facts-only record
-and the run's existing durable ledger. Operating, event and market specialists
-see separate fact views. Reservations and merge order are fixed, with at most
-two specialist workers. Each hypothesis requires cited facts, an invalidation
-condition and an alternative explanation. One anonymous challenge stage can
-return zero challenges. Immutable condition bindings compile up to three C1
-checks before one synthesis; no fixed bullish/bearish stance is required.
+## Financial and price calculations
 
-The optional `assessment`, owned by `_research_assessment.py`, binds the final
-snapshot, ordered mode dimensions, up to three key claims, primary challenge
-and next check. Missing valuation inputs or original holding thesis constrain
-the corresponding dimension. Announcement titles do not prove delivery;
-predicate checks cannot close economic challenges. Unresolved dimensions keep
-the assessment partial. No research accuracy improvement has been measured.
+[structured_financial_checks.py](../../tradingagents/research/structured_financial_checks.py) and
+[minimum_evidence.py](../../tradingagents/research/minimum_evidence.py) own the finite check pack.
+Calculation-v3 has five ordered checks: operating-disclosure coverage, full cash bridge, valuation
+context, structured baseline and same-period profit/CFO comparison. Older versions retain their
+own pack; passing an endpoint comparison does not pass a complete reported cash bridge.
 
-Checkpointed stage inputs and validated outputs replay without work. Dispatched
-model calls with no saved result stay consumed and are not automatically
-redispatched. The exact facts-only V0 is saved before model dispatch;
-`load_native_seed` reads it on recovery. Raw provider context must not be used
-to rebuild source-family digests after persistence, because RFC 8785 can
-normalize `2.0` to `2` while provider JSON used the original representation.
-Source-content strings and typed metrics in the saved V0 preserve its identity.
-The optional assessment is omitted when absent, preserving old
-record bytes/digests. `execution/native_model.py` supplies a bounded SDK adapter;
-the kernel itself has no model/provider SDK dependency.
+Use latest qualified same-period consolidated statements without mixing supplier cells or falling
+back to an older complete pair. Consolidated profit and parent-attributable profit are distinct.
+Exact Decimal calculations retain amounts for nonpositive bases but omit unsupported growth rates;
+conflicts and missing official crosschecks remain visible. Source qualification, arithmetic and
+saved input hashes are recomputed at their applicable snapshot.
 
-Source content distinguishes excerpts, saved summaries and selected original
-fields. The adapter admits only narrow source-specific content: qualified public/Tushare
-identity, Sina/Tushare financial fields, CNINFO announcement fields and bounded
-document excerpts/operating rows, qualified price and valuation fields, and V5/V6
-dated EPS/industry-candidate context. Compatibility adapters admit matching
-classic financial bundles. Announcement titles are not
-document bodies or proof that an event occurred. Missing content is explicit;
-analyst prose is never relabelled as original source text. Private storage
-locators, response envelopes and prompts are excluded. Content/snapshot hashes
-refer to the admitted public content, not private files.
+[native_valuation.py](../../tradingagents/research/native_valuation.py) assembles qualified saved
+quotes/history/profit into the pure [valuation chain](../../tradingagents/research/valuation.py).
+A historical-multiple reference range is assumption-dependent, not intrinsic value or a trade target.
+Missing valuation can prohibit favorable without erasing supported cautious operating analysis.
 
-## Metrics and reading
+[price_statistics.py](../../tradingagents/research/price_statistics.py) and
+[risk_metrics.py](../../tradingagents/dataflows/risk_metrics.py) compute saved historical return-risk
+and ATR statistics after price/calendar/adjustment qualification. They do not replace valuation or
+forecast future losses; unavailable benchmark data must not manufacture Beta. Units, methods,
+sample/window and lineage travel with the saved metric.
 
-Saved qualified native public/Tushare and legacy catalyst Tushare price evidence projects annualized volatility,
-signed historical return quantile, ES, drawdown, ATR and unavailable Beta when
-no qualified benchmark exists. The projection does not recalculate metrics.
-Each item carries its input reference/hash, method, unit, window, sample,
-version and availability. Classic records currently have no corresponding
-local price metrics; the existing valuation artifact is separate. See
-[calculation methods](local-price-statistics.md).
+## Search and execution limits
 
-The execution layer publishes the record after the existing source-case commit
-or catalyst publication authorization. Replay reuses committed output.
-Compatibility-record failure preserves the source case and emits a safe
-`artifact.projection_unavailable` event. Native callers use
-`execution/native_publication.py::publish_native_record`: a frozen candidate,
-lifecycle authorization and committed checkpoint must precede public promotion.
-NativeRunner also reenters consumer lifecycle arbitration when replaying an already
-committed record after interruption; the publisher itself retains read-only replay.
-Publication failure raises rather than using the additive fallback. Native
-Markdown is rendered from that same record without another model call.
+Dedicated APIs remain first for identity/quantitative inputs. DeepSeek Search/Fetch and Tavily
+Search/Extract discover context and field-specific fallback. Default Tavily is basic without generated
+answers. Queries bind company, code and cutoff; snippets only aid discovery. Unknown publication,
+missing original content, future dates and truncation cannot become qualified numerical evidence.
+Historical admission requires a verifiable immutable official PDF, not a current web page labelled old.
 
-`GET /api/runs/{run_id}/reader/record` validates committed artifact bytes,
-identity and, for adapted records, the paired source-case hash. It returns `ready` or a stable
-unavailable reason; missing runs use the existing 404. Missing historical
-records remain missing. Reading, expanding and refreshing never backfill,
-dispatch models or query providers.
+Supported identity/profile and recognized FY/H1 consolidated financial rows may recover fields after
+exact code, period, currency, unit, scope and source-location/hash checks. Other layouts, full adjusted
+price windows and valuation snapshots remain unavailable unless the original requirement is met.
+Search never silently overwrites a dedicated value; conflict candidates remain explicit.
+PDF download/parse bounds are 20 MiB, 500 pages, up to 12 selected pages × 4000 characters.
 
-The evidence_v1 workbench uses the native record as its single main Reader. Its
-V6 desktop report presents mode scope and independent judgement before key grounds, principal doubt
-and next check, executed checks, valuation and quantitative context. Linked facts
-and saved source content appear in the evidence panel or narrow-desktop drawer.
-Process, per-Agent proposals and the complete record remain separate read views;
-proposal authorship requires frozen version-specific qualification, not text
-similarity. See the [Reader architecture](../architecture/research-reader.md#reader-projection-and-degradation)
-for sequence and degradation boundaries. It does not fetch or mount the
-classic/catalyst case Reader. Creation offers the three native scopes and fixed roles.
-Existing profiles retain saved quantitative context below the catalyst brief and
-alongside the classic Reader. The catalyst citation drawer shows saved source content
-before locator metadata. Records and source content are bound to the selected
-run; missing content or unavailable values are not estimated. V4 adds a saved-content modal and deterministic valuation context. Same-evidence
-quality/cost comparison and broader human acceptance remain separate from browser
-checks and single-symbol operational smoke. See
-[evidence research operations](../operations/evidence-research.md).
+| Shared V8 pool | Maximum |
+| --- | --- |
+| Search requests, including failures/retries | DeepSeek 50; Tavily 50 across keys |
+| Extra body attempts, including redirects | 8 across Fetch/Extract/PDF |
+| Supplementary rounds | 3, selecting at most 3 gaps per round |
+| Supplementary model attempts | 3 per round, 9 total including repairs/retries |
+| Baseline model attempts | 12 total: at most 8 main and 1 focus; repairs/retries consume that same total |
+| Baseline repair/retry sub-pools | 2 structured repairs (1 per stage); 3 shared transient retries |
+| Dedicated data | 24 capability calls / 64 HTTP attempts |
+| All data HTTP | 172 attempts |
+| Search activity | 90 seconds, union of overlapping intervals, excluding model thinking |
+| Whole research | 300 active seconds by default, excluding queue time; effective timeout is frozen in run identity |
 
-## Official document content and coverage scope
+Reservations persist before dispatch. Recovery carries spent/unknown attempts forward. Search retries
+at most once; access/payment/security rejection does not gain retries or new quota by rotating keys.
+No new qualified material, exhausted pools/deadline or unavailable sources produce explicit gaps and
+stop reasons; cancellation propagates. A judgement is updated only after its affected review executes.
+Baseline plus review is at most 21 model attempts. Review retries/repairs use the review pool and
+its three-attempt per-round ceiling, rather than replenishing baseline repair/retry allowance.
+The code-owned [search policy](../../tradingagents/research/native_versions.py),
+[search_budget.py](../../tradingagents/execution/search_budget.py),
+[search_reviews.py](../../tradingagents/execution/search_reviews.py) and
+[_search.py](../../tradingagents/agents/schemas/_search.py) define exact semantics.
 
-Native v3 retains the v1 wire shape. `cninfo.document_excerpt` is saved as
-`excerpt`, with a PDF page locator and document hash; bounded excerpts are not
-full document coverage. `cninfo.operating_detail` retains qualified row fields,
-original row/header/unit, period, classification and page/hash. Both are official
-company disclosures, not independent implementation verification. Operating rows
-are separate from the closed Sina/Tushare financial families accepted by C1.
+## Publication and judgement
 
-Collector-produced limitations use `global_coverage:<capability>:<status>` and
-`global_gap:<capability>:<reason>`. New specialist unknowns are
-`specialist_unknown:<role>:<text>`; the role is code-owned. Synthesis receives
-collector coverage in addition to these scoped unknowns. Read projections
-label each scope explicitly, and do not upgrade old unscoped unknowns into a
-global missing-source finding. These strings are additive annotations, not
-new model permissions or a change to the frozen evidence qualification rules.
+The four-dimensional assessment carries referenced support/counterevidence, original change
+conditions, targeted replies and separate adjudications. Revised/withdrawn original inference IDs
+cannot silently remain affirmative support. Missing operating evidence, valuation anchors and
+critical unresolved challenges constrain the stance according to the saved policy.
 
-## Native v4 valuation
+Fresh sectioned synthesis validates each dimension, adjudication, overall judgement and conditions
+independently. Accepted sections are immutable; one targeted repair fills failed sections. Missing
+overall or critical adjudication suppresses the rating; other failures can retain a qualified stance
+with partial/LOW_CONFIDENCE and visible unfinished synthesis. Zero usable synthesis retains a basic
+report/specialist summary, not a fabricated model decision. Cancellation/deadline/persistence failures
+remain lifecycle failures.
 
-The optional `valuation` field carries `NativeValuationV1`: saved typed inputs,
-input SHA256, source evidence IDs, deterministic `ValuationAssessmentV1` and
-limitations. Validators bind run/ticker/cutoff, require qualified source refs
-and recompute the input digest and assessment. Producers admit source payloads
-against frozen family hashes and qualified dates. Absence omits this additive
-field from serialized records, preserving old record and checkpoint digests.
-The code-owned schema, rather than this prose, defines the complete fields.
-V1–V3 recovery does not gain V4 facts, source views, valuation policy or prompt
-inputs. Reader displays missing valuation explicitly without deriving new data.
+A frozen candidate, durable lifecycle authorization and committed checkpoint must precede native
+public promotion. Publication failure cannot complete the run. Compatibility projections may be
+unavailable without destroying their original case. [report_delivery.py](../../tradingagents/research/report_delivery.py),
+[synthesis_sections.py](../../tradingagents/research/synthesis_sections.py) and publication own these gates.
 
-## Native v5 bounded evidence checks
+## Reader, focus and explanations
 
-The outer wire contract remains `research-record-v1`. Optional `evidence_checks`
-and `challenge_bindings` are omitted when absent, preserving old serialization.
-V5/V6 use `research-assessment-v2`; V7 uses `research-assessment-v3`; v1 remains accepted for old records. Canonical
-definitions are in `agents/schemas/_evidence_checks.py`, `_native_stage.py` and
-`_research_assessment.py`, with binding/recomputation in `_research_record.py`.
+`/api/runs/{id}/reader/record` dispatches committed V1/V2 records; it is the native report entry.
+Process and fixed-role stage endpoints qualify saved outputs at a captured sequence, without prompts
+or raw envelopes. A stage record is unassessed and provisional; it cannot substitute for failed final
+qualification. Unsupported versions, missing/corrupt provenance and absent history remain explicit.
 
-Official numeric evidence carries explicit units, current/prior periods, raw
-cells and row/header page locators. Dated EPS scenarios and target-bound peer
-selection/quotes retain their dates and identities. They supplement the existing
-valuation artifact without manufacturing additional reference-price anchors.
-Official report, summary and notice for one security/period share one disclosure
-family; repeated fields and multiple wrappers do not create independent sources.
+Optional focus is a separate baseline-digest-bound artifact, using one dedicated attempt within the
+baseline pool and no repair/retry/tools. It cannot alter baseline judgement; local optional failure
+preserves the baseline, while cancellation/global corruption still propagates.
+Plain-language explanations are independent post-completion artifacts with at most one main plus
+one repair over 120 seconds. GET reads only; eligible explicit POST retries preserve attempt history.
+Their failure does not change research completion, ratings or original Markdown.
 
-`research/minimum_evidence.py` owns the finite question scopes, arithmetic and
-requirements. Check identity and input content digest bind frozen V0, even after
-C1 adds a later snapshot. Validation recomputes all saved checks and challenge
-assessments; changing outcome, question, arithmetic or scope rejects the record.
-The model may select an admitted check/risk/date binding but cannot write a
-resolved economic outcome. Reader distinguishes evidence sufficiency, an observed
-CFO-decline risk, future observations and unavailable/conflicting evidence.
+Reading/projection/export does not fetch new research, generate a missing historical artifact or
+call a model. Native research creates no classic `/reader/package`; external classic consumption is
+covered in the [compatibility reference](../operations/catalyst-research.md).
 
-Reader and Markdown use this same validated record. Reading performs no external
-retrieval or model generation. The standalone 600803 HTML acceptance preview is
-an artifact produced from that record, not a new runtime HTML-export endpoint.
-V1–V4 recovery never acquires V5 source views, prompts, checks or outcomes.
+## Change propagation
 
-Fresh V7 runs may additionally freeze the [structured financial check policy](structured-financial-checks.md).
-Its calculation-v3 pack keeps the original three scopes and adds two independent
-structured comparisons. A passed endpoint comparison is not a passed full cash
-bridge. Calculation-v2 records retain exact three-check replay; v1 keeps its
-existing saved-result read policy.
+Change canonical models first, then producers, saved identity/replay, publication, backend DTOs,
+frontend wire types and consumers. Keep supported historical bytes and version-specific guards.
+Run focused contract tests; rebuild tracked SPA assets for frontend changes. Operational instructions
+belong in [Web operations](../operations/evidence-research.md), not duplicated field lists here.
 
-
-## Native v6 supplementary focus contract
-
-The baseline remains `ResearchRecordV1` / `research-record-v1`, without supplemental
-fields. For V6, `assessment.research_question` contains the code-owned mode
-objective. The original optional request field remains `research_question` for
-compatibility and recovery identity, while the core kernel never consumes it.
-
-`agents/schemas/_research_focus.py` owns `FocusProposalV1` and
-`ResearchFocusResponseV1` / `research-focus-response-v1`. Host-owned identity binds
-run, ticker, mode, cutoff, final input snapshot, baseline canonical digest and
-normalized focus. Available responses contain a closed proposal; unavailable
-responses contain only a stable reason. Answerability is distinct from
-verification and research quality. References must point to qualified saved
-baseline claims/sources; unsupported, undated, unavailable or future material is
-rejected. The supplement cannot add or edit baseline research entities.
-
-A separate publication barrier and frozen candidate bind the already-committed
-baseline. The read-only `/reader/focus` envelope (`web/focus_projection.py`) uses
-schema version 1 and explicit ready/pending/unavailable/not_applicable states.
-Ready can contain a canonical unavailable response. Only committed bytes can
-supply a proposal; local optional promotion failure is a durable unavailable
-state. Reader, Agent review and Markdown consume these same qualified sources.
-
-V6 enables one dedicated focus budget within twelve total model attempts. V1–V5
-retain zero focus budget, their original prompts/identities/roles and Markdown
-semantics. No optional failure may change baseline judgement, quality, references,
-challenges or next checks. Explicit cancel and global persistence/integrity
-errors retain existing terminal behavior.
-
-
-## Native V7 investment assessment and dialogue
-
-The V7 baseline retained by V8 uses the closed V3 investment assessment and optional-on-the-outer-record V1 dialogue. V7 requires both; absent dialogue stays omitted from old serialization. Four ordered dimensions, bounded referenced reasons, original falsifiers, targeted specialist responses and separate adjudications are code-validated. Revised/withdrawn inference support is excluded. Missing operating/valuation support forces insufficient evidence; critical unresolved challenges or absent cited valuation anchors prohibit favorable. Version-specific publication and Reader qualification retain V1–V6 behavior. See the [unified company contract](unified-company-research.md) for workflow, failure and budget ownership.
+<!-- Compatibility anchors for existing section links. -->
+<a id="metrics-and-reading"></a>
+<a id="native-shared-kernel"></a>
+<a id="native-v4-valuation"></a>
+<a id="native-v5-bounded-evidence-checks"></a>
+<a id="native-v6-supplementary-focus-contract"></a>
+<a id="native-v7-investment-assessment-and-dialogue"></a>
+<a id="official-document-content-and-coverage-scope"></a>
+<a id="programmatic-verification"></a>
+<a id="shared-research-record"></a>

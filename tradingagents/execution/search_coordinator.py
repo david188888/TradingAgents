@@ -195,16 +195,22 @@ class SearchCoordinator:
                 outcomes = tuple(future.result() for future in pending)
             merged = {}
             families = {}
-            for outcome in outcomes:
+            family_requests = {}
+            for request, outcome in zip(requests, outcomes, strict=True):
                 for hit in outcome.hits:
                     url = canonical_url(hit.url)
                     fingerprint = hashlib.sha256(' '.join(hit.content.split()).encode()).hexdigest() if len(hit.content) >= 200 else None
                     family = families.setdefault(fingerprint, url) if fingerprint else url
+                    family_requests.setdefault(family, []).append(request)
                     candidate = hit.model_copy(update={'canonical_url': url, 'family_id': family})
                     old = merged.get(family)
                     if old is None or (not candidate.truncated, len(candidate.content)) > (not old.truncated, len(old.content)):
                         merged[family] = candidate
-            extracted = tuple(self._body(hit, requests[0]) for hit in merged.values())
+            # Extraction needs the demands that discovered this source, including
+            # a later financial demand for a URL also found by a background task.
+            extracted = tuple(self._body(hit, next(
+                (request for request in family_requests[family] if request.requirements),
+                family_requests[family][0])) for family, hit in merged.items())
             # Fetch/Extract may reveal that initially distinct discovery URLs
             # are the same syndicated text. Keep their discovery/role linkage,
             # but never count them as independent source families.

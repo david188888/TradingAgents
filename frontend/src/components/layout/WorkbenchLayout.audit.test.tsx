@@ -50,6 +50,7 @@ describe("WorkbenchLayout audit center integration", () => {
       runs: [],
       loading: false,
       error: null,
+      hasMore: false, loadingMore: false, loadMore: vi.fn(),
       refresh: vi.fn().mockResolvedValue(undefined),
       removeRun: vi.fn().mockResolvedValue(true),
       clearAll: vi.fn().mockResolvedValue({ removed: 0, skipped_active: false }),

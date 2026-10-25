@@ -179,3 +179,110 @@ def test_package_rejects_unvalidated_point_in_time_observation() -> None:
             metric_definitions=(metric_definition("net_margin"),),
             observations=(observation("margin", "net_margin", "600000.SH", 0.2).model_copy(update={"point_in_time": False}),),
         )
+
+
+def test_metric_slots_cannot_swap_profit_and_revenue():
+    with pytest.raises(ValueError, match='do not match'):
+        calculate_metric('gross_margin', {
+            'gross_profit': observation('revenue', 'revenue', 'target', 1000),
+            'revenue': observation('profit', 'gross_profit', 'target', 100),
+        })
+
+
+@pytest.mark.parametrize('metric_id,slots', [
+    ('gross_margin', ('gross_profit', 'revenue')),
+    ('net_margin', ('net_income', 'revenue')),
+    ('cash_conversion', ('operating_cash_flow', 'net_income')),
+    ('debt_ratio', ('total_liabilities', 'total_assets')),
+    ('pe', ('equity_value', 'net_income')),
+    ('pb', ('equity_value', 'equity')),
+    ('ps', ('equity_value', 'revenue')),
+])
+def test_ratios_require_same_recognized_financial_period(metric_id, slots):
+    result = calculate_metric(metric_id, {
+        slots[0]: observation('first', slots[0], 'target', 100, period='2026Q1'),
+        slots[1]: observation('second', slots[1], 'target', 1000, period='2026Q2'),
+    })
+    assert result.status == 'unavailable'
+    assert result.output_observation.unavailable_reason == 'incomparable_periods'
+
+
+@pytest.mark.parametrize('frequency,current,prior', [
+    ('quarterly', '2026Q2', '2026Q1'),
+    ('quarterly', '2026Q2', '2025Q1'),
+    ('annual', '2026', '2024'),
+    ('annual', 'unknown', 'unavailable'),
+    ('quarterly', '2026-06-30', '2025-06-30'),
+    ('ttm', '2026-06-30', '2025-06-30'),
+])
+def test_yoy_does_not_guess_periods_or_reporting_basis(frequency, current, prior):
+    result = calculate_yoy('revenue_yoy',
+        observation('current', 'revenue', 'target', 120, period=current).model_copy(update={'frequency': frequency}),
+        observation('prior', 'revenue', 'target', 100, period=prior).model_copy(update={'frequency': frequency}))
+    assert result.status == 'unavailable'
+    assert result.output_observation.value is None
+
+
+def test_roe_cannot_infer_equity_endpoints_from_matching_period_labels():
+    result = calculate_metric('roe', {
+        'net_income': observation('profit', 'net_income', 'target', 20),
+        'equity_begin': observation('begin', 'equity_begin', 'target', 100),
+        'equity_end': observation('end', 'equity_end', 'target', 100),
+    })
+    assert result.status == 'unavailable'
+    assert result.output_observation.unavailable_reason == 'period_basis_unavailable'
+
+
+@pytest.mark.parametrize('periods,want', [
+    (('2026Q1', '2026Q2'), None),
+    (('2025Q2', '2026Q1', '2026Q2'), 0.2),
+])
+def test_package_yoy_selects_previous_year_same_quarter(periods, want):
+    from tradingagents.research.research_package import _derived_evaluations
+
+    values = tuple(observation('r'+str(i), 'revenue', 'target', 120 if p == '2026Q2' else 100,
+                               period=p) for i, p in enumerate(periods))
+    yoy = [item for item in _derived_evaluations(values) if item.metric_id == 'revenue_yoy']
+    if want is None:
+        assert yoy == []
+    else:
+        assert len(yoy) == 1
+        assert yoy[0].output_observation.value == pytest.approx(want)
+        assert yoy[0].input_observation_ids == ('r2', 'r0')
+
+
+@pytest.mark.parametrize('period,frequency', [('unknown', 'annual'), ('2026Q2_YTD', 'quarterly'),
+                                              ('2026-06-30', 'ttm')])
+def test_ratio_matching_labels_do_not_establish_unknown_period_basis(period, frequency):
+    result = calculate_metric('gross_margin', {
+        key: observation(key, key, 'target', value, period=period).model_copy(update={'frequency': frequency})
+        for key, value in (('gross_profit', 20), ('revenue', 100))
+    })
+    assert result.status == 'unavailable'
+    assert result.output_observation.unavailable_reason == 'period_basis_unavailable'
+
+
+@pytest.mark.parametrize('periods,want', [
+    (('2024-12-31', '2026-12-31'), None),
+    (('2024-12-31', '2025-12-31', '2026-12-31'), 0.2),
+])
+def test_package_annual_yoy_requires_exact_prior_year(periods, want):
+    from tradingagents.research.research_package import _derived_evaluations
+
+    values = tuple(observation('r'+str(i), 'revenue', 'target', 120 if p == '2026-12-31' else 100,
+                               period=p).model_copy(update={'frequency': 'annual'})
+                   for i, p in enumerate(periods))
+    yoy = [item for item in _derived_evaluations(values) if item.metric_id == 'revenue_yoy']
+    if want is None:
+        assert yoy == []
+    else:
+        assert len(yoy) == 1
+        assert yoy[0].output_observation.value == pytest.approx(want)
+        assert yoy[0].input_observation_ids == ('r2', 'r1')
+
+
+def test_missing_operand_does_not_hide_wrong_supplied_slot_metric():
+    with pytest.raises(ValueError, match='do not match'):
+        calculate_metric('gross_margin', {
+            'gross_profit': observation('wrong', 'revenue', 'target', 100),
+        })

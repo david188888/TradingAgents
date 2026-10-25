@@ -58,24 +58,28 @@ def launch_web(
         from .api import create_app
 
         app_factory = create_app
-    application = app_factory(checkpoint_available=bool(capability_report.ok))
+    from tradingagents.runtime.ownership import own_run_store
 
-    url = f"http://{LOOPBACK_HOST}:{port}"
-    (output or print)(url)
+    # Acquire before app construction/recovery, and hold through server shutdown.
+    with own_run_store():
+        application = app_factory(checkpoint_available=bool(capability_report.ok))
 
-    if open_browser:
-        if browser_opener is None:
-            from webbrowser import open as open_url
+        url = f"http://{LOOPBACK_HOST}:{port}"
+        (output or print)(url)
 
-            browser_opener = open_url
-        browser_opener(url)
+        if open_browser:
+            if browser_opener is None:
+                from webbrowser import open as open_url
 
-    if server_runner is None:
-        from uvicorn import run as run_server
+                browser_opener = open_url
+            browser_opener(url)
 
-        server_runner = run_server
-    server_runner(
-        application,
-        host=LOOPBACK_HOST,
-        port=port,
-    )
+        if server_runner is None:
+            from uvicorn import run as run_server
+
+            server_runner = run_server
+        server_runner(
+            application,
+            host=LOOPBACK_HOST,
+            port=port,
+        )

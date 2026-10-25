@@ -1,70 +1,92 @@
 # Contributing
 
-TradingAgents is a Python 3.10+ project with a React/TypeScript workbench. Contributions should keep the local-first, research-only product boundary intact and should preserve existing dirty work in unrelated files.
+TradingAgents maintains a local A-share Web research workbench. Preserve evidence provenance,
+saved-run compatibility and unrelated work. Start with [architecture](ARCHITECTURE.md) and the
+[scoped Agent guides](AGENTS.md) for files being changed.
 
 ## Setup
 
 ```bash
-# Reuse the existing environment; create it only if absent:
-# conda create -n tradingagents python=3.13
 conda activate tradingagents
 python -m pip install -e ".[china,web,dev]" --index-url https://pypi.org/simple
 npm --prefix frontend ci
 ```
 
-Copy `.env.example` to `.env` for Web credentials and supported environment defaults. The retained CLI can additionally load `tradingagents.config.example.json` copied to the ignored `tradingagents.local.json`; the Web server does not load that JSON. Never commit API keys, provider responses, local run stores, or private datasets. Coding Agents should read [AGENTS.md](AGENTS.md) and the applicable scoped guide before editing.
+Reuse the existing Conda environment; only create it if absent. Copy `.env.example` to `.env` on first
+setup. The legacy CLI may read `tradingagents.local.json`; Web does not. Credentials and runtime data
+must stay out of commits. Node is for frontend development/builds, not installed-Web runtime.
+
+## Change routing
+
+| Change | Start here |
+| --- | --- |
+| Request/result, cancellation, execution identity | `tradingagents/execution/models.py`, `native_runner.py`, `runtime/` |
+| Research artifacts, qualification, calculations | `tradingagents/agents/schemas/`, `research/`, `dataflows/` |
+| Role sequence or scope | `tradingagents/graph/native_research.py`, `research/native_policy.py` |
+| Web/Reader/SSE | `tradingagents/web/` and `frontend/src/api/contracts.ts`, then consumers |
+| Browser interaction/state | `frontend/AGENTS.md`, API transport, stores/hooks, components |
+
+Canonical schemas own fields and validation. Update producers, persistence/replay, projections and
+consumers together; do not derive a new machine contract from Markdown or a rendered report.
+Keep historical identities/prompts and absent-field serialization compatible where supported.
 
 ## Scoped Validation
 
-Choose checks that match the change:
+Choose the smallest set of checks that covers the changed behavior and its consumers.
+Full pytest, all frontend tests and all E2E tests are not required after every optimization.
 
-```bash
-python scripts/check_agent_docs.py
-python -m pytest -m unit
-python -m pytest
-ruff check .
-npm --prefix frontend run typecheck
-npm --prefix frontend run test -- --run
-npm --prefix frontend run build
-npm --prefix frontend run test:e2e
-```
+| Change | Default validation |
+| --- | --- |
+| Documentation or comments only | `python scripts/check_agent_docs.py` for Markdown changes; `git diff --check`. No application tests; the frontend source build rule still applies if `frontend/src/` changes. |
+| Local Python behavior | Ruff on changed Python files, including tests, plus relevant pytest files or test cases. |
+| Frontend source | Relevant Vitest files for affected behavior plus one `npm --prefix frontend run build`. |
+| Persistence, recovery, API contracts or the research pipeline | Expand regression to affected producers and consumers; run the relevant Playwright specs when a complete browser flow is affected. |
+| Version release or broad shared changes | Broader offline regression for affected layers; use full suites when the impact spans the layer. GitHub publication alone does not require a full run. |
 
-The pytest, Vitest and Playwright suites are tracked and available in fresh
-clones after contributor setup. Before the first end-to-end run, execute
-`npx playwright install chromium` from `frontend/` and build the SPA. The
-fixture server uses `python`; set `TRADINGAGENTS_E2E_PYTHON` to the contributor
-interpreter when needed. Linux hosts may also need Playwright browser system
-dependencies. See the [frontend guide](frontend/AGENTS.md).
+Run `git diff --check` for every change. For a local fix, select explicit test paths or cases,
+for example `python -m pytest tests/test_search_budget.py` or
+`npm --prefix frontend run test -- --run src/hooks/useRunStream.test.ts`.
+Add or adjust tests for meaningful behavior changes and regression gaps; small edits do not
+automatically need new tests. Preserve existing tests unless their removal is separately agreed.
 
-No GitHub Actions workflows are tracked in this fork. Install the local Ruff
-commit hook once with `pip install pre-commit && pre-commit install`.
-Run relevant checks locally and verify remote checks/review requirements when
-publishing; absent checks are not CI success. Documentation changes require
-`python scripts/check_agent_docs.py` and `git diff --check`. Frontend install,
-typecheck/build and tests apply to changes affecting that layer.
+Reuse passing checks while the relevant code, tests, fixtures, configuration, dependencies and
+environment remain unchanged. Commit, push or PR creation alone does not invalidate them.
+After a broader run passes, do not rerun its covered subsets; after a change or failure, rerun
+the checks it affects. Record the scope and result in the PR rather than repeating the run.
 
-After changing `frontend/src/`, `npm --prefix frontend run build` must be run and the generated `tradingagents/web/static/` output must remain in sync. Do not edit generated assets by hand.
+Run `npm --prefix frontend ci` for first setup, dependency/lockfile changes or an incomplete install,
+not for every frontend edit. Build already runs TypeScript checks and writes to tracked
+`tradingagents/web/static/`; include generated changes in the same change. Standalone `typecheck`
+is useful for quick feedback during editing, but is not an additional delivery requirement.
+For Playwright, install Chromium once from `frontend/` with `npx playwright install chromium`,
+build the SPA, and set `TRADINGAGENTS_E2E_PYTHON` when the fixture server's `python` would use
+another environment. Select affected specs; see the [frontend guide](frontend/AGENTS.md).
+
+`python -m pytest -m unit` and `python -m pytest -m 'not integration'` select different subsets;
+many tests have no level marker, and neither selection guarantees offline execution. Inspect
+selected tests before broader runs. Live model/provider checks require explicit authorization;
+the real DeepSeek integration test also requires `TRADINGAGENTS_RUN_LIVE_TESTS=1` and a real key.
+Report exact suites, exclusions and failures rather than calling a scoped run “all tests passed”.
 
 ## Documentation Impact
 
-Use the [documentation index](docs/README.md) to classify the change before opening a PR.
+Maintain four core reader/developer pages: the README pair, architecture, Web operations and this
+guide. `docs/README.md` is short navigation; technical references are optional. Put each current fact
+in its owning page and link to it elsewhere. Explain goals, responsibilities, critical boundaries and
+how to find the canonical code; do not duplicate full schema fields or per-version implementation logs.
 
-- Product overview: keep the Chinese [README.md](README.md) and [English README](README.en.md) aligned and concise. Budgets, version-specific execution rules and API/recovery details belong in focused documents. `README.zh-CN.md` is a compatibility pointer; `pyproject.toml` uses the English README as its package description.
-- Public request, response, event, artifact, or runtime semantics: update the canonical source, consumers, [contract index](docs/contracts/README.md), and affected current-state docs.
-- Module boundaries or execution flow: update [ARCHITECTURE.md](ARCHITECTURE.md) and the relevant scoped `AGENTS.md`.
-- Reader, Companion, or Audit behavior: update [Reader architecture](docs/architecture/research-reader.md) and its contract sources.
-- A-share data capability or provider behavior: update the focused data reference and any applicable plan or decision record.
-- Temporary implementation work: update the owning plan; do not present the plan as shipped architecture.
-
-If a change has no documentation impact, state `No documentation impact` in the PR description. Otherwise name the updated documentation surface explicitly.
+Keep Chinese/English READMEs aligned. Update the owner when behavior/configuration changes; otherwise
+state `No documentation impact` in the PR. New historical reviews/plans are not required for routine
+changes: keep temporary execution notes outside maintained docs, and retain only durable decisions or
+material verification evidence. Existing archives stay available and are not current instructions.
+Old document paths may remain short pointers so saved links keep working.
 
 ## PR Hygiene
 
-Keep changes scoped, explain compatibility implications, and include the commands used for validation. Do not commit local secrets, ignored test artifacts, run-store data, generated caches, or unrelated dirty files. A clean documentation diff should pass `git diff --check`.
+Do not commit secrets, user run stores, caches, private datasets or unrelated changes. Use the existing
+Ruff pre-commit gate without bypassing it. No GitHub Actions workflows are tracked in this fork;
+verify remote requirements when publishing, and do not treat absent checks as successful CI.
 
-When Git publication is authorized, use branch → PR → merge after applicable
-local checks and required remote checks/reviews pass. Stop for material scope
-uncertainty, conflicts, failed/pending checks or missing required review; never
-bypass protections. No separate merge confirmation is needed within that scope.
-
-Before handing off, verify `git status --short`, inspect the complete diff, and confirm that any changed public surface has both consumer updates and a current documentation pointer. Do not bypass or weaken the pre-commit Ruff gate to land a change.
+When Git publication is authorized, use branch → PR → merge after applicable local checks and required
+remote checks/reviews pass. Stop for material scope uncertainty, conflicts, failed/pending checks or
+missing required review. No separate merge confirmation is needed within that authorized scope.

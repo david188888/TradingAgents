@@ -270,4 +270,31 @@ describe("RunHistory", () => {
     );
     expect(screen.getByRole("button", { name: "清空中…" })).toBeDisabled();
   });
+  it("offers cursor navigation and disables duplicate loads while a page is pending", () => {
+    const loadMore = vi.fn();
+    const props = { runs: FIXTURES, loading: false, error: null, onDeleteRun: vi.fn(), onClearHistory: vi.fn(), hasMore: true, onLoadMore: loadMore };
+    const { rerender } = render(<RunHistory {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "加载更多历史记录" }));
+    expect(loadMore).toHaveBeenCalledTimes(1);
+    rerender(<RunHistory {...props} loadingMore />);
+    expect(screen.getByRole("button", { name: "加载更多历史记录" })).toBeDisabled();
+    rerender(<RunHistory {...props} hasMore={false} />);
+    expect(screen.queryByRole("button", { name: "加载更多历史记录" })).not.toBeInTheDocument();
+  });
+
+  it("keeps loaded records readable after a later page fails", () => {
+    render(<RunHistory runs={FIXTURES} loading={false} error={new Error("offline")} onDeleteRun={vi.fn()} onClearHistory={vi.fn()} hasMore onLoadMore={vi.fn()} />);
+    expect(screen.getByText(/offline/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开 AAPL 的研究记录" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "加载更多历史记录" })).toBeEnabled();
+  });
+
+  it("makes older failures reachable after expanding the initial cap", () => {
+    const failed = Array.from({ length: 5 }, (_, index) => ({ ...FIXTURES[1], run_id: `older_failure_${index}`, ticker: `Failed${index}` }));
+    render(<RunHistory runs={failed} loading={false} error={null} onDeleteRun={vi.fn()} onClearHistory={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "打开 Failed4 的研究记录" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "显示更早的失败记录" }));
+    expect(screen.getByRole("button", { name: "打开 Failed4 的研究记录" })).toBeVisible();
+  });
+
 });

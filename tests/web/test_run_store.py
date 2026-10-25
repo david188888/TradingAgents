@@ -1,5 +1,7 @@
 import hashlib
 import json
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -15,6 +17,20 @@ from tradingagents.web.store import (
     RunStore,
     RunStoreError,
 )
+
+
+def test_runtime_store_can_import_without_web_adapter():
+    script = """
+import sys
+class BlockWeb:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'tradingagents.web' or fullname.startswith('tradingagents.web.'):
+            raise AssertionError('neutral runtime imported the Web adapter')
+sys.meta_path.insert(0, BlockWeb())
+from tradingagents.runtime.store import RunStore
+"""
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
 
 
 def _snapshot(*, run_id=None, ticker="AAPL", captured=None, metadata=None):
@@ -177,6 +193,48 @@ def test_snapshot_cannot_move_behind_durable_event_log(tmp_path):
 
     with pytest.raises(RunStoreError, match="cannot decrease"):
         store.write_snapshot_atomic(snapshot)
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_durable_completion_repairs_snapshot_after_snapshot_write_failure(
+    tmp_path, monkeypatch, restart
+):
+    store = RunStore(tmp_path)
+    snapshot = store.create_run(_snapshot())
+    report = tmp_path / snapshot.run_id / "reports" / "complete_report.md"
+    report.parent.mkdir()
+    report.write_text("Complete report", encoding="utf-8")
+    artifact_id = f"report-final:{hashlib.sha256(report.read_bytes()).hexdigest()}"
+    completed_at = "2026-10-25T12:00:00.000Z"
+    payload = {
+        "run_status": "completed",
+        "summary": "Evidence ready",
+        "final_signal": "HOLD",
+        "final_report_artifact_id": artifact_id,
+        "completed_at": completed_at,
+        "degraded_data_sources": [{"source": "news", "reason": "unavailable"}],
+    }
+    with monkeypatch.context() as patch:
+        def fail_snapshot(*_args):
+            raise OSError("simulated interruption after event fsync")
+
+        patch.setattr(store, "_write_snapshot_file", fail_snapshot)
+        with pytest.raises(OSError, match="simulated interruption"):
+            store.append_event(RunEventDraft(
+                snapshot.run_id, "run.completed", payload, timestamp=datetime(2026, 10, 25, 12, tzinfo=timezone.utc)
+            ))
+
+    reader = RunStore(tmp_path) if restart else store
+    recovered = reader.read_snapshot(snapshot.run_id)
+    assert recovered.status == "completed"
+    assert recovered.latest_sequence == 1
+    assert recovered.updated_at == completed_at
+    assert recovered.completed_at == completed_at
+    assert recovered.final_report_artifact_id == artifact_id
+    assert recovered.summary == "Evidence ready"
+    assert recovered.final_signal == "HOLD"
+    assert recovered.degraded_data_sources == tuple(payload["degraded_data_sources"])
+    assert reader.read_snapshot(snapshot.run_id) == recovered
 
 
 def test_snapshot_metadata_is_redacted_without_mutating_semantic_fields(tmp_path):

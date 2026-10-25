@@ -131,3 +131,18 @@ def _no_live_search_transport(monkeypatch):
             raise AssertionError('offline test attempted an unmocked paid search transport')
         return original(session, method, url, *args, **kwargs)
     monkeypatch.setattr(requests.sessions.Session, 'request', guarded)
+
+
+@pytest.fixture(autouse=True)
+def _loopback_test_client(monkeypatch):
+    """HTTP tests use the production loopback origin; explicit foreign hosts stay explicit."""
+    from fastapi.testclient import TestClient
+
+    original = TestClient.__init__
+
+    def initialize(self, *args, **kwargs):
+        if len(args) < 2:
+            kwargs.setdefault("base_url", "http://127.0.0.1")
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(TestClient, "__init__", initialize)

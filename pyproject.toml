@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tradingagents"
-version = "3.7.0"
+version = "3.7.1"
 description = "TradingAgents: Multi-Agents LLM Financial Trading Framework"
 readme = "README.en.md"
 requires-python = ">=3.10"
@@ -68,7 +68,7 @@ include = ["tradingagents*", "cli*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]
-tradingagents = ["presets/*.yaml", "web/static/*", "web/static/assets/*"]
+tradingagents = ["presets/*.yaml", "web/static/*", "web/static/assets/*", "skills/library/*/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

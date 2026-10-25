@@ -31,6 +31,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_CATALYST_PROFILE_ENABLED": "catalyst_profile_enabled",
     "TRADINGAGENTS_CATALYST_DEFAULT_WEB":    "catalyst_default_web",
     "TRADINGAGENTS_EVIDENCE_STOP_ON_FAIL":   "evidence_stop_on_fail",
+    "TRADINGAGENTS_EVIDENCE_SEARCH_ENABLED": "evidence_search_enabled",
     "TRADINGAGENTS_NEWS_MIN_COMPANY_ITEMS":  "news_min_company_items",
     "TRADINGAGENTS_NEWS_MIN_MIXED_ITEMS":    "news_min_mixed_items",
     "TRADINGAGENTS_HALT_ON_MISSING_DATA":    "halt_on_missing_data",

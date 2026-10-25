@@ -21,6 +21,7 @@ MODEL_BUCKETS = {"main_analysis", "focus_response", "semantic_preprocess",
 SUCCESS_STATUSES = {"synthesized", "analysis_unrated"}
 RUN_ID = re.compile(r"run_[A-Za-z0-9_]+\Z")
 DIGEST = re.compile(r"[a-f0-9]{64}\Z")
+RECORD_KINDS = ("research-record-v1", "research-record-v2")
 
 
 class MeasurementUnavailable(ValueError):
@@ -51,13 +52,14 @@ def _events(directory: Path, run_id: str) -> list[dict]:
     return events
 
 
-def _artifact(directory: Path, events: list[dict], kind: str) -> tuple[dict | None, int | None]:
+def _artifact(directory: Path, events: list[dict], kind: str | tuple[str, ...]) -> tuple[dict | None, int | None]:
+    kinds = (kind,) if isinstance(kind, str) else kind
     candidates = [event for event in events
                   if event.get("type") == "artifact.written"
                   and event.get("status") == "committed"
-                  and event.get("payload", {}).get("kind") == kind
-                  and (kind != "research-record-v1" or (
-                      event["payload"].get("public_contract") == kind
+                  and event.get("payload", {}).get("kind") in kinds
+                  and (event["payload"]["kind"] not in RECORD_KINDS or (
+                      event["payload"].get("public_contract") == event["payload"]["kind"]
                       and type(event["payload"].get("committed_sequence")) is int
                       and 0 < event["payload"]["committed_sequence"] < event["sequence"]))]
     if not candidates:
@@ -65,6 +67,7 @@ def _artifact(directory: Path, events: list[dict], kind: str) -> tuple[dict | No
     event = max(candidates, key=lambda item: (
         item["payload"].get("committed_sequence", item["sequence"]), item["sequence"]))
     payload = event["payload"]
+    kind = payload["kind"]
     artifact_id = payload.get("artifact_id", "")
     prefix, _, digest = artifact_id.partition(":")
     if prefix != kind or not DIGEST.fullmatch(digest) or payload.get("content_sha256") != digest:
@@ -113,7 +116,7 @@ def measure_run(directory: Path) -> dict:
         raise MeasurementUnavailable("run_identity_mismatch")
     events = _events(directory, directory.name)
     checkpoint, _ = _artifact(directory, events, "catalyst-checkpoint")
-    record, record_bytes = _artifact(directory, events, "research-record-v1")
+    record, record_bytes = _artifact(directory, events, RECORD_KINDS)
     if checkpoint and checkpoint.get("run_id") != directory.name:
         raise MeasurementUnavailable("checkpoint_identity_mismatch")
     if record and any(record.get(key) != snapshot.get(key) for key in ("run_id", "ticker", "analysis_date")):
@@ -150,13 +153,13 @@ def measure_run(directory: Path) -> dict:
     sections = delivery.get("sections") if delivery.get("policy") == "synthesis-sections-v1" else None
     accepted_sections = sum(item.get("status") == "accepted" for item in sections) if sections else None
     unavailable_sections = sum(item.get("status") == "unavailable" for item in sections) if sections else None
-    from tradingagents.agents.schemas._research_record import ResearchRecordV1
     from tradingagents.research.challenge_metrics import (
         challenge_admission_counts,
         challenge_metrics,
     )
+    from tradingagents.research.record_codec import parse_research_record
     try:
-        directed = challenge_metrics(ResearchRecordV1.model_validate(record)
+        directed = challenge_metrics(parse_research_record(record)
             if record and record.get("challenge_check_policy") else None)
         if directed["availability"] == "recorded":
             directed["admission"] = challenge_admission_counts(checkpoint)

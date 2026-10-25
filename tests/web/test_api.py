@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
@@ -82,9 +84,19 @@ class RecordingManager:
 
     def __init__(self, store: RunStore) -> None:
         self.store = store
+        self._guard = threading.RLock()
         self.calls: list[tuple[str, Any]] = []
         self.errors: dict[str, BaseException] = {}
         self.active_run_id: str | None = None
+
+    @contextmanager
+    def deletion_guard(self):
+        with self._guard:
+            protected = {self.active_run_id} if self.active_run_id else set()
+            for batch in self.store.list_batches():
+                if batch.status in {"queued", "running"}:
+                    protected.update(item.run_id for item in batch.items)
+            yield protected
 
     def _raise(self, operation: str) -> None:
         error = self.errors.get(operation)
@@ -697,6 +709,22 @@ def test_delete_all_runs_preserves_the_active_batch_and_its_members(api):
     # member would corrupt it, so the whole subtree is protected.
     remaining_batches = [item["batch_id"] for item in client.get("/api/batches").json()]
     assert remaining_batches == [active_batch.batch_id]
+
+
+def test_delete_run_preserves_queued_and_finished_members_of_active_batch(api):
+    client, store, _manager = api
+    queued = store.create_run(_snapshot(status="queued"))
+    finished = store.create_run(_snapshot(status="completed"))
+    batch = store.create_batch(BatchSnapshot.create(items=(
+        _batch_item(queued.run_id, 0), _batch_item(finished.run_id, 1)
+    )).evolve(status="running"))
+
+    for run in (queued, finished):
+        response = client.delete(f"/api/runs/{run.run_id}")
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "run_active"
+        assert store.read_snapshot(run.run_id).status == run.status
+    assert store.read_batch(batch.batch_id).items == batch.items
 
 
 def test_cancel_retry_and_resume_delegate_to_manager_with_expected_http_semantics(api):
