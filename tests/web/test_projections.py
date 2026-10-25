@@ -300,3 +300,15 @@ def test_fixed_projection_paths_are_allowlisted(tmp_path):
     assert store.read_fixed_json(run.run_id, "projections/run-view-v1.json") == {"schema_version": 1}
     with pytest.raises(InvalidStorePath):
         store.write_fixed_json(run.run_id, "projections/../escape.json", {})
+
+
+def test_recent_page_includes_queued_runs_and_preserves_cursor_order(tmp_path):
+    store = RunStore(tmp_path / "runs")
+    older = store.create_run(_snapshot(run_id="run_20260803T010101000000Z_dddddddd"))
+    queued = store.create_run(_snapshot(run_id="run_20260803T020202000000Z_eeeeeeee", status="queued"))
+    page = recent_runs_page(store.list_runs(), limit=1, cursor=None)
+    assert [(item["run_id"], item["status"]) for item in page["items"]] == [(queued.run_id, "queued")]
+    assert page["next_cursor"]
+    next_page = recent_runs_page(store.list_runs(), limit=1, cursor=page["next_cursor"])
+    assert [item["run_id"] for item in next_page["items"]] == [older.run_id]
+    assert next_page["next_cursor"] is None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Callable, Mapping
 from datetime import date
 
@@ -64,16 +65,13 @@ def _validate_input_semantics(
     values: Mapping[str, MetricObservationV1],
 ) -> None:
     definition = metric_definition(metric_id)
-    missing = set(definition.required_inputs).difference(values)
-    if missing:
+    if not values:
         return
-    expected = {
-        _expected_input_metric_id(key) for key in definition.required_inputs
-    }
-    actual = {item.metric_id for item in values.values()}
+    expected = {key: _expected_input_metric_id(key) for key in definition.required_inputs if key in values}
+    actual = {key: item.metric_id for key, item in values.items()}
     if actual != expected:
         raise ValueError(
-            f"metric inputs do not match {metric_id}: expected {sorted(expected)}, got {sorted(actual)}"
+            f"metric inputs do not match {metric_id}: expected {expected}, got {actual}"
         )
     entities = {item.entity_id for item in values.values()}
     runs = {item.run_id for item in values.values()}
@@ -88,14 +86,39 @@ def _validate_input_semantics(
         raise ValueError("metric inputs must share frequency")
     if len(units) != 1:
         raise ValueError("metric inputs must share units")
+    if not metric_id.endswith("_yoy") and len(as_ofs) != 1:
+        raise ValueError("metric inputs must share as_of")
+
+
+def financial_period_key(observation: MetricObservationV1) -> tuple[int, int] | None:
+    """Recognize declared annual/single-quarter periods without inferring YTD or TTM."""
+    if observation.frequency == "annual":
+        match = re.fullmatch(r"(\d{4})(?:-12-31)?", observation.period)
+        if match and int(match[1]) > 0:
+            return int(match[1]), 0
+    elif observation.frequency == "quarterly":
+        match = re.fullmatch(r"(\d{4})Q([1-4])", observation.period)
+        if match and int(match[1]) > 0:
+            return int(match[1]), int(match[2])
+    return None
+
+
+def _period_unavailable_reason(metric_id: str, values: Mapping[str, MetricObservationV1]) -> str | None:
+    # This contract has no explicit profit window/equity endpoint binding.
+    # Matching labels or begin/end slot names cannot establish that binding.
+    if metric_id == "roe":
+        return "period_basis_unavailable"
+    periods = {key: financial_period_key(value) for key, value in values.items()}
+    if any(value is None for value in periods.values()):
+        return "period_basis_unavailable"
     if metric_id.endswith("_yoy"):
         base = metric_id.removesuffix("_yoy")
-        current = values.get(f"{base}_current")
-        prior = values.get(f"{base}_prior")
-        if current is None or prior is None or current.period <= prior.period:
-            raise ValueError("yoy inputs must have distinct ordered periods")
-    elif len(as_ofs) != 1:
-        raise ValueError("metric inputs must share as_of")
+        current, prior = periods[f"{base}_current"], periods[f"{base}_prior"]
+        if (current[0] - 1, current[1]) != prior:
+            return "incomparable_periods"
+    elif len(set(periods.values())) != 1:
+        return "incomparable_periods"
+    return None
 
 
 def _output_context(
@@ -183,14 +206,14 @@ def calculate_metric(
     entity_id = next(iter(ordered.values())).entity_id
     unavailable = [item for item in ordered.values() if item.availability != "available"]
     unit_groups = {item.unit for item in ordered.values()}
-    reason: str | None = None
+    reason = _period_unavailable_reason(metric_id, ordered)
     if unavailable:
         reason = "input_unavailable"
     elif len(unit_groups) > 1:
         reason = "inconsistent_input_units"
     elif any(not math.isfinite(float(item.value)) for item in ordered.values()):
         reason = "non_finite_input"
-    else:
+    elif reason is None:
         denominator_keys = {
             "revenue": ("revenue", "revenue_prior", "net_income"),
             "net_income": ("net_income", "net_income_prior"),

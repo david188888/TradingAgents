@@ -17,9 +17,9 @@ from typing import Any
 from tradingagents.observability.canonical import canonical_business_value
 from tradingagents.observability.events import ArtifactRef, PersistedEvent, RunEventDraft
 from tradingagents.observability.redaction import redact_recursive
-from tradingagents.web.batch_models import BatchSnapshot, validate_batch_id
 
-from .run_models import RunSnapshot, RunSummary, utc_timestamp, validate_run_id
+from .batch_models import BatchSnapshot, validate_batch_id
+from .run_models import RunSnapshot, RunSummary, utc_timestamp as utc_timestamp, validate_run_id
 
 ARTIFACT_KIND_DIRECTORIES = {
     "data": "data",
@@ -140,11 +140,10 @@ class RunStore:
             snapshot = RunSnapshot.from_dict(payload)
             latest_event = self._last_event_sequence_cached(run_id, run_dir)
             if latest_event > snapshot.latest_sequence:
-                snapshot = replace(
-                    snapshot,
-                    latest_sequence=latest_event,
-                    updated_at=utc_timestamp(),
-                )
+                # The log is durable before run.json. Replay every missed event;
+                # advancing only the watermark would permanently lose terminal state.
+                for event in self.read_events(run_id, after=snapshot.latest_sequence):
+                    snapshot = self._apply_event(snapshot, event)
                 self._write_snapshot_file(run_dir, snapshot)
             elif latest_event < snapshot.latest_sequence:
                 raise RunStoreCorruption(
@@ -217,31 +216,38 @@ class RunStore:
             # this call ends in RunStoreError.
             self._sequence_watermarks[draft.run_id] = sequence
 
-            status = snapshot.status
-            if event.type.startswith("run.") and isinstance(payload.get("run_status"), str):
-                status = payload["run_status"]
-            updated = replace(
-                snapshot,
-                status=status,
-                latest_sequence=sequence,
-                updated_at=event.timestamp,
-            )
-            if event.type == "run.completed":
-                updated = replace(
-                    updated,
-                    final_signal=payload.get("final_signal")
-                    if isinstance(payload.get("final_signal"), str)
-                    else None,
-                    summary=payload.get("summary")
-                    if isinstance(payload.get("summary"), str)
-                    else None,
-                    error_category=None,
-                    final_report_artifact_id=str(payload["final_report_artifact_id"]),
-                    completed_at=event.timestamp,
-                    degraded_data_sources=tuple(payload["degraded_data_sources"]),
-                )
+            updated = self._apply_event(snapshot, event)
             self._write_snapshot_file(run_dir, updated)
             return event
+
+    @staticmethod
+    def _apply_event(snapshot: RunSnapshot, event: PersistedEvent) -> RunSnapshot:
+        """Project an already durable event identically during append and recovery."""
+        payload = event.payload
+        status = snapshot.status
+        if event.type.startswith("run.") and isinstance(payload.get("run_status"), str):
+            status = payload["run_status"]
+        updated = replace(
+            snapshot,
+            status=status,
+            latest_sequence=event.sequence,
+            updated_at=event.timestamp,
+        )
+        if event.type == "run.completed":
+            updated = replace(
+                updated,
+                final_signal=payload.get("final_signal")
+                if isinstance(payload.get("final_signal"), str)
+                else None,
+                summary=payload.get("summary")
+                if isinstance(payload.get("summary"), str)
+                else None,
+                error_category=None,
+                final_report_artifact_id=str(payload["final_report_artifact_id"]),
+                completed_at=event.timestamp,
+                degraded_data_sources=tuple(payload["degraded_data_sources"]),
+            )
+        return updated
 
     def read_events(
         self,

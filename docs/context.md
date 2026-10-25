@@ -1,88 +1,18 @@
-# Product Context
+# Product context
 
-- **Status: Current**（current-state 文档；行为变化时对照代码与测试校验）
+Status: Current — navigation pointer.
 
-TradingAgents is a local-first multi-agent financial research framework derived
-from TauricResearch/TradingAgents. This fork prioritizes China A-share research with a maintained A-share Web product and retained compatibility code for older instruments. It is a research tool,
-not an execution or account-management product.
+Maintained explanation: [owning reference](../README.md).
+Canonical detail or related owner: [source](../ARCHITECTURE.md#goal-and-reading-path).
 
-## Users
+Product goals, users and non-goals are maintained in the README and architecture, rather than repeated here.
 
-- Individual researchers and engineers running the local Web workbench.
-- Developers extending data providers, graph roles, evidence contracts, and
-  local observability.
-- Readers reviewing a company-research or historical holding-review artifact with its
-  reported evidence, uncertainty, and data-source degradation.
-
-## Goals
-
-- Combine operating quality, event context and market context through isolated
-  specialist hypotheses, independent challenge and code-owned evidence checks.
-- Make evidence provenance, coverage limitations, and persisted artifacts
-  available to local readers rather than hiding provider failures.
-- Support one company investment research workflow and batch company research.
-  Preserve historical catalyst and holding records for reading/recovery.
-- Keep domain execution independent of the Web adapter and retained compatibility consumers.
-
-## Entry Surfaces
-
-`tradingagents web --port 8765 --open` starts the maintained local workbench.
-New single and batch runs use `evidence_v1` / `evidence-production-v7`; old profiles are read/resume only.
-CLI analysis is outside continued maintenance. The FastAPI/SSE adapter serves
-its bundled frontend on loopback only. The native kernel freezes evidence,
-creates isolated hypotheses, challenges and bounded conditions, then collects one targeted reply per challenged specialist and synthesizes
-one saved research record consumed by both Reader and Markdown. V7 judges company investment attractiveness across four dimensions; optional user focus is
-answered afterward from saved evidence and cannot change the baseline.
-
-## Non-Goals
-
-The project does not provide brokerage connectivity, account management,
-custody, order generation, order routing, trade execution, target-position
-recommendations, or investment advice. A research artifact or model output is
-not a trading instruction.
-
-## Core Concepts
-
-- **Analysis request:** typed ticker, date, profile, research mode and optional
-  holding context passed into the shared execution boundary. Native roles and
-  source policy are code-owned; analyst selection and horizon overrides belong
-  to retained classic compatibility callers.
-- **Evidence and capability result:** provider output with source and
-  availability semantics. Missing, degraded, and unavailable sources are not
-  evidence that an event did not occur.
-- **Research record:** the mandatory native `research-record-v1`, binding saved
-  evidence, hypotheses, challenges, checks and dimension-level assessment.
-  Classic/catalyst cases remain compatibility artifacts; partial and unavailable
-  outputs stay explicit. V6 focus uses a separate baseline-bound artifact.
-- **Reader and audit projection:** read-only Web views of persisted artifacts
-  and events, including compatibility/degradation states for incomplete or
-  older runs.
-- **Checkpoint:** native/catalyst durable attempt and publication state,
-  independent of the classic checkpoint toggle. Classic LangGraph checkpoints
-  remain optional. Recovery preserves saved versions, identity and spent budget.
-
-## A-Share-First Constraints
-
-A-share instruments require exchange-aware symbol normalization, local-market
-data source routing, and careful distinction between official disclosures,
-public fallbacks, and unavailable coverage. Market sessions, disclosures, and
-timestamps must be interpreted with the relevant market and declared time
-semantics rather than the machine's locale. See
-[operations/a-share-data-capabilities.md](operations/a-share-data-capabilities.md) for focused
-provider behavior.
-
-## Evidence And Time Boundaries
-
-Research should distinguish observed facts from inference, preserve source
-identity where an artifact exposes a claim, and report unavailable or partial
-coverage honestly. Analysis is evaluated relative to its requested analysis
-date and the runtime's resolved cutoff; later data must not silently appear as
-point-in-time evidence. Persisted artifacts and projections should remain
-read-only representations of what a run captured, not live provider refreshes.
-
-## Product Stage
-
-The workbench is a local, loopback-only application that persists its run
-history under the user's home directory. Its purpose is research, inspection,
-and iterative development of the framework, not a hosted multi-tenant service
-or a financial-account portal.
+<!-- Compatibility anchors for existing section links. -->
+<a id="a-share-first-constraints"></a>
+<a id="core-concepts"></a>
+<a id="entry-surfaces"></a>
+<a id="evidence-and-time-boundaries"></a>
+<a id="goals"></a>
+<a id="non-goals"></a>
+<a id="product-stage"></a>
+<a id="users"></a>

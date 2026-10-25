@@ -180,8 +180,9 @@ export function listRuns(): Promise<RunSummaryDTO[]> {
 /** GET /api/runs?view=recent */
 export function listRecentRuns(
   signal?: AbortSignal,
+  cursor?: string,
 ): Promise<RecentRunsPageDTO> {
-  return request<RecentRunsPageDTO>("GET", API.recentRuns(), undefined, signal);
+  return request<RecentRunsPageDTO>("GET", API.recentRuns(20, cursor), undefined, signal);
 }
 
 /** GET /api/runs/{run_id}/view */

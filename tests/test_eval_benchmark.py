@@ -11,7 +11,7 @@ from scripts.eval_benchmark import MeasurementUnavailable, evaluate, measure_run
 RUN = "run_20261018T010000000000Z_ab123456"
 
 
-def saved_run(root, *, run_id=RUN, status="specialist_summary", model="gpt-6-luna", sections=None):
+def saved_run(root, *, run_id=RUN, status="specialist_summary", model="gpt-6-luna", sections=None, record_kind="research-record-v1", record_value=None):
     directory = root / run_id
     directory.mkdir()
     snapshot = {"run_id": run_id, "ticker": "300750.SZ", "analysis_date": "2026-10-17",
@@ -46,14 +46,17 @@ def saved_run(root, *, run_id=RUN, status="specialist_summary", model="gpt-6-lun
     }
     if sections:
         record["assessment"]["synthesis_sections"] = {"policy": "synthesis-sections-v1", "sections": sections}
+    if record_value is not None:
+        record = record_value
+    record["schema_version"] = record_kind
     events = []
-    for kind, value in (("catalyst-checkpoint", checkpoint), ("research-record-v1", record)):
+    for kind, value in (("catalyst-checkpoint", checkpoint), (record_kind, record)):
         raw = json.dumps(value).encode()
         digest = hashlib.sha256(raw).hexdigest()
         (directory / kind).mkdir()
         (directory / kind / (digest + ".json")).write_bytes(raw)
         payload = {"kind": kind, "artifact_id": kind + ":" + digest, "content_sha256": digest}
-        if kind == "research-record-v1":
+        if kind.startswith("research-record-"):
             payload.update(public_contract=kind, committed_sequence=1)
         events.append({"sequence": len(events) + 1, "run_id": run_id, "type": "artifact.written",
                        "status": "committed", "payload": payload})
@@ -144,3 +147,66 @@ def test_evaluation_never_uses_write_apis(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "open", read_only)
     assert evaluate(tmp_path)["errors"] == []
+
+
+@pytest.mark.parametrize('status,want', [('synthesized', True), ('specialist_summary', False)])
+def test_v2_committed_record_measures_delivery(tmp_path, status, want):
+    row = measure_run(saved_run(tmp_path, status=status, record_kind='research-record-v2'))
+    assert row['record_available'] is True
+    assert row['synthesis_success'] is want
+    assert row['record_bytes'] > 0
+
+
+def test_v2_challenge_metrics_use_versioned_codec(tmp_path):
+    from tests.test_challenge_checks import directed_record
+    from tradingagents.research.record_codec import parse_research_record
+
+    payload = directed_record().model_dump(mode='json')
+    payload.update(schema_version='research-record-v2', workflow_version='evidence-production-v8')
+    record = parse_research_record(payload).model_dump(mode='json')
+    directory = saved_run(tmp_path, run_id=record['run_id'], record_kind='research-record-v2', record_value=record)
+    snapshot_path = directory / 'run.json'
+    snapshot = json.loads(snapshot_path.read_text())
+    snapshot.update(ticker=record['ticker'], analysis_date=record['analysis_date'])
+    snapshot_path.write_text(json.dumps(snapshot))
+    row = measure_run(directory)
+    assert row['record_available'] is True
+    assert row['hypothesis_directed_checks']['availability'] == 'recorded'
+
+
+def test_latest_committed_record_across_versions_wins(tmp_path):
+    directory = saved_run(tmp_path, status='specialist_summary')
+    record = {'run_id': RUN, 'ticker': '300750.SZ', 'analysis_date': '2026-10-17',
+              'schema_version': 'research-record-v2', 'assessment': {'report_status': 'synthesized'}}
+    raw = json.dumps(record).encode()
+    digest = hashlib.sha256(raw).hexdigest()
+    kind = 'research-record-v2'
+    (directory / kind).mkdir()
+    (directory / kind / (digest+'.json')).write_bytes(raw)
+    with (directory / 'events.jsonl').open('a') as handle:
+        handle.write(json.dumps({'sequence': 3, 'run_id': RUN, 'type': 'artifact.written',
+            'status': 'committed', 'payload': {'kind': kind, 'public_contract': kind,
+                'artifact_id': kind+':'+digest, 'content_sha256': digest, 'committed_sequence': 2}})+'\n')
+    assert measure_run(directory)['synthesis_success'] is True
+    (directory / kind / (digest+'.json')).write_bytes(b'corrupt')
+    assert evaluate(tmp_path)['errors'] == [{'run_id': RUN, 'reason': 'artifact_hash_mismatch'}]
+
+
+@pytest.mark.parametrize('defect', ['uncommitted', 'wrong_contract', 'missing_barrier', 'future_barrier'])
+def test_v2_measurement_requires_public_committed_reference(tmp_path, defect):
+    directory = saved_run(tmp_path, status='synthesized', record_kind='research-record-v2')
+    path = directory / 'events.jsonl'
+    events = [json.loads(line) for line in path.read_text().splitlines()]
+    event = events[-1]
+    if defect == 'uncommitted':
+        event['status'] = 'prepared'
+    elif defect == 'wrong_contract':
+        event['payload']['public_contract'] = 'research-record-v1'
+    elif defect == 'missing_barrier':
+        del event['payload']['committed_sequence']
+    else:
+        event['payload']['committed_sequence'] = event['sequence']
+    path.write_text(''.join(json.dumps(item)+'\n' for item in events))
+    row = measure_run(directory)
+    assert row['record_available'] is False
+    assert row['synthesis_success'] is False

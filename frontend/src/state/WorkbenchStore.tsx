@@ -20,6 +20,8 @@ import { useRunView } from "../hooks/useRunView";
 export interface WorkbenchSelectionValue {
   run_id: string | null;
   selectRun: (id: string | null) => void;
+  /** Restart transport and refetch the projection after a same-ID resume. */
+  reconnectRun: (id: string) => void;
 }
 
 /** Stream slice: reducer state + transport status, no projection. */
@@ -45,7 +47,10 @@ export function WorkbenchProvider({
   children: ReactNode;
 }): JSX.Element {
   const [run_id, setRunId] = useState<string | null>(null);
-  const stream = useRunStream(run_id);
+  const [reconnectKey, setReconnectKey] = useState(0);
+  const selectedRunRef = useRef(run_id);
+  selectedRunRef.current = run_id;
+  const stream = useRunStream(run_id, reconnectKey);
   const viewRefreshKey = useRef(0);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -73,7 +78,13 @@ export function WorkbenchProvider({
   const selectRun = useCallback((id: string | null): void => {
     setRunId(id);
   }, []);
-  const selectionValue = useMemo(() => ({ run_id, selectRun }), [run_id, selectRun]);
+  const reconnectRun = useCallback((id: string): void => {
+    if (selectedRunRef.current !== id) return;
+    setReconnectKey((key) => key + 1);
+    viewRefreshKey.current += 1;
+    setRefreshKey(viewRefreshKey.current);
+  }, []);
+  const selectionValue = useMemo(() => ({ run_id, selectRun, reconnectRun }), [run_id, selectRun, reconnectRun]);
   const streamValue = useMemo(
     () => ({ state: stream.state, status: stream.status, error: stream.error }),
     [stream.state, stream.status, stream.error],

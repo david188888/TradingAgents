@@ -20,6 +20,11 @@ inspect its canonical code before changing behavior. New Web research uses
   endpoint errors and recovery belong in the indexed operations/contracts docs.
 - `ARCHITECTURE.md` owns the current module map; this file and scoped guides own
   contribution rules. Plans and dated reviews retain their writing-time facts.
+- Keep four core reading surfaces: the README pair, architecture, Web operations,
+  and CONTRIBUTING. `docs/README.md` is short navigation; focused references own
+  important technical boundaries. Link to the owner rather than repeat it.
+  Routine changes need no new plan/review narrative in the repository; retain
+  only durable decisions or material evidence. Existing history stays archived.
 
 ## Repository Map
 
@@ -47,24 +52,24 @@ conda activate tradingagents
 python -m pip install -e ".[china,web,dev]" --index-url https://pypi.org/simple
 ```
 
-Baseline contributor checks are:
+Choose validation by change scope using the matrix in
+[CONTRIBUTING.md](CONTRIBUTING.md#scoped-validation). Local changes default to
+focused checks; full pytest, all frontend tests and all E2E tests are not a
+routine checklist. Documentation-only changes need documentation and diff checks.
+Lint changed Python files, including tests, and select relevant test paths.
+Frontend source changes require one build, which includes TypeScript checks;
+install dependencies only for first setup, dependency changes or a broken install.
 
-```bash
-python scripts/check_agent_docs.py
-ruff check tradingagents cli scripts/check_agent_docs.py
-npm --prefix frontend ci
-npm --prefix frontend run typecheck
-npm --prefix frontend run build
-```
+Reuse passing checks while their relevant code, tests, configuration, dependencies
+and environment remain unchanged. Commit, push and PR creation do not by themselves
+require rerunning them. Broaden regression for shared behavior or version releases;
+run E2E only for affected complete browser flows. Add or adjust tests for meaningful
+behavior or regression gaps, rather than adding tests for every small optimization.
 
-Run the applicable tracked tests for the changed layer:
-
-```bash
-python -m pytest
-python -m pytest -m unit
-npm --prefix frontend run test -- --run
-npm --prefix frontend run test:e2e
-```
+Live model/provider checks require explicit authorization. The real DeepSeek
+integration test also requires `TRADINGAGENTS_RUN_LIVE_TESTS=1` and a real key.
+Marker selection alone does not guarantee offline execution; report the actual
+scope and exclusions.
 
 For first-time end-to-end setup, install Playwright Chromium from `frontend/`
 with `npx playwright install chromium`, and build the SPA before running tests.
@@ -115,9 +120,9 @@ large schema definitions in prose.
 - Scope changes to the owning layer; retain existing uncommitted work.
 - Start contract changes from their canonical Python or TypeScript schema and
   update every affected adapter, projection, and consumer.
-- Run `python scripts/check_agent_docs.py` and the applicable Ruff, frontend
-  install/typecheck/build checks; run pytest, Vitest, or Playwright for the
-  affected layer using the tracked tests.
+- Apply the [scoped validation matrix](CONTRIBUTING.md#scoped-validation).
+  Reuse applicable passing results; do not repeat covered subsets after a
+  broader passing run. Keep the existing Ruff pre-commit gate.
 - Rebuild `tradingagents/web/static/` after frontend source changes.
 - Update the current-state documentation surface when behavior, configuration,
   contract ownership, or operational workflow changed.

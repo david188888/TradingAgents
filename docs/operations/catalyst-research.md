@@ -1,111 +1,95 @@
-# Explicit catalyst research trials
+# Compatibility and legacy integrations
 
-Status: Legacy recovery reference
+Status: Current
 
-New Web research uses `evidence_v1`; see [Web research](evidence-research.md).
-`catalyst_v1` records remain readable and interrupted runs recover using their
-saved identities and budgets. Creation and fresh retry return
-`410 research_profile_retired`, regardless of the old enable flag. The sections
-below describe the retained workflow for recovery, rather than a current creation
-entry point. CLI analysis is outside continued maintenance.
+This page describes supported legacy reading/recovery and retained public callers. It does not enable
+new old-profile Web studies. New work follows [Web operations](evidence-research.md) and the
+[current research contract](../contracts/research-record.md).
 
-## Historical trial setup
+## Saved workflow recovery
 
-Keep existing LLM/data credentials in ignored local configuration. Enable the
-server process, then select the catalyst workflow:
+Classic and `catalyst_v1` creation/retry return 410; historical native catalyst/holding modes cannot be
+newly created/retried and return 422. Compatible interrupted runs can resume under their original
+profile, mode, source policy, prompt/kernel versions, request/configuration and spent budget.
+Saved valid results replay; uncertain dispatched calls stay spent. Recovery is not an upgrade.
+
+The retained catalyst runner freezes its own evidence and executes three specialists, independent
+refutation and synthesis under the saved policy. Its case/record publication retains the original
+lifecycle barrier. Classic follows `TradingAgentsGraph → AnalysisRunner → LangGraph`, with Evidence
+Steward and bull/bear research convergence. Trader/risk-debator execution was retired; older state or
+metadata names do not prove those nodes still execute. CLI analysis is outside continued maintenance.
+
+Reading a missing old artifact does not manufacture it. Historical source limits, unavailable
+quantitative metrics and converted model dispositions stay explicit; conversion is not executed
+verification. Unknown versions/integrity conflicts refuse qualification or recovery rather than
+silently adopting the current collector. Canonical routing/compatibility lives in
+[execution](../../tradingagents/execution/), [graph](../../tradingagents/graph/) and
+[Reader policy](../../tradingagents/web/native_reader_versions.py).
+
+## Analyst presets
+
+YAML presets configure the four classic analysts only. Native roles/prompts/methodology mapping are
+code-owned. Presets cannot add tools, graph edges or downstream research roles.
+Built-ins are in `tradingagents/presets/`; a valid same-ID file in `~/.tradingagents/presets/` overrides
+one without modifying package files. Allowed keys are `id`, `label`, `analysts`; analyst values are
+unique members of `market`, `social`, `news`, `fundamentals` in the requested order.
 
 ```bash
-TRADINGAGENTS_CATALYST_PROFILE_ENABLED=1 tradingagents web --port 8765 --open
+tradingagents inspect-preset ~/.tradingagents/presets/news-first.yaml
 ```
 
-Enter company code, research cutoff and optional question. The outlook is the
-next 84 calendar days, separate from historical lookback. Evidence must have
-been knowable at the cutoff. The question is trimmed, limited to 400 Unicode
-code points, persisted in run identity and included in model prompts and the
-case. Classic rejects a nonempty catalyst question.
+Inspection uses [presets.py](../../tradingagents/presets.py) without models; invalid YAML exits 2.
+Historical convergence metadata includes retired names, not actual topology. Analyst order is part of
+request/resume identity. The executable graph, not YAML or Markdown, owns downstream routing.
 
-Catalyst does not submit classic role, debate-depth, holding-review or horizon
-selections. Required legacy wire fields use canonical compatibility defaults.
-Output language and model selections remain effective: the three specialists
-and refutation use quick, synthesis uses deep.
+## External classic package consumption
 
-## Sources and qualification
+Classic runs may publish `research-case-v2` plus `research-package-v1`. External Agents resolve one
+confirmed run/ticker, read `/api/runs/{id}/reader/package`, validate its version and bind each answer
+to `run_id`, canonical `package_sha256` and relevant stable entity/evidence IDs. Use selected Reader,
+Companion and evidence-ref routes to inspect public material, not private run-file scans or array positions.
 
-Only adapters whose actual network dispatch can be charged enter this profile.
-Configured category/tool selection is respected; unselected sources are never
-substituted. Opaque SDK fallbacks are unavailable here.
+[research_package.py](../../tradingagents/research/research_package.py) owns the package and
+[public_hash.py](../../tradingagents/research/public_hash.py) its public projection/hash. Unknown
+observations remain unknown; source prose does not upgrade missing package facts. Conversation state
+belongs to the external Agent, not a local conversation API. The interoperability Skill is statically
+mapped to the classic Research Manager and is not a native research stage.
 
-| Capability | Bounded adapter and admission rule |
-| --- | --- |
-| Security identity | Tushare REST `stock_basic`; exact code, unique identity and listing date at/before cutoff. Current company name is not historical identity evidence. |
-| Event coverage | CNINFO direct transport, 90-day publication lookback with bounded pagination; only proven complete coverage qualifies. Each filing cites its own source record. Publication date is not inferred to be occurrence date. |
-| Fundamentals | Tushare REST income, balance sheet and cash flow; consolidated statements, publication/final-publication and reporting dates at/before cutoff, eight distinct periods per statement. Fewer periods are partial. Credentials do not prove API entitlement. |
-| Price history | Direct Tushare REST `trade_cal`, `daily` and `adj_factor` is admitted when explicitly present in the configured chain. All calendar dates, settled sessions, security codes, OHLC and dated factors are checked. OHLC is scaled to the last price session's factor. Only capture on the research-cutoff date can qualify without an archive vintage; retrospective factors remain unverified. Tencent qfq still needs explicit selection and verified PIT provenance; existing unverified provenance is rejected. |
+Native V8 publishes `research-record-v2` through `/reader/record`, without a paired classic case or
+package. Historical native workflows use V1. Missing `/reader/package` is therefore not a native
+execution failure. Compatibility metrics validate each operand and require the exact prior-year
+reporting period for YoY. Unknown periods, TTM/cumulative basis and unproven ROE equity endpoints
+remain unavailable; package presence alone does not establish financial comparability.
 
-Unavailable/partial required capabilities cap priority at
-`insufficient_information`. Source errors and truncated windows cannot prove
-no events. A cutoff anchor alone cannot qualify historical factor vintage.
-Missing price sessions, including possible suspensions, are recorded without
-filling prices or asserting their cause. The first explicitly selected bounded
-price adapter is used; opaque Wind CLI/SDK paths are recorded as unsupported
-for this profile, even though classic can use Wind. An explicit Wind-only
-selection cannot silently call Tushare prices.
+## Wind
 
-Qualifying Tushare price evidence includes code-computed volatility, signed
-daily historical VaR/ES, observed maximum drawdown and Wilder ATR when their
-own inputs/sample limits permit. Missing a qualified benchmark leaves beta
-unavailable without suppressing single-security statistics. The input hash,
-calculation versions, adjustment anchor and limitations are frozen with the
-source payload and checkpointed before specialist dispatch. The market
-specialist reads this saved payload; a dedicated homepage metrics projection
-is not yet part of the published case. See [local price statistics](../contracts/local-price-statistics.md).
+The classic vendor path can use the pinned Wind CLI for adjusted prices, registered indices,
+EDB search/series and provider-reported risk. Configure `WIND_API_KEY` and, if necessary,
+`WIND_CLI_PATH`. Native evidence collection does not use Wind, even when `wind_enabled=true`.
+Provider/transport ownership is [wind_provider.py](../../tradingagents/dataflows/wind_provider.py);
+[default_config.py](../../tradingagents/default_config.py) and
+[registry.py](../../tradingagents/dataflows/registry.py) own the pin, settings and actual fallback chains.
 
-## Budget, cancellation and recovery
+Wind requests remain serialized by default. Explicit index identity avoids guessing an equity from
+a bare numeric code; `.SS`→`.SH` conversion requires known Shanghai identity. Missing/INVALID is not
+zero. EDB allowlist enforcement is optional configuration, not permission to treat every discovered
+code as approved. Snapshot/history fallback differs from profile/fundamental capability support.
 
-Permissions are persisted before dispatch. SDK retries and redirects are
-disabled. The stricter ledger/policy limits apply: five main calls, two semantic
-preprocessing calls, two structured repairs (one per stage), three network
-retries, twelve model attempts total, twenty-four capability calls and sixty-four
-HTTP attempts. At most one supplement round covers three capabilities.
-Pagination consumes HTTP attempts. Model/data concurrency is two each across
-runs. Active execution defaults to 300 seconds, excluding queue time; timeout
-prohibits late publication.
+Authentication, balance and quota failures require explicit recovery or their confirmed reset;
+transient errors may follow bounded retry/fallback. No-results does not prove no event. Warnings
+with usable data remain partial. Wind fundamental/news/document/fund/bond/analytics tools are not
+implicitly added to the current default research route. Historical design scope is not delivery.
 
-Stage/attempt checkpoints are always persisted in the run store, even when the
-classic checkpoint toggle is disabled. Interruption can resume the same run
-after validating profile, policy, question, ticker, cutoff, workflow/config
-identity and artifact integrity. Saved results are reused; uncertain dispatched
-calls remain spent, and a repeated main task requires network-retry allowance.
-Resume cannot promise remote billing exactly once. Absent usage stays unknown.
+## Extending compatibility
 
-Accepted cancellation is terminal; start a new run or retry. Interrupted runs
-can resume. Cancellation and publication authorization share a lifecycle lock:
-cancellation first prevents the artifact; authorization first durably records
-the candidate's right to publish and a late cancel receives conflict. Recovery
-after that barrier only finishes publication/reporting.
+Keep public facade imports and version-specific serialization until their retirement policy changes.
+A static search finding no internal caller is not enough to delete a public helper or recovery branch.
+Change the owning canonical code, consumers and focused historical fixtures together; do not rewrite
+user runs, infer new permissions from old plans or re-enable retired Web entry points through docs.
 
-## Read a result
-
-The four stage statuses derive from committed durable records. Failures and
-source gaps remain visible. A terminal run without a committed case has no
-research conclusion. `GET /api/runs/{id}/catalyst` returns `ready`, `unavailable`
-or `unsupported`; `ready` only means readable. Inspect completeness, quality,
-priority and limitations independently.
-
-First screen, details, evidence drawer and Markdown report read the same case.
-Refresh, SSE replay/reconnect and artifact/projection reads perform no model or
-data calls. After a page reload, select the saved run from history. Reports
-remain in the run's `reports/` directory in the local durable store.
-
-See [architecture](../../ARCHITECTURE.md) for ownership and default paths.
-Verification history and research-quality decisions belong in the
-[wiring acceptance record](../archive/reviews/2026-09-30-catalyst-wiring-acceptance.md).
-
-New case publication also emits an additive
-[shared research record](../contracts/research-record.md). The Reader presents
-up to four saved price-statistic cards below the brief, with ES/Beta and method
-details expandable. Citation drawers resolve saved claims/challenges to all
-their directly cited sources and show admitted source content before metadata.
-Missing original bodies remain missing; model dispositions never become
-executed verification. This integration does not change the existing catalyst
-workflow, default profile or data-qualification rules.
+<!-- Compatibility anchors for existing section links. -->
+<a id="budget-cancellation-and-recovery"></a>
+<a id="explicit-catalyst-research-trials"></a>
+<a id="historical-trial-setup"></a>
+<a id="read-a-result"></a>
+<a id="sources-and-qualification"></a>

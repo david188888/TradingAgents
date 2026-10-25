@@ -2,8 +2,8 @@
 
 - **Status: Historical** — 历史设计与交付记录，**不是当前实现行为的证据**。当前行为以代码、passing tests 和 [当前状态文档索引](../README.md) 为准。
 
-`docs/` 下除 `contracts/`、`operations/`、`architecture/`、`integrations/`、
-`decisions/` 外的其余目录都属于归档。本页是这些目录的完整清单；
+`docs/plans/`、`docs/reviews/`、`docs/superpowers/` 与本目录保留历史材料。
+本页提供这些材料的导航；旧路径保留，不要求读者先读完历史再了解项目。
 当前状态的导航入口是 [docs/README.md](../README.md)。
 
 ## 归档约定
@@ -14,6 +14,7 @@
 
 ## Reviews And Verification Records
 
+- [文档与代码审查及精简结果（2026-10-25）](../reviews/2026-10-25-documentation-code-audit.md)：关键发现、现役文档收敛和验证边界；代码缺陷尚未整改。
 - [v3.7.0 发布说明](../reviews/2026-10-24-v3.7.0-release-notes.md)：双路搜索、有界补证与 V2 证据版本。
 - [双路搜索实施收尾](../reviews/2026-10-24-dual-search-closeout.md)：11 项任务、独立审查修复、验证范围和知识面状态。
 
@@ -103,7 +104,7 @@
 
 ## Legacy Archive
 
-`docs/archive/` — 2026-09 之前的原始设计与实施记录。
+`docs/archive/` — 较早阶段及后续归入此处的设计、实施与调查记录。
 
 - [Low-cost evidence design](../archive/designs/2026-10-05-low-cost-evidence-design.md) and [implementation](../archive/plans/2026-10-05-low-cost-evidence-implementation.md)
 - [Native multi-source design](../archive/designs/2026-10-03-native-multisource-design.md), [implementation](../archive/plans/2026-10-03-native-multisource-implementation.md), [acceptance](../archive/reviews/2026-10-03-native-multisource-acceptance.md) and [live smoke record](../archive/reviews/2026-10-03-002130-live-smoke.md)

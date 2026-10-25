@@ -25,26 +25,27 @@ translation.
 
 ## Commands
 
-Public frontend checks start by installing the tracked lockfile dependencies:
+Follow the [scoped validation matrix](../CONTRIBUTING.md#scoped-validation).
+Install lockfile dependencies with `npm --prefix frontend ci` for first setup,
+dependency changes or an incomplete install. For a localized behavior change,
+select the relevant tracked Vitest files, for example:
 
 ```bash
-npm --prefix frontend ci
-npm --prefix frontend run typecheck
+npm --prefix frontend run test -- --run src/hooks/useRunStream.test.ts
 npm --prefix frontend run build
-```
-
-Frontend test files/configuration and `e2e/` scaffolding are tracked. When
-those paths are present, run the applicable checks:
-
-```bash
-npm --prefix frontend run test -- --run
-npm --prefix frontend run test:e2e
 ```
 
 `npm --prefix frontend run build` runs TypeScript build checks and Vite. Vite
 writes directly to `../tradingagents/web/static/`, the tracked assets served by
 the FastAPI package. Every `frontend/src/` change therefore requires that build
 and inclusion of the resulting static-asset changes in the same change.
+Standalone `typecheck` is optional feedback while editing, not an extra check
+before the same build. Documentation-only changes do not require a build.
+
+Run selected Playwright specs with `npm --prefix frontend run test:e2e -- <spec>`
+when a complete browser flow is affected. Use broader suites for shared behavior
+changes or version releases, not every component edit. Reuse passing checks while
+their inputs remain unchanged; publication alone does not require another run.
 
 Use `npm --prefix frontend run dev` for local Vite development. The end-to-end
 configuration starts the Python fixture server on `127.0.0.1:4173`, serving

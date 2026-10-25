@@ -189,6 +189,28 @@ def _event_types(store: RunStore, run_id: str) -> list[str]:
     return [event.type for event in store.read_events(run_id)]
 
 
+def test_deletion_guard_protects_pending_run_and_serializes_admission(tmp_path):
+    manager, store, _broker, _factory = _manager(tmp_path)
+    run = _persisted_run(store, status="created")
+    manager.scheduler.queue_run(run.run_id)
+    attempted = threading.Event()
+    admitted = threading.Event()
+
+    def admission():
+        attempted.set()
+        with manager._guard:
+            admitted.set()
+
+    with manager.deletion_guard() as protected:
+        assert run.run_id in protected
+        worker = threading.Thread(target=admission)
+        worker.start()
+        assert attempted.wait(1)
+        assert not admitted.is_set()
+    worker.join(1)
+    assert admitted.is_set()
+
+
 def _persisted_run(
     store: RunStore,
     *,

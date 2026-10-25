@@ -32,8 +32,8 @@ export interface SseSubscription {
 
 /**
  * Stream failure with the HTTP status attached. useRunStream uses it to
- * refuse reconnecting on 4xx responses, which are permanent boundary
- * rejections (run deleted, malformed id) rather than transient faults.
+ * stop on permanent boundary rejections (run deleted, malformed id), while
+ * transient HTTP 408/429 failures use bounded reconnect backoff.
  */
 export class SseHttpError extends Error {
   readonly status: number;

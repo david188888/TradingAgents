@@ -68,7 +68,7 @@ Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记�
 
 ## 当前限制
 
-- **覆盖有限**：公开来源可能缺失、限流或无法验证历史时点；部分历史估值能力依赖 Tushare 凭据和权限。交易日历已改为由指数行情本地派生，不再依赖有每日配额的供应商。
+- **覆盖有限**：公开来源可能缺失、限流或无法验证历史时点；部分历史估值能力依赖 Tushare 凭据和权限。交易日历优先使用深交所官方月历，结合指数日期与通达信见证，Tushare 仅作最后备源。
 - **研究质量仍需验证**：运行完成可能仍是 `partial / LOW_CONFIDENCE`；证据核查通过不代表经济原因或合理价值已确定，也未证明预测准确率提升。
 - **产品范围明确**：当前维护本地 A 股 Web 研究；CLI 分析不再维护，旧流程保留历史读取与兼容恢复。
 
@@ -76,12 +76,10 @@ Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记�
 
 | 想了解什么 | 文档入口 |
 | --- | --- |
-| 整体架构、模块职责与 Agent 边界 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 运行、数据源、模型与恢复 | [Web 操作](docs/operations/evidence-research.md) · [模型配置](docs/operations/llm-reasoning.md) |
-| 研究记录与证据契约 | [契约索引](docs/contracts/README.md) · [研究记录](docs/contracts/research-record.md) |
-| Reader 的证据追溯与展示 | [Reader 架构](docs/architecture/research-reader.md) |
-| 编码 Agent 与贡献者如何修改项目 | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| 全部文档与发布记录 | [文档索引](docs/README.md) · [3.7.0 发布说明](docs/reviews/2026-10-24-v3.7.0-release-notes.md) |
+| 当前目标、研究流程、模块职责与扩展入口 | [系统架构](ARCHITECTURE.md) |
+| 创建、阅读、模型配置与恢复 | [Web 操作](docs/operations/evidence-research.md) |
+| 开发环境、修改路由与验证 | [开发指南](CONTRIBUTING.md)；编码 Agent 另读 [AGENTS.md](AGENTS.md) |
+| 按需技术参考与历史追溯 | [文档索引](docs/README.md) |
 
 编码 Agent 从 [AGENTS.md](AGENTS.md) 开始；当前行为以代码、契约和当前状态文档为准，历史计划不是实现证据。
 

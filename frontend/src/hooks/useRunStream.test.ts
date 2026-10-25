@@ -260,3 +260,87 @@ describe("useRunStream symmetric error handling", () => {
     expect(result.current.status).toBe("closed");
   });
 });
+
+describe("useRunStream snapshot recovery", () => {
+  beforeEach(() => {
+    vi.useFakeTimers(); mocks.getRunMock.mockReset(); mocks.closeMock.mockReset(); mocks.resetHandlers();
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("continues backoff after a transient reconnect snapshot failure and recovers", async () => {
+    mocks.getRunMock.mockResolvedValueOnce(snap("outage", "running", 0));
+    mocks.getRunMock.mockRejectedValueOnce(new Error("temporary outage"));
+    mocks.getRunMock.mockResolvedValueOnce(snap("outage", "completed", 0));
+    const { result } = renderHook(() => useRunStream("outage"));
+    await act(async () => {});
+    await act(async () => { mocks.getHandlers()!.onClose(); await vi.advanceTimersByTimeAsync(500); });
+    expect(result.current.status).not.toBe("error");
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(result.current.status).toBe("closed");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("stops after the bounded retry budget when snapshots stay unavailable", async () => {
+    mocks.getRunMock.mockResolvedValueOnce(snap("exhausted", "running", 0));
+    mocks.getRunMock.mockRejectedValue(new Error("offline"));
+    const { result } = renderHook(() => useRunStream("exhausted"));
+    await act(async () => {});
+    await act(async () => { mocks.getHandlers()!.onClose(); await vi.advanceTimersByTimeAsync(200_000); });
+    expect(result.current.status).toBe("error");
+    expect(result.current.error?.message).toMatch(/too many times/);
+    expect(mocks.getRunMock).toHaveBeenCalledTimes(21);
+    await act(async () => vi.advanceTimersByTimeAsync(100_000));
+    expect(mocks.getRunMock).toHaveBeenCalledTimes(21);
+  });
+
+  it("does not retry a permanent snapshot rejection", async () => {
+    mocks.getRunMock.mockResolvedValueOnce(snap("deleted", "running", 0));
+    mocks.getRunMock.mockRejectedValue(Object.assign(new Error("deleted"), { status: 404 }));
+    const { result } = renderHook(() => useRunStream("deleted"));
+    await act(async () => {});
+    await act(async () => { mocks.getHandlers()!.onClose(); await vi.advanceTimersByTimeAsync(60_000); });
+    expect(result.current.status).toBe("error");
+    expect(result.current.error?.message).toBe("deleted");
+    expect(mocks.getRunMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels the old run retry and ignores its late snapshot after switching", async () => {
+    let finish!: (next: RunSnapshotDTO) => void;
+    mocks.getRunMock.mockResolvedValueOnce(snap("old", "running", 0));
+    mocks.getRunMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    mocks.getRunMock.mockResolvedValueOnce(snap("new", "running", 0));
+    const { result, rerender } = renderHook(({ id }) => useRunStream(id), { initialProps: { id: "old" } });
+    await act(async () => {});
+    await act(async () => { mocks.getHandlers()!.onClose(); await vi.advanceTimersByTimeAsync(500); });
+    rerender({ id: "new" });
+    await act(async () => {});
+    await act(async () => finish(snap("old", "completed", 0)));
+    expect(result.current.state?.meta.run_id).toBe("new");
+    expect(result.current.status).toBe("replaying");
+  });
+  it.each([408, 429])("retries a temporary HTTP %i snapshot rejection and reaches the terminal state", async (status) => {
+    mocks.getRunMock.mockResolvedValueOnce(snap(`temporary_${status}`, "running", 0));
+    mocks.getRunMock.mockRejectedValueOnce(Object.assign(new Error("temporary HTTP failure"), { status }));
+    mocks.getRunMock.mockResolvedValueOnce(snap(`temporary_${status}`, "completed", 0));
+    const { result } = renderHook(() => useRunStream(`temporary_${status}`));
+    await act(async () => {});
+    await act(async () => { mocks.getHandlers()!.onClose(); await vi.advanceTimersByTimeAsync(1500); });
+    expect(result.current.status).toBe("closed");
+    expect(result.current.error).toBeNull();
+    expect(mocks.getRunMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([408, 429])("recovers from a temporary HTTP %i stream rejection", async (status) => {
+    mocks.getRunMock.mockResolvedValueOnce(snap(`stream_${status}`, "running", 0));
+    mocks.getRunMock.mockResolvedValueOnce(snap(`stream_${status}`, "completed", 0));
+    const { result } = renderHook(() => useRunStream(`stream_${status}`));
+    await act(async () => {});
+    await act(async () => {
+      mocks.getHandlers()!.onError(Object.assign(new Error("temporary HTTP failure"), { status }));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(result.current.status).toBe("closed");
+    expect(result.current.error).toBeNull();
+  });
+
+});

@@ -57,7 +57,7 @@ function clampInspectorWidth(width: number): number {
 
 /** The primary surface reads the compact view first; audit material is opt-in. */
 export function WorkbenchLayout(): JSX.Element {
-  const { run_id, stream, view, selectRun } = useWorkbenchStore();
+  const { run_id, stream, view, selectRun, reconnectRun } = useWorkbenchStore();
   const history = useRunHistory();
   const [selectedTurn, setSelectedTurn] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
@@ -319,10 +319,8 @@ export function WorkbenchLayout(): JSX.Element {
     if (run_id === null) return;
     await resumeRun(run_id);
     await history.refresh();
-    // The run keeps its id but leaves the terminal set; re-select it so the
-    // live stream reconnects and the stale terminal projection is refetched.
-    selectRun(null);
-    selectRun(run_id);
+    // React batches selection changes; explicitly invalidate the same run.
+    reconnectRun(run_id);
   };
 
   return (
@@ -362,6 +360,9 @@ export function WorkbenchLayout(): JSX.Element {
             onDeleteRun={handleDeleteRun}
             onClearHistory={handleClearHistory}
             clearing={clearingHistory}
+            hasMore={history.hasMore}
+            loadingMore={history.loadingMore}
+            onLoadMore={history.loadMore}
           />
         </aside>
 

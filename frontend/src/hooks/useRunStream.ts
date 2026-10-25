@@ -45,16 +45,16 @@ function reconnectDelayMs(reconnectCount: number): number {
 }
 
 /**
- * Duck-typed status probe: eventSource attaches `status` to HTTP failures
+ * Permanent HTTP rejection probe: HTTP and SSE clients attach `status` to failures
  * (SseHttpError). A structural check keeps this hook independent of the
- * transport module's runtime exports, so test doubles stay trivial.
+ * transport module's runtime exports. Timeouts and rate limits remain retryable.
  */
-function sseHttpStatus(err: Error): number | null {
+function permanentHttpFailure(err: Error): boolean {
   const status = (err as Partial<SseHttpError>).status;
-  return typeof status === "number" ? status : null;
+  return typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
-export function useRunStream(run_id: string | null): UseRunStreamResult {
+export function useRunStream(run_id: string | null, reconnectKey = 0): UseRunStreamResult {
   const [state, dispatch] = useReducer(
     runReducer as (s: ReducerState, a: ReducerAction) => ReducerState,
     createInitialState(),
@@ -85,6 +85,8 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
 
     const id: string = run_id;
     closedRef.current = false;
+    lastSeqRef.current = 0;
+    reconnectCountRef.current = 0;
     let cancelled = false;
     setStatus("loading");
     setError(null);
@@ -94,7 +96,7 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
     // all events seen) or the transport should be re-established from the
     // last seen sequence to drain whatever was missed.
     const scheduleReconnect = (): void => {
-      if (cancelled || closedRef.current) return;
+      if (cancelled || closedRef.current || reconnectTimerRef.current !== null) return;
       if (reconnectCountRef.current >= MAX_RECONNECTS) {
         setStatus("error");
         setError(new Error("SSE reconnected too many times without reaching a terminal state"));
@@ -102,10 +104,12 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
       }
       reconnectCountRef.current += 1;
       reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
         if (cancelled || closedRef.current) return;
         getRun(id)
           .then((snap: RunSnapshotDTO) => {
             if (cancelled || closedRef.current) return;
+            setError(null);
             // Do NOT dispatch({type:"snapshot"}) here. The snapshot action
             // returns createInitialState(snapshot) -- only meta+roles --
             // which would wipe the turns/timeline/tool_calls already
@@ -129,8 +133,13 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
           })
           .catch((err: unknown) => {
             if (cancelled || closedRef.current) return;
-            setError(err instanceof Error ? err : new Error(String(err)));
-            setStatus("error");
+            const failure = err instanceof Error ? err : new Error(String(err));
+            if (permanentHttpFailure(failure)) {
+              setError(failure);
+              setStatus("error");
+              return;
+            }
+            scheduleReconnect();
           });
       }, reconnectDelayMs(reconnectCountRef.current));
     };
@@ -152,13 +161,12 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
         },
         onError: (err: Error) => {
           if (cancelled || closedRef.current) return;
-          // A 4xx is a permanent boundary rejection (run deleted, bad id):
+          // Most 4xx errors are permanent (run deleted, bad id):
           // retrying cannot succeed, so fail fast instead of burning the
-          // reconnect budget. Everything else -- 5xx, dropped transport,
-          // malformed frames -- recovers through the same snapshot-checked
+          // reconnect budget. Timeouts/rate limits (408/429), 5xx, dropped transport,
+          // and malformed frames recover through the same snapshot-checked
           // backoff path as a clean close.
-          const httpStatus = sseHttpStatus(err);
-          if (httpStatus !== null && httpStatus >= 400 && httpStatus < 500) {
+          if (permanentHttpFailure(err)) {
             setError(err);
             setStatus("error");
             return;
@@ -208,7 +216,7 @@ export function useRunStream(run_id: string | null): UseRunStreamResult {
         subscriptionRef.current = null;
       }
     };
-  }, [run_id]);
+  }, [run_id, reconnectKey]);
 
   return { state, status, error };
 }

@@ -31,7 +31,7 @@ RUN_VIEW_LOCATOR = "projections/run-view-v1.json"
 READER_BRIEF_LOCATOR = "projections/reader-brief-v1.json"
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "interrupted"})
 RECENT_ELIGIBLE_STATUSES = frozenset(
-    {"created", "running", "cancel_requested", "completed", "failed", "cancelled", "interrupted"}
+    {"created", "queued", "running", "cancel_requested", "completed", "failed", "cancelled", "interrupted"}
 )
 
 

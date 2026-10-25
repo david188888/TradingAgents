@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from tradingagents.agents.schemas._research_case import EvidenceRefV2
 
 from .metric_catalog import all_metric_definitions
-from .metric_engine import calculate_metric, calculate_yoy
+from .metric_engine import calculate_metric, calculate_yoy, financial_period_key
 from .metric_models import (
     FormulaEvaluationV1,
     LogicEdgeV1,
@@ -273,10 +273,15 @@ def _derived_evaluations(
             if item.metric_id == base_metric:
                 by_frequency.setdefault(item.frequency, []).append(item)
         for _frequency, values in by_frequency.items():
-            ordered = sorted(values, key=lambda item: item.period)
-            if len(ordered) < 2:
+            by_period = {financial_period_key(item): item for item in values
+                         if financial_period_key(item) is not None}
+            if not by_period:
                 continue
-            current, prior = ordered[-1], ordered[-2]
+            latest = max(by_period)
+            current = by_period[latest]
+            prior = by_period.get((latest[0] - 1, latest[1]))
+            if prior is None:
+                continue
             evaluation = calculate_yoy(yoy_metric, current, prior)
             refs = tuple(dict.fromkeys(current.source_evidence_ref_ids + prior.source_evidence_ref_ids))
             output = evaluation.output_observation.model_copy(

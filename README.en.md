@@ -68,7 +68,7 @@ Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at run
 
 ## Current limitations
 
-- **Limited coverage**: public sources may be missing, rate-limited or unable to establish historical availability. Some historical valuation capabilities require Tushare credentials and entitlements. The trading calendar is now derived locally from index bars and no longer depends on a daily-quota vendor.
+- **Limited coverage**: public sources may be missing, rate-limited or unable to establish historical availability. Some historical valuation capabilities require Tushare credentials and entitlements. The trading calendar prioritizes the official SZSE month grid with index-date/TDX witnesses; Tushare is the last fallback.
 - **Research quality needs evaluation**: completed runs may remain `partial / LOW_CONFIDENCE`. Passing evidence checks does not establish economic causes or fair value, and improved predictive accuracy has not been demonstrated.
 - **Defined product scope**: maintained research runs through the local A-share Web workbench. CLI analysis is no longer maintained; older workflows retain saved reading and compatible recovery.
 
@@ -76,12 +76,10 @@ Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at run
 
 | Question | Documentation entry |
 | --- | --- |
-| Architecture, module ownership and Agent boundaries | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Operations, sources, models and recovery | [Web operations](docs/operations/evidence-research.md) · [Model configuration](docs/operations/llm-reasoning.md) |
-| Research records and evidence contracts | [Contract index](docs/contracts/README.md) · [Research record](docs/contracts/research-record.md) |
-| Reader evidence tracing and presentation | [Reader architecture](docs/architecture/research-reader.md) |
-| Coding Agent and contributor workflow | [AGENTS.md](AGENTS.md) · [CONTRIBUTING.md](CONTRIBUTING.md) |
-| All documentation and release records | [Documentation index](docs/README.md) · [3.7.0 release notes](docs/reviews/2026-10-24-v3.7.0-release-notes.md) |
+| Current goals, workflow, module ownership and extension points | [Architecture](ARCHITECTURE.md) |
+| Creation, reading, model configuration and recovery | [Web operations](docs/operations/evidence-research.md) |
+| Development setup, change routing and validation | [Contributing](CONTRIBUTING.md); Coding Agents also read [AGENTS.md](AGENTS.md) |
+| Optional technical references and historical context | [Documentation index](docs/README.md) |
 
 Coding Agents should start with [AGENTS.md](AGENTS.md). Code, contracts and current-state docs define supported behavior; historical plans are not implementation evidence.
 

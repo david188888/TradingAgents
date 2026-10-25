@@ -196,8 +196,8 @@ def _has_real_deepseek_key():
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not _has_real_deepseek_key(),
-    reason="DEEPSEEK_API_KEY not set (or placeholder); skipping live API call",
+    os.environ.get("TRADINGAGENTS_RUN_LIVE_TESTS") != "1" or not _has_real_deepseek_key(),
+    reason="Live call requires TRADINGAGENTS_RUN_LIVE_TESTS=1 and a real DEEPSEEK_API_KEY",
 )
 class TestDeepSeekLiveStructuredOutput:
     """End-to-end: a real DeepSeek V4-flash call returns a typed instance.

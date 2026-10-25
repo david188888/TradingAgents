@@ -893,6 +893,7 @@ export interface DeleteAllRunsResultDTO {
  * tests/test_frontend_wire_contract.py::test_api_error_codes_match_backend.
  */
 export type ApiErrorCode =
+  | "local_origin_required"
   | "reader_sequence_unavailable"
   | "asset_type_mismatch"
   | "audit_item_not_found"

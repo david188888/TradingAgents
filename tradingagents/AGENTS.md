@@ -52,14 +52,14 @@ production behavior without an explicit runtime-policy change.
 
 ## Validation
 
-Public checks available from a fresh clone are:
+Follow the [scoped validation matrix](../CONTRIBUTING.md#scoped-validation).
+For localized behavior changes, lint changed Python files (including tests)
+with Ruff and run relevant pytest files or test cases. Expand to affected
+consumers for shared contracts, persistence, recovery or pipeline changes.
+Use broader offline regression for version releases or broad shared changes;
+do not run full pytest after every local optimization or repeat covered subsets.
 
-```bash
-ruff check tradingagents
-python scripts/check_agent_docs.py
-```
-
-`pytest` suites are tracked test scaffolding. Run `python -m pytest` or
-`python -m pytest -m unit` when that scaffolding is present. Use narrower
-test paths for a localized change, then run the
-applicable repository-level checks from the root guide.
+Documentation-only changes need documentation and diff checks. Add or adjust
+tests for meaningful behavior or regression gaps, not every small edit. Reuse
+passing checks while their relevant inputs remain unchanged, including when
+publishing to GitHub; preserve the Ruff pre-commit gate.

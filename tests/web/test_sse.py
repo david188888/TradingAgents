@@ -305,7 +305,7 @@ def test_client_disconnect_unsubscribes_but_never_cancels_run(tmp_path: Path):
             "raw_path": f"/api/runs/{run.run_id}/events".encode(),
             "query_string": b"",
             "root_path": "",
-            "headers": [(b"host", b"testserver")],
+            "headers": [(b"host", b"127.0.0.1:8000")],
             "client": ("127.0.0.1", 12345),
             "server": ("127.0.0.1", 8000),
             "state": {},

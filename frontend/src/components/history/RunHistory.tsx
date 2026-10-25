@@ -8,7 +8,7 @@
  * shows the ticker, a colored status badge, and either the final signal or
  * the failure category in the sub line.
  */
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { RunStatusLiteral, RunSummaryDTO } from "../../api/contracts";
 import { errorCategoryLabel } from "../../domain/errorCategory";
 import { useWorkbenchSelection } from "../../state/WorkbenchStore";
@@ -48,6 +48,9 @@ export interface RunHistoryProps {
   onClearHistory: () => void;
   /** True while a bulk clear is in flight so the button can be disabled. */
   clearing?: boolean;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 export function RunHistory({
@@ -57,8 +60,12 @@ export function RunHistory({
   onDeleteRun,
   onClearHistory,
   clearing = false,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }: RunHistoryProps): JSX.Element {
   const { run_id, selectRun } = useWorkbenchSelection();
+  const [showAllFailures, setShowAllFailures] = useState(false);
 
   const handleDelete = (run: RunSummaryDTO): void => {
     if (window.confirm(`确定删除 ${run.ticker} 的运行记录吗？此操作不可恢复。`)) {
@@ -145,9 +152,9 @@ export function RunHistory({
   if (completed.length) groups.push({ title: "已完成", items: completed });
   if (failed.length) {
     groups.push({
-      title: `失败（最近 ${Math.min(failed.length, FAILED_GROUP_LIMIT)} 个）`,
-      items: failed.slice(0, FAILED_GROUP_LIMIT),
-      capped: failed.length > FAILED_GROUP_LIMIT,
+      title: showAllFailures ? `失败（${failed.length} 个）` : `失败（最近 ${Math.min(failed.length, FAILED_GROUP_LIMIT)} 个）`,
+      items: showAllFailures ? failed : failed.slice(0, FAILED_GROUP_LIMIT),
+      capped: !showAllFailures && failed.length > FAILED_GROUP_LIMIT,
     });
   }
   if (terminated.length) groups.push({ title: "已终止", items: terminated });
@@ -169,21 +176,30 @@ export function RunHistory({
       </div>
       {error ? (
         <p className="placeholder">加载失败：{error.message}</p>
-      ) : loading && runs.length === 0 ? (
+      ) : null}
+      {loading && runs.length === 0 ? (
         <p className="placeholder">加载中…</p>
       ) : runs.length === 0 ? (
-        <p className="placeholder">暂无运行记录</p>
+        error ? null : <p className="placeholder">暂无运行记录</p>
       ) : (
         groups.map((group) => (
           <div className="history-group" key={group.title}>
             <div className="history-group-title">{group.title}</div>
             <ul>{group.items.map(renderItem)}</ul>
             {group.capped ? (
-              <p className="history-group-note">更早的失败记录已折叠，文件仍保留</p>
+              <div className="history-group-note">
+                <p>更早的失败记录已折叠</p>
+                <button type="button" className="history-clear" onClick={() => setShowAllFailures(true)}>显示更早的失败记录</button>
+              </div>
             ) : null}
           </div>
         ))
       )}
+      {hasMore ? (
+        <button type="button" className="history-clear" aria-label="加载更多历史记录" disabled={loading || loadingMore} onClick={onLoadMore}>
+          {loadingMore ? "加载中…" : "加载更多历史记录"}
+        </button>
+      ) : null}
     </section>
   );
 }

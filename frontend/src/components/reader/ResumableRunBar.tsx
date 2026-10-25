@@ -8,8 +8,8 @@ export interface ResumableRunBarProps {
 /**
  * Inline banner for a terminal interrupted run: the durable checkpoint is
  * still on disk, so the same run can pick up where it stopped. Resuming
- * keeps the run_id; the workbench re-selects the run so the live stream
- * and projection refetch restart.
+ * keeps the run_id; the workbench explicitly restarts the live stream
+ * and refetches the projection.
  */
 export function ResumableRunBar({ onResume }: ResumableRunBarProps): JSX.Element {
   const [resuming, setResuming] = useState(false);
