@@ -56,10 +56,13 @@ from tradingagents.llm_clients.chatgpt_policy import (
 )
 from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.research.native_versions import (
+    CHALLENGE_INPUT_POLICY,
     COMPANY_RESEARCH_POLICY,
     FOCUS_WORKFLOW_VERSION,
+    MODEL_BINDING_POLICY,
     REPORT_DELIVERY_POLICY,
     RESPONSE_ROLES,
+    SEARCH_GAP_GUIDANCE_POLICY,
     SEARCH_WORKFLOW_VERSION,
     SPECIALIST_REFERENCE_POLICY,
     UNIFIED_WORKFLOW_VERSION,
@@ -156,6 +159,16 @@ class NativeModelCaller:
         self.schemas = dict(STAGE_SCHEMAS)
         self.instructions = dict(STAGE_INSTRUCTIONS)
         version = ledger.journal.state.get("identity", {}).get("workflow_version")
+        self.challenge_input_policy = ledger.journal.state["identity"].get("challenge_input_policy")
+        if self.challenge_input_policy is not None and (
+            self.challenge_input_policy != CHALLENGE_INPUT_POLICY or version != SEARCH_WORKFLOW_VERSION
+        ):
+            raise CatalystCheckpointConflict("native challenge input policy mismatch")
+        self.search_gap_guidance_policy = ledger.journal.state["identity"].get("search_gap_guidance_policy")
+        if self.search_gap_guidance_policy is not None and (
+            self.search_gap_guidance_policy != SEARCH_GAP_GUIDANCE_POLICY or version != SEARCH_WORKFLOW_VERSION
+        ):
+            raise CatalystCheckpointConflict("native search gap guidance policy mismatch")
         retry_policy = ledger.journal.state.get("identity", {}).get("model_retry_policy")
         if retry_policy is not None and retry_policy != MODEL_RETRY_POLICY:
             raise CatalystCheckpointConflict("native model retry policy mismatch")
@@ -174,6 +187,20 @@ class NativeModelCaller:
         self.deliver_company_report = report_policy == REPORT_DELIVERY_POLICY
         from tradingagents.research.numeric_integration import numeric_enabled
         self.numeric_enabled = numeric_enabled(ledger.journal.state["identity"])
+        self.model_binding_policy = ledger.journal.state["identity"].get("model_binding_policy")
+        from tradingagents.research.native_versions import RESEARCH_DELIVERY_POLICY
+        self.research_delivery_policy = ledger.journal.state["identity"].get("research_delivery_policy")
+        if self.research_delivery_policy is not None and (
+            self.research_delivery_policy != RESEARCH_DELIVERY_POLICY or version != SEARCH_WORKFLOW_VERSION
+            or self.model_binding_policy != MODEL_BINDING_POLICY or not self.numeric_enabled
+            or ledger.journal.state["identity"].get("factual_premise_policy") is None
+        ):
+            raise CatalystCheckpointConflict("research delivery policy mismatch")
+        if self.model_binding_policy is not None and (
+            self.model_binding_policy != MODEL_BINDING_POLICY or version != SEARCH_WORKFLOW_VERSION
+            or not self.numeric_enabled
+        ):
+            raise CatalystCheckpointConflict("native model binding policy mismatch")
         if self.numeric_enabled and version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             raise CatalystCheckpointConflict("native numeric workflow mismatch")
         if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
@@ -270,9 +297,13 @@ class NativeModelCaller:
 
     def _prompt(self, stage: str, context: Mapping[str, Any], *, synthesis_targets=None) -> str:
         try:
+            gap_constraints = None
             canonical = context
             context = self._model_context(stage, context)
             schema_value = self.schemas[stage].model_json_schema()
+            if stage == "challenge" and self.research_delivery_policy is not None:
+                from tradingagents.research.challenge_reviews import review_schema
+                schema_value = review_schema(schema_value, canonical)
             # Additive check IDs must not alter already-frozen legacy prompts.
             from tradingagents.research.native_versions import STRUCTURED_FINANCIAL_POLICY
             if self.ledger.journal.state["identity"].get("structured_financial_policy") != STRUCTURED_FINANCIAL_POLICY:
@@ -305,15 +336,40 @@ class NativeModelCaller:
                             "overall": "overall" in synthesis_targets, "conditions": "conditions" in synthesis_targets,
                         }
             if self.numeric_enabled:
-                from tradingagents.research.numeric_narrative import numeric_prompt_schema
-                schema_value = numeric_prompt_schema(schema_value, premises="factual_premise_policy" in canonical)
+                if self.model_binding_policy == MODEL_BINDING_POLICY:
+                    from tradingagents.research.inline_bindings import inline_prompt_schema
+                    schema_value = inline_prompt_schema(schema_value, premises="factual_premise_policy" in canonical)
+                else:
+                    from tradingagents.research.numeric_narrative import numeric_prompt_schema
+                    schema_value = numeric_prompt_schema(schema_value, premises="factual_premise_policy" in canonical)
             if (self.ledger.journal.state['identity'].get('workflow_version') == SEARCH_WORKFLOW_VERSION
                     and stage != 'synthesis' and stage != 'focus_response'):
                 from tradingagents.agents.schemas._search import SearchGapsV1
                 gap_schema = SearchGapsV1.model_json_schema()
+                if self.search_gap_guidance_policy == SEARCH_GAP_GUIDANCE_POLICY:
+                    from tradingagents.execution.search_reviews import stage_gap_constraints
+                    gap_constraints = stage_gap_constraints(stage, context)
+                    fields = gap_schema['$defs']['EvidenceGapV1']['properties']
+                    if gap_constraints['required_role'] is not None:
+                        fields['role']['const'] = gap_constraints['required_role']
+                    if gap_constraints['cutoff'] is not None:
+                        fields['cutoff']['const'] = gap_constraints['cutoff']
+                    if gap_constraints['allowed_target_ids']:
+                        fields['target_ids']['items']['enum'] = gap_constraints['allowed_target_ids']
+                    else:
+                        fields['target_ids']['maxItems'] = 0
                 schema_value.setdefault('$defs', {}).update(gap_schema.get('$defs', {}))
                 schema_value['properties']['gaps'] = gap_schema['properties']['gaps']
                 schema_value.setdefault('required', []).append('gaps')
+            if self.research_delivery_policy is not None:
+                from tradingagents.research.evidence_packets import packet_context, packet_schema
+                schema_value = packet_schema(schema_value, canonical)
+                repair_sections = context.get("synthesis_repair_sections")
+                context = packet_context(stage, canonical)
+                if self.ledger.journal.state.get("native.reference_aliases." + stage) in {1, 2}:
+                    context = translate_references(context, reference_aliases(canonical))
+                if repair_sections is not None:
+                    context["synthesis_repair_sections"] = repair_sections
             payload = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
             schema = json.dumps(schema_value, ensure_ascii=False, sort_keys=True)
             language = str(self.config.get("output_language", "Chinese"))
@@ -329,7 +385,27 @@ class NativeModelCaller:
             + f"\nOutput language: {language}. Return one JSON object only, no Markdown.\n"
             + "Schema:\n" + schema + "\nSaved research context:\n" + payload
         )
-        if self.numeric_enabled:
+        if gap_constraints is not None:
+            prompt += (
+                "\nEach gaps entry requests additional evidence. Copy cutoff from the constraints below; "
+                "when required_role is not null, set role to required_role. target_ids may contain only the supplied saved hypothesis/challenge "
+                "IDs listed in allowed_target_ids; never fact/evidence IDs or newly proposed items. "
+                "If allowed_target_ids is empty, target_ids must be []. A gap can request evidence for "
+                "this role without targeting an item. Use gaps:[] when no actionable gap is needed. "
+                "Search gap constraints:\n" + json.dumps(gap_constraints, ensure_ascii=False, sort_keys=True)
+            )
+        if self.research_delivery_policy is not None:
+            from tradingagents.research.evidence_packets import PACKET_INSTRUCTIONS
+            prompt += PACKET_INSTRUCTIONS
+            if stage == "challenge":
+                prompt += ("\nReturn exactly one reviews item for EVERY supplied hypothesis, with a cited rationale. "
+                    "Use challenged only when you return an actual challenge for that hypothesis; otherwise use "
+                    "no_additional_counterevidence, explain what remains uncertain. Empty challenges never "
+                    "replaces reviews. A review is an interpretation, never proof that risks are absent.")
+        elif self.numeric_enabled and self.model_binding_policy == MODEL_BINDING_POLICY:
+            from tradingagents.research.inline_bindings import inline_binding_instructions
+            prompt += inline_binding_instructions(premises="factual_premise_policy" in canonical)
+        elif self.numeric_enabled:
             prompt += (
                 "\nReturn the numeric envelope {proposal, plans, structured_bindings}. "
                 "All narrative quantities, dates and numbered identities must use the exact "
@@ -342,7 +418,7 @@ class NativeModelCaller:
                 "A plan is a proposed threshold/date, never a company fact. Existing evidence scope, "
                 "reply/argument bindings and all invocation limits remain unchanged."
             )
-        if "factual_premise_policy" in canonical:
+        if "factual_premise_policy" in canonical and self.model_binding_policy is None:
             prompt += (
                 "\nThe envelope MUST also contain premises: one binding per statement, rationale, judgement, "
                 "answer and alternative_explanation field, with field_path, observation_ids, pending_questions. "
@@ -365,7 +441,7 @@ class NativeModelCaller:
                        "these fields: " + detail_fields + ". A financial condition may use either the "
                        "financial_statements or the financial_detail record, but both operands must "
                        "come from the same evidence record.")
-        if self.ledger.journal.state.get("native.binding_guidance." + stage) == 1:
+        if self.ledger.journal.state.get("native.binding_guidance." + stage) == 1 and self.research_delivery_policy is None:
             if stage in {"operating_quality", "event_context", "market_context"}:
                 prompt += (
                     "\nBefore returning JSON: every hypothesis needs at least one condition with "
@@ -383,6 +459,14 @@ class NativeModelCaller:
                     "Allowed dimension claim IDs:\n"
                     + json.dumps(context.get("dimension_claim_ids", {}), ensure_ascii=False, sort_keys=True)
                 )
+        if self.ledger.journal.state.get("native.field_path_guidance." + stage) == 1 and self.model_binding_policy is None:
+            prompt += (
+                "\nEvery field_path in plans, structured_bindings and premises is the dotted path inside "
+                "proposal, without a 'proposal.' prefix, using 0-based list positions exactly as they appear "
+                "in your own proposal, e.g. hypotheses.0.statement, hypotheses.1.alternative_explanation, "
+                "hypotheses.0.conditions.0.check.predicate. Write one entry per field; never duplicate a "
+                "path or address a list position that your proposal does not contain."
+            )
         alias_version = self.ledger.journal.state.get("native.reference_aliases." + stage)
         if alias_version in {1, 2}:
             prompt += (
@@ -419,11 +503,18 @@ class NativeModelCaller:
 
     def _model_context(self, stage: str, context: Mapping[str, Any]) -> Mapping[str, Any]:
         if self.ledger.journal.state.get("native.reference_aliases." + stage) in {1, 2}:
-            return translate_references(context, reference_aliases(context))
+            context = translate_references(context, reference_aliases(context))
+        if stage == "challenge" and self.challenge_input_policy == CHALLENGE_INPUT_POLICY:
+            from tradingagents.execution.native_prompt_context import (
+                compact_challenge_search_context,
+            )
+            return compact_challenge_search_context(context)
         return context
 
     def _parse(self, stage: str, response: Any, context: Mapping[str, Any] | None = None, *, phase: str = "main") -> dict[str, Any]:
         try:
+            review_envelope = None
+            review_receipt = None
             content = normalize_content(response).content
             value = json.loads(content, object_pairs_hook=_unique_object)
             if not isinstance(value, dict):
@@ -431,6 +522,15 @@ class NativeModelCaller:
             if context is not None and self.ledger.journal.state.get("native.reference_aliases." + stage) in {1, 2}:
                 aliases = reference_aliases(context)
                 value = translate_references(value, {alias: identifier for identifier, alias in aliases.items()})
+            if self.model_binding_policy == MODEL_BINDING_POLICY:
+                if self.research_delivery_policy is not None:
+                    from tradingagents.research.evidence_packets import decode_packet_envelope
+                    value = decode_packet_envelope(value, context or {})
+                from tradingagents.research.inline_bindings import decode_inline_envelope
+                value = decode_inline_envelope(value, premises="factual_premise_policy" in (context or {}))
+                if stage == "challenge" and self.research_delivery_policy is not None:
+                    from tradingagents.research.challenge_reviews import split_reviews
+                    value, review_envelope = split_reviews(value)
             if (stage == "synthesis" and context is not None
                     and self.ledger.journal.state.get("native.reference_schema.synthesis") == 2):
                 validate_synthesis_reference_surface(value.get("proposal") if self.numeric_enabled else value,
@@ -441,7 +541,7 @@ class NativeModelCaller:
                 from tradingagents.execution.search_reviews import extract_stage_gaps
                 stage_gaps = value.get('gaps', [])
                 value = extract_stage_gaps(value, stage=stage, context=context, ledger=self.ledger, persist=False)
-            numeric_proof = None
+            numeric_proof, binding_issues = None, []
             sectioned = stage == "synthesis" and self.ledger.journal.state.get("native.reference_schema.synthesis") == 3
             if sectioned:
                 from tradingagents.research.synthesis_sections import (
@@ -467,7 +567,7 @@ class NativeModelCaller:
                 from tradingagents.research.numeric_narrative import compile_numeric_stage
                 value, numeric_proof = compile_numeric_stage(stage, value, context, self.schemas[stage],
                     isolate=(self.isolate_specialists and stage in {"operating_quality", "event_context", "market_context"})
-                    or (stage == "challenge" and self.directed_challenges))
+                    or (stage == "challenge" and self.directed_challenges), issues=binding_issues)
             if context is not None and stage == "challenge" and self.directed_challenges:
                 from tradingagents.research.challenge_checks import (
                     ChallengeValidationError,
@@ -529,6 +629,10 @@ class NativeModelCaller:
                         rejected.append(HypothesisRejectionV1(**rejection))
                     if rejected:
                         first_error = NativeEvidenceBindingError("numeric hypothesis invalid", code=rejected[0].code)
+                        first_error.binding_issue = next((i["binding_issue"] for i in binding_issues
+                                                          if i["index"] == rejected[0].index and "binding_issue" in i), None)
+                        first_error.field_name = next((i["field_name"] for i in binding_issues
+                                                       if i["index"] == rejected[0].index and "field_name" in i), None)
                 for index, hypothesis in enumerate(proposal.hypotheses):
                     original_index = numeric_indices[index]
                     try:
@@ -599,11 +703,16 @@ class NativeModelCaller:
                 if {c.challenge_id for c in proposal.challenge_assessments} != challenges:
                     raise ValueError("synthesis challenge coverage invalid")
             value = proposal.model_dump(mode="json")
+            if review_envelope is not None:
+                from tradingagents.research.challenge_reviews import compile_reviews
+                review_receipt = compile_reviews(review_envelope, context, value)
             if numeric_proof is not None:
                 from tradingagents.research.numeric_integration import remember_numeric
                 remember_numeric(self.ledger.journal, stage, value, numeric_proof, context)
             if stage_gaps is not None:
                 extract_stage_gaps({**value, 'gaps': stage_gaps}, stage=stage, context=context, ledger=self.ledger)
+            if review_receipt is not None:
+                self.ledger.record_result("native.challenge_reviews", review_receipt)
             return value
         except Exception as exc:
             if isinstance(exc, (CatalystCheckpointConflict, NativeModelCancelled, TimeoutError)):
@@ -618,6 +727,8 @@ class NativeModelCaller:
 
     def _candidate(self, stage, digest, context):
         if stage == "challenge" and self.directed_challenges:
+            if self.research_delivery_policy is not None and self.ledger.cached_result("native.challenge_reviews") is None:
+                return None
             saved = self.ledger.cached_result("native.challenge_candidate")
             if saved is None:
                 return None
@@ -802,8 +913,10 @@ class NativeModelCaller:
             })
 
     def _record_safe_diagnostic(self, stage, phase, category, exc, *, response=None, attempt_key=None):
+        from tradingagents.agents.schemas._numeric_stage import NumericStageEnvelopeV1
         diagnostic = safe_model_diagnostic(stage, phase, category, exc,
-            schema=self.schemas[stage], response=response)
+            schema=self.schemas[stage], envelope_schema=NumericStageEnvelopeV1 if self.numeric_enabled else None,
+            response=response)
         journal = self.ledger.journal
         with journal.lock:
             if journal.failed:
@@ -833,6 +946,21 @@ class NativeModelCaller:
             return base
         diagnostic = self.ledger.journal.state.get("native.model_diagnostics", {}).get(stage + ".main", {})
         code = diagnostic.get("detail_code")
+        if self.research_delivery_policy is not None and code == "challenge_review_coverage":
+            return base + ("\nValidation failure: challenge_review_coverage. Supply reviews for every saved "
+                "hypothesis exactly once, with its cited rationale. Use challenged only if challenges contains "
+                "that hypothesis; otherwise explain no_additional_counterevidence. Do not omit reviews.")
+        if self.model_binding_policy == MODEL_BINDING_POLICY and code == "inline_binding_shape":
+            return base + ("\nValidation failure: inline_binding_shape. Return only proposal and the "
+                "schema-requested gaps. Place text and premise together in their own field, plans beside "
+                "their own text/date, and structured value/binding together. Never output field_path "
+                "or top-level premises, plans or structured_bindings. The host generates addresses.")
+        if self.search_gap_guidance_policy == SEARCH_GAP_GUIDANCE_POLICY and code in {
+            "gap_cutoff_changed", "gap_role_changed", "gap_target_scope",
+        }:
+            return base + ("\nValidation failure: " + code + ". Correct the gaps using the Search gap "
+                "constraints already supplied. Do not use fact/evidence IDs or newly proposed items "
+                "as gap targets. When allowed_target_ids is empty, use target_ids:[].")
         if stage == "synthesis" and self.ledger.journal.state.get("native.reference_schema.synthesis") == 3:
             candidate = self.ledger.cached_result("native.synthesis_sections.main")
             if candidate is not None and candidate["failures"]:
@@ -973,6 +1101,10 @@ class NativeModelCaller:
                 and stage in {*STAGE_SCHEMAS} - {"challenge"}
                 and "native.prompt." + stage not in self.ledger.journal.state):
             self._bind("native.binding_guidance." + stage, 1)
+        if (self.ledger.journal.state.get("identity", {}).get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
+                and self.numeric_enabled and stage not in {"synthesis", "focus_response"}
+                and "native.prompt." + stage not in self.ledger.journal.state):
+            self._bind("native.field_path_guidance." + stage, 1)
         if (self.ledger.journal.state.get("identity", {}).get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
                 and stage == "synthesis" and "native.prompt." + stage not in self.ledger.journal.state
                 and "native.reference_aliases." + stage not in self.ledger.journal.state):

@@ -56,6 +56,11 @@ it("creates native company research with normalized scheduling regardless of leg
   const { result } = await mount();
   expect(result.current.buildRequest()).toMatchObject({ ticker: "600803", mode: "company_research", research_profile: "evidence_v1", research_depth: 1, horizon: "medium", selected_analysts: ["market", "social", "news", "fundamentals"], checkpoint_enabled: false });
 });
+it("lets the server resolve the current date for single and batch creation", async () => {
+  const {result} = await mount();
+  expect(result.current.buildRequest()).not.toHaveProperty("analysis_date");
+  expect(result.current.buildRequestForTicker("002130")).not.toHaveProperty("analysis_date");
+});
 it("keeps an optional focus in the single company workflow and uses the same scope for batch", async () => {
   const {result} = await mount();
   act(() => result.current.setResearchQuestion("  兑现条件？  "));

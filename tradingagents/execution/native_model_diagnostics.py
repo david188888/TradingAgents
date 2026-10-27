@@ -21,6 +21,9 @@ _BINDINGS = {
     "operating judgement requires cited financial evidence": "operating_financial_reference",
     "holding judgement requires cited original thesis": "holding_thesis_reference",
     "duplicate JSON key": "duplicate_json_key",
+    "gap cutoff changed": "gap_cutoff_changed",
+    "gap role changed": "gap_role_changed",
+    "gap target outside supplied scope": "gap_target_scope",
     "critical economic challenge or missing anchor prohibits favorable": "investment_stance_ceiling",
 }
 _UPSTREAM_CODES = {
@@ -54,7 +57,7 @@ def _fields(schema):
     return names
 
 
-def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, response=None):
+def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, envelope_schema=None, response=None):
     """Only host-owned labels, declared field names and numeric metadata escape."""
     value = {"version": 1, "stage": stage, "phase": phase, "category": category}
     status = getattr(exc, "status_code", None)
@@ -78,25 +81,35 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, response=
         value.update(category="budget_refused", budget_bucket=exc.hit.bucket.value,
                      budget_limit=exc.hit.limit, budget_consumed=exc.hit.consumed)
     elif getattr(exc, "code", None) in {
-        "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
+        "inline_binding_shape", "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
         "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
         "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
         "premise_observation_scope", "premise_support_missing",
         "numeric_manifest_binding", "numeric_catalog_limit",
-        "challenge_schema_invalid", "challenge_fact_reference", "challenge_check_scope",
+        "challenge_review_coverage", "challenge_schema_invalid", "challenge_fact_reference", "challenge_check_scope",
         "challenge_future_date", "challenge_check_unavailable", "challenge_requirement_invalid",
         "challenge_target_reference", "challenge_condition_reference",
     }:
         value.update(category="reference_validation", detail_code=exc.code)
+        from tradingagents.research.numeric_narrative import BINDING_ISSUES
+        if getattr(exc, "binding_issue", None) in BINDING_ISSUES:
+            value["binding_issue"] = exc.binding_issue
+        from tradingagents.research.numeric_narrative import _TEXT_FIELDS
+        if getattr(exc, "field_name", None) in _TEXT_FIELDS:
+            value["field_name"] = exc.field_name
     elif isinstance(exc, TimeoutError) or type(exc).__name__ in {"APITimeoutError", "ReadTimeout", "ConnectTimeout"}:
         value["category"] = "request_timeout"
     elif type(exc).__name__ == "APIConnectionError":
         value["category"] = "transport_failed"
     elif isinstance(exc, ValidationError) and schema is not None:
         names = _fields(schema)
+        if envelope_schema is not None:
+            names.update(_fields(envelope_schema))
         value["category"] = "schema_validation"
         issues = []
-        for issue in exc.errors(include_input=False, include_context=False, include_url=False)[:8]:
+        # Context is inspected only for whitelisted integer bounds below; never
+        # copy validator messages, exception objects or arbitrary context values.
+        for issue in exc.errors(include_input=False, include_context=True, include_url=False)[:8]:
             path = [part if type(part) is int or part in names else "<undeclared>"
                     for part in issue["loc"]]
             # Custom validators can define arbitrary error types; only built-in
@@ -107,7 +120,15 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, response=
                        "float_parsing", "string_type", "tuple_type", "list_type", "model_type",
                        "date_parsing", "date_from_datetime_parsing", "enum", "greater_than_equal",
                        "less_than_equal", "finite_number"}
-            issues.append({"path": path, "code": code if code in allowed else "validation_error"})
+            item = {"path": path, "code": code if code in allowed else "validation_error"}
+            if code in {"too_long", "too_short", "string_too_long", "string_too_short"}:
+                bounds = (issue.get("ctx") or {})
+                for target, source in (("limit", "max_length" if "long" in code else "min_length"),
+                                       ("actual", "actual_length")):
+                    number = bounds.get(source)
+                    if type(number) is int and number >= 0:
+                        item[target] = number
+            issues.append(item)
             if not issue["loc"] and code == "value_error" and issue["msg"] in _PUBLIC_BINDINGS:
                 value.update(category="reference_validation", detail_code=_PUBLIC_BINDINGS[issue["msg"]])
         value["issues"] = issues

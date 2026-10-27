@@ -212,6 +212,7 @@ export interface ExplanationEntryDTO {
   target: string; explanation: string; uncertainty: string; references: string[];
 }
 export interface ReportExplanationDTO {
+  coverage?: {total: number; explained: number; unavailable: number; pending: number};
   schema_version: 1; run_id: string; base_record_sha256: string | null;
   state: "not_generated" | "generating" | "available" | "partial" | "failed" | "interrupted" | "unsupported" | "corrupt";
   reason_code: string | null; eligible: boolean;
@@ -518,7 +519,7 @@ export interface PortfolioDTO {
 
 export interface RunCreateRequestDTO {
   ticker: string;
-  analysis_date: string;
+  analysis_date?: string;
   selected_analysts: string[];
   research_depth: ResearchDepth;
   mode?: ResearchMode;
@@ -2504,6 +2505,7 @@ export interface SynthesisProposalV3DTO extends SynthesisProposalDTO, Investment
 }
 export interface ResponsesProposalDTO { responses: ResearchResponseProposalDTO[] }
 export interface ReaderAgentDTO {
+  challenge_reviews?: Array<{hypothesis_id: string; disposition: "challenged" | "no_additional_counterevidence"; rationale: string; supporting_fact_ids: string[]}>;
   factual_premises?: Array<PremiseReceiptV1DTO & {text: string}>;
   schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;
   /** Qualified stage material without an assessment; never a published report. */

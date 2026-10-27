@@ -53,11 +53,14 @@ from tradingagents.observability.roles import (
 )
 from tradingagents.research.native_record import build_native_record
 from tradingagents.research.native_versions import (
+    CHALLENGE_INPUT_POLICY,
     COMPANY_RESEARCH_POLICY,
     FOCUS_BUDGET_POLICY,
     FOCUS_WORKFLOW_VERSION,
+    MODEL_BINDING_POLICY,
     NUMERIC_NARRATIVE_POLICY,
     REPORT_DELIVERY_POLICY,
+    SEARCH_GAP_GUIDANCE_POLICY,
     SEARCH_RESEARCH_POLICY,
     SEARCH_WORKFLOW_VERSION,
     SPECIALIST_REFERENCE_POLICY,
@@ -77,14 +80,19 @@ WORKFLOW_VERSION = SEARCH_WORKFLOW_VERSION
 DISCLOSURE_WORKFLOW_VERSION = "evidence-production-v3"
 PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
+# New Web studies persist this value; saved requests without it keep the 300s identity.
+NEW_STUDY_TIMEOUT_SECONDS = 900
 
 
-def native_identity(request, *, workflow_version=None, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True, structured_financial_policy=True, factual_premise_policy=True, financial_detail_policy=True, challenge_check_policy=True):
+def native_identity(request, *, workflow_version=None, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True, structured_financial_policy=True, factual_premise_policy=True, financial_detail_policy=True, challenge_check_policy=True, challenge_input_policy=True, search_gap_guidance_policy=True, model_binding_policy=True, research_delivery_policy=True):
     workflow_version = workflow_version or WORKFLOW_VERSION
     from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
     from tradingagents.agents.schemas._factual_premise import FACTUAL_PREMISE_POLICY
     from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
-    from tradingagents.research.native_versions import FINANCIAL_DETAIL_POLICY
+    from tradingagents.research.native_versions import (
+        FINANCIAL_DETAIL_POLICY,
+        RESEARCH_DELIVERY_POLICY,
+    )
     subscription_policy = chatgpt_request_policy and request.effective_config.get("llm_provider") == "chatgpt"
     if subscription_policy:
         validate_reasoning_effort(request.effective_config.get("openai_reasoning_effort"))
@@ -97,6 +105,14 @@ def native_identity(request, *, workflow_version=None, model_retry_policy=True, 
         "holding_context": asdict(request.holding_context) if request.holding_context else None,
         "config": native_effective_config(request.effective_config, workflow_version),
         **({"chatgpt_request_policy": CHATGPT_REQUEST_POLICY} if subscription_policy else {}),
+        **({"challenge_input_policy": CHALLENGE_INPUT_POLICY}
+           if workflow_version == SEARCH_WORKFLOW_VERSION and challenge_input_policy else {}),
+        **({"search_gap_guidance_policy": SEARCH_GAP_GUIDANCE_POLICY}
+           if workflow_version == SEARCH_WORKFLOW_VERSION and search_gap_guidance_policy else {}),
+        **({"model_binding_policy": MODEL_BINDING_POLICY}
+           if workflow_version == SEARCH_WORKFLOW_VERSION and numeric_narrative_policy and model_binding_policy else {}),
+        **({"research_delivery_policy": deepcopy(RESEARCH_DELIVERY_POLICY)} if workflow_version == SEARCH_WORKFLOW_VERSION
+           and numeric_narrative_policy and factual_premise_policy and model_binding_policy and research_delivery_policy else {}),
         **({'search_research_policy': {**deepcopy(SEARCH_RESEARCH_POLICY),
                 'enabled': request.effective_config.get('evidence_search_enabled', True)},
             'search_budget_policy': deepcopy(SEARCH_BUDGET_POLICY)}
@@ -144,7 +160,11 @@ def validate_native_resume(store, run_id, request):
     structured_policy = state is not None and "structured_financial_policy" in state["identity"]
     detail_policy = state is not None and "financial_detail_policy" in state["identity"]
     challenge_policy = state is not None and "challenge_check_policy" in state["identity"]
-    if version not in {SEARCH_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy, financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy):
+    challenge_input_policy = state is not None and "challenge_input_policy" in state["identity"]
+    search_gap_guidance_policy = state is not None and "search_gap_guidance_policy" in state["identity"]
+    model_binding_policy = state is not None and "model_binding_policy" in state["identity"]
+    research_delivery_policy = state is not None and "research_delivery_policy" in state["identity"]
+    if version not in {SEARCH_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy, financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy, challenge_input_policy=challenge_input_policy, search_gap_guidance_policy=search_gap_guidance_policy, model_binding_policy=model_binding_policy, research_delivery_policy=research_delivery_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.research.record_codec import parse_research_record
 
@@ -272,10 +292,26 @@ class NativeRunner:
         structured_policy = not resume or "structured_financial_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         detail_policy = not resume or "financial_detail_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         challenge_policy = not resume or "challenge_check_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        challenge_input_policy = not resume or "challenge_input_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        search_gap_guidance_policy = not resume or "search_gap_guidance_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        model_binding_policy = not resume or "model_binding_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        research_delivery_policy = not resume or "research_delivery_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version,
             model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy,
             numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy,
-            financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy), require_existing=resume)
+            financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy,
+            challenge_input_policy=challenge_input_policy, search_gap_guidance_policy=search_gap_guidance_policy,
+            model_binding_policy=model_binding_policy, research_delivery_policy=research_delivery_policy), require_existing=resume)
+        delivery = journal.state["identity"].get("research_delivery_policy")
+        if delivery is not None:
+            with self.observer.store.lock_for(run_id):
+                snapshot = self.observer.store.read_snapshot(run_id)
+                metadata = dict(snapshot.metadata or {})
+                if metadata.get("research_delivery_policy") not in {None, delivery["version"]}:
+                    raise CatalystCheckpointConflict("research delivery snapshot identity mismatch")
+                if metadata.get("research_delivery_policy") is None:
+                    metadata["research_delivery_policy"] = delivery["version"]
+                    self.observer.store.write_snapshot_atomic(replace(snapshot, metadata=metadata))
         if journal.state["identity"].get("numeric_narrative_policy") is not None:
             with self.observer.store.lock_for(run_id):
                 snapshot = self.observer.store.read_snapshot(run_id)
@@ -434,21 +470,28 @@ class NativeRunner:
                     runner._stage(journal, stage, "completed")
                 return value
 
-        record = run_native_research(
-            seed,
-            caller=ProgressCaller(),
-            ledger=journal.ledger,
-            research_question=request.research_question,
-            cancelled=cancelled,
-            scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
-            valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
-            minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
-            independent=version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
-            unified=version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
-            supplement=(lambda current, gaps: run_search_reviews(
-                current, gaps, coordinator=coordinator, caller=ProgressCaller(), ledger=journal.ledger, cancelled=cancelled))
-                if coordinator is not None else None,
-        )
+        try:
+            record = run_native_research(
+                seed,
+                caller=ProgressCaller(),
+                ledger=journal.ledger,
+                research_question=request.research_question,
+                cancelled=cancelled,
+                scoped=version in {DISCLOSURE_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                valuation=version in {VALUATION_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                minimum=version in {MINIMUM_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                independent=version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                unified=version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION},
+                supplement=(lambda current, gaps: run_search_reviews(
+                    current, gaps, coordinator=coordinator, caller=ProgressCaller(), ledger=journal.ledger, cancelled=cancelled))
+                    if coordinator is not None else None,
+            )
+        except AnalysisCancelled:
+            # `cancelled()` also observes the deadline; an expired deadline is a
+            # lifecycle failure, not a user cancellation.
+            if not token.is_cancelled and time.monotonic() >= deadline:
+                raise TimeoutError("native active deadline exceeded") from None
+            raise
         active()
         focus_response = None
         if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:

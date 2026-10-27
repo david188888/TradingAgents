@@ -55,14 +55,56 @@ _CODES = {
 }
 
 
+BINDING_ISSUES = frozenset({
+    "duplicate_path", "missing_path", "proposal_prefix", "index_out_of_range",
+    "unexpected_field", "unknown_path",
+})
+
+
 class NumericNarrativeError(ValueError):
     """Safe diagnostics: never interpolate invalid model text or numbers."""
 
-    def __init__(self, code, field_path="", *, index=None):
+    def __init__(self, code, field_path="", *, index=None, binding_issue=None):
         if code not in _CODES:
             code = "numeric_manifest_binding"
         self.code, self.field_path, self.index = code, field_path, index
+        parts = field_path.split(".") if isinstance(field_path, str) else []
+        name = parts[-2] if len(parts) > 1 and parts[-1].isdigit() else parts[-1] if parts else None
+        self.field_name = name if name in _TEXT_FIELDS else None
+        # Closed shape label for a rejected binding path; never the path itself.
+        self.binding_issue = binding_issue if binding_issue in BINDING_ISSUES else None
         super().__init__(code)
+
+
+def binding_path_issue(path, proposal):
+    """Classify an unexpected binding path without retaining model text."""
+    if path.startswith("proposal."):
+        return "proposal_prefix"
+    value = proposal
+    for part in path.split("."):
+        if isinstance(value, list):
+            if not part.isdigit():
+                return "unknown_path"
+            if int(part) >= len(value):
+                return "index_out_of_range"
+            value = value[int(part)]
+        elif isinstance(value, dict) and part in value:
+            value = value[part]
+        else:
+            return "unknown_path"
+    return "unexpected_field"
+
+
+def collection_index(path, collection):
+    match = re.match(rf"^{collection}\.(\d+)\.", path) if collection else None
+    return int(match[1]) if match else None
+
+
+def _plan_issue(paths, expected, proposal):
+    if len(set(paths)) != len(paths):
+        return "duplicate_path"
+    extra = [p for p in paths if p not in expected]
+    return binding_path_issue(extra[0], proposal) if extra else "missing_path"
 
 
 def _payload(value):
@@ -201,6 +243,9 @@ def _field_scope(stage, path, proposal, context):
     if parent == "hypotheses":
         return _dependencies(proposal[parent][index]["supporting_fact_ids"], context)
     if parent == "challenges":
+        item = proposal[parent][index]
+        return _target_facts(item["hypothesis_id"], context) | _dependencies(item.get("supporting_fact_ids", []), context)
+    if parent == "reviews":
         item = proposal[parent][index]
         return _target_facts(item["hypothesis_id"], context) | _dependencies(item.get("supporting_fact_ids", []), context)
     if parent == "responses":
@@ -498,12 +543,13 @@ def _check_frequency(current, base, path, operation):
 def _validate_bindings(stage, proposal, envelope, context, *, prefix=None):
     expected = _required_bindings(proposal)
     entries = envelope["structured_bindings"]
-    if prefix is not None and stage == "challenge" and context.get("challenge_check_policy"):
+    if prefix is not None:
         expected = {p: value for p, value in expected.items() if p.startswith(prefix)}
         entries = [b for b in entries if b["field_path"].startswith(prefix)]
     bindings = {b["field_path"]: b for b in entries}
     if len(bindings) != len(entries) or bindings.keys() != expected.keys():
-        raise NumericNarrativeError("numeric_plan_mismatch")
+        raise NumericNarrativeError("numeric_plan_mismatch",
+            binding_issue=_plan_issue([b["field_path"] for b in entries], expected.keys(), proposal))
     anchors = {a["anchor_id"]: a for a in context["numeric_catalog"]["anchors"]}
     aliases = context.get("numeric_aliases", {})
     plans = {p["alias"]: p for p in envelope["plans"]}
@@ -553,7 +599,11 @@ def _validate_bindings(stage, proposal, envelope, context, *, prefix=None):
             _check_frequency(bound[path], bound[path[:-len("current")]+"base"], path, owner["operation"])
 
 
-def _canonical_envelope(envelope, schema):
+def _canonical_envelope(envelope, schema, *, discard_extra_premises=False):
+    if discard_extra_premises and isinstance(envelope, dict) and isinstance(envelope.get("proposal"), dict):
+        from tradingagents.research.factual_premises import discard_redundant_bindings
+        proposal = _schema_validate(schema, envelope["proposal"])
+        envelope = discard_redundant_bindings(envelope, proposal=proposal)
     try:
         result = NumericStageEnvelopeV1.model_validate(envelope).model_dump(mode="json")
     except (ValidationError, ValueError, TypeError):
@@ -583,7 +633,7 @@ def _remap_path(path, indices, *, reverse=False):
     return f"{match[1]}.{mapping[index]}{match[3]}"
 
 
-def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, rejections=None):
+def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, rejections=None, issues=None):
     if context.get("numeric_narrative_policy") != NUMERIC_NARRATIVE_POLICY:
         raise NumericNarrativeError("numeric_manifest_binding")
     try:
@@ -603,25 +653,34 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
             reply = replies.get(item.get("challenge_id"))
             if reply is not None:
                 item["response_id"], item["disposition"] = reply["response_id"], reply["disposition"]
-    envelope = _canonical_envelope(envelope, schema)
+    from tradingagents.research.factual_premises import (
+        bind_field,
+        premise_enabled,
+        prepare_bindings,
+    )
+    envelope = _canonical_envelope(envelope, schema, discard_extra_premises=premise_enabled(context))
     proposal, compiled = envelope["proposal"], deepcopy(envelope["proposal"])
     plans = {p["alias"]: p for p in envelope["plans"]}
-    from tradingagents.research.factual_premises import bind_field, prepare_bindings
-    premise_bindings = prepare_bindings(envelope, context, [p for p, _ in _fields(proposal)])
+    collection = ("hypotheses" if stage in _SPECIALISTS else "challenges"
+                  if stage == "challenge" and context.get("challenge_check_policy") else None)
+    premise_bindings, invalid_premises = prepare_bindings(envelope, context, [p for p, _ in _fields(proposal)],
+        proposal=proposal, collection=collection)
     def compile_field(path, template):
         text, field = _compile_field(stage, path, template, proposal, context, plans, counts)
         return bind_field(stage, path, text, field, proposal, context, premise_bindings)
     counts, fields, accepted, rejected = [0], [], [], list(rejections or [])
-    collection = ("hypotheses" if stage in _SPECIALISTS else "challenges"
-                  if stage == "challenge" and context.get("challenge_check_policy") else None)
-    # Binding shape errors and malformed main schemas are never isolated.
+    # Malformed main schemas and unaddressable binding paths are never isolated;
+    # an isolated item's own binding set is compared within its prefix below.
     expected_paths = _required_bindings(proposal).keys()
     binding_paths = [b["field_path"] for b in envelope["structured_bindings"]]
-    if collection == "challenges" and isolate:
-        if any(not re.match(r"^challenges\.\d+\.", path) for path in binding_paths):
-            raise NumericNarrativeError("numeric_plan_mismatch")
+    if collection and isolate:
+        for path in binding_paths:
+            index = collection_index(path, collection)
+            if index is None or index >= len(proposal[collection]):
+                raise NumericNarrativeError("numeric_plan_mismatch",
+                    binding_issue="index_out_of_range" if index is not None else binding_path_issue(path, proposal))
     elif len(set(binding_paths)) != len(binding_paths) or set(binding_paths) != set(expected_paths):
-        raise NumericNarrativeError("numeric_plan_mismatch")
+        raise NumericNarrativeError("numeric_plan_mismatch", binding_issue=_plan_issue(binding_paths, expected_paths, proposal))
     if collection:
         # Shared unknowns are validated first; a bad shared field rejects all.
         for path, template in _fields(proposal):
@@ -632,6 +691,8 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
         for index, hypothesis in enumerate(proposal[collection]):
             local_fields, prior_count = [], counts[0]
             try:
+                if index in invalid_premises:
+                    raise NumericNarrativeError("premise_binding_invalid", binding_issue=invalid_premises[index])
                 _validate_bindings(stage, proposal, envelope, context, prefix=f"{collection}.{index}.")
                 for path, template in _fields(hypothesis, f"{collection}.{index}"):
                     text, field = compile_field(path, template)
@@ -647,6 +708,11 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
                     exc.hypothesis_index = index
                     raise
                 rejected.append({"index": index, "code": exc.code})
+                if issues is not None and exc.binding_issue:
+                    # Diagnostics only; the saved proof keeps its closed rejection shape.
+                    issues.append({"index": index, "binding_issue": exc.binding_issue})
+                if issues is not None and exc.code == "numeric_literal_unbound" and exc.field_name:
+                    issues.append({"index": index, "field_name": exc.field_name})
             else:
                 accepted.append(index)
                 fields.extend(local_fields)
@@ -680,22 +746,32 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
     return compiled, NumericStageProofV1.model_validate(proof).model_dump(mode="json")
 
 
-def compile_numeric_stage(stage, envelope, context, schema, *, isolate=False):
-    """Compile a full stage or lawful specialist siblings with original indices."""
+def compile_numeric_stage(stage, envelope, context, schema, *, isolate=False, issues=None):
+    """Compile a full stage or lawful specialist siblings with original indices.
+
+    ``issues`` optionally collects closed binding-shape labels of isolated
+    rejections for diagnostics; it never changes the compiled result or proof.
+    """
     if stage == "challenge" and context.get("challenge_check_policy") and isolate:
         from tradingagents.research.challenge_checks import parse_challenge_items
+        from tradingagents.research.factual_premises import (
+            discard_redundant_bindings,
+            premise_enabled,
+        )
+        if premise_enabled(context):
+            envelope = discard_redundant_bindings(envelope, partitioned_collections=("challenges",))
         envelope = NumericStageEnvelopeV1.model_validate(envelope).model_dump(mode="json")
         proposal, indices, rejections = parse_challenge_items(envelope["proposal"])
         envelope["proposal"] = proposal.model_dump(mode="json")
         for key in ("plans", "structured_bindings", *(("premises",) if "premises" in envelope else ())):
             envelope[key] = [dict(item, field_path=path) for item in envelope[key]
                 if (path := _remap_path(item["field_path"], indices, reverse=True)) is not None]
-        compiled, proof = _compile(stage, envelope, context, schema, isolate=True)
+        compiled, proof = _compile(stage, envelope, context, schema, isolate=True, issues=issues)
         original_indices = [indices[i] for i in proof["indices"]]
         rejected = [*rejections, *({**r, "index": indices[r["index"]]} for r in proof["rejections"])]
         return _compile(stage, proof["envelope"], context, schema,
             indices=original_indices, rejections=sorted(rejected, key=lambda r: r["index"]))
-    return _compile(stage, envelope, context, schema, isolate=isolate)
+    return _compile(stage, envelope, context, schema, isolate=isolate, issues=issues)
 
 
 def validate_numeric_stage(stage, proposal, proof, context, schema):

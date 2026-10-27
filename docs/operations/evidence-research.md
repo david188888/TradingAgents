@@ -53,7 +53,8 @@ and enforcement depend on the selected model. Task-effort mappings are programma
 ## Create a study
 
 1. Enter a supported A-share code or a company name that resolves to one instrument.
-2. Choose analysis date, model/account configuration and output language, then start research.
+2. Choose model/account configuration and output language, then start research. The server uses the
+   current Asia/Shanghai date; there is no date selector.
 3. Optionally supply a supplementary focus, trimmed to 400 Unicode code points. The independent
    company baseline excludes this text; a saved-evidence response follows it and cannot rewrite it.
 
@@ -63,12 +64,13 @@ debate-depth, preset or horizon selectors. Earlier catalyst/holding scopes are r
 new old-mode requests return 422, and retired profiles return 410.
 
 API clients use `POST /api/runs`; [RunCreateRequest](../../tradingagents/web/schemas.py) is the request
-source. Omit legacy scheduling overrides. An analysis date is not proof that today's source values
+source. Omit `analysis_date` for current research. Explicit dates remain accepted for compatible API
+callers; saved runs keep their original cutoff. Omit legacy scheduling overrides. A date is not proof that today's source values
 were available on that historical date: unarchived profiles, quotes or factor vintages may be unavailable.
 
 ## Batch research
 
-A batch accepts 1–8 companies with shared date, focus, provider/models and language. Every child is an
+A batch accepts 1–8 companies with shared current cutoff, focus, provider/models and language. Every child is an
 independent durable run. Single/batch jobs share a FIFO scheduler; global concurrency defaults to 3
 and may be 1, 2 or 3. Lowering it does not interrupt admitted work.
 
@@ -83,6 +85,12 @@ Dedicated APIs come first for identity and quantitative inputs; bounded dual sea
 and attempts missing fields. Qualified sources feed isolated specialists, one challenge/check/reply
 sequence, up to three supplementary rounds and one synthesis. Source availability is distinct from
 fact qualification. Reposts do not create independent confirmation; titles/snippets do not prove delivery.
+
+Fresh studies present qualified observations as sourced Markdown cards. The model selects card
+citations; code builds the saved bindings and still rejects unsupported references. Local lexical
+retrieval adds passages from already saved, role-qualified sources. Each hypothesis needs an explicit
+review: either a supported challenge or a sourced explanation that no additional counterevidence was
+found. The latter is not a claim that the hypothesis is safe or proven.
 
 Sources retain identity, dates, units and coverage. SZSE's full-month calendar is authoritative for all
 A-share exchanges; Tencent index dates and TDX witness gaps/disputes, with Tushare as last fallback.
@@ -106,12 +114,17 @@ specific question, not the entire hypothesis or an economic cause.
 
 Native Reader, evidence expansion and Markdown use saved content, without new research calls.
 The optional focus is separate. New-study plain-language explanations run independently after completion;
-a failed explanation leaves professional text available and requires explicit retry. Historical reading
+a failed explanation leaves professional text available and requires explicit retry. Fresh jobs retain
+all eligible targets, process up to 16 per batch, and retry only missing items once per batch. The UI
+shows explained, pending and original-text-only counts. A job stops at 24 requests or five minutes;
+retry retains its original deadline and request history. Historical reading
 does not generate a new explanation. Technical diagnostics are for execution failures, not a quality score.
 
 ## Budget, cancellation and recovery
 
-A study defaults to a 300-second active deadline excluding scheduler queue time. Search, HTTP, review and
+A new study defaults to a 900-second active deadline excluding scheduler queue time; saved requests
+without a frozen value keep 300 seconds. An expired deadline fails the run as a timeout, not a user
+cancellation. Search, HTTP, review and
 model pools have independent ceilings; see [shared limits](../contracts/research-record.md#search-and-execution-limits).
 Missing usage remains unknown; authorization counts are not confirmed charges.
 

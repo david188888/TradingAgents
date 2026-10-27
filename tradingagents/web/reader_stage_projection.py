@@ -99,6 +99,7 @@ def stage_seed(ctx):
 class StageReader:
     def __init__(self, ctx):
         self.ctx, self.cp = ctx, ctx.checkpoint
+        self.review_items = []
         self.seed = stage_seed(ctx)
         self.views = saved_fact_views(self.seed, self.cp["identity"]["workflow_version"])
         # V7 company-foundation facts are background, never specialist inputs.
@@ -130,6 +131,9 @@ class StageReader:
             journal = SimpleNamespace(state=self.cp, ledger=SimpleNamespace(
                 cached_result=lambda key: self.cp["results"].get(key)))
             validate_cached_numeric(journal, role, proposal.model_dump(mode="json"), expected, schema)
+            if role == "challenge":
+                from tradingagents.research.challenge_reviews import require_reviews
+                self.review_items = require_reviews(journal, role, expected, proposal.model_dump(mode="json"))
         return proposal
 
     def specialist(self, role):

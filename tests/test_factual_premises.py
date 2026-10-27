@@ -109,6 +109,157 @@ def test_bad_sibling_isolated_and_pending_text_not_leaked(context):
     validate_numeric_stage("operating_quality", compiled, proof, context, SpecialistProposalV1)
 
 
+def two_hypotheses(context):
+    value = proposal(context)
+    value["proposal"]["hypotheses"].append(deepcopy(value["proposal"]["hypotheses"][0]))
+    value["premises"] += [{**p, "field_path": p["field_path"].replace(".0.", ".1.")}
+                          for p in deepcopy(value["premises"])]
+    return value
+
+
+@pytest.mark.parametrize("damage,issue", [
+    ("unknown", "unknown_path"), ("duplicate", "duplicate_path"),
+])
+def test_wrong_premise_path_inside_one_hypothesis_rejects_only_that_sibling(context, damage, issue):
+    value = two_hypotheses(context)
+    first = next(p for p in value["premises"] if p["field_path"].startswith("hypotheses.0."))
+    path = {"unknown": "hypotheses.0.invented",
+            "duplicate": first["field_path"]}[damage]
+    value["premises"].append({**first, "field_path": path})
+    issues = []
+    compiled, proof = compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1,
+                                            isolate=True, issues=issues)
+    assert proof["indices"] == [1]
+    assert proof["rejections"] == [{"index": 0, "code": "premise_binding_invalid"}]
+    assert issues == [{"index": 0, "binding_issue": issue}]
+    validate_numeric_stage("operating_quality", compiled, proof, context, SpecialistProposalV1)
+    with pytest.raises(NumericNarrativeError) as caught:  # whole-stage callers keep the strict contract
+        compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1)
+    assert (caught.value.code, caught.value.binding_issue) == ("premise_binding_invalid", issue)
+
+
+@pytest.mark.parametrize("isolate", [False, True])
+@pytest.mark.parametrize("path", ["unknowns", "unknowns.0", "hypotheses.0.conditions.0.text"])
+def test_redundant_premises_on_existing_non_premise_fields_are_discarded(context, isolate, path):
+    value = two_hypotheses(context)
+    value["proposal"]["unknowns"] = ["费用变化仍待核查"]
+    expected, expected_proof = compile_numeric_stage(
+        "operating_quality", value, context, SpecialistProposalV1, isolate=isolate)
+    original = deepcopy(value)
+    value["premises"].append({**value["premises"][0], "field_path": path,
+                              "observation_ids": ["o.unused"], "pending_questions": ["unused question"]})
+    compiled, proof = compile_numeric_stage(
+        "operating_quality", value, context, SpecialistProposalV1, isolate=isolate)
+    assert compiled == expected
+    assert proof == expected_proof
+    assert proof["indices"] == [0, 1]
+    assert proof["rejections"] == []
+    assert value["premises"][:-1] == original["premises"]  # caller input stays intact
+    validate_numeric_stage("operating_quality", compiled, proof, context, SpecialistProposalV1)
+
+
+def test_ignored_unknown_binding_does_not_admit_unbound_quantity(context):
+    value = proposal(context)
+    value["proposal"]["unknowns"] = ["费用增长25%仍待核查"]
+    value["premises"].append({**value["premises"][0], "field_path": "unknowns.0"})
+    with pytest.raises(NumericNarrativeError, match="numeric_literal_unbound"):
+        compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1, isolate=True)
+
+
+@pytest.mark.parametrize("path", ["unknowns.0", "hypotheses.0.conditions.0.text"])
+@pytest.mark.parametrize("damage", ["observations", "questions", "type"])
+def test_redundant_premise_contents_are_discarded_before_envelope_validation(context, path, damage):
+    value = proposal(context)
+    value["proposal"]["unknowns"] = ["经营持续性仍待查"]
+    expected, expected_proof = compile_numeric_stage(
+        "operating_quality", value, context, SpecialistProposalV1, isolate=True)
+    extra = {**value["premises"][0], "field_path": path}
+    if damage == "observations":
+        extra["observation_ids"] = ["o.unused"] * 7
+    elif damage == "questions":
+        extra["pending_questions"] = ["unused question"] * 4
+    else:
+        extra["observation_ids"] = "not an array"
+    value["premises"].append(extra)
+    before = deepcopy(value)
+    compiled, proof = compile_numeric_stage(
+        "operating_quality", value, context, SpecialistProposalV1, isolate=True)
+    assert (compiled, proof) == (expected, expected_proof)
+    assert value == before
+    validate_numeric_stage("operating_quality", compiled, proof, context, SpecialistProposalV1)
+
+
+@pytest.mark.parametrize("path", ["hypotheses.0.statement", "proposal.unknowns.0",
+                                  "unknowns.9", "unknowns_typo"])
+def test_malformed_required_or_unaddressable_premises_still_reject(context, path):
+    value = proposal(context)
+    value["proposal"]["unknowns"] = ["经营持续性仍待查"]
+    value["premises"].append({"field_path": path, "observation_ids": ["o.unused"] * 7,
+                              "pending_questions": []})
+    with pytest.raises(NumericNarrativeError):
+        compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1, isolate=True)
+
+
+def test_challenge_discards_redundant_binding_before_item_validation(context):
+    from tradingagents.agents.schemas._native_stage import ChallengesProposalV3
+    ctx = {**context, "challenge_check_policy": "hypothesis-directed-checks-v1"}
+    value = {"proposal": {"challenges": []}, "premises": []}
+    expected = compile_numeric_stage("challenge", value, ctx, ChallengesProposalV3, isolate=True)
+    value["premises"] = [{"field_path": "challenges", "observation_ids": "unused malformed content"}]
+    compiled, proof = compile_numeric_stage("challenge", value, ctx, ChallengesProposalV3, isolate=True)
+    assert (compiled, proof) == expected
+    validate_numeric_stage("challenge", compiled, proof, ctx, ChallengesProposalV3)
+
+
+@pytest.mark.parametrize("path", ["proposal.challenges", "challenges.9.rationale", "unknowns_typo"])
+def test_challenge_rejects_unaddressable_premise_before_item_partition(context, path):
+    from tradingagents.agents.schemas._native_stage import ChallengesProposalV3
+    ctx = {**context, "challenge_check_policy": "hypothesis-directed-checks-v1"}
+    value = {"proposal": {"challenges": []}, "premises": [
+        {"field_path": path, "observation_ids": [], "pending_questions": []}]}
+    with pytest.raises(NumericNarrativeError):
+        compile_numeric_stage("challenge", value, ctx, ChallengesProposalV3, isolate=True)
+
+
+@pytest.mark.parametrize("path,issue", [
+    ("hypotheses.2.statement", "index_out_of_range"), ("proposal.hypotheses.0.statement", "proposal_prefix"),
+    ("summary", "unknown_path"), ("unknowns.0", "index_out_of_range"),
+    ("proposal.unknowns", "proposal_prefix"), ("unknowns_typo", "unknown_path"),
+    ("hypotheses.0.conditions.5.text", "index_out_of_range"),
+])
+def test_unaddressable_premise_paths_still_reject_the_stage(context, path, issue):
+    value = two_hypotheses(context)
+    value["premises"].append({**value["premises"][0], "field_path": path})
+    with pytest.raises(NumericNarrativeError) as caught:
+        compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1, isolate=True)
+    assert (caught.value.code, caught.value.binding_issue) == ("premise_binding_invalid", issue)
+
+
+def test_wrong_structured_binding_inside_one_hypothesis_rejects_only_that_sibling(context):
+    value = two_hypotheses(context)
+    value["structured_bindings"] = [{"field_path": "hypotheses.0.conditions.0.check.predicate",
+                                     "kind": "num", "alias": "n_invented"}]
+    issues = []
+    compiled, proof = compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1,
+                                            isolate=True, issues=issues)
+    assert proof["indices"] == [1]
+    assert proof["rejections"] == [{"index": 0, "code": "numeric_plan_mismatch"}]
+    assert issues == [{"index": 0, "binding_issue": "unknown_path"}]
+    validate_numeric_stage("operating_quality", compiled, proof, context, SpecialistProposalV1)
+    value["structured_bindings"][0]["field_path"] = "hypotheses.5.conditions.0.check.predicate"
+    with pytest.raises(NumericNarrativeError) as caught:
+        compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1, isolate=True)
+    assert (caught.value.code, caught.value.binding_issue) == ("numeric_plan_mismatch", "index_out_of_range")
+
+
+def test_binding_issue_diagnostic_is_a_closed_label():
+    from tradingagents.execution.native_model_diagnostics import safe_model_diagnostic
+    error = NumericNarrativeError("premise_binding_invalid", binding_issue="index_out_of_range")
+    assert safe_model_diagnostic("operating_quality", "main", "x", error)["binding_issue"] == "index_out_of_range"
+    error.binding_issue = "hypotheses.0.model text"
+    assert "binding_issue" not in safe_model_diagnostic("operating_quality", "main", "x", error)
+
+
 def test_tampered_observation_direction_is_not_a_saved_fact(context):
     record = growth_record()
     changed = deepcopy(context)
@@ -144,7 +295,11 @@ class PremiseCaller(NumericCaller):
         value = super().__call__(stage, context)
         if stage == "synthesis":
             value["proposal"]["key_claim_ids"] = value["proposal"]["opposing_arguments"][0]["claim_ids"]
-        return bind(stage, value, context)
+        value = bind(stage, value, context)
+        if "unknowns" in value["proposal"]:
+            value["premises"].append({"field_path": "unknowns", "observation_ids": ["o.unused"],
+                                      "pending_questions": []})
+        return value
 
 
 @pytest.fixture(scope="module")
@@ -165,6 +320,7 @@ def test_pipeline_replay_publication_and_export(completed):
     assert record.assessment.report_status == "synthesized"
     assert all(ctx["factual_premise_policy"] == FACTUAL_PREMISE_POLICY for _, ctx in caller.calls)
     assert public_premises(record)
+    assert "o.unused" not in record.model_dump_json()
     validate_record_numeric(record, journal.state["identity"])
     assert run(journal, seed, lambda *_: pytest.fail("replay invoked model")) == record
     publish_native_record(journal.observer, record=record, ledger=journal.ledger,
@@ -204,6 +360,36 @@ def test_sections_reject_bad_binding_without_erasing_siblings(completed):
     assert proof["receipts"]
 
 
+def test_sections_discard_overlong_redundant_premise_before_shared_validation(completed):
+    from tradingagents.research.synthesis_sections import (
+        candidate_result,
+        parse_sections,
+        validate_sectioned_proof,
+    )
+    _, _, caller, _ = completed
+    ctx = next(c for s, c in caller.calls if s == "synthesis")
+    value = caller("synthesis", ctx)
+    value["proposal"]["change_conditions"] = []
+    expected = parse_sections(value, ctx, phase="main")
+    value["premises"].append({"field_path": "dimensions.0.limitations",
+        "observation_ids": ["o.unused"] * 7, "pending_questions": ["unused"] * 4})
+    candidate = parse_sections(value, ctx, phase="main")
+    assert candidate == expected
+    compiled, proof = candidate_result(candidate, ctx)
+    validate_sectioned_proof(compiled, proof, ctx)
+
+
+@pytest.mark.parametrize("path", ["proposal.judgement", "dimensions.99.judgement", "unknowns_typo"])
+def test_sections_reject_unaddressable_premise_before_partition(completed, path):
+    from tradingagents.research.synthesis_sections import parse_sections
+    _, _, caller, _ = completed
+    ctx = next(c for s, c in caller.calls if s == "synthesis")
+    value = caller("synthesis", ctx)
+    value["premises"].append({"field_path": path, "observation_ids": [], "pending_questions": []})
+    with pytest.raises(NumericNarrativeError):
+        parse_sections(value, ctx, phase="main")
+
+
 def test_new_policy_stage_reader_retains_binding_without_writes(completed, monkeypatch):
     from tests.web.test_reader_stage import first_saved
     from tradingagents.web.reader_process_projection import project_reader_agent
@@ -226,6 +412,8 @@ def test_new_policy_resume_does_not_upgrade_historical_identity():
     old = native_identity(request(), factual_premise_policy=False)
     new = native_identity(request())
     assert new.pop("factual_premise_policy") == FACTUAL_PREMISE_POLICY
+    assert "research_delivery_policy" not in old
+    assert new.pop("research_delivery_policy")["version"] == "evidence-packets-v1"
     assert old == new
 
 

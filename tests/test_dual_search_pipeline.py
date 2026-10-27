@@ -125,6 +125,7 @@ def test_runner_publication_and_resume_never_duplicate_search(tmp_path,monkeypat
     assert record['schema_version']=='research-record-v2'
     assert len(record['snapshots'])<=8
     cp=load_checkpoint(store,run_id)
+    assert cp['identity']['challenge_input_policy'] == 'search-trace-summary-v1'
     def used(bucket):
         return sum(r['bucket']==bucket and r['dispatched_at'] is not None for r in cp['records'])
     assert 0<used('deepseek_search')<=50 and 0<used('tavily_search')<=50
@@ -141,6 +142,28 @@ def test_runner_publication_and_resume_never_duplicate_search(tmp_path,monkeypat
     before=len(session.calls),len(caller.calls)
     runner.run(request,checkpoint_guard=NativeResumeGuard(),publication_authorizer=lambda j:j.put('publication_authorized',True))
     assert (len(session.calls),len(caller.calls))==before and session.closed
+
+
+@pytest.mark.parametrize('missing', [('challenge_input_policy',), ('search_gap_guidance_policy',),
+    ('model_binding_policy',), ('challenge_input_policy', 'search_gap_guidance_policy'),
+    ('challenge_input_policy', 'search_gap_guidance_policy', 'model_binding_policy')])
+def test_legacy_v8_resume_keeps_original_prompt_policies(tmp_path, monkeypatch, missing):
+    from tradingagents.execution import native_runner as runner_module
+
+    runner, request, store, run_id, session, caller = setup(tmp_path, monkeypatch, enabled=False)
+    original_identity = runner_module.native_identity
+    def legacy_identity(request, **kwargs):
+        return original_identity(request, **{**kwargs, **dict.fromkeys(missing, False)})
+    with monkeypatch.context() as legacy:
+        legacy.setattr(runner_module, 'native_identity', legacy_identity)
+        runner.run(request, publication_authorizer=lambda j: j.put('publication_authorized', True))
+    before = load_checkpoint(store, run_id)['identity']
+    assert not set(missing).intersection(before)
+    calls = len(session.calls), len(caller.calls)
+    runner.run(request, checkpoint_guard=NativeResumeGuard(),
+               publication_authorizer=lambda j: j.put('publication_authorized', True))
+    assert load_checkpoint(store, run_id)['identity'] == before
+    assert (len(session.calls), len(caller.calls)) == calls
 
 
 def test_disabled_search_keeps_dedicated_research_without_spending(tmp_path,monkeypatch):
@@ -199,3 +222,44 @@ def test_tavily_only_success_is_admitted_when_deepseek_unavailable(tmp_path, mon
     assert record['recovered_fields']
     assert any(s['source_name'].startswith('web.') for s in record['evidence'])
     assert all(b['outcomes'][0]['provider'] in {'deepseek', 'tavily'} for b in record['search_batches'])
+
+
+class DeadlineCaller(Caller):
+    """Synthesis consumes the remaining active deadline before returning."""
+    def __init__(self, clock, *, token=None):
+        super().__init__()
+        self.clock, self.token = clock, token
+    def __call__(self, stage, context):
+        value = super().__call__(stage, context)
+        if stage == 'synthesis':
+            self.clock.now += 10_000
+            if self.token is not None:
+                self.token.cancel()
+        return value
+
+
+@pytest.mark.parametrize('user_cancelled', [False, True])
+def test_expired_deadline_is_a_timeout_not_a_user_cancellation(tmp_path, monkeypatch, user_cancelled):
+    import tradingagents.execution.native_runner as module
+    from tradingagents.execution.models import AnalysisCancelled, CancellationToken
+    runner, request, *_ = setup(tmp_path, monkeypatch, enabled=False)
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=lambda: clock.now))
+    token = CancellationToken()
+    caller = DeadlineCaller(clock, token=token if user_cancelled else None)
+    runner.caller_factory = lambda **kw: caller
+    with pytest.raises(AnalysisCancelled if user_cancelled else TimeoutError):
+        runner.run(request, cancellation_token=token,
+                   publication_authorizer=lambda j: j.put('publication_authorized', True))
+    assert 'synthesis' in caller.calls
+
+
+def test_new_web_studies_freeze_longer_deadline_and_saved_requests_keep_default():
+    from tradingagents.web.api import _analysis_request
+    from tradingagents.web.schemas import RunCreateRequest
+    body = RunCreateRequest(ticker='002130.SZ', analysis_date='2026-10-23', llm_provider='deepseek',
+        quick_think_llm='deepseek-flash', deep_think_llm='deepseek-flash')
+    request, _ = _analysis_request(body, {'DEEPSEEK_API_KEY': 'offline-placeholder'}, checkpoint_available=False)
+    assert native_identity(request)['active_timeout_seconds'] == 900
+    saved = AnalysisRequest('002130.SZ', '2026-10-23', research_profile='evidence_v1', effective_config={})
+    assert native_identity(saved)['active_timeout_seconds'] == 300

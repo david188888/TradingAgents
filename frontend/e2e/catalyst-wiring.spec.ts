@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
 test("custom model IDs survive single/batch switching and reach native admission", async ({page}) => {
   await page.goto("/");
   await page.getByLabel("股票代码").fill("600803");
-  await page.getByLabel("分析日期").fill("2026-09-30");
+  await expect(page.getByLabel("分析日期")).toHaveCount(0);
   await page.getByLabel("专项与挑战模型").selectOption("custom");
   await page.getByLabel("综合模型").selectOption("custom");
   await expect(page.getByRole("button",{name:"开始分析",exact:true})).toBeDisabled();
@@ -31,13 +31,14 @@ for (const viewport of [{width:1440,height:900}, {width:1280,height:800}, {width
     await expect(page.getByLabel("研究流程")).toHaveCount(0);
     await expect(page.getByLabel("研究深度")).toHaveCount(0);
     await page.getByLabel("股票代码").fill("600803");
-    await page.getByLabel("分析日期").fill("2026-09-30");
+    await expect(page.getByLabel("分析日期")).toHaveCount(0);
     await page.getByLabel("补充关注点（可选）").fill("核验经营兑现😀");
     const created = page.waitForResponse(r => r.url().endsWith("/api/runs") && r.request().method()==="POST");
     await page.getByRole("button",{name:"开始分析",exact:true}).click();
     const response=await created;
     expect(response.status()).toBe(201);
     expect(response.request().postDataJSON()).toMatchObject({research_profile:"evidence_v1",research_depth:1,research_question:"核验经营兑现😀"});
+    expect(response.request().postDataJSON()).not.toHaveProperty("analysis_date");
     const snapshot=await response.json();
     const brief=page.locator(".question-reader");
     await expect(brief).toBeVisible({timeout:20000});
@@ -72,7 +73,7 @@ test("one company workflow shows investment reasons and public falsifiers withou
   await expect(page.getByLabel("研究模式")).toHaveCount(0);
   await expect(page.getByLabel("持仓数量")).toHaveCount(0);
   await page.getByLabel("股票代码").fill("600803");
-  await page.getByLabel("分析日期").fill("2026-09-30");
+  await expect(page.getByLabel("分析日期")).toHaveCount(0);
   await page.getByRole("button",{name:"开始分析",exact:true}).click();
   await expect(page.locator(".question-reader")).toBeVisible({timeout:20000});
   await expect(page.getByRole("region",{name:"投资判断依据"})).toBeVisible();

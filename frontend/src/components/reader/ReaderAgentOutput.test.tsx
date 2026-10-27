@@ -23,6 +23,17 @@ function show(value: ReaderAgentDTO, role: AgentKey = value.role_key) {
 
 describe("independently readable saved stage outputs",()=>{
   beforeEach(()=>{HTMLElement.prototype.scrollIntoView=vi.fn();});
+  it("shows explicit no-counterevidence reviews even with an empty challenge list",()=>{
+    show({...output("challenge"),proposal:{challenges:[]},challenge_reviews:[{
+      hypothesis_id:record.hypotheses[0].hypothesis_id,disposition:"no_additional_counterevidence",
+      rationale:"解释假设：尚未找到额外反证，仍需继续验证",supporting_fact_ids:[facts[0].claim_id]}]});
+    expect(screen.getByRole("heading",{name:"逐条假设审查记录"})).toBeVisible();
+    expect(screen.getByRole("heading",{name:"暂未发现额外反证"})).toBeVisible();
+    expect(screen.getByText("解释假设：尚未找到额外反证，仍需继续验证")).toBeVisible();
+    const hypothesisClaim = record.claims.find(c=>c.claim_id === record.hypotheses[0].claim_id)!;
+    expect(screen.getByText(hypothesisClaim.statement, {selector:"p"})).toBeVisible();
+    expect(screen.getByRole("button",{name:"核对审查依据 →"})).toBeVisible();
+  });
   it("shows actual frozen facts and sources before publication and keeps general instructions folded",()=>{
     show(output());
     expect(screen.getByRole("heading",{name:"已冻结的证据与检查"})).toBeVisible();

@@ -27,7 +27,7 @@ test("dynamic subscription selectors preserve removed choices and freeze account
   await expect(page.getByLabel("专项与挑战模型", {exact:true})).toHaveValue("future-z");
   await page.getByLabel("综合模型", {exact:true}).selectOption("future-mini");
   await page.getByLabel("股票代码", {exact:true}).fill("600803");
-  await page.getByLabel("分析日期", {exact:true}).fill("2026-10-10");
+  await expect(page.getByLabel("分析日期")).toHaveCount(0);
   await expect(page.getByRole("button", {name:"开始分析",exact:true})).toBeEnabled();
   models = [{id:"future-z",label:"Future Z"}];
   await page.getByRole("button", {name:"刷新模型",exact:true}).click();

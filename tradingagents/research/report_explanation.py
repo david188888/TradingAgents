@@ -123,14 +123,14 @@ def indicator_presentations(record):
         result["claim:" + cid] = first
     if record.evidence_checks:
         for check in record.evidence_checks.checks:
-            for obs in check.observations:
-                result[f"check:{check.check_id}:{obs.key}"] = IndicatorExplanation(label=obs.label,
+            for position, obs in enumerate(check.observations):
+                result[f"check:{check.check_id}:observation:{position}"] = IndicatorExplanation(label=obs.label,
                     value=display_number(obs.value, obs.unit), definition="此数值用于核对所列具体问题。",
                     caution="核对通过仍不能证明经营原因、增长持续性或合理价值。", professional=f"{obs.value} {obs.unit}；{obs.method}")
     return result
 
 
-def explanation_targets(record, indicators, focus=None):
+def explanation_targets(record, indicators, focus=None, *, batched=False):
     """Stable, whole targets, with each target's own dependency closure."""
     from tradingagents.research.factual_premises import public_premises
     premise_entries = public_premises(record)
@@ -203,7 +203,9 @@ def explanation_targets(record, indicators, focus=None):
     admitted, excluded, size = {}, {}, 0
     for key, target in targets.items():
         length = len(json.dumps(target, ensure_ascii=False))
-        if len(admitted) >= 32 or size + length > 32000:
+        if batched and length + 2 > 32000:
+            excluded[key] = "target_too_large"
+        elif not batched and (len(admitted) >= 32 or size + length > 32000):
             excluded[key] = "capacity_limited"
         else:
             admitted[key] = target

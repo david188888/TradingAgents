@@ -16,6 +16,13 @@ const data: ReportExplanationDTO = {
     interpretation: "", caution: "利润不等于现金流。", scope: "报告期 2025-12-31 · 合并口径", professional: saved.claims[0].statement, raw_value:"800000000", raw_unit:"CNY" } },
 };
 
+it("shows explained and pending counts while batches are running", () => {
+  render(<ExplanationStatus error={false} submitting={false} retry={vi.fn()} reload={vi.fn()}
+    value={{...data,state:"generating",coverage:{total:40,explained:16,unavailable:0,pending:24}}}/>);
+  expect(screen.getByRole("status")).toHaveTextContent("已解释 16 / 40 段");
+  expect(screen.getByRole("status")).toHaveTextContent("待处理 24 段");
+});
+
 it("shows the same beginner explanation and exact professional source in report and rail", () => {
   const basics = { schema_version: "company-basics-v1" as const, company_name: "测试公司", introduction: [], fundamentals: [{label:"归母净利润",claim_id:id,report_period:"2025-12-31"}], quantitative: [], gaps: [] };
   render(<ExplanationContext.Provider value={data}>

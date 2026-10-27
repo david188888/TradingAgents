@@ -6,15 +6,10 @@ import { useChatGPT } from "./useChatGPT";
 
 export type UseConfigResult = ReturnType<typeof useConfig>;
 
-function todayIso(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-}
-
 export function useConfig() {
   const [config, setConfig] = useState<ConfigResponseDTO | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [ticker, setTicker] = useState("");
-  const [analysis_date, setAnalysisDate] = useState(todayIso);
   const [research_question, setResearchQuestion] = useState("");
   const [llm_provider, setLlmProviderState] = useState("");
   const [quick_model_selection, setQuickThinkLlm] = useState("");
@@ -78,20 +73,19 @@ export function useConfig() {
     : !quick_think_llm || !deep_think_llm || (llm_provider !== "chatgpt" && (quick_think_llm === "custom" || deep_think_llm === "custom")) ? "请选择研究模型；自定义模型需填写实际 ID" : null;
   const commonError = error ? "无法读取服务配置" : config === null ? "正在读取服务配置"
     : support?.supported !== true ? support?.reason ?? "此服务不支持新建证据研究"
-    : !analysis_date || analysis_date > todayIso() ? "请选择有效的分析日期"
     : Array.from(research_question.trim()).length > 400 ? "补充关注点最多 400 个字符"
     : configurationError;
   const validationError = commonError ?? (!ticker.trim() ? "请输入股票代码" : null);
   function nativeRequest(value: string): RunCreateRequestDTO | null {
     if (commonError !== null || !value.trim()) return null;
-    return { ticker: value.trim(), analysis_date, research_profile: "evidence_v1", mode: "company_research",
+    return { ticker: value.trim(), research_profile: "evidence_v1", mode: "company_research",
       research_question: research_question.trim() || null,
       selected_analysts: ["market", "social", "news", "fundamentals"], research_depth: 1, horizon: "medium",
       llm_provider, quick_think_llm, deep_think_llm, output_language, checkpoint_enabled: false, asset_type: null,
       ...(llm_provider === "chatgpt" && chatgpt.account_ref ? {chatgpt_account_ref: chatgpt.account_ref} : {}),
     };
   }
-  return { config, error, loading: config === null && error === null, ticker, setTicker, analysis_date, setAnalysisDate,
+  return { config, error, loading: config === null && error === null, ticker, setTicker,
     research_question, setResearchQuestion, llm_provider, setLlmProvider, quick_think_llm, setQuickThinkLlm,
     deep_think_llm, setDeepThinkLlm, output_language, setOutputLanguage,
     quick_model_selection, deep_model_selection, quick_custom_model_id, setQuickCustomModelId, deep_custom_model_id, setDeepCustomModelId,

@@ -71,12 +71,14 @@ def _bound_put(journal, key, value):
 
 
 def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None):
+    from tradingagents.research.challenge_reviews import require_reviews
     logical = "native." + stage
     _bound_put(ledger.journal, logical + ".input", {"sha256": canonical_sha256(context)})
     cached = ledger.cached_result(logical)
     if cached is not None:
         from tradingagents.research.numeric_integration import validate_cached_numeric
         validate_cached_numeric(ledger.journal, stage, cached["proposal"], context, schema)
+        require_reviews(ledger.journal, stage, context, cached["proposal"])
         return schema.model_validate_json(json.dumps(cached["proposal"]))
     recover = getattr(caller, "recover_cached", None)
     if callable(recover):
@@ -88,6 +90,7 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
                 from tradingagents.research.numeric_integration import remember_numeric
                 remember_numeric(ledger.journal, stage, saved, receipt["proof"], context)
             proposal = schema.model_validate_json(json.dumps(saved, allow_nan=False))
+            require_reviews(ledger.journal, stage, context, proposal.model_dump(mode="json"))
             ledger.record_result(logical, {"proposal": proposal.model_dump(mode="json")})
             return proposal
     attempts = [item for item in ledger.records() if item.logical_call_id == logical]
@@ -117,6 +120,7 @@ def _call(stage, context, schema, *, caller, ledger, cancelled, reservation=None
             from tradingagents.research.report_delivery import normalize_synthesis_bindings
             value = json.dumps(normalize_synthesis_bindings(json.loads(value), parse_research_record(context["record"])), ensure_ascii=False)
         proposal = schema.model_validate_json(value)
+        require_reviews(ledger.journal, stage, context, proposal.model_dump(mode="json"))
         if isinstance(proposal, ChallengesProposalV3):
             from tradingagents.research.challenge_checks import validate_challenge
             record = parse_research_record(context["record"])

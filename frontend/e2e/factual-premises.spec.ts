@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 test('premise boundaries remain readable on desktop and narrow screens', async ({page}) => {
   await page.goto('/');
   await page.getByLabel('股票代码').fill('600418');
-  await page.getByLabel('分析日期').fill('2026-09-30');
+  await expect(page.getByLabel('分析日期')).toHaveCount(0);
   await page.getByRole('button', {name:'开始分析', exact:true}).click();
   const reader = page.locator('.question-reader');
   await expect(reader).toBeVisible({timeout:20000});

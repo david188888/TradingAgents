@@ -31,6 +31,11 @@ Safe public diagnostics use fixed categories/codes, permitted field paths, HTTP 
 counts. They exclude arbitrary exception messages, rejected responses, credentials and model reasoning.
 Native diagnostics distinguish request/configuration, JSON/schema, reference qualification and report
 publication failures. Unknown historical failures are not reconstructed from prose.
+Numeric failures may name a declared text field, without retaining its full model-supplied path.
+Schema length failures may include declared envelope fields and numeric limits/actual counts;
+unknown names remain redacted and arbitrary validation context is never copied.
+`inline_binding_shape` identifies an invalid model-facing inline envelope using a fixed code;
+it never exposes the rejected payload or a model-supplied address.
 
 `scratchpad.jsonl` keeps bounded lifecycle markers and stable hashes/artifact references;
 `cycle-record/<sha256>.json` links a cycle's safe spec/query, event span and report references.

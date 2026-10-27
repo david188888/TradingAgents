@@ -108,17 +108,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
             />
           </div>
 
-          <div className="input-group">
-            <label htmlFor="ctrl-date">分析日期</label>
-            <input
-              id="ctrl-date"
-              type="date"
-              value={cfg.analysis_date}
-              onChange={(e) => cfg.setAnalysisDate(e.target.value)}
-            />
-          </div>
-
-          <p className="qr-meta">研究经营、估值、事件与市场风险。</p>
+          <p className="qr-meta">使用当前可得资料，研究经营、估值、事件与市场风险；报告保留资料的实际时间。</p>
 
           <div className="input-group">
             <label htmlFor="ctrl-question">补充关注点（可选）</label>
