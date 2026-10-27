@@ -23,6 +23,7 @@ from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.models import AnalysisRequest, HoldingContext
+from tradingagents.execution.native_runner import NEW_STUDY_TIMEOUT_SECONDS
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
 from tradingagents.presets import load_preset_catalog
@@ -981,6 +982,7 @@ def _analysis_request(
         "checkpoint_enabled": body.checkpoint_enabled,
         "max_debate_rounds": body.research_depth,
         "max_risk_discuss_rounds": body.research_depth,
+        "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS,
     }
     if provider == "chatgpt":
         effective_config["chatgpt_account_ref"] = body.chatgpt_account_ref

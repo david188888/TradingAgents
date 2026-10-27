@@ -5,7 +5,7 @@ test('unusable synthesis still delivers a traceable basic report and specialist 
  await page.setViewportSize({width:1280,height:900});
  await page.goto('/');
  await page.getByLabel('股票代码').fill('600418');
- await page.getByLabel('分析日期').fill('2026-09-30');
+ await expect(page.getByLabel('分析日期')).toHaveCount(0);
  await page.getByRole('button',{name:'开始分析',exact:true}).click();
  const reader=page.locator('.question-reader');
  await expect(reader).toBeVisible({timeout:20000});

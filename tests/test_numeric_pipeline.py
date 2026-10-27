@@ -391,3 +391,17 @@ def test_numeric_fragments_survive_dialogue_inherited_condition_reader_and_markd
                          publication_authorizer=lambda j: j.put("publication_authorized", True))
     assert project_research_record(journal.observer.store, record.run_id)["state"] == "ready"
     assert original in build_markdown_from_native_record(record, workflow_version=journal.state["identity"]["workflow_version"])
+
+
+def test_v8_attribution_indexes_every_narrative_field_while_v1_keeps_its_limit():
+    from pydantic import ValidationError
+
+    from tradingagents.agents.schemas._numeric_attribution import (
+        NumericAttributionV1,
+        NumericAttributionV2,
+    )
+    field ={"path": ["claims", 0, "statement"], "text_sha256": "a" * 64, "kind": "host", "sources": []}
+    payload = {"policy": "anchored-narrative-v1", "catalog": {}, "final_fields": [field] * 265}
+    assert len(NumericAttributionV2.model_validate(payload).final_fields) == 265
+    with pytest.raises(ValidationError):
+        NumericAttributionV1.model_validate(payload)

@@ -598,6 +598,10 @@ def _agent(ctx, role):
                     record, proposal, claims, challenges, inputs = material
                     receipt = ctx.checkpoint["results"].get("native.numeric.accepted." + role, {})
                     base["factual_premises"] = stage_premises(receipt.get("proof", {}))
+                    if role == "challenge":
+                        base["challenge_reviews"] = ctx.stage_reader.review_items
+                        review_receipt = ctx.checkpoint["results"].get("native.challenge_reviews", {})
+                        base["factual_premises"].extend(stage_premises(review_receipt.get("proof", {})))
                     return ReaderAgentDTO(**base, availability="stage_available", reason_code="stage_qualified",
                         stage_record=record, proposal=proposal, claim_ids=claims, challenge_ids=challenges,
                         input_fact_ids=inputs, code_sections=("facts", "sources", "checks") if role == "evidence"
@@ -660,6 +664,14 @@ def _agent(ctx, role):
                 else "proposal_not_recorded",
             )
         record = ctx.record
+        if role == "challenge" and ctx.checkpoint["identity"].get("research_delivery_policy") is not None:
+            from tradingagents.web.reader_stage_projection import StageReader
+            if ctx.stage_reader is None:
+                ctx.stage_reader = StageReader(ctx)
+            ctx.stage_reader.read("challenge")
+            base["challenge_reviews"] = ctx.stage_reader.review_items
+            review_receipt = ctx.checkpoint["results"].get("native.challenge_reviews", {})
+            base["factual_premises"] = [*base.get("factual_premises", []), *stage_premises(review_receipt.get("proof", {}))]
         if (isinstance(proposal, SpecialistProposalV1) and not proposal.hypotheses
                 and "native_stage_unavailable:" + role in record.limitations):
             return ReaderAgentDTO(**base, availability="unavailable", reason_code="native_stage_unavailable")

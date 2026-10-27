@@ -23,6 +23,16 @@ from tradingagents.research.native_policy import fact_views
 from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
 
 
+def stage_gap_constraints(stage, context):
+    """The same saved-target, role and cutoff scope for prompts and validation."""
+    cutoff = context.get('cutoff') or context.get('numeric_analysis_date') or context.get('record', {}).get('analysis_date')
+    role = context.get('role') or (stage if stage in ('operating_quality', 'event_context', 'market_context') else stage.removeprefix('response_'))
+    allowed = {x['hypothesis_id'] for x in context.get('hypotheses', context.get('record', {}).get('hypotheses', []))}
+    allowed.update(x['challenge_id'] for x in context.get('challenges', context.get('record', {}).get('challenges', [])))
+    return {'cutoff': cutoff, 'required_role': role if role in (
+        'operating_quality', 'event_context', 'market_context') else None, 'allowed_target_ids': sorted(allowed)}
+
+
 def extract_stage_gaps(value, *, stage, context, ledger, persist=True):
     """Questions are saved separately from accepted narrative and numeric proof."""
     value = value.model_dump(mode='json') if hasattr(value, 'model_dump') else json.loads(value) if isinstance(value, str) else dict(value)
@@ -31,14 +41,12 @@ def extract_stage_gaps(value, *, stage, context, ledger, persist=True):
         return value
     raw = value.pop('gaps', [])
     gaps = SearchGapsV1.model_validate({'gaps': raw}).gaps
-    cutoff = context.get('cutoff') or context.get('numeric_analysis_date') or context.get('record', {}).get('analysis_date')
-    role = context.get('role') or (stage if stage in ('operating_quality', 'event_context', 'market_context') else stage.removeprefix('response_'))
-    allowed = {x['hypothesis_id'] for x in context.get('hypotheses', context.get('record', {}).get('hypotheses', []))}
-    allowed.update(x['challenge_id'] for x in context.get('challenges', context.get('record', {}).get('challenges', [])))
+    scope = stage_gap_constraints(stage, context)
+    cutoff, role, allowed = scope['cutoff'], scope['required_role'], set(scope['allowed_target_ids'])
     for gap in gaps:
         if cutoff is None or gap.cutoff != date.fromisoformat(str(cutoff)):
             raise ValueError('gap cutoff changed')
-        if role in ('operating_quality', 'event_context', 'market_context') and gap.role != role:
+        if role is not None and gap.role != role:
             raise ValueError('gap role changed')
         if not set(gap.target_ids) <= allowed:
             raise ValueError('gap target outside supplied scope')

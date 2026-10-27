@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import (
     BaseModel,
@@ -25,6 +26,11 @@ SUPPORTED_OUTPUT_LANGUAGES = (
 )
 RESEARCH_DEPTHS = (1, 3, 5)
 TICKER_PATTERN = re.compile(r"^[A-Za-z0-9._\-^=]{1,32}$")
+
+
+def current_analysis_date() -> str:
+    """Resolve on submission, including browsers left open across midnight."""
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
 class PortfolioPositionRequest(BaseModel):
@@ -93,7 +99,7 @@ class RunCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     ticker: str = Field(min_length=1, max_length=32)
-    analysis_date: str
+    analysis_date: str = Field(default_factory=current_analysis_date)
     selected_analysts: tuple[str, ...] = ANALYST_WIRE_KEYS
     research_depth: Literal[1, 3, 5] = 1
     mode: Literal["company_research", "catalyst_research", "holding_review"] | None = None
@@ -161,7 +167,7 @@ class RunCreateRequest(BaseModel):
             parsed = date.fromisoformat(value)
         except ValueError as exc:
             raise ValueError("analysis_date must use YYYY-MM-DD") from exc
-        if parsed > date.today():
+        if parsed > date.fromisoformat(current_analysis_date()):
             raise ValueError("analysis_date cannot be in the future")
         return value
 
@@ -196,7 +202,7 @@ class BatchRunConfigRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    analysis_date: str
+    analysis_date: str = Field(default_factory=current_analysis_date)
     selected_analysts: tuple[str, ...] = ANALYST_WIRE_KEYS
     research_depth: Literal[1, 3, 5] = 1
     horizon: Literal["short", "medium", "long"] = "medium"
@@ -231,7 +237,7 @@ class BatchRunConfigRequest(BaseModel):
             parsed = date.fromisoformat(value)
         except ValueError as exc:
             raise ValueError("analysis_date must use YYYY-MM-DD") from exc
-        if parsed > date.today():
+        if parsed > date.fromisoformat(current_analysis_date()):
             raise ValueError("analysis_date cannot be in the future")
         return value
 

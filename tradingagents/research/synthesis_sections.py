@@ -161,6 +161,9 @@ def parse_sections(envelope, context, *, phase, previous=None, on_progress=None)
         numeric_validation_context,
     )
     context = numeric_validation_context(context, sectioned=True)
+    from tradingagents.research.factual_premises import discard_redundant_bindings, premise_enabled
+    if premise_enabled(context):
+        envelope = discard_redundant_bindings(envelope, partitioned_collections=("dimensions", "adjudications"))
     # Invalid shared JSON/envelope shape is not salvaged. No unowned metadata.
     envelope = NumericStageEnvelopeV1.model_validate(envelope).model_dump(mode="json")
     if set(envelope["proposal"]) - (SynthesisProposalV3.model_fields.keys() - {"synthesis_sections"}):

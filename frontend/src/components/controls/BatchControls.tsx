@@ -215,7 +215,7 @@ export function BatchControls({ cfg, refreshHistory, onSelectRun }: BatchControl
           </div>
           <button type="button" className="secondary" disabled={!canAdd} onClick={() => setRows((current) => [...current, { id: Math.max(...current.map((row) => row.id), 0) + 1, input: "" }])}>＋ 添加公司（{rows.length}/{MAX_ITEMS}）</button>
         </div>
-        <div className="input-group"><label htmlFor="batch-date">分析日期</label><input id="batch-date" type="date" value={cfg.analysis_date} onChange={(event) => cfg.setAnalysisDate(event.target.value)} /></div>
+        <p className="qr-meta">各公司使用当前可得资料，报告保留资料的实际时间。</p>
         <div className="input-group">
           <label htmlFor="batch-question">补充关注点（可选）</label>
           <textarea id="batch-question" value={cfg.research_question} onChange={event => cfg.setResearchQuestion(event.target.value)} maxLength={800} rows={2} placeholder="独立研究完成后，补充回应你关心的角度" />

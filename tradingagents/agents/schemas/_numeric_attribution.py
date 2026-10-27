@@ -41,3 +41,5 @@ class NumericRecordedStageV2(NumericRecordedStageV1):
 class NumericAttributionV2(NumericAttributionV1):
     """V8 preserves base receipts plus up to nine supplemental reviews."""
     stages: tuple[NumericRecordedStageV2, ...] = Field(default=(), max_length=17)
+    # One entry per record narrative field; claims are unbounded, so this index is too.
+    final_fields: tuple[NumericRecordFieldV1, ...] = ()

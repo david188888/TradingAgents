@@ -5,10 +5,13 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from tradingagents.agents.schemas._report_explanation import (
+    BATCH_EXPLANATION_POLICY,
     EXPLANATION_POLICY,
+    EXPLANATION_REQUEST_LIMIT,
+    EXPLANATION_TIMEOUT_SECONDS,
     ExplanationAttempt,
     ExplanationJob,
     ExplanationProposal,
@@ -68,7 +71,8 @@ class ExplanationService:
         if (snapshot.status != "completed" or snapshot.metadata.get("report_explanation_policy") != EXPLANATION_POLICY
                 or record.construction != "native" or record.assessment is None):
             raise ValueError("explanation_not_eligible")
-        targets, excluded = explanation_targets(record, indicator_presentations(record), focus)
+        batched = snapshot.metadata.get("research_delivery_policy") == "evidence-packets-v1"
+        targets, excluded = explanation_targets(record, indicator_presentations(record), focus, batched=batched)
         identity = {"base_record_sha256": canonical_sha256(record), "focus_sha256": canonical_sha256(focus) if focus else None,
                     "targets_sha256": canonical_sha256(targets)}
         config = dict(snapshot.metadata["effective_config"])
@@ -87,13 +91,22 @@ class ExplanationService:
             if prior:
                 if any(getattr(prior, k) != v for k, v in identity.items()) or prior.config_sha256 != frozen_config_hash:
                     raise ValueError("explanation_binding_mismatch")
-                if self.active(run_id, prior.job_id) or prior.state in {"available", "partial"} or not retry:
+                if (self.active(run_id, prior.job_id) or not retry or prior.state == "available"
+                        or prior.batch_policy is None and prior.state == "partial"):
                     return prior
-            job = ExplanationJob(job_id=uuid.uuid4().hex, run_id=run_id, **identity,
-                config_sha256=frozen_config_hash, language=snapshot.output_language,
-                model=snapshot.quick_think_llm, state="generating", unavailable_targets=excluded,
-                target_hashes={k: t["text_sha256"] for k, t in targets.items()},
-                attempts=prior.attempts if prior else ())
+                if prior.batch_policy and (len(prior.attempts) >= EXPLANATION_REQUEST_LIMIT
+                        or prior.deadline_at is None or prior.deadline_at <= datetime.now(timezone.utc)):
+                    return prior
+            if prior and prior.batch_policy:
+                job = prior.model_copy(update={"state": "generating", "reason_code": None})
+            else:
+                job = ExplanationJob(job_id=uuid.uuid4().hex, run_id=run_id, **identity,
+                    config_sha256=frozen_config_hash, language=snapshot.output_language,
+                    model=snapshot.quick_think_llm, state="generating", unavailable_targets=excluded,
+                    target_hashes={k: t["text_sha256"] for k, t in targets.items()},
+                    attempts=prior.attempts if prior else (),
+                    batch_policy=BATCH_EXPLANATION_POLICY if batched else None,
+                    deadline_at=datetime.now(timezone.utc) + timedelta(seconds=EXPLANATION_TIMEOUT_SECONDS) if batched else None)
             save_explanation_job(self.store, job)
             self._active[run_id] = job.job_id
             try:
@@ -110,7 +123,8 @@ class ExplanationService:
         self._pool.shutdown(wait=False, cancel_futures=True)
 
     def _execute(self, job, config, targets, record, chatgpt_request_policy=None):
-        deadline = time.monotonic() + 120
+        seconds = min(EXPLANATION_TIMEOUT_SECONDS, max(0, (job.deadline_at - datetime.now(timezone.utc)).total_seconds())) if job.batch_policy and job.deadline_at else 120
+        deadline = time.monotonic() + seconds
 
         def active():
             remaining = deadline - time.monotonic()
@@ -154,6 +168,21 @@ class ExplanationService:
 
         reason = "invalid_response"
         try:
+            if job.batch_policy:
+                from tradingagents.execution.explanation_batches import run_batches
+
+                def request(batch_prompt, dispatch, usage):
+                    def on_error(category, exc):
+                        code = exc.diagnostic.category if isinstance(exc, ChatGPTError) else category
+                        raise ExplanationRequestFailed(code) from None
+                    return invoke_model_request(config=config, model=job.model, task="aux.report_explanation",
+                        prompt=batch_prompt, client_factory=self.client_factory, slots=global_model_slots(),
+                        ensure_active=active, cancelled=lambda: not self.active(job.run_id, job.job_id),
+                        deadline=lambda: deadline, dispatch=dispatch, on_error=on_error, on_usage=usage,
+                        chatgpt_auth=self.chatgpt_auth, chatgpt_request_policy=chatgpt_request_policy)
+
+                run_batches(job=lambda: job, save=save, active=active, request=request, targets=targets, record=record)
+                return
             if not targets:
                 save(state="available", generated_at=_now())
                 return
@@ -221,7 +250,11 @@ class ExplanationService:
         finally:
             try:
                 if job.state == "generating":
-                    save(state="failed", reason_code=reason)
+                    if job.batch_policy:
+                        from tradingagents.execution.explanation_batches import finish_batches
+                        finish_batches(lambda: job, save, reason)
+                    else:
+                        save(state="failed", reason_code=reason)
             finally:
                 with self._guard:
                     if self._active.get(job.run_id) == job.job_id:

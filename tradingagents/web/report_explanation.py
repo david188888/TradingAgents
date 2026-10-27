@@ -49,7 +49,7 @@ def project_report_explanation(store, run_id, *, service=None):
             return ReportExplanationView(**view).model_dump(mode="json")
         if not eligible or record.construction != "native":
             raise ValueError("explanation_policy_mismatch")
-        targets, excluded = explanation_targets(record, view["indicators"], focus)
+        targets, excluded = explanation_targets(record, view["indicators"], focus, batched=job.batch_policy is not None)
         if (job.base_record_sha256 != digest or job.focus_sha256 != (canonical_sha256(focus) if focus else None)
                 or job.targets_sha256 != canonical_sha256(targets)
                 or job.target_hashes != {k: t["text_sha256"] for k, t in targets.items()}
@@ -73,9 +73,17 @@ def project_report_explanation(store, run_id, *, service=None):
         state = job.state
         if state == "generating" and (service is None or not service.active(run_id, job.job_id)):
             state = "interrupted"
-        view.update(state=state, entries=job.entries if job.state in {"available", "partial"} else {}, reason_code=job.reason_code,
+        view.update(state=state, entries=job.entries if job.batch_policy or job.state in {"available", "partial"} else {}, reason_code=job.reason_code,
                     unavailable_targets={**excluded, **job.unavailable_targets},
                     model=job.model, generated_at=job.generated_at)
+        if job.batch_policy:
+            if not set(job.unavailable_targets) <= (targets.keys() | excluded.keys()):
+                raise ValueError("explanation unknown unavailable target")
+            total = len(targets) + len(excluded)
+            unavailable = len({k for k, v in {**excluded, **job.unavailable_targets}.items()
+                               if k not in job.entries and v != "retry_pending"})
+            view["coverage"] = {"total": total, "explained": len(job.entries), "unavailable": unavailable,
+                                "pending": total - len(job.entries) - unavailable}
     except Exception:
         view.update(state="corrupt", reason_code="explanation_binding_invalid", entries={})
     return ReportExplanationView(**view).model_dump(mode="json")

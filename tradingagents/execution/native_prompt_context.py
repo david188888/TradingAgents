@@ -17,6 +17,23 @@ def legacy_check_schema(schema):
     return schema
 
 
+def compact_challenge_search_context(context):
+    """Summarize discovery logs; preserve all admitted evidence and source bodies."""
+    value = deepcopy(context)
+    batches = []
+    for batch in value["record"]["search_batches"]:
+        trace = {key: item for key, item in batch.items() if key not in {"hits", "outcomes"}}
+        trace["merged_hit_count"] = len(batch["hits"])
+        trace["outcomes"] = [
+            {**{key: item for key, item in outcome.items() if key != "hits"},
+             "hit_count": len(outcome["hits"])}
+            for outcome in batch["outcomes"]
+        ]
+        batches.append(trace)
+    value["record"]["search_batches"] = batches
+    return value
+
+
 def compact_synthesis_context(context, *, delivery=False):
     value = deepcopy(context)
     record = value["record"]

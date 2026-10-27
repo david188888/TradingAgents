@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from tradingagents.agents.schemas._native_stage import SpecialistProposalV1
+from tradingagents.agents.schemas._numeric_stage import NumericStageEnvelopeV1
 from tradingagents.execution import native_model as adapter
 from tradingagents.execution.budget import BudgetBucket
 from tradingagents.execution.native_model_diagnostics import safe_model_diagnostic
@@ -17,6 +18,28 @@ from tradingagents.runtime.run_models import RunSnapshot
 from tradingagents.runtime.store import RunStore
 
 SECRET = "private-invalid-value-and-field-name"
+
+
+def test_envelope_length_diagnostic_names_only_declared_fields_and_numeric_bounds():
+    with pytest.raises(ValidationError) as caught:
+        NumericStageEnvelopeV1.model_validate({"proposal": {}, "premises": [{
+            "field_path": SECRET, "observation_ids": [SECRET] * 7, "pending_questions": []}]})
+    diagnostic = safe_model_diagnostic("synthesis", "main", "response_invalid", caught.value,
+        schema=adapter.SynthesisProposalV3, envelope_schema=NumericStageEnvelopeV1)
+    assert diagnostic["issues"] == [{"path": ["premises", 0, "observation_ids"],
+                                      "code": "too_long", "limit": 6, "actual": 7}]
+    assert SECRET not in json.dumps(diagnostic)
+
+
+@pytest.mark.parametrize("path,expected", [("hypotheses.0.statement", "statement"),
+    ("unknowns.0", "unknowns"), (SECRET, None)])
+def test_numeric_failure_reports_closed_field_name_without_model_path(path, expected):
+    from tradingagents.research.numeric_narrative import NumericNarrativeError
+    diagnostic = safe_model_diagnostic("operating_quality", "repair", "response_invalid",
+        NumericNarrativeError("numeric_literal_unbound", path), schema=SpecialistProposalV1)
+    assert diagnostic.get("field_name") == expected
+    assert "field_path" not in diagnostic
+    assert SECRET not in json.dumps(diagnostic)
 
 
 def test_schema_diagnostic_excludes_input_context_message_and_unknown_field_names():

@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
+from tradingagents.agents.schemas._challenge_review import HypothesisReviewV1
 from tradingagents.agents.schemas._factual_premise import PublicPremiseV1
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
@@ -123,6 +124,7 @@ class OutputRelation(_ReaderModel):
 
 
 class ReaderAgentDTO(_ReaderModel):
+    challenge_reviews: tuple[HypothesisReviewV1, ...] = ()
     factual_premises: tuple[PublicPremiseV1, ...] = ()
     schema_version: Literal[1] = 1
     run_id: str
@@ -165,6 +167,13 @@ class ReaderAgentDTO(_ReaderModel):
         elif self.stage_record is not None:
             raise ValueError("stage record requires independent stage qualification")
         return self
+
+    @model_serializer(mode="wrap")
+    def compatible_review_shape(self, handler):
+        value = handler(self)
+        if not self.challenge_reviews:
+            value.pop("challenge_reviews", None)
+        return value
 
 
 class SearchUsageV1(_ReaderModel):

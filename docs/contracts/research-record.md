@@ -53,13 +53,62 @@ comparable-direction observations, interpretations and pending questions. Observ
 within each field's allowed facts; key/overall support has additional binding gates.
 These mechanisms certify bindings and bounded arithmetic, not arbitrary sentence entailment.
 A correct revenue reference can still accompany an unsupported free-prose causal claim.
+Redundant `premises` bindings on existing fields that do not require factual premises (such as
+`unknowns` and condition text) are discarded before validating the unused binding contents and
+saving the replay envelope, including malformed or over-limit unused contents. Their text still
+passes the normal numeric checks. Missing paths, out-of-range indices and a `proposal.` prefix
+remain invalid; required premise bindings and structured numeric bindings retain their gates.
+
+Fresh V8 runs freeze `challenge_input_policy=search-trace-summary-v1` in their identity. Only the
+challenge model view replaces raw search-batch hits and outcome hits with counts, retaining requests,
+status, reasons and usage metadata. Qualified evidence bodies, claims, numeric anchors, observations
+and validation contexts stay unchanged. Full search logs remain in the saved record for audit.
+Saved runs without this policy retain their original prompts on recovery; unknown policies refuse
+resume or model dispatch. This policy changes neither evidence admission nor model/repair budgets.
+
+Fresh V8 runs also freeze `search_gap_guidance_policy=supplied-gap-targets-v1`. Gap prompts and
+their prompt schemas state the same role, cutoff and saved hypothesis/challenge targets enforced
+by validation. An initial specialist with no saved targets must use empty `target_ids`; fact/source
+IDs and newly proposed items cannot be gap targets. Unmarked saved runs retain their original
+prompts on recovery. Invalid gap roles, dates and targets still reject, using closed diagnostic codes.
+
+Fresh numeric V8 runs freeze `model_binding_policy=inline-bindings-v1`. Their model-facing
+schema keeps narrative text and its premise observations together, proposed plans beside their
+own text/date, and structured check values beside their numeric/plan bindings.
+[inline_bindings.py](../../tradingagents/research/inline_bindings.py) derives dotted paths from
+the actual object keys and array positions, then converts the response to `NumericStageEnvelopeV1`
+before the existing schema, scope, quantity, isolation and publication gates. The model cannot
+submit `field_path` or top-level `premises`, `plans` or `structured_bindings` in this format.
+Unknowns remain qualitative text; unused premise annotations on non-premise text are discarded.
+The adapter neither chooses evidence nor guesses/corrects addresses. Saved proofs and public
+records keep their canonical formats. Unmarked history retains its original prompt/parser;
+unknown or incompatible policies reject before dispatch. This adds no model stage or budget.
+
+Fresh numeric V8 also freezes the exact `research_delivery_policy` payload from `native_versions.py`.
+`evidence-packets-v1` uses [evidence_packets.py](../../tradingagents/research/evidence_packets.py) to
+render all qualified observations as Markdown cards with source, cutoff and limitations. Up to eight
+lexically ranked passages (at most 1200 characters each) quote saved sources within the same role
+scope. Retrieval cannot qualify a new fact. Models select short card citations; the host restores
+observation IDs and derives fact lists from selected observations and numeric anchors, before the
+existing canonical validators. Unknown citations reject locally where existing isolation permits;
+they are never guessed. Unmarked history retains its original parser, prompts and budgets.
 
 Malformed shared JSON/schema cannot be salvaged as free text. Within existing repair budgets,
 independently valid original specialist siblings can survive reference rejection with original
-indices and closed reasons; effective rejection forces partial/LOW_CONFIDENCE. Valid repairs replace
+indices and closed reasons; effective rejection forces partial/LOW_CONFIDENCE. A wrong premise or
+structured-binding path inside one existing hypothesis rejects only that hypothesis; invalid shared-field,
+out-of-range and unaddressable paths still reject the stage. Diagnostics record a closed path-shape
+label, never the path or model text. Valid repairs replace
 whole proposals rather than combining incompatible main/repair responses.
 
 ## Challenge and verification
+
+Under `evidence-packets-v1`, every supplied hypothesis must appear exactly once in a saved review:
+`challenged` must match an accepted challenge, while `no_additional_counterevidence` needs its own
+source-bound rationale. An empty challenge array without complete reviews is invalid. These separate
+receipts bind the challenge proposal and numeric context, replay on recovery/Reader access, and do
+not change canonical challenge proofs. Finding no additional counterevidence does not establish
+safety, entailment or absence of risk.
 
 Important challenges under `hypothesis-directed-checks-v1` classify verifiability and may propose an
 independent check using additional qualified frozen facts. They do not change the target hypothesis
@@ -123,18 +172,19 @@ PDF download/parse bounds are 20 MiB, 500 pages, up to 12 selected pages × 4000
 | Extra body attempts, including redirects | 8 across Fetch/Extract/PDF |
 | Supplementary rounds | 3, selecting at most 3 gaps per round |
 | Supplementary model attempts | 3 per round, 9 total including repairs/retries |
-| Baseline model attempts | 12 total: at most 8 main and 1 focus; repairs/retries consume that same total |
-| Baseline repair/retry sub-pools | 2 structured repairs (1 per stage); 3 shared transient retries |
+| Baseline model attempts | Fresh `evidence-packets-v1`: 20; unmarked history: 12. At most 8 main and 1 focus; repairs/retries consume that same total |
+| Baseline repair/retry sub-pools | Fresh policy: 8 structured repairs, at most 1 per stage; unmarked history: 2. Both retain 3 shared transient retries |
 | Dedicated data | 24 capability calls / 64 HTTP attempts |
 | All data HTTP | 172 attempts |
 | Search activity | 90 seconds, union of overlapping intervals, excluding model thinking |
-| Whole research | 300 active seconds by default, excluding queue time; effective timeout is frozen in run identity |
+| Whole research | 900 active seconds for new Web studies (300 for saved requests without a value), excluding queue time; effective timeout is frozen in run identity |
 
 Reservations persist before dispatch. Recovery carries spent/unknown attempts forward. Search retries
 at most once; access/payment/security rejection does not gain retries or new quota by rotating keys.
 No new qualified material, exhausted pools/deadline or unavailable sources produce explicit gaps and
 stop reasons; cancellation propagates. A judgement is updated only after its affected review executes.
-Baseline plus review is at most 21 model attempts. Review retries/repairs use the review pool and
+Baseline plus supplementary review is at most 29 model attempts for the fresh policy, 21 for unmarked
+history. Review retries/repairs use the review pool and
 its three-attempt per-round ceiling, rather than replenishing baseline repair/retry allowance.
 The code-owned [search policy](../../tradingagents/research/native_versions.py),
 [search_budget.py](../../tradingagents/execution/search_budget.py),
@@ -170,9 +220,19 @@ qualification. Unsupported versions, missing/corrupt provenance and absent histo
 Optional focus is a separate baseline-digest-bound artifact, using one dedicated attempt within the
 baseline pool and no repair/retry/tools. It cannot alter baseline judgement; local optional failure
 preserves the baseline, while cancellation/global corruption still propagates.
-Plain-language explanations are independent post-completion artifacts with at most one main plus
-one repair over 120 seconds. GET reads only; eligible explicit POST retries preserve attempt history.
+Plain-language explanations are independent post-completion artifacts. Fresh-policy jobs freeze
+`batched-explanations-v1`, keep all eligible targets, and batch at most 16 targets / 32000 serialized
+characters. A single oversized target stays explicitly unavailable. Accepted entries persist after
+each response; one missing-only pass per batch retains valid siblings. Each job has a cumulative
+24-request / 300-second wall-clock deadline; explicit retries retain both history and deadline.
+Dispatched responses lost before persistence remain unknown and their targets are not resent.
+The Reader exposes explained/pending/unavailable counts, including accepted progress while running.
+Old jobs retain the original 32-target selector, one main plus one repair and 120-second execution.
+GET reads only; eligible explicit POST retries preserve attempt history.
 Their failure does not change research completion, ratings or original Markdown.
+Rule-based check indicators address each observation by check ID and saved array position; repeated
+semantic keys cannot overwrite another observation's displayed number. This display repair does not
+change saved observations, numeric proofs or explanation-job target manifests.
 
 Reading/projection/export does not fetch new research, generate a missing historical artifact or
 call a model. Native research creates no classic `/reader/package`; external classic consumption is

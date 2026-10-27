@@ -7,7 +7,7 @@ test("saved stage evidence and proposal are readable before final publication",a
   await page.setViewportSize({width:1512,height:900});
   await page.goto("/");
   await page.getByLabel("股票代码").fill("600803");
-  await page.getByLabel("分析日期").fill("2026-09-30");
+  await expect(page.getByLabel("分析日期")).toHaveCount(0);
   await page.getByRole("button",{name:"开始分析",exact:true}).click();
   await expect(page.locator(".question-reader")).toBeVisible({timeout:20000});
   const runId=await page.locator(".native-research-page").getAttribute("data-run");

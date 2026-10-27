@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 test("desktop question, evidence, agent review and diagnostic truth",async({page})=>{
  await page.setViewportSize({width:1512,height:900});
- await page.goto("/");await page.getByLabel("股票代码").fill("600803");await page.getByLabel("分析日期").fill("2026-09-30");
+ await page.goto("/");await page.getByLabel("股票代码").fill("600803");await expect(page.getByLabel("分析日期")).toHaveCount(0);
  await page.getByLabel("补充关注点（可选）").fill("需要核对哪些经营事实？");
  await page.getByRole("button",{name:"开始分析",exact:true}).click();
  const reader=page.locator(".question-reader");await expect(reader).toBeVisible({timeout:20000});

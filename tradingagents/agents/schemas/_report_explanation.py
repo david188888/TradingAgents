@@ -1,10 +1,16 @@
 """Additive reading aids; never part of the professional research record."""
 
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 EXPLANATION_POLICY = "plain-language-report-v1"
+BATCH_EXPLANATION_POLICY = "batched-explanations-v1"
+BATCH_TARGET_LIMIT = 16
+BATCH_CHAR_LIMIT = 32000
+EXPLANATION_REQUEST_LIMIT = 24
+EXPLANATION_TIMEOUT_SECONDS = 300
 
 
 class _Model(BaseModel):
@@ -48,6 +54,8 @@ class ExplanationAttempt(_Model):
     outcome: Literal["reserved", "unknown", "received", "failed"] = "reserved"
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
+    batch_index: int | None = Field(default=None, ge=0)
+    target_ids: tuple[str, ...] = ()
 
 
 class ExplanationJob(_Model):
@@ -69,6 +77,36 @@ class ExplanationJob(_Model):
     target_hashes: dict[str, str] = Field(default_factory=dict)
     result_artifact_id: str | None = None
     result_sha256: str | None = None
+    batch_policy: Literal["batched-explanations-v1"] | None = None
+    deadline_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def bounded_batches(self):
+        if self.batch_policy is not None:
+            if self.deadline_at is None or self.deadline_at.utcoffset() is None:
+                raise ValueError("batched explanation deadline must be timezone aware")
+            if len(self.attempts) > EXPLANATION_REQUEST_LIMIT:
+                raise ValueError("explanation request limit exceeded")
+            for attempt in self.attempts:
+                if (attempt.batch_index is None or not attempt.target_ids
+                        or len(attempt.target_ids) > BATCH_TARGET_LIMIT
+                        or len(set(attempt.target_ids)) != len(attempt.target_ids)
+                        or not set(attempt.target_ids) <= self.target_hashes.keys()):
+                    raise ValueError("explanation batch attempt invalid")
+        return self
+
+
+class ExplanationCoverage(_Model):
+    total: int = Field(ge=0)
+    explained: int = Field(ge=0)
+    unavailable: int = Field(ge=0)
+    pending: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def complete_partition(self):
+        if self.explained + self.unavailable + self.pending != self.total:
+            raise ValueError("explanation coverage mismatch")
+        return self
 
 
 class ReportExplanationView(_Model):
@@ -84,3 +122,11 @@ class ReportExplanationView(_Model):
     unavailable_targets: dict[str, str] = Field(default_factory=dict)
     model: str | None = None
     generated_at: str | None = None
+    coverage: ExplanationCoverage | None = None
+
+    @model_serializer(mode="wrap")
+    def compatible_coverage_shape(self, handler):
+        value = handler(self)
+        if self.coverage is None:
+            value.pop("coverage", None)
+        return value

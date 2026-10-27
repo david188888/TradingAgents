@@ -176,7 +176,7 @@ describe("Controls", () => {
     await waitForConfig();
 
     expect(screen.getByLabelText("股票代码")).toBeInTheDocument();
-    expect(screen.getByLabelText("分析日期")).toBeInTheDocument();
+    expect(screen.queryByLabelText("分析日期")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("研究深度")).toBeNull();
     expect(screen.queryByLabelText("研究模式")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("持仓数量")).not.toBeInTheDocument();

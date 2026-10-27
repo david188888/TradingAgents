@@ -67,6 +67,7 @@ export function ExplanationStatus({ value, error, submitting, retry, reload }: {
     invalid_response: "这次解释未能可靠对应原报告，已保留专业原文。",
   } as Record<string,string>)[value.reason_code ?? ""] : null;
   return <div className="qr-explanation-status" role="status"><span>{text}</span>
+    {value.coverage ? <span className="qr-meta">已解释 {value.coverage.explained} / {value.coverage.total} 段 · 待处理 {value.coverage.pending} 段{value.coverage.unavailable ? ` · 保留原文 ${value.coverage.unavailable} 段` : ""}</span> : null}
     {recovery ? <span>{recovery}</span> : null}
     {value.model ? <span className="qr-meta">解释模型：{value.model}</span> : null}
     {canRetry ? <button disabled={submitting} onClick={retry}>{submitting ? "正在提交…" : "生成或重试通俗解读"}</button> : null}

@@ -2,7 +2,6 @@ import { expect, type Page, type Route } from "@playwright/test";
 import type { AuditSelectionDTO, CompanionSelectionDTO } from "../../src/api/contracts";
 import {
   configFixture,
-  FIXED_DATE,
   FIXED_NOW,
   scenarioFixture,
   terminalEvent,
@@ -121,7 +120,7 @@ export async function mountScenario(
   });
 
   await page.goto("/");
-  await expect(page.locator("#ctrl-date")).toHaveValue(FIXED_DATE);
+  await expect(page.locator("#ctrl-date")).toHaveCount(0);
   await page.getByRole("button", { name: `打开 ${fixture.ticker} 的研究记录`, exact: true }).click();
 
   if (kind === "failed") {

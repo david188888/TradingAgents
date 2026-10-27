@@ -167,6 +167,12 @@ class DurableBudgetLedger(BudgetLedger):
             if identity.get("search_budget_policy") != SEARCH_BUDGET_POLICY:
                 raise CatalystCheckpointConflict("search budget policy mismatch")
             limits = {BudgetBucket(key): value for key, value in SEARCH_BUDGET_POLICY["limits"].items()}
+        delivery = identity.get("research_delivery_policy")
+        if delivery is not None:
+            from tradingagents.research.native_versions import RESEARCH_DELIVERY_POLICY
+            if identity.get("workflow_version") != "evidence-production-v8" or delivery != RESEARCH_DELIVERY_POLICY:
+                raise CatalystCheckpointConflict("research delivery policy mismatch")
+            limits.update({BudgetBucket(key): value for key, value in delivery["repair_limits"].items()})
         super().__init__(journal.observer.run_id, limits=limits, records=(
             _record_from_json(value) for value in journal.state["records"]
         ))

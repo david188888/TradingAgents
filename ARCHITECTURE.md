@@ -50,6 +50,19 @@ Code owns qualification, calculations, reference validation, budgets and publica
 interpretations. Context isolation is not statistical independence. Numeric/reference checks do not
 prove free-prose entailment, economic causality, fair value or predictive accuracy.
 
+New Web studies resolve an omitted cutoff to the current Asia/Shanghai date; historical requests and
+resume retain their saved date. Fresh numeric V8 calls freeze `research_delivery_policy=evidence-packets-v1`
+(with its exact policy payload). [evidence_packets.py](tradingagents/research/evidence_packets.py)
+renders all role-qualified observations as sourced Markdown cards and ranks bounded passages from
+their saved source bodies by lexical overlap. Models select short card citations; the host derives
+canonical observation/fact references. This is local retrieval, without an embedding service or new
+evidence admission. The pure adapter
+[inline_bindings.py](tradingagents/research/inline_bindings.py) derives binding paths from the
+response structure and restores the canonical numeric envelope before existing admission checks.
+Per-hypothesis challenge-review receipts bind the accepted challenge proposal and exact numeric
+context; the Reader replays them. The policy also reserves a repair opportunity for each basic stage.
+Saved proofs/public records retain their formats; old runs retain their original prompts and budgets.
+
 ## Publication And Projections
 
 ### Shared Projections And Native Publication
@@ -72,7 +85,8 @@ financial and numeric rules, search budgets and snapshot semantics are in the
 
 Eligible new studies can run a separate post-completion explanation job using the frozen quick-model
 configuration. It owns its manifest/artifact and does not change the baseline, ratings or research
-budgets. Reading is a GET; explicit explanation generation/retry is a POST. Historical reads never
+budgets. Fresh-policy jobs process bounded batches, save accepted entries after each response, and
+expose explained/pending/unavailable counts. Reading is a GET; explicit explanation generation/retry is a POST. Historical reads never
 acquire this job automatically. See [reading semantics](docs/contracts/research-record.md#reader-focus-and-explanations).
 
 ## Module Ownership And Extension Points

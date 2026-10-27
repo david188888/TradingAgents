@@ -69,9 +69,12 @@ def test_isolated_original_index_and_receipt_do_not_retain_bad_prose():
     good = deepcopy(value["proposal"]["hypotheses"][0])
     good["statement"] = "{{num:" + alias + "}}"
     value["proposal"]["hypotheses"].append(good)
-    proposal, proof = compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1, isolate=True)
+    issues = []
+    proposal, proof = compile_numeric_stage("operating_quality", value, context, SpecialistProposalV1,
+                                           isolate=True, issues=issues)
     assert proof["indices"] == [1]
     assert proof["rejections"] == [{"index": 0, "code": "numeric_literal_unbound"}]
+    assert issues == [{"index": 0, "field_name": "statement"}]
     assert "25%" not in str(proof)
     validate_numeric_stage("operating_quality", proposal, proof, context, SpecialistProposalV1)
 

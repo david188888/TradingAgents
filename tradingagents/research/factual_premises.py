@@ -99,20 +99,84 @@ def premise_path(path):
     return path.split(".")[-1] in {"statement", "rationale", "judgement", "answer", "alternative_explanation"}
 
 
-def prepare_bindings(envelope, context, paths):
-    from tradingagents.research.numeric_narrative import NumericNarrativeError
+def discard_redundant_bindings(envelope, *, proposal=None, partitioned_collections=None):
+    """Drop resolvable non-premise bindings before validating their unused contents.
+
+    Unaddressable paths and required bindings remain subject to full validation.
+    The caller gates this normalization on the factual-premise policy.
+    """
+    from tradingagents.research.numeric_narrative import (
+        NumericNarrativeError,
+        binding_path_issue,
+        collection_index,
+    )
+
+    if not isinstance(envelope, dict):
+        return envelope
+    proposal = envelope.get("proposal") if proposal is None else proposal
+    bindings = envelope.get("premises")
+    if not isinstance(proposal, dict) or not isinstance(bindings, (list, tuple)):
+        return envelope
+    result = deepcopy(envelope)
+    kept = []
+    for binding in result["premises"]:
+        path = binding.get("field_path") if isinstance(binding, dict) else None
+        if not isinstance(path, str):
+            kept.append(binding)
+            continue
+        issue = binding_path_issue(path, proposal)
+        if partitioned_collections is not None and (
+            issue in {"proposal_prefix", "index_out_of_range"}
+            or issue == "unknown_path" and not any(
+                collection_index(path, collection) is not None for collection in partitioned_collections)
+        ):
+            # Partitioning must not erase a shared invalid address. Bad fields
+            # inside an existing item still go to that item's own validator.
+            raise NumericNarrativeError("premise_binding_invalid", binding_issue=issue)
+        if premise_path(path) or issue != "unexpected_field":
+            kept.append(binding)
+    result["premises"] = kept
+    return result
+
+
+def prepare_bindings(envelope, context, paths, *, proposal=None, collection=None):
+    """Return (bindings, invalid item indices -> closed issue label).
+
+    Redundant bindings on existing non-premise fields are discarded, including
+    from the canonical envelope saved for replay. Wrong paths inside an existing
+    item invalidate that item; out-of-range and unaddressable paths still reject.
+    """
+    from tradingagents.research.numeric_narrative import (
+        NumericNarrativeError,
+        binding_path_issue,
+        collection_index,
+    )
     bindings = envelope.get("premises")
     if not premise_enabled(context):
         if bindings is not None:
             raise NumericNarrativeError("premise_binding_invalid")
-        return {}
+        return {}, {}
     if bindings is None:
         raise NumericNarrativeError("premise_binding_missing")
-    result = {b["field_path"]: b for b in bindings}
-    if len(result) != len(bindings) or set(result) - {p for p in paths if premise_path(p)}:
-        raise NumericNarrativeError("premise_binding_invalid")
+    allowed = {p for p in paths if premise_path(p)}
+    result, invalid = {}, {}
+    for binding in bindings:
+        path = binding["field_path"]
+        issue = ("duplicate_path" if path in result else None if path in allowed
+                 else binding_path_issue(path, proposal or {}))
+        if issue is None:
+            result[path] = binding
+            continue
+        if issue == "unexpected_field":
+            continue
+        index = collection_index(path, collection)
+        if index is None or issue == "index_out_of_range":
+            raise NumericNarrativeError("premise_binding_invalid", binding_issue=issue)
+        invalid.setdefault(index, issue)
+    envelope["premises"] = [binding for binding in bindings
+                            if binding["field_path"] in allowed]
     # Missing bindings are checked per field so valid specialist siblings survive.
-    return result
+    return result, invalid
 
 
 def bind_field(stage, path, text, proof, proposal, context, bindings):
@@ -143,6 +207,8 @@ def bind_field(stage, path, text, proof, proposal, context, bindings):
                 or path == "judgement" and proposal.get("investment_stance") not in {None, "insufficient_evidence"})
     if path.startswith("responses."):
         required = proposal["responses"][int(path.split(".")[1])]["disposition"] in {"maintained", "revised"}
+    if path.startswith("reviews."):
+        required = True
     if path.startswith("dimensions."):
         required = proposal["dimensions"][int(path.split(".")[1])]["status"] != "unresolved"
     if stage.startswith('search_review.') and path == 'rationale':
