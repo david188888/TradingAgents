@@ -19,7 +19,7 @@ export function outputLabel(value: OutputAvailability, reason: string | null, ru
   if (reason === "native_response_unavailable") return "专项回应未能取得有效结果";
   if (reason === "no_hypotheses_not_called") return "没有待挑战假设，本环节未调用";
   if (reason === "no_qualified_facts_not_called") return "没有本专项的合格输入事实，本环节未调用";
-  return { available: "已发布，可回顾", pending_publication: "提议已保存，等待发布校验", not_recorded: "原提议未记录", unavailable: "未通过产物读取校验", unsupported: "历史版本暂不支持回顾", not_applicable: "不适用" }[value];
+  return { insight_stage_available: "阶段观点已保存，尚未发布总体判断", available: "已发布，可回顾", pending_publication: "提议已保存，等待发布校验", not_recorded: "原提议未记录", unavailable: "未通过产物读取校验", unsupported: "历史版本暂不支持回顾", not_applicable: "不适用" }[value];
 }
 export function countLabel(count: ObservedCountDTO | null | undefined): string {
   if (!count || count.value === null) return "未记录";

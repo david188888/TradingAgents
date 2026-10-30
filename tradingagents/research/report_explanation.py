@@ -74,6 +74,8 @@ def _reading(name, value, unit, professional):
 
 
 def indicator_presentations(record):
+    if record.schema_version == 'insight-research-v1':
+        return {}
     result = {}
     claims = {c.claim_id: c for c in record.claims}
     for metric in record.metrics:
@@ -132,6 +134,20 @@ def indicator_presentations(record):
 
 def explanation_targets(record, indicators, focus=None, *, batched=False):
     """Stable, whole targets, with each target's own dependency closure."""
+    if record.schema_version == 'insight-research-v1':
+        targets, excluded, size = {}, {}, 0
+        for item in (*record.insights, *record.focus_insights):
+            key = 'insight:' + item.insight_id
+            text = '\n'.join((item.rendered.claim, item.rendered.reasoning, item.rendered.limitations))
+            target = {'target': key, 'text': text, 'text_sha256': text_hash(text),
+                'references': list(item.source_ids), 'facts': [], 'research_disposition': item.status}
+            length = len(json.dumps(target, ensure_ascii=False))
+            if length + 2 > 32000 or not batched and (len(targets) >= 32 or size + length > 32000):
+                excluded[key] = 'target_too_large' if batched else 'capacity_limited'
+            else:
+                targets[key] = target
+                size += length
+        return targets, excluded
     from tradingagents.research.factual_premises import public_premises
     premise_entries = public_premises(record)
     targets = {}

@@ -50,6 +50,11 @@ shared output cap to `max_output_tokens`, and Azure forwards `max_tokens`; provi
 and enforcement depend on the selected model. Task-effort mappings are programmatic/legacy CLI settings, not Web selectors;
 [task_effort.py](../../tradingagents/llm_clients/task_effort.py) owns valid tasks and values.
 
+Fresh V9 research sends strict structured output on SIWC/OpenAI and JSON mode on the existing
+DeepSeek Chat Completions route. Canonical evidence and numeric checks still apply; old runs keep
+their frozen request format. A successful small schema probe is separate from complete real-model
+research acceptance. See the [output contract](../contracts/research-record.md) for boundaries.
+
 ## Create a study
 
 1. Enter a supported A-share code or a company name that resolves to one instrument.
@@ -59,7 +64,7 @@ and enforcement depend on the selected model. Task-effort mappings are programma
    company baseline excludes this text; a saved-evidence response follows it and cannot rewrite it.
 
 New studies assess company investment attractiveness through operations, valuation, events and market
-risk. They use `evidence_v1` / V8 and publish a V2 research record. There are no native analyst,
+risk. They use `evidence_v1` / V9 and publish an independent Insight record. There are no native analyst,
 debate-depth, preset or horizon selectors. Earlier catalyst/holding scopes are read/resume only;
 new old-mode requests return 422, and retired profiles return 410.
 
@@ -82,15 +87,16 @@ produces no single-run completion notice. Queued work survives reload/startup re
 ## Evidence and workflow
 
 Dedicated APIs come first for identity and quantitative inputs; bounded dual search provides context
-and attempts missing fields. Qualified sources feed isolated specialists, one challenge/check/reply
-sequence, up to three supplementary rounds and one synthesis. Source availability is distinct from
+and attempts missing fields. Qualified sources feed isolated specialists, bounded supplementary collection, one critique/reply
+round and synthesis. Source availability is distinct from
 fact qualification. Reposts do not create independent confirmation; titles/snippets do not prove delivery.
 
-Fresh studies present qualified observations as sourced Markdown cards. The model selects card
-citations; code builds the saved bindings and still rejects unsupported references. Local lexical
-retrieval adds passages from already saved, role-qualified sources. Each hypothesis needs an explicit
-review: either a supported challenge or a sourced explanation that no additional counterevidence was
-found. The latter is not a claim that the hypothesis is safe or proven.
+Fresh studies present all qualified fact cards and selected exact saved-source passages. Models return
+four-field Insights and optional outer `search_requests`; code resolves references and renders numbers.
+Questions enter at most three supplementary rounds, with three selected questions per round;
+new gaps from reanalysis consume the remaining rounds instead of resetting the budget. Changed evidence requires affected roles to reanalyse.
+A review may explicitly find no effective counterevidence; missing or failed review remains visible.
+The latter does not prove the Insight correct. See [V9 semantics](../contracts/research-record.md#insight-first-v9).
 
 Sources retain identity, dates, units and coverage. SZSE's full-month calendar is authoritative for all
 A-share exchanges; Tencent index dates and TDX witness gaps/disputes, with Tushare as last fallback.
@@ -102,10 +108,10 @@ Missing bars are not automatically holidays. See [source rules](a-share-data-cap
 | --- | --- |
 | Running stage output | A qualified saved proposal; it may be revised and is not a final report. |
 | `completed` | Execution/publication finished; it does not prove complete evidence or correct judgement. |
-| Reader `ready` | The saved report is readable. |
-| `partial` / `LOW_CONFIDENCE` | Coverage, accepted analysis or unresolved risks limit the research. |
-| `analysis_unrated` / no overall rating | Usable analysis exists, but overall/critical synthesis or evidence gates do not support a rating. |
-| `specialist_summary` / `basic_report` | Synthesis was unusable; saved specialist findings or basics remain, explicitly without a fabricated overall decision. |
+| Reader `insight_ready` / historical `ready` | The versioned saved report is readable. |
+| Insight `pending` / `excluded` | Unsupported, withdrawn or superseded work remains visible but cannot support the overall judgement. |
+| No overall rating | Overall synthesis was unavailable or its references/quantities failed checks; valid independent Insights remain. |
+| Historical `specialist_summary` / `basic_report` | Synthesis was unusable; saved specialist findings or basics remain, explicitly without a fabricated overall decision. |
 
 Start with stance and its limits, then supporting/opposing reasons and change conditions. Use the
 bound evidence panel to check source text, dates and units. Process/Agent views explain contributions;
@@ -113,9 +119,9 @@ the full record retains detail omitted from the first screen. A passed arithmeti
 specific question, not the entire hypothesis or an economic cause.
 
 Native Reader, evidence expansion and Markdown use saved content, without new research calls.
-The optional focus is separate. New-study plain-language explanations run independently after completion;
-a failed explanation leaves professional text available and requires explicit retry. Fresh jobs retain
-all eligible targets, process up to 16 per batch, and retry only missing items once per batch. The UI
+The optional focus is separate. Insight plain-language explanations run independently after completion and are not an acceptance gate;
+a failed explanation leaves professional text available and requires explicit retry. Historical `evidence-packets-v1` jobs retain
+all eligible targets, process up to 16 per batch, and retry only missing items once per batch. Their legacy Reader
 shows explained, pending and original-text-only counts. A job stops at 24 requests or five minutes;
 retry retains its original deadline and request history. Historical reading
 does not generate a new explanation. Technical diagnostics are for execution failures, not a quality score.

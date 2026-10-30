@@ -10,7 +10,7 @@ from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 def invoke_model_request(*, config, model, task, prompt, client_factory, slots,
                          ensure_active, cancelled, deadline, dispatch,
                          on_error: Callable, on_usage: Callable, chatgpt_auth=None,
-                         chatgpt_request_policy=None):
+                         chatgpt_request_policy=None, response_format=None):
     ensure_active()
     while not slots.acquire(timeout=min(0.1, ensure_active())):
         ensure_active()
@@ -19,6 +19,8 @@ def invoke_model_request(*, config, model, task, prompt, client_factory, slots,
         try:
             kwargs = provider_llm_kwargs(config, task=task)
             kwargs.update(max_retries=0, timeout=remaining)
+            if response_format is not None:
+                kwargs["response_format"] = response_format
             if config["llm_provider"] == "chatgpt":
                 if validate_request_policy(chatgpt_request_policy) is None:
                     # Unmarked frozen runs predate effort transmission.

@@ -107,6 +107,8 @@ ReferenceCode = Literal[
     "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
     "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
         "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit",
+        "numeric_proposal_schema", "numeric_envelope_schema", "numeric_catalog_invalid",
+        "numeric_cutoff_invalid", "numeric_condition_reference", "numeric_receipt_invalid",
 ]
 
 
@@ -196,6 +198,14 @@ class ChallengeProposalV1(_Proposal):
     risk_type: Literal["evidence_quality", "operations", "governance", "market", "valuation", "unclassified"]
     proposed_test: str = Field(min_length=1, max_length=300)
     condition_id: str | None = None
+    condition_index: int | None = Field(default=None, ge=0, strict=True)
+
+    @model_serializer(mode="wrap")
+    def legacy_condition_shape(self, handler):
+        value = handler(self)
+        if self.condition_index is None:
+            value.pop("condition_index", None)
+        return value
 
 
 class ChallengesProposalV1(_Proposal):

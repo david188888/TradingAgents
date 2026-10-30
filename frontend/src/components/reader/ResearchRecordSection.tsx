@@ -8,6 +8,7 @@ import type { CheckObservationV1DTO, ChallengeAssessmentV2DTO, QuantitativeMetri
 import { limitationLabel } from "../../domain/researchCoverage";
 import { unfinishedSynthesis } from "../../domain/synthesisSections";
 import { ChallengeCheckSummary } from "./ChallengeChecks";
+import { InsightReader } from "./InsightReader";
 
 const CONTENT_LABELS = { excerpt: "原文摘录", source_fields: "原始数据字段", saved_summary: "已保存摘要" };
 export const CHECK_LABELS = { operating_disclosures: "经营披露依据", cash_conversion: "现金流桥核对", valuation_context: "估值补充背景", financial_baseline: "结构化财务基础覆盖", cashflow_comparison: "利润与现金流同期比较" };
@@ -181,6 +182,7 @@ export function ResearchRecordSection({ runId, response, loading, error }: {
   if (loading) return <p className="record-meta" aria-busy="true">正在读取保存的证据与计算记录…</p>;
   if (error) return <p className="record-meta" role="status">证据与计算记录暂时无法读取。</p>;
   if (response === null || response.run_id !== runId) return null;
+  if (response.state === "insight_ready") return response.record.run_id === runId ? <InsightReader record={response.record}/> : null;
   if (response.state === "unavailable") return <p className="record-meta" role="status">
     {response.reason_code === "not_published" ? "该运行未保存新版证据与计算记录。" : "新版证据与计算记录未通过读取校验。"}
   </p>;

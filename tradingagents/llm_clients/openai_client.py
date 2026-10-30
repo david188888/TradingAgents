@@ -413,6 +413,8 @@ class OpenAIClient(BaseLLMClient):
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
+        if "response_format" in self.kwargs:
+            llm_kwargs["model_kwargs"] = {"response_format": self.kwargs["response_format"]}
         # DeepSeek: enable thinking by default with high effort.
         # DeepSeekChatOpenAI handles the reasoning_content round-trip.
         # Opt out with thinking={"type": "disabled"} for the non-thinking path

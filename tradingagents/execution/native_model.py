@@ -49,14 +49,17 @@ from tradingagents.execution.native_retry import MODEL_RETRY_POLICY, transient_m
 from tradingagents.graph.catalyst_workflow import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
+from tradingagents.llm_clients.capabilities import native_structured_method
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
 from tradingagents.llm_clients.chatgpt_policy import (
     validate_reasoning_effort,
     validate_request_policy,
 )
+from tradingagents.llm_clients.structured_output import STRUCTURED_OUTPUT_POLICY, strict_schema
 from tradingagents.llm_clients.task_effort import task_effort_overrides
 from tradingagents.research.native_versions import (
     CHALLENGE_INPUT_POLICY,
+    CHALLENGE_REFERENCE_POLICY,
     COMPANY_RESEARCH_POLICY,
     FOCUS_WORKFLOW_VERSION,
     MODEL_BINDING_POLICY,
@@ -159,6 +162,16 @@ class NativeModelCaller:
         self.schemas = dict(STAGE_SCHEMAS)
         self.instructions = dict(STAGE_INSTRUCTIONS)
         version = ledger.journal.state.get("identity", {}).get("workflow_version")
+        self.structured_output_policy = ledger.journal.state["identity"].get("structured_output_policy")
+        if self.structured_output_policy is not None and (
+            self.structured_output_policy != STRUCTURED_OUTPUT_POLICY or version != SEARCH_WORKFLOW_VERSION
+        ):
+            raise CatalystCheckpointConflict("native structured output policy mismatch")
+        self.challenge_reference_policy = ledger.journal.state["identity"].get("challenge_reference_policy")
+        if self.challenge_reference_policy is not None and (
+            self.challenge_reference_policy != CHALLENGE_REFERENCE_POLICY or version != SEARCH_WORKFLOW_VERSION
+        ):
+            raise CatalystCheckpointConflict("native challenge reference policy mismatch")
         self.challenge_input_policy = ledger.journal.state["identity"].get("challenge_input_policy")
         if self.challenge_input_policy is not None and (
             self.challenge_input_policy != CHALLENGE_INPUT_POLICY or version != SEARCH_WORKFLOW_VERSION
@@ -301,6 +314,11 @@ class NativeModelCaller:
             canonical = context
             context = self._model_context(stage, context)
             schema_value = self.schemas[stage].model_json_schema()
+            if stage == "challenge":
+                for definition in schema_value.get("$defs", {}).values():
+                    properties = definition.get("properties", {})
+                    if "condition_index" in properties:
+                        properties.pop("condition_id" if self.challenge_reference_policy else "condition_index", None)
             if stage == "challenge" and self.research_delivery_policy is not None:
                 from tradingagents.research.challenge_reviews import review_schema
                 schema_value = review_schema(schema_value, canonical)
@@ -324,7 +342,8 @@ class NativeModelCaller:
                 if reference_version == 3:
                     from tradingagents.research.synthesis_sections import request_schema
                     schema_value = request_schema(schema_value, canonical, synthesis_targets)
-                schema_value = _alias_schema_choices(schema_value, reference_aliases(canonical))
+                if not self.structured_output_policy:
+                    schema_value = _alias_schema_choices(schema_value, reference_aliases(canonical))
                 if stage == "synthesis":
                     context = compact_synthesis_context(context, delivery=self.deliver_company_report)
                     if synthesis_targets is not None:
@@ -370,6 +389,16 @@ class NativeModelCaller:
                     context = translate_references(context, reference_aliases(canonical))
                 if repair_sections is not None:
                     context["synthesis_repair_sections"] = repair_sections
+            if stage == "challenge" and self.challenge_reference_policy:
+                model_context = self._model_context(stage, canonical)
+                context["condition_choices"] = model_context["condition_choices"]
+                context["condition_reference_instruction"] = model_context["condition_reference_instruction"]
+            if self.structured_output_policy:
+                model = self.config["deep_think_llm"] if stage == "synthesis" else self.config["quick_think_llm"]
+                if native_structured_method(self.config["llm_provider"], model) == "json_schema":
+                    schema_value = strict_schema(schema_value)
+                if reference_version in {1, 2, 3}:
+                    schema_value = _alias_schema_choices(schema_value, reference_aliases(canonical))
             payload = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
             schema = json.dumps(schema_value, ensure_ascii=False, sort_keys=True)
             language = str(self.config.get("output_language", "Chinese"))
@@ -502,6 +531,10 @@ class NativeModelCaller:
         return prompt
 
     def _model_context(self, stage: str, context: Mapping[str, Any]) -> Mapping[str, Any]:
+        if stage == "challenge" and self.challenge_reference_policy:
+            from tradingagents.research.challenge_checks import condition_choices
+            context = {**context, "condition_choices": condition_choices(context.get("conditions", {})),
+                "condition_reference_instruction": "Select hypothesis_id and its zero-based condition_index from condition_choices. Use null when no condition is selected. The host resolves condition_id; never copy its hash."}
         if self.ledger.journal.state.get("native.reference_aliases." + stage) in {1, 2}:
             context = translate_references(context, reference_aliases(context))
         if stage == "challenge" and self.challenge_input_policy == CHALLENGE_INPUT_POLICY:
@@ -556,12 +589,16 @@ class NativeModelCaller:
                     candidate["prompt_sha256"] = self.ledger.journal.state["native.prompt.synthesis"]
                     self.ledger.journal.put("native.synthesis_sections.progress." + phase, candidate)
 
-                candidate = parse_sections(value, context, phase=phase, previous=previous, on_progress=save_progress)
+                section_locations = []
+                candidate = parse_sections(value, context, phase=phase, previous=previous, on_progress=save_progress,
+                                           diagnostics=section_locations)
                 candidate["prompt_sha256"] = self.ledger.journal.state["native.prompt.synthesis"]
                 self.ledger.record_result("native.synthesis_sections." + phase, candidate)
                 if phase == "main" and candidate["failures"]:
                     from tradingagents.research.record_codec import parse_research_record
-                    raise SynthesisReferenceError(failure_issues(candidate, parse_research_record(context["record"])))
+                    error = SynthesisReferenceError(failure_issues(candidate, parse_research_record(context["record"])))
+                    error.validation_locations = tuple(section_locations)
+                    raise error
                 value, numeric_proof = candidate_result(candidate, context)
             elif self.numeric_enabled:
                 from tradingagents.research.numeric_narrative import compile_numeric_stage
@@ -603,7 +640,10 @@ class NativeModelCaller:
                             )
                             filtered = filter_numeric_proof(stage, numeric_proof, accepted_indices, rejections, context, self.schemas[stage])
                             self.ledger.record_result("native.numeric.candidate.challenge", filtered)
-                    raise ChallengeValidationError(rejected[0]["code"])
+                    error = ChallengeValidationError(rejected[0]["code"])
+                    error.section_issues = [(r["code"], ("challenges", r["index"])) for r in rejected]
+                    error.validation_locations = tuple(path for issue in binding_issues for path in issue.get("locations", []))
+                    raise error
             if context is not None and stage == "synthesis" and self.deliver_company_report:
                 from tradingagents.research.record_codec import parse_research_record
                 from tradingagents.research.report_delivery import normalize_synthesis_bindings
@@ -659,6 +699,8 @@ class NativeModelCaller:
                             )
                             filtered = filter_numeric_proof(stage, numeric_proof, indices, rejected, context, self.schemas[stage])
                             self.ledger.record_result("native.numeric.candidate." + stage, filtered)
+                    first_error.section_issues = [(r.code, ("hypotheses", r.index)) for r in rejected]
+                    first_error.validation_locations = tuple(path for issue in binding_issues for path in issue.get("locations", []))
                     raise first_error
             if context is not None and stage.startswith("response_"):
                 supplied = {r.challenge_id: r for r in proposal.responses}
@@ -877,6 +919,21 @@ class NativeModelCaller:
     def _invoke_once(self, stage: str, prompt: str, dispatch: Callable[[], None], *, usage_key: str | None = None, phase: str = "main") -> Any:
         from tradingagents.execution.model_request import invoke_model_request
 
+        response_format = None
+        if self.structured_output_policy:
+            model = self.config["deep_think_llm"] if stage == "synthesis" else self.config["quick_think_llm"]
+            method = native_structured_method(self.config["llm_provider"], model)
+            metadata = {"policy": STRUCTURED_OUTPUT_POLICY, "method": method}
+            if method == "json_schema":
+                # The schema is host-generated and already adapted by _prompt.
+                schema, _ = json.JSONDecoder().raw_decode(prompt.split("\nSchema:\n", 1)[1])
+                response_format = {"type": "json_schema", "json_schema": {
+                    "name": "native_stage", "schema": schema, "strict": True}}
+                metadata["schema_sha256"] = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+            elif method == "json_mode":
+                response_format = {"type": "json_object"}
+            self.ledger.journal.put("native.structured_output." + stage + "." + phase, metadata)
+
         def on_error(category, exc):
             if isinstance(exc, ChatGPTError):
                 self._record_failure(stage, exc)
@@ -903,7 +960,7 @@ class NativeModelCaller:
             client_factory=create_llm_client, slots=global_model_slots(), ensure_active=self._ensure_active,
             cancelled=self.cancelled, deadline=self.deadline, dispatch=dispatch,
             on_error=on_error, on_usage=on_usage, chatgpt_auth=self.chatgpt_auth,
-            chatgpt_request_policy=self.chatgpt_request_policy)
+            chatgpt_request_policy=self.chatgpt_request_policy, response_format=response_format)
 
     def _record_failure(self, stage: str, exc: ChatGPTError) -> None:
         diagnostic = exc.diagnostic.model_copy(update={"stage": stage}).model_dump(mode="json")
@@ -937,6 +994,38 @@ class NativeModelCaller:
             self.ledger.journal.put(key, True)
 
     def _repair_prompt(self, stage: str, prompt: str, context: Mapping[str, Any]) -> str:
+        legacy = self._legacy_repair_prompt(stage, prompt, context)
+        saved = self.ledger.journal.state.get("native.prompt." + stage + ".repair")
+        if saved == hashlib.sha256(legacy.encode()).hexdigest():
+            return legacy
+        if self.ledger.journal.state.get("identity", {}).get("workflow_version") not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
+            return legacy
+        diagnostic = self.ledger.journal.state.get("native.model_diagnostics", {}).get(stage + ".main", {})
+        codes = set(diagnostic.get("detail_codes", [])) | {diagnostic.get("detail_code")}
+        details = ""
+        if "challenge_condition_reference" in codes:
+            from tradingagents.research.challenge_checks import condition_choices
+            conditions = condition_choices(self._model_context(stage, context).get("conditions", {}))
+            details += ("\nValidation failure: challenge_condition_reference. Select a condition belonging to the "
+                "same hypothesis as hypothesis_id. Do not copy a condition from another hypothesis. "
+                "Allowed conditions by hypothesis (zero-based condition_index):\n"
+                + json.dumps(conditions, ensure_ascii=False, sort_keys=True))
+        if any(isinstance(code, str) and code.startswith("numeric_") for code in codes):
+            model_context = self._model_context(stage, context)
+            paths = []
+            for issue in diagnostic.get("issues", []):
+                path = ""
+                for part in issue["path"]:
+                    path += f"[{part}]" if type(part) is int else ("." if path else "") + part
+                paths.append(path or "<root>")
+            details += ("\nCorrect these exact schema locations (indices are zero-based): "
+                + json.dumps(paths) + ". Follow the original field types; empty arrays use [], not null. "
+                "For schema/envelope errors, restore required fields and nesting before adjusting bindings. "
+                "Allowed numeric token aliases:\n" + json.dumps(sorted(model_context.get("numeric_aliases", {})))
+                + "\nAllowed metadata token aliases:\n" + json.dumps(sorted(model_context.get("numeric_meta", {}))))
+        return legacy + details
+
+    def _legacy_repair_prompt(self, stage: str, prompt: str, context: Mapping[str, Any]) -> str:
         base = prompt + "\n" + _REPAIR_INSTRUCTION
         # Previously dispatched repairs retain their exact prompt identity.
         saved = self.ledger.journal.state.get("native.prompt." + stage + ".repair")

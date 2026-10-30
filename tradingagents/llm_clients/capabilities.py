@@ -147,3 +147,19 @@ def get_capabilities(model_name: str) -> ModelCapabilities:
         if pattern.match(model_name):
             return caps
     return _DEFAULT
+
+
+def native_structured_method(provider: str, model: str) -> StructuredMethod:
+    """Explicit native-kernel transports; other providers keep their existing route."""
+    if provider == "chatgpt":
+        # Authorized gpt-6.1-terra SIWC probe on 2026-10-28: HTTP 200 and
+        # a randomized schema-only enum was enforced by /v1/responses.
+        return "json_schema"
+    if provider == "deepseek":
+        # A custom model label must not inherit the OpenAI default's schema
+        # flag: DeepSeek's documented response_format supports json_object.
+        return "json_mode"
+    if provider not in {"openai", "deepseek", "openrouter"}:
+        return "none"
+    caps = get_capabilities(model)
+    return "json_schema" if caps.supports_json_schema else "json_mode" if caps.supports_json_mode else "none"

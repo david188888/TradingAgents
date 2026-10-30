@@ -1,3 +1,4 @@
+import { InsightReader } from "./InsightReader";
 import { PremiseContext, PremiseLedger } from "./FactualPremises";
 import type { AgentKey, ReaderAgentDTO, ReaderProcessDTO, ResearchRecordDTO } from "../../api/contracts";
 import { AGENT_LABELS, DISPOSITION_LABELS, dimensionLabel, DIMENSION_LABELS, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
@@ -40,6 +41,7 @@ export function ReaderAgentOutput({ role, process, output, error, record: publis
     {stage ? <p className="qr-stage-notice" role="status">{output.origin === "model" ? "以下是已保存并通过本环节校验的阶段提议，尚非最终研究结论。" : "以下是本环节已保存并通过校验的资料与检查，可在后续研究期间核对。"}最终研究发布状态单独记录。</p> : null}
     {stage && selected && record ? <div className="qr-stage-inspection" ref={evidencePane} tabIndex={-1} role="region" aria-label="阶段依据详情"><button onClick={() => { setSelected(null); evidenceTrigger.current?.focus(); }}>收起依据</button><ReaderEvidence record={record} selected={selected} term={term} onTerm={setTerm}/></div> : null}
     {error ? <p role="status">产物暂时无法读取。<button onClick={onRetry}>重试读取</button></p> : !output ? <p aria-busy="true">正在读取所选角色的保存产物…</p> : !["available", "stage_available"].includes(output.availability) ? <p role="status">{outputLabel(output.availability, output.reason_code, runStatus)}。{publishedRecord?.assessment ? "最终报告仍可按原保存记录阅读。" : "可在研究检查中核对执行状态与原因。"}</p> : <>
+      {output.insight_record ? <><p>此处展示已保存的研究产物，阶段观点不等于已发布总体判断。</p><InsightReader record={output.insight_record} role={role}/></> : null}
       {p && "answer" in p ? <><p className="qr-meta">此回应引用基础研究，不是被引用事实或推断的作者，也不会改写基础综合。</p><FocusAnswer proposal={p} onInspect={onInspect}/></> : null}
       {p && "hypotheses" in p ? <>
         <h3>全部研究假设（{p.hypotheses.length}）</h3>
@@ -62,7 +64,7 @@ export function ReaderAgentOutput({ role, process, output, error, record: publis
           <h4>建议如何核查 · 尚非执行结果</h4><p>{c.proposed_test}</p>{record ? <ChallengeCheckSummary record={record} challengeId={id} test={c}/> : null}
           {c.check_id ? <p className="qr-meta">关联固定证据子问题：{CHECK_LABELS[c.check_id]}</p> : null}
           {c.observation_date ? <p>提议观察日期：{c.observation_date}</p> : null}
-          {c.condition_id ? <details><summary>绑定的条件与研究字段</summary><pre>{JSON.stringify(c, null, 2)}</pre></details> : null}
+          {c.condition_id || c.condition_index != null ? <details><summary>绑定的条件与研究字段</summary><pre>{JSON.stringify(c, null, 2)}</pre></details> : null}
           {relation(id,"challenge")}
           <button onClick={() => onInspect({kind:"challenge",id})}>核对目标假设的依据 →</button>
           {record?.assessment && record.assessment.schema_version !== "research-assessment-v1" ? record.assessment.challenge_assessments.filter(a => a.challenge_id === id).map(a => <details key={a.challenge_id}><summary>最终代码核查结果 · 另列来源</summary><LocalChallengeResult item={a}/></details>) : null}

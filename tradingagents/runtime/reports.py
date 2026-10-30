@@ -173,6 +173,12 @@ class ReportArtifactWriter:
         )
 
     def _publish_native(self, run_id: str, value: Any, ticker: str) -> FinalReportPublication:
+        if value.get('schema_version') == 'insight-research-v1':
+            from tradingagents.runtime.insight_artifacts import read_insight_publication
+            record = read_insight_publication(self.store, run_id)
+            if record.ticker != ticker or record.model_dump(mode='json') != value:
+                raise ReportPublicationError('insight report publication mismatch')
+            return self._write_native_content(run_id, build_markdown_from_native_record(record))
         from tradingagents.research.record_codec import parse_research_record
 
         record = parse_research_record(value)
@@ -211,6 +217,9 @@ class ReportArtifactWriter:
         content = build_markdown_from_native_record(record, workflow_version=version,
                                                    focus_response=response, focus_reason=reason,
                                                    focus_text=checkpoint["identity"].get("research_question") if checkpoint else None)
+        return self._write_native_content(run_id, content)
+
+    def _write_native_content(self, run_id: str, content: str) -> FinalReportPublication:
         run_dir = self.store._run_dir(run_id)
         reports_dir = run_dir / "reports"
         with self.store.lock_for(run_id):
@@ -544,6 +553,9 @@ def _build_v4_native_markdown(record: Any) -> str:
 
 def build_markdown_from_native_record(record: Any, *, workflow_version=None, focus_response=None, focus_reason=None, focus_text=None) -> str:
     """Retain byte-stable legacy reports; V4 uses the unified Reader order."""
+    if record.schema_version == 'insight-research-v1':
+        from tradingagents.research.insight_report import insight_markdown
+        return insight_markdown(record)
     if record.evidence_checks is not None:
         content = _build_v5_native_markdown(record)
     elif record.valuation is not None or "native_valuation_policy_v1" in record.limitations:

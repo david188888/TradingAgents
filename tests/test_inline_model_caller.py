@@ -64,7 +64,7 @@ def test_pathful_payload_repair_is_specific_and_never_echoes_response(journal, c
 def test_new_identity_marks_inline_protocol_and_resumes_unmarked_history(journal):
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1",
                               effective_config=model_tests.CONFIG)
-    fresh = native_identity(request)
+    fresh = native_identity(request, workflow_version="evidence-production-v8")
     assert fresh["model_binding_policy"] == POLICY
     journal.put("identity", fresh)
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
@@ -73,7 +73,7 @@ def test_new_identity_marks_inline_protocol_and_resumes_unmarked_history(journal
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
     assert journal.state["identity"] == legacy
     assert "model_binding_policy" not in native_identity(request, workflow_version="evidence-production-v7")
-    assert "model_binding_policy" not in native_identity(request, numeric_narrative_policy=False)
+    assert "model_binding_policy" not in native_identity(request, numeric_narrative_policy=False, workflow_version="evidence-production-v8")
     journal.put("identity", {**fresh, "model_binding_policy": "unknown"})
     with pytest.raises(CatalystCheckpointConflict):
         validate_native_resume(journal.observer.store, journal.ledger.run_id, request)

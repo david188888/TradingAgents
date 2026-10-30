@@ -21,7 +21,9 @@ class SynthesisSectionV1(_Frozen):
         "numeric_literal_unbound", "numeric_anchor_unknown", "numeric_anchor_scope",
         "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
         "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
-        "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit"] | None = None
+        "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit",
+        "numeric_proposal_schema", "numeric_envelope_schema", "numeric_catalog_invalid",
+        "numeric_cutoff_invalid", "numeric_condition_reference", "numeric_receipt_invalid"] | None = None
 
     @model_validator(mode="after")
     def delivery_state(self):

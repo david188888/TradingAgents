@@ -124,10 +124,11 @@ def roles_for_profile(profile: str = "classic", *, workflow_version=None, focus_
     if profile == "evidence_v1":
         from tradingagents.research.native_versions import (
             FOCUS_WORKFLOW_VERSION,
+            INSIGHT_WORKFLOW_VERSION,
             SEARCH_WORKFLOW_VERSION,
             UNIFIED_WORKFLOW_VERSION,
         )
-        if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
+        if workflow_version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION, INSIGHT_WORKFLOW_VERSION}:
             return (*UNIFIED_ROLE_REGISTRY, FOCUS_ROLE) if focus_requested else UNIFIED_ROLE_REGISTRY
         return (*NATIVE_ROLE_REGISTRY, FOCUS_ROLE) if workflow_version == FOCUS_WORKFLOW_VERSION and focus_requested else NATIVE_ROLE_REGISTRY
     return CATALYST_ROLE_REGISTRY if profile == "catalyst_v1" else ROLE_REGISTRY

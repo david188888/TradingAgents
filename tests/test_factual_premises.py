@@ -60,7 +60,7 @@ def test_jianghuai_missing_expense_is_a_question_not_a_host_observation(context)
 @pytest.mark.parametrize("damage,code", [
     ("missing", "premise_binding_missing"), ("unknown", "premise_observation_unknown"),
     ("scope", "premise_observation_scope"), ("empty", "premise_support_missing"),
-    ("duplicate", "numeric_manifest_binding"), ("raw_quantity", "numeric_literal_unbound"),
+    ("duplicate", "numeric_envelope_schema"), ("raw_quantity", "numeric_literal_unbound"),
 ])
 def test_invalid_premises_are_rejected(context, damage, code):
     value = proposal(context)
@@ -409,8 +409,8 @@ def test_new_policy_stage_reader_retains_binding_without_writes(completed, monke
 def test_new_policy_resume_does_not_upgrade_historical_identity():
     from tests.web.test_native_production_wiring import request
     from tradingagents.execution.native_runner import native_identity
-    old = native_identity(request(), factual_premise_policy=False)
-    new = native_identity(request())
+    old = native_identity(request(), factual_premise_policy=False, workflow_version="evidence-production-v8")
+    new = native_identity(request(), workflow_version="evidence-production-v8")
     assert new.pop("factual_premise_policy") == FACTUAL_PREMISE_POLICY
     assert "research_delivery_policy" not in old
     assert new.pop("research_delivery_policy")["version"] == "evidence-packets-v1"

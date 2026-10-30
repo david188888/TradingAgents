@@ -45,7 +45,8 @@ def test_qualitative_reference_failure_is_not_a_numeric_error_and_reports_all_se
     with pytest.raises(SynthesisReferenceError) as caught:
         validate_synthesis_reference_surface(proposal, ALLOWED, ["challenge.one"])
     diagnostic = safe_model_diagnostic("synthesis", "main", "response_invalid", caught.value)
-    assert diagnostic["detail_code"] == "dimension_claim_reference"
+    assert diagnostic["detail_code"] == "section_validation"
+    assert diagnostic["detail_codes"] == ["adjudication_coverage", "dimension_claim_reference"]
     assert diagnostic["synthesis_reference_issues"] == [
         {"code": "dimension_claim_reference", "path": ["dimensions", 2, "claim_ids"]},
         {"code": "adjudication_coverage", "path": ["adjudications"]}]

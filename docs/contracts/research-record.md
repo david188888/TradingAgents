@@ -17,10 +17,62 @@ Use [architecture](../../ARCHITECTURE.md) for responsibilities and
 | Publication and read qualification | [native_publication.py](../../tradingagents/execution/native_publication.py), [web/native_reader_versions.py](../../tradingagents/web/native_reader_versions.py) |
 | Browser wire shape | [frontend/src/api/contracts.ts](../../frontend/src/api/contracts.ts), mirroring backend DTOs |
 
-Fresh Web company research is `evidence-production-v8` / `native-research-kernel-v7` /
-`research-record-v2`. Historical V1–V7 workflows retain V1 records and their saved identities, prompts,
-budgets and qualification rules. Never infer a workflow version from a model label or optional field.
-Classic/catalyst case adapters are compatibility producers, not the current new-study path.
+Fresh Web research uses `evidence-production-v9` / `insight-research-v1`. V1–V8 keep their saved
+identities, contracts and admission rules. Version dispatch is explicit; never infer it from model names.
+
+## Insight-first V9
+
+Canonical owners are [_insight.py](../../tradingagents/agents/schemas/_insight.py),
+[insights.py](../../tradingagents/research/insights.py),
+[insight_research.py](../../tradingagents/graph/insight_research.py) and
+[insight_report.py](../../tradingagents/research/insight_report.py).
+Each Insight has exactly claim, evidence references, reasoning and limitations. The outer submission
+also accepts `search_requests`; omitted collections retain their original default type, never `null`
+unless the canonical model allows it. IDs, catalog versions, compilation receipts and status are host-owned.
+
+The host unions explicit and inline evidence references. Numeric tokens resolve qualified catalog
+values with subject, period and units; explicit unbound quantities stay pending. Bare years/codes are
+not automatically rejected. Invalid items do not discard accepted siblings; specialist and synthesis
+repair is bounded to one attempt. Missing, unknown or stale references cannot support a rating.
+Source traceability and bounded arithmetic do not certify all natural-language entailment.
+
+New V9 runs freeze `insight_context_policy=compact-saved-evidence-v1`. Prompt catalogs use short
+source labels instead of host hashes; all specialist/reviewer facts, limitations, numeric descriptions
+and selected exact source passages remain visible. Synthesis receives the facts and passages already
+supporting effective Insights or their review/reply notes, without the unused numeric catalog.
+Runs without this policy retain the previous prompt shape on resume. Source labels locate provenance;
+only the supplied evidence/numeric references are admissible model citations.
+
+One review/reply round records doubts, alternatives or the absence of effective counterevidence.
+Missing/failed review is distinct from no counterevidence. Revisions and withdrawals preserve the old
+version but remove it from effective support. Overall synthesis is atomic: invalid support suppresses
+that judgement, while independent Insights and company basics survive. The synthesis Agent decides
+whether evidence is sufficient; a missing prescribed valuation anchor is a visible gap, not a code veto.
+Rejected replies retain per-item safe diagnostics in the checkpoint: missing/duplicate/unassigned targets,
+shape errors, invalid references/numbers or replacement failures. Rejected prose is not persisted.
+An older run without these diagnostics cannot be retrospectively classified as model omission versus
+validation rejection; an unresolved response remains an explicit research gap.
+
+Supplementary questions are plain text, deduplicated by role and normalized question. The host assigns
+company, cutoff, role and search IDs, selecting at most three questions per round and three rounds.
+Questions come from specialist output; supplementary reanalysis may identify further gaps within
+the same three-round ceiling, with previously processed questions deduplicated. No new qualified delta stops collection. New evidence invalidates affected role
+versions until reanalysis; failed reanalysis leaves the prior versions visible but excluded. Source,
+HTTP, search activity and model ceilings remain those of fresh V8: 8 main, 1 focus, 8 repair slots,
+9 supplementary review attempts, at most 29 total. Unknown dispatched outcomes are not resent.
+
+Focus uses saved evidence after synthesis, with one focus attempt and no repair. It is stored separately
+inside the new record and cannot support or change baseline synthesis. Optional explanations are
+post-completion reading aids over saved Insight text; coverage is not a research acceptance criterion.
+
+The same durable candidate/authorization/commit barrier protects new publications. Reads replay
+Insight, review/reply and synthesis bindings. The record endpoint returns `insight_ready`; stage output
+uses `insight_stage_available` without an uncommitted overall rating. These are explicit new wire
+variants, not disguised V2 records. Historical variants remain supported.
+
+**Scope below:** the hypothesis/envelope, executable-condition and four-dimensional assessment rules
+below describe retained V1/V2 output contracts through V8. Source qualification and lifecycle rules
+remain shared where cited above; legacy model gates do not apply to V9 Insights.
 
 ## Evidence and inference
 
@@ -83,6 +135,28 @@ Unknowns remain qualitative text; unused premise annotations on non-premise text
 The adapter neither chooses evidence nor guesses/corrects addresses. Saved proofs and public
 records keep their canonical formats. Unmarked history retains its original prompt/parser;
 unknown or incompatible policies reject before dispatch. This adds no model stage or budget.
+
+Fresh V8 identities freeze `challenge_reference_policy=hypothesis-condition-index-v1`.
+The model selects `hypothesis_id` plus a zero-based `condition_index` from that hypothesis's
+supplied choices. Conditions are ordered by their canonical IDs within each hypothesis, so JSON
+key sorting cannot change index meaning. The shared resolver generates the ID for validation,
+kernel task construction and Reader projections. Legacy `condition_id` remains supported; if both
+are supplied they must agree. Absent indices are omitted from serialization to preserve old hashes.
+Unmarked saved tasks retain their original model-facing condition-ID schema.
+
+`structured_output_policy=provider-schema-or-json-v1` selects the native request format for fresh
+V8 tasks. SIWC/OpenAI use a strict JSON Schema; the existing DeepSeek Chat Completions route uses
+`json_object`. Other providers retain their prior transport and explicitly record `none`.
+[structured_output.py](../../tradingagents/llm_clients/structured_output.py) closes objects, requires
+all fields, preserves nullable types, keeps nonnullable collections as arrays, shares identical enum
+definitions and checks provider schema limits. Discriminated unions and branches made disjoint by a required
+field with unique constant values become `anyOf`; overlapping `oneOf` branches remain rejected.
+String length constraints remain in schema guidance
+and canonical local validation. Alias substitution follows adaptation. Each request records its method
+and, for strict output, schema hash. Unmarked history keeps the original prompt and transport.
+Strict output does not prove evidence scope, entailment or semantic correctness; refusals and
+incomplete responses still fail admission. The 2026-10-28 SIWC probe confirmed a trivial schema
+for `gpt-6.1-terra`, not acceptance of a complete research run.
 
 Fresh numeric V8 also freezes the exact `research_delivery_policy` payload from `native_versions.py`.
 `evidence-packets-v1` uses [evidence_packets.py](../../tradingagents/research/evidence_packets.py) to

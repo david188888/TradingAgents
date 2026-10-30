@@ -227,8 +227,8 @@ class StageReader:
                     from tradingagents.research.challenge_checks import validate_challenge
                     validate_challenge(record, item, conditions)
                 target = hs[item.hypothesis_id]
-                if item.condition_id and conditions.get(item.condition_id, {}).get("hypothesis_id") != item.hypothesis_id:
-                    raise ValueError("stage_challenge_condition")
+                from tradingagents.research.challenge_checks import resolve_challenge_condition
+                resolve_challenge_condition(item, conditions)
                 cid = "c." + canonical_sha256({"input": self.cp["native_input"], "index": index,
                                                "challenge": item.model_dump(mode="json")})
                 challenges.append({"challenge_id": cid, "target_claim_ids": [target.claim_id],
@@ -268,7 +268,10 @@ class StageReader:
         proposed = schema.model_validate(critique["proposal"]) if critique else schema()
         tasks = []
         for challenge, item in zip(original.challenges, proposed.challenges, strict=True):
-            bound = self.cp.get("native_conditions", {}).get(item.condition_id) if item.condition_id else None
+            from tradingagents.research.challenge_checks import resolve_challenge_condition
+            conditions = self.cp.get("native_conditions", {})
+            condition_id = resolve_challenge_condition(item, conditions)
+            bound = conditions.get(condition_id) if condition_id else None
             if not original.challenge_check_policy and bound and bound["check"] is not None:
                 tasks.append({"task_id": "t." + challenge.challenge_id[2:], "challenge_id": challenge.challenge_id,
                     "hypothesis_id": item.hypothesis_id, "condition_role": bound["condition_role"],

@@ -34,6 +34,11 @@ publication failures. Unknown historical failures are not reconstructed from pro
 Numeric failures may name a declared text field, without retaining its full model-supplied path.
 Schema length failures may include declared envelope fields and numeric limits/actual counts;
 unknown names remain redacted and arbitrary validation context is never copied.
+Wrapped numeric schema failures retain sanitized Pydantic locations, without messages or input.
+Proposal shape, envelope shape, catalog, cutoff, inherited condition and field-receipt failures have
+distinct codes; the former `numeric_manifest_binding` remains accepted for historical replay.
+Partitioned failures report `section_validation` with the complete `detail_codes` set and per-section
+paths, rather than presenting the first failing section as the entire stage's cause.
 `inline_binding_shape` identifies an invalid model-facing inline envelope using a fixed code;
 it never exposes the rejected payload or a model-supplied address.
 
@@ -96,6 +101,14 @@ period/unit/source/limits and hash. Full restoration/retained ratio 1 proves str
 not that every economic input was supplied or that models reason equally well. Bytes are not token
 estimates. The reversible candidate is measured with schema, markers and guidance included; positive
 byte savings do not authorize production compression or establish real token/cost savings.
+
+## Insight workflow observations
+
+V9 process and role endpoints read saved Insight batches at the requested sequence. A stage output
+uses `insight_stage_available` and does not expose an uncommitted overall rating. Final `insight_ready`
+records pass the same publication barrier as exports. Counters distinguish dispatch reservations from
+confirmed SDK usage; missing usage is unknown. Search requests and superseded Insight versions are
+preserved, while optional explanation coverage is not a research success metric.
 
 ## Quality evaluation
 

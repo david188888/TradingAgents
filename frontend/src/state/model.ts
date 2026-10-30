@@ -320,8 +320,8 @@ export const UNIFIED_ROLE_REGISTRY: readonly RoleDefinition[] = [
 ];
 export function rolesForProfile(profile?: ResearchProfile, version?: string, focusRequested=false): readonly RoleDefinition[] {
   if (profile !== "evidence_v1") return ROLE_REGISTRY;
-  const roles = ["evidence-production-v7", "evidence-production-v8"].includes(version ?? "") ? UNIFIED_ROLE_REGISTRY : NATIVE_ROLE_REGISTRY;
-  return (["evidence-production-v6", "evidence-production-v7", "evidence-production-v8"].includes(version ?? "")) && focusRequested ? [...roles, FOCUS_ROLE] : roles;
+  const roles = ["evidence-production-v7", "evidence-production-v8", "evidence-production-v9"].includes(version ?? "") ? UNIFIED_ROLE_REGISTRY : NATIVE_ROLE_REGISTRY;
+  return (["evidence-production-v6", "evidence-production-v7", "evidence-production-v8", "evidence-production-v9"].includes(version ?? "")) && focusRequested ? [...roles, FOCUS_ROLE] : roles;
 }
 
 export const ROLE_REGISTRY: readonly RoleDefinition[] = [

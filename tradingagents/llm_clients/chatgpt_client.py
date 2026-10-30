@@ -27,6 +27,7 @@ class ChatGPTClient(BaseLLMClient):
         self.before_request = before_request
         self.reasoning_effort = validate_reasoning_effort(reasoning_effort)
         self.provider = "chatgpt"
+        self.response_format = kwargs.get("response_format")
 
     def validate_model(self):
         # Actual admission uses the selected account's dynamic catalog in Web;
@@ -86,6 +87,8 @@ class ChatGPTClient(BaseLLMClient):
                        "store": False, "stream": True}
             if self.reasoning_effort is not None:
                 payload["reasoning"] = {"effort": self.reasoning_effort}
+            if self.response_format is not None:
+                payload["text"] = {"format": {"type": "json_schema", **self.response_format["json_schema"]}}
             async with httpx.AsyncClient(transport=self.stream_transport, follow_redirects=False, timeout=timeout) as client, client.stream("POST", API_ORIGIN + "/responses",
                                          headers={"Authorization": "Bearer " + access},
                                          json=payload) as response:

@@ -15,8 +15,8 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, recor
   onSelect(role: AgentKey): void; onClose(): void; children?: ReactNode;
 }) {
   const version = process?.workflow_version ?? workflowVersion;
-  const known = /^evidence-production-v[1-8]$/.test(version ?? "");
-  const unified = version === "evidence-production-v7" || version === "evidence-production-v8";
+  const known = /^evidence-production-v[1-9]$/.test(version ?? "");
+  const unified = version === "evidence-production-v7" || version === "evidence-production-v8" || version === "evidence-production-v9";
   const terminal = isTerminalRun(runStatus);
   const activeRun = !terminal && runStatus !== "cancel_requested";
   const roles: FlowRole[] = process ? process.roles.map(r => ({ key: r.role_key,
@@ -29,7 +29,7 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, recor
     { id: "evidence", label: "共同输入", keys: ["evidence"] },
     { id: "specialists", label: "独立专项分工", keys: ["operating_quality", "event_context", "market_context"] },
     { id: "challenge", label: "汇合提议，提出质疑", keys: ["challenge"] },
-    { id: "checks", label: "核查可执行条件", keys: ["code_checks"] },
+    ...(version === "evidence-production-v9" ? [] : [{ id: "checks", label: "核查可执行条件", keys: ["code_checks"] as AgentKey[] }]),
     ...(unified ? [{ id: "responses", label: "被质疑专项回应", keys: ["response_operating_quality", "response_event_context", "response_market_context"] as AgentKey[] }] : []),
     { id: "synthesis", label: "综合研究判断", keys: ["synthesis"] },
     { id: "publication", label: "校验并发布基础研究", keys: ["code_checks"] },

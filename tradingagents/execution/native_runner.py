@@ -57,6 +57,8 @@ from tradingagents.research.native_versions import (
     COMPANY_RESEARCH_POLICY,
     FOCUS_BUDGET_POLICY,
     FOCUS_WORKFLOW_VERSION,
+    INSIGHT_POLICY,
+    INSIGHT_WORKFLOW_VERSION,
     MODEL_BINDING_POLICY,
     NUMERIC_NARRATIVE_POLICY,
     REPORT_DELIVERY_POLICY,
@@ -76,7 +78,7 @@ from tradingagents.runtime.catalyst_checkpoint import (
 
 VALUATION_WORKFLOW_VERSION = "evidence-production-v4"
 MINIMUM_WORKFLOW_VERSION = "evidence-production-v5"
-WORKFLOW_VERSION = SEARCH_WORKFLOW_VERSION
+WORKFLOW_VERSION = INSIGHT_WORKFLOW_VERSION
 DISCLOSURE_WORKFLOW_VERSION = "evidence-production-v3"
 PUBLIC_WORKFLOW_VERSION = "evidence-production-v2"
 LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
@@ -84,12 +86,28 @@ LEGACY_WORKFLOW_VERSION = "evidence-production-v1"
 NEW_STUDY_TIMEOUT_SECONDS = 900
 
 
-def native_identity(request, *, workflow_version=None, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True, structured_financial_policy=True, factual_premise_policy=True, financial_detail_policy=True, challenge_check_policy=True, challenge_input_policy=True, search_gap_guidance_policy=True, model_binding_policy=True, research_delivery_policy=True):
+def native_identity(request, *, workflow_version=None, model_retry_policy=True, specialist_reference_policy=True, company_research_policy=True, report_delivery_policy=True, numeric_narrative_policy=True, chatgpt_request_policy=True, structured_financial_policy=True, factual_premise_policy=True, financial_detail_policy=True, challenge_check_policy=True, challenge_input_policy=True, search_gap_guidance_policy=True, model_binding_policy=True, research_delivery_policy=True, challenge_reference_policy=True, structured_output_policy=True, insight_context_policy=True):
     workflow_version = workflow_version or WORKFLOW_VERSION
+    if workflow_version == INSIGHT_WORKFLOW_VERSION:
+        # Reuse the source and transport policies, not legacy model-output gates.
+        value = native_identity(request, workflow_version=SEARCH_WORKFLOW_VERSION,
+            numeric_narrative_policy=False, factual_premise_policy=False, model_binding_policy=False,
+            challenge_check_policy=False, challenge_input_policy=False, challenge_reference_policy=False,
+            search_gap_guidance_policy=False, specialist_reference_policy=False, model_retry_policy=False,
+            company_research_policy=company_research_policy, report_delivery_policy=report_delivery_policy,
+            structured_financial_policy=structured_financial_policy, financial_detail_policy=financial_detail_policy,
+            chatgpt_request_policy=chatgpt_request_policy, structured_output_policy=structured_output_policy)
+        value.update(workflow_version=INSIGHT_WORKFLOW_VERSION, insight_policy=INSIGHT_POLICY,
+            insight_budget_policy={'structured_repair': 8, 'basic_model_attempts': 20, 'model_attempts': 29})
+        if insight_context_policy:
+            value['insight_context_policy'] = 'compact-saved-evidence-v1'
+        return value
     from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
     from tradingagents.agents.schemas._factual_premise import FACTUAL_PREMISE_POLICY
     from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
+    from tradingagents.llm_clients.structured_output import STRUCTURED_OUTPUT_POLICY
     from tradingagents.research.native_versions import (
+        CHALLENGE_REFERENCE_POLICY,
         FINANCIAL_DETAIL_POLICY,
         RESEARCH_DELIVERY_POLICY,
     )
@@ -105,6 +123,10 @@ def native_identity(request, *, workflow_version=None, model_retry_policy=True, 
         "holding_context": asdict(request.holding_context) if request.holding_context else None,
         "config": native_effective_config(request.effective_config, workflow_version),
         **({"chatgpt_request_policy": CHATGPT_REQUEST_POLICY} if subscription_policy else {}),
+        **({"structured_output_policy": STRUCTURED_OUTPUT_POLICY}
+           if workflow_version == SEARCH_WORKFLOW_VERSION and structured_output_policy else {}),
+        **({"challenge_reference_policy": CHALLENGE_REFERENCE_POLICY}
+           if workflow_version == SEARCH_WORKFLOW_VERSION and challenge_reference_policy else {}),
         **({"challenge_input_policy": CHALLENGE_INPUT_POLICY}
            if workflow_version == SEARCH_WORKFLOW_VERSION and challenge_input_policy else {}),
         **({"search_gap_guidance_policy": SEARCH_GAP_GUIDANCE_POLICY}
@@ -164,12 +186,22 @@ def validate_native_resume(store, run_id, request):
     search_gap_guidance_policy = state is not None and "search_gap_guidance_policy" in state["identity"]
     model_binding_policy = state is not None and "model_binding_policy" in state["identity"]
     research_delivery_policy = state is not None and "research_delivery_policy" in state["identity"]
-    if version not in {SEARCH_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy, financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy, challenge_input_policy=challenge_input_policy, search_gap_guidance_policy=search_gap_guidance_policy, model_binding_policy=model_binding_policy, research_delivery_policy=research_delivery_policy):
+    challenge_reference_policy = state is not None and "challenge_reference_policy" in state["identity"]
+    insight_context_policy = state is not None and "insight_context_policy" in state["identity"]
+    structured_output_policy = state is not None and "structured_output_policy" in state["identity"]
+    if version not in {INSIGHT_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, FOCUS_WORKFLOW_VERSION, MINIMUM_WORKFLOW_VERSION, VALUATION_WORKFLOW_VERSION, DISCLOSURE_WORKFLOW_VERSION, PUBLIC_WORKFLOW_VERSION, LEGACY_WORKFLOW_VERSION} or state["identity"] != native_identity(request, workflow_version=version, model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy, numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy, financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy, challenge_input_policy=challenge_input_policy, search_gap_guidance_policy=search_gap_guidance_policy, model_binding_policy=model_binding_policy, research_delivery_policy=research_delivery_policy, challenge_reference_policy=challenge_reference_policy, structured_output_policy=structured_output_policy, insight_context_policy=insight_context_policy):
         raise CatalystCheckpointConflict("native checkpoint missing or incompatible")
     from tradingagents.research.record_codec import parse_research_record
 
     for key in ("native_seed", "native_publication_candidate"):
         if key in state:
+            if version == INSIGHT_WORKFLOW_VERSION and key == 'native_publication_candidate':
+                from tradingagents.research.insight_report import parse_insight_report
+                record = parse_insight_report(state[key])
+                if ((record.run_id, record.ticker, record.analysis_date.isoformat()) != (run_id, request.ticker, request.analysis_date)
+                        or state.get('insight.report') != state[key]):
+                    raise CatalystCheckpointConflict('insight checkpoint identity mismatch')
+                continue
             record = parse_research_record(state[key])
             from tradingagents.research.numeric_integration import validate_record_numeric
             validate_record_numeric(record, state["identity"])
@@ -198,6 +230,7 @@ class NativeRunner:
     def __init__(
         self, observer, *, sources_factory=None, caller_factory=NativeModelCaller, chatgpt_auth=None, search_session_factory=requests.Session
     ):
+        self.chatgpt_auth = chatgpt_auth
         self.search_session_factory = search_session_factory
         self.observer, self.sources_factory, self.caller_factory = (
             observer,
@@ -296,12 +329,16 @@ class NativeRunner:
         search_gap_guidance_policy = not resume or "search_gap_guidance_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         model_binding_policy = not resume or "model_binding_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         research_delivery_policy = not resume or "research_delivery_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        challenge_reference_policy = not resume or "challenge_reference_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        insight_context_policy = not resume or "insight_context_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
+        structured_output_policy = not resume or "structured_output_policy" in load_checkpoint(self.observer.store, run_id)["identity"]
         journal = CatalystJournal(self.observer, native_identity(request, workflow_version=version,
             model_retry_policy=retry_policy, specialist_reference_policy=reference_policy, company_research_policy=company_policy, report_delivery_policy=report_policy,
             numeric_narrative_policy=numeric_policy, chatgpt_request_policy=chatgpt_policy, structured_financial_policy=structured_policy, factual_premise_policy=premise_policy,
             financial_detail_policy=detail_policy, challenge_check_policy=challenge_policy,
             challenge_input_policy=challenge_input_policy, search_gap_guidance_policy=search_gap_guidance_policy,
-            model_binding_policy=model_binding_policy, research_delivery_policy=research_delivery_policy), require_existing=resume)
+            model_binding_policy=model_binding_policy, research_delivery_policy=research_delivery_policy,
+            challenge_reference_policy=challenge_reference_policy, structured_output_policy=structured_output_policy, insight_context_policy=insight_context_policy), require_existing=resume)
         delivery = journal.state["identity"].get("research_delivery_policy")
         if delivery is not None:
             with self.observer.store.lock_for(run_id):
@@ -323,7 +360,7 @@ class NativeRunner:
                     metadata["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
                     self.observer.store.write_snapshot_atomic(replace(snapshot, metadata=metadata))
         coordinator = None
-        if version == SEARCH_WORKFLOW_VERSION:
+        if version in {SEARCH_WORKFLOW_VERSION, INSIGHT_WORKFLOW_VERSION}:
             from tradingagents.execution.search_budget import SearchBudget
             from tradingagents.execution.search_coordinator import SearchCoordinator
             search_session = self.search_session_factory()
@@ -384,7 +421,7 @@ class NativeRunner:
                 return value
 
             source_fields = {**vars(request), "catalyst_policy": request.evidence_policy.collector_policy()}
-            if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
+            if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION, INSIGHT_WORKFLOW_VERSION}:
                 source_fields.pop("research_question", None)
                 source_fields["effective_config"] = {
                     key: value for key, value in request.effective_config.items()
@@ -406,13 +443,14 @@ class NativeRunner:
                     FOCUS_WORKFLOW_VERSION: MinimumEvidenceSources,
                     UNIFIED_WORKFLOW_VERSION: MinimumEvidenceSources,
                     SEARCH_WORKFLOW_VERSION: SearchEvidenceSources,
+                    INSIGHT_WORKFLOW_VERSION: SearchEvidenceSources,
                 }[version]
-                collector = factory(source_request, run_id, session, fetch, coordinator) if version == SEARCH_WORKFLOW_VERSION else factory(source_request, run_id, session, fetch)
+                collector = factory(source_request, run_id, session, fetch, coordinator) if version in {SEARCH_WORKFLOW_VERSION, INSIGHT_WORKFLOW_VERSION} else factory(source_request, run_id, session, fetch)
                 draft, context = collector.collect()
-            capabilities = getattr(collector, 'source_admission', ()) if version == SEARCH_WORKFLOW_VERSION else draft.capabilities
+            capabilities = getattr(collector, 'source_admission', ()) if version in {SEARCH_WORKFLOW_VERSION, INSIGHT_WORKFLOW_VERSION} else draft.capabilities
             journal.put("native_source_admission", [cap.model_dump(mode="json") for cap in capabilities])
             active()
-            if version == SEARCH_WORKFLOW_VERSION:
+            if version in {SEARCH_WORKFLOW_VERSION, INSIGHT_WORKFLOW_VERSION}:
                 from tradingagents.agents.schemas._research_record_v2 import ResearchRecordV2
                 if not isinstance(draft, ResearchRecordV2):
                     raise ValueError('V8 collector must return a native V2 record')
@@ -443,6 +481,54 @@ class NativeRunner:
                 seed = attach_numeric_attribution(seed, journal)
             journal.put("native_seed", seed.model_dump(mode="json"))
             self._stage(journal, "evidence", "completed")
+        if version == INSIGHT_WORKFLOW_VERSION:
+            from functools import partial
+
+            from tradingagents.execution.insight_model import InsightModelCaller
+            from tradingagents.graph.insight_research import run_insight_research
+            from tradingagents.research.insights import build_insight_catalog
+            from tradingagents.research.native_policy import fact_views
+            factory = self.caller_factory
+            if factory is NativeModelCaller or isinstance(factory, partial) and factory.func is NativeModelCaller:
+                factory = partial(InsightModelCaller, chatgpt_auth=self.chatgpt_auth)
+            delegate = factory(effective_config=request.effective_config, run_id=run_id, ledger=journal.ledger,
+                cancelled=lambda: token.is_cancelled, deadline=lambda: deadline)
+            catalogs = {role: build_insight_catalog(seed, facts=facts)
+                for role, facts in fact_views(seed, valuation=True).items()}
+            search_record = seed
+
+            def supplement_insights(questions, round_id):
+                nonlocal search_record
+                from tradingagents.execution.insight_search import collect_insight_supplement
+                search_record, result = collect_insight_supplement(search_record, questions,
+                    coordinator=coordinator, ledger=journal.ledger, round_id=round_id)
+                return result
+
+            record = run_insight_research(run_id=run_id, ticker=request.ticker, analysis_date=seed.analysis_date,
+                catalogs=catalogs, caller=delegate, journal=journal, ensure_active=active, focus_question=request.research_question,
+                company_basics=seed.company_basics, foundation_catalog=build_insight_catalog(seed, facts=tuple(
+                    f for f in seed.claims if seed.company_basics and f.claim_id in {v.claim_id for v in (
+                        *seed.company_basics.introduction, *seed.company_basics.fundamentals, *seed.company_basics.quantitative)})),
+                on_stage=lambda role, status: self._stage(journal, role, status),
+                supplement=supplement_insights if coordinator is not None and journal.state['identity'].get('search_research_policy', {}).get('enabled') is not False else None,
+                source_gaps=tuple(item for item in seed.limitations if item.startswith('global_gap:') or item.startswith('global_coverage:') and not item.endswith(':available'))
+                    + tuple('search_gap:' + g.gap_id for g in seed.search_gaps))
+            active()
+            if publication_authorizer is None:
+                raise ValueError('native publication requires a lifecycle authorizer')
+            entered = False
+
+            def authorize_insight(value):
+                nonlocal entered
+                publication_authorizer(value)
+                entered = True
+
+            publish_native_record(self.observer, record=record, ledger=journal.ledger,
+                publication_authorizer=authorize_insight)
+            if not entered:
+                authorize_insight(journal)
+            return AnalysisResult({'research_profile': 'evidence_v1',
+                'native_research_record': record.model_dump(mode='json')}, 'research_only')
         delegate = self.caller_factory(
             effective_config=request.effective_config,
             run_id=run_id,

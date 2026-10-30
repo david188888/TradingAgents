@@ -34,12 +34,19 @@ def _digest(value: dict[str, Any]) -> str:
         separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
+def _parse_public_record(value):
+    if value.get('schema_version') == 'insight-research-v1':
+        from tradingagents.research.insight_report import parse_insight_report
+        return parse_insight_report(value)
+    return parse_research_record(value)
+
+
 def _existing_artifact(observer: Any, record: ResearchRecord) -> str | None:
     artifact_id = None
     events = observer.store.read_events(observer.run_id)
     event_index = {event.event_id: event for event in events}
     for event in events:
-        if event.type != "artifact.written" or event.status != "committed" or event.payload.get("public_contract") not in {"research-record-v1", "research-record-v2"}:
+        if event.type != "artifact.written" or event.status != "committed" or event.payload.get("public_contract") not in {"research-record-v1", "research-record-v2", "insight-research-v1"}:
             continue
         try:
             raw = observer.store.read_artifact(observer.run_id, event.payload["artifact_id"])
@@ -47,7 +54,7 @@ def _existing_artifact(observer: Any, record: ResearchRecord) -> str | None:
             raise NativePublicationError("native publication integrity mismatch") from None
         if hashlib.sha256(raw).hexdigest() != event.payload.get("content_sha256"):
             raise NativePublicationError("native publication integrity mismatch")
-        prior = parse_research_record(json.loads(raw))
+        prior = _parse_public_record(json.loads(raw))
         if prior != record or event.payload.get("graph_task_id") != NATIVE_PUBLIC_TASK:
             raise NativePublicationError("native publication content conflict")
         barrier = event_index.get(event.parent_event_id)
@@ -79,20 +86,26 @@ def publish_native_record(
     verifies persisted public bytes and performs no model or provider work.
     """
     try:
-        record = parse_research_record(record.model_dump(mode="json"))
+        record = _parse_public_record(record.model_dump(mode="json"))
+        insight = record.schema_version == 'insight-research-v1'
         journal = ledger.journal
         if journal.observer.store is not observer.store or journal.observer.run_id != observer.run_id or record.run_id != observer.run_id or ledger.run_id != observer.run_id:
             raise NativePublicationError("native publication identity mismatch")
-        if record.construction != "native" or record.assessment is None:
+        if record.construction != "native" or not insight and record.assessment is None:
             raise NativePublicationError("native publication requires a native assessment")
         if not callable(publication_authorizer):
             raise NativePublicationError("native publication requires a lifecycle authorizer")
-        from tradingagents.research.native_versions import validate_assessment_version
-        validate_assessment_version(record, journal.state["identity"].get("workflow_version"))
-        from tradingagents.research.numeric_integration import validate_record_numeric
-        validate_record_numeric(record, journal.state["identity"])
-        if record.numeric_attribution is not None and record.numeric_attribution.input_identity != journal.state.get("native_input"):
-            raise NativePublicationError("native numeric input binding mismatch")
+        if insight:
+            if (journal.state['identity'].get('workflow_version') != 'evidence-production-v9'
+                    or journal.state.get('insight.report') != record.model_dump(mode='json')):
+                raise NativePublicationError('insight publication identity mismatch')
+        else:
+            from tradingagents.research.native_versions import validate_assessment_version
+            validate_assessment_version(record, journal.state["identity"].get("workflow_version"))
+            from tradingagents.research.numeric_integration import validate_record_numeric
+            validate_record_numeric(record, journal.state["identity"])
+            if record.numeric_attribution is not None and record.numeric_attribution.input_identity != journal.state.get("native_input"):
+                raise NativePublicationError("native numeric input binding mismatch")
         candidate = record.model_dump(mode="json")
         digest = _digest(candidate)
         with journal.lock:

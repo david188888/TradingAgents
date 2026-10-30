@@ -407,9 +407,9 @@ def run_native_research(seed: ResearchRecordV1, *, caller: Callable,
             if item.hypothesis_id not in hypothesis_map:
                 raise ValueError("challenge references an unknown hypothesis")
             target = hypothesis_map[item.hypothesis_id]
-            bound = conditions.get(item.condition_id) if item.condition_id else None
-            if item.condition_id and (bound is None or bound["hypothesis_id"] != item.hypothesis_id):
-                raise ValueError("challenge selected a condition from another hypothesis")
+            from tradingagents.research.challenge_checks import resolve_challenge_condition
+            condition_id = resolve_challenge_condition(item, conditions)
+            bound = conditions.get(condition_id) if condition_id else None
             challenge_id = "c." + canonical_sha256({"input": identity, "index": index, "challenge": item.model_dump(mode="json")})
             challenges.append({"challenge_id": challenge_id, "target_claim_ids": [target.claim_id],
                 "statement": item.statement, "severity": item.severity, "risk_type": item.risk_type,
