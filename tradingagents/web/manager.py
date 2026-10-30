@@ -759,12 +759,16 @@ class SingleRunManager:
         current = self.store.read_snapshot(run_id)
         completion_summary = "Analysis completed successfully."
         if request.research_profile == "evidence_v1":
-            assessment = result.final_state["native_research_record"]["assessment"]
-            completion_summary = (
-                "研究流程已完成；判断受证据限制。"
-                if assessment["completeness"] != "complete" or assessment["quality"] == "LOW_CONFIDENCE"
-                else "研究流程已完成。"
-            )
+            record = result.final_state["native_research_record"]
+            if record.get('schema_version') == 'insight-research-v1':
+                completion_summary = '研究流程已完成；部分结果与资料限制已保留。' if record['gaps'] else '研究流程已完成。'
+            else:
+                assessment = record["assessment"]
+                completion_summary = (
+                    "研究流程已完成；判断受证据限制。"
+                    if assessment["completeness"] != "complete" or assessment["quality"] == "LOW_CONFIDENCE"
+                    else "研究流程已完成。"
+                )
         self.store.write_snapshot_atomic(
             current.evolve(
                 final_signal=result.final_signal,

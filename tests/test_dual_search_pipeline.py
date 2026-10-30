@@ -87,6 +87,8 @@ class Caller:
 
 
 def setup(tmp_path, monkeypatch, *, unavailable=False, enabled=True):
+    # This fixture exercises frozen V8 compatibility, independently of new-run defaults.
+    monkeypatch.setattr('tradingagents.execution.native_runner.WORKFLOW_VERSION', 'evidence-production-v8')
     monkeypatch.setenv('DEEPSEEK_API_KEY','offline-placeholder')
     monkeypatch.setenv('TAVILY_API_KEY','offline-placeholder')
     monkeypatch.delenv('TAVILY_API_KEYS',raising=False)
@@ -107,7 +109,7 @@ def setup(tmp_path, monkeypatch, *, unavailable=False, enabled=True):
 
 def test_new_workflow_identity_freezes_search_policy():
     request=AnalysisRequest('600803','2026-10-23',research_profile='evidence_v1',effective_config={})
-    identity=native_identity(request)
+    identity=native_identity(request,workflow_version='evidence-production-v8')
     assert identity['workflow_version']=='evidence-production-v8'
     assert identity['search_budget_policy']['limits']['model_attempts']==21
     assert identity['search_research_policy']['endpoints']['deepseek_search'].endswith('/v1/tools/search')

@@ -80,7 +80,7 @@ def test_challenge_may_direct_a_gap_to_any_specialist_role(journal):
 def test_fresh_gap_guidance_identity_preserves_legacy_resume(journal):
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1",
                               effective_config=model_tests.CONFIG)
-    fresh = native_identity(request)
+    fresh = native_identity(request, workflow_version="evidence-production-v8")
     assert fresh["search_gap_guidance_policy"] == POLICY
     journal.put("identity", fresh)
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)

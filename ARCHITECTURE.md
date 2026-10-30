@@ -29,39 +29,35 @@ flowchart LR
 
 ## Native Research Architecture
 
-New single and batch studies use `evidence_v1` / `evidence-production-v8`, kernel
-`native-research-kernel-v7`, and `research-record-v2`. New creation supports `company_research` only.
-The workflow name, kernel name and public record name are separate versioned contracts.
+New single and batch studies use `evidence_v1` / `evidence-production-v9` and the independent
+`insight-research-v1` contract. Source collection still uses V2 evidence snapshots; model output is
+not converted into the legacy hypothesis/envelope contracts. New creation supports company research.
 
-1. Dedicated APIs collect identity, company information, financials, prices and valuation.
-   DeepSeek/Tavily search adds dated context and attempts narrowly requested missing fields.
-2. Code qualifies sources and freezes facts. Operating, event and market specialists receive
-   isolated views; they cannot read each other's drafts. Accepted outputs merge in fixed order.
-3. One challenge stage identifies counterevidence and testable propositions. Code performs bounded
-   checks on qualified saved inputs, then each challenged specialist may reply once.
-4. Up to three shared supplementary-search rounds can add qualified material and review affected
-   judgements. Original facts, hypotheses and receipts remain traceable to their snapshots.
-5. Synthesis combines the effective findings into four dimensions, referenced reasons and change
-   conditions. Section validation and one targeted repair preserve independently valid analysis.
-6. The executor freezes the baseline, optionally answers the user's focus from saved evidence,
-   then publishes the mandatory baseline and any qualified supplement. Markdown uses the same record.
+1. Dedicated APIs collect company and quantitative data; DeepSeek/Tavily add qualified context.
+2. Isolated operating, event and market specialists produce four-field Insights. Code compiles short
+   evidence references and numeric tokens, saving valid siblings when another item fails.
+3. Explicit outer `search_requests` trigger bounded supplementary collection. Only affected roles
+   are reanalysed; superseded versions remain saved and cannot support synthesis.
+4. One critique/reply round examines weak judgements and alternative explanations. Synthesis chooses
+   its stance from saved effective Insights; invalid overall support suppresses only the rating.
+5. The optional focus follows saved synthesis and cannot change it. Existing publication barriers
+   protect the independent record; Reader, stage views and Markdown replay its references.
 
-Code owns qualification, calculations, reference validation, budgets and publication; models propose
-interpretations. Context isolation is not statistical independence. Numeric/reference checks do not
-prove free-prose entailment, economic causality, fair value or predictive accuracy.
+Owners: [_insight.py](tradingagents/agents/schemas/_insight.py),
+[insights.py](tradingagents/research/insights.py), [insight_research.py](tradingagents/graph/insight_research.py),
+[insight_model.py](tradingagents/execution/insight_model.py) and
+[insight_search.py](tradingagents/execution/insight_search.py). All fact cards remain visible to the
+model; bounded exact saved-source passages replace duplicated full source bodies. Program-rendered
+numeric labels retain subject, period and units. These checks do not prove causal entailment or value.
 
-New Web studies resolve an omitted cutoff to the current Asia/Shanghai date; historical requests and
-resume retain their saved date. Fresh numeric V8 calls freeze `research_delivery_policy=evidence-packets-v1`
-(with its exact policy payload). [evidence_packets.py](tradingagents/research/evidence_packets.py)
-renders all role-qualified observations as sourced Markdown cards and ranks bounded passages from
-their saved source bodies by lexical overlap. Models select short card citations; the host derives
-canonical observation/fact references. This is local retrieval, without an embedding service or new
-evidence admission. The pure adapter
-[inline_bindings.py](tradingagents/research/inline_bindings.py) derives binding paths from the
-response structure and restores the canonical numeric envelope before existing admission checks.
-Per-hypothesis challenge-review receipts bind the accepted challenge proposal and exact numeric
-context; the Reader replays them. The policy also reserves a repair opportunity for each basic stage.
-Saved proofs/public records retain their formats; old runs retain their original prompts and budgets.
+New studies default to the current Asia/Shanghai date. SIWC/OpenAI use strict structured output;
+the existing DeepSeek Chat Completions route uses JSON mode. Canonical Pydantic field types retain
+their semantics. Source and execution budgets are unchanged; details and compatibility are owned by
+[the research contract](docs/contracts/research-record.md#insight-first-v9).
+
+V1–V8 runs keep their frozen versions, prompts, envelopes, condition checks and rating gates.
+`native_research.py`, `native_model.py`, `inline_bindings.py` and `synthesis_sections.py` remain
+compatibility owners; they are not the new Insight model-output path.
 
 ## Publication And Projections
 

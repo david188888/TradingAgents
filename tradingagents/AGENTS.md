@@ -9,8 +9,9 @@ for repository-wide setup and finish rules.
   `AnalysisResult` and cancellation are shared contracts. `NativeRunner` owns
   maintained Web research; `AnalysisRunner` retains classic execution for
   compatibility callers. Neither should import consumer-specific UI concerns.
-- `graph/native_research.py` owns the maintained evidence-research kernel,
-  with isolated specialists, fixed merge order, challenge and synthesis.
+- `graph/insight_research.py` owns new V9 Insight research, with isolated
+  specialists, bounded supplementary search, one review/reply round and synthesis.
+  `graph/native_research.py` retains the kernels for older frozen research tasks.
   `setup.py` assembles the retained classic LangGraph nodes/edges;
   `trading_graph.py` owns its compatibility-facing facade.
 - `dataflows/` owns provider interfaces, vendor selection, normalization, and

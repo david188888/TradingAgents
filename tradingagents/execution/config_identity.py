@@ -137,7 +137,7 @@ def prune_removed_credential_shells(original: Any, stripped: Any) -> Any:
 def native_effective_config(config, workflow_version):
     """New search options cannot retroactively change saved V1–V7 identities."""
     value = dict(config)
-    if workflow_version == 'evidence-production-v8':
+    if workflow_version in {'evidence-production-v8', 'evidence-production-v9'}:
         enabled = value.setdefault('evidence_search_enabled', True)
         if type(enabled) is not bool:
             raise SemanticConfigError('evidence_search_enabled must be boolean')

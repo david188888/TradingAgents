@@ -13,13 +13,13 @@ New studies use one company investment research workflow, combining operations, 
 ## Project highlights
 
 - **A-share evidence chain**: combines public company information, official disclosures, financials and prices while preserving sources, timestamps and coverage limits.
-- **Purposeful Agent roles**: operating, event and market specialists develop isolated hypotheses followed by one challenge round, actual checks, targeted specialist replies and synthesis; important challenges record verifiability and task outcomes for independently proposed tests. Code owns evidence admission, reference validation and deterministic calculations.
-- **Current information and evidence citations**: new studies use currently available information without a date selector. Models select sourced Markdown evidence cards and code derives bindings. The new policy requires the challenge stage to review every accepted hypothesis, including the basis for finding no additional counterevidence.
+- **Purposeful Agent roles**: isolated operating, event and market specialists produce Insights containing a claim, evidence references, reasoning and limitations. One critique/reply round informs synthesis; code owns numbers, references and effective versions.
+- **Current information and evidence citations**: new studies use currently available information. Models select short evidence references and numeric tokens; code resolves saved sources and passages. No effective counterevidence, missing review and failed review remain distinct.
 - **Dual web evidence collection**: DeepSeek and Tavily discover news, industry, policy and competitor material. Dedicated APIs remain first for identity and quantitative data, with field-specific search fallback. Qualified new evidence can trigger bounded supplementary research and review of affected judgments. See the [dual-search contract](docs/contracts/dual-search-research.md).
 - **Traceable research reading**: inspect qualified saved stage outputs, facts and sources while research is running, with stage proposals clearly separated from final conclusions. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
-- **Company report delivery**: preserve public introductions, fundamentals and market observations independently. Validate synthesis by section, repair failed sections and retain valid analysis. An unfinished overall judgement or critical challenge adjudication suppresses the rating; synthesis execution failures remain distinct from financial data gaps.
-- **Verifiable numeric fragments**: new studies reference frozen numbers that code renders with units, periods and actual/forecast labels, validated through Reader and export. Qualified structured financial comparisons are checked independently, with full cash-bridge gaps kept separate. New studies separately preserve and display observations, interpretations and pending premises. Surrounding explanations still need researcher review; see the [numeric contract](docs/contracts/numeric-narrative.md).
-- **Plain-language reading**: financial and historical-risk indicators include definitions and readable numbers. New studies can generate separately saved model explanations shared by the report and related evidence; uncovered or failed items retain the professional text. Historical reports receive indicator and formatting improvements only. See the [reading boundaries](docs/contracts/report-explanation.md).
+- **Company report delivery**: preserve basic facts and valid Insights independently. Repair invalid items once without discarding valid siblings. Invalid synthesis support suppresses the overall rating; missing a prescribed valuation anchor no longer overrides the synthesis Agent, and gaps remain explicit.
+- **Verifiable numeric fragments**: code calculates and renders values with subject, units, period and provenance. Unbound quantities cannot pass admission; valid references and arithmetic do not prove economic reasoning. See the [research contract](docs/contracts/research-record.md#insight-first-v9).
+- **Plain-language reading**: new reports can generate separately saved explanations; missing explanations retain original text. Explanation coverage is not a research acceptance gate. Historical reports retain their existing indicator reading aids. See the [reading boundaries](docs/contracts/report-explanation.md).
 
 ## Overall architecture and Agent design
 
@@ -33,11 +33,11 @@ flowchart LR
 
 | Role / layer | Responsibility |
 | --- | --- |
-| Operating, event and market specialist Agents | Propose hypotheses and invalidation conditions from their own evidence views, without reading other specialists' drafts. |
-| Independent challenge Agent | Identify counterevidence, evidence gaps and conditions to check. |
+| Operating, event and market specialist Agents | Produce four-field Insights from their own evidence views, without reading other specialists' drafts. |
+| Independent challenge Agent | Question judgements, evidence sufficiency and alternative explanations; record when no effective counterevidence was found. |
 | Challenged specialist Agents | Reply once from bounded saved facts, maintaining, revising, withdrawing or admitting they cannot answer. |
-| Synthesis Agent | Combine evidence, counterevidence and replies into an investment stance, reasons, falsifiers and four-dimensional judgments. |
-| Code host | Control source admission and execution boundaries, check computable conditions, validate and persist results. |
+| Synthesis Agent | Combine evidence, counterevidence and replies to judge evidential sufficiency, overall stance and limitations. |
+| Code host | Control source admission and execution boundaries, compute numbers, resolve references, and preserve valid versions. |
 
 Baseline research completes independently and is saved before an optional response to the user's focus; that response cannot rewrite baseline conclusions. Execution, recovery and module boundaries are detailed in the [architecture](ARCHITECTURE.md).
 

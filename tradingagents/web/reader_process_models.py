@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_valid
 
 from tradingagents.agents.schemas._challenge_review import HypothesisReviewV1
 from tradingagents.agents.schemas._factual_premise import PublicPremiseV1
+from tradingagents.agents.schemas._insight import InsightReport
 from tradingagents.agents.schemas._native_stage import (
     ChallengesProposalV1,
     ChallengesProposalV2,
@@ -34,6 +35,7 @@ AgentKey = Literal[
 OutputAvailability = Literal[
     "available",
     "stage_available",
+    "insight_stage_available",
     "pending_publication",
     "not_recorded",
     "unavailable",
@@ -124,6 +126,7 @@ class OutputRelation(_ReaderModel):
 
 
 class ReaderAgentDTO(_ReaderModel):
+    insight_record: InsightReport | None = None
     challenge_reviews: tuple[HypothesisReviewV1, ...] = ()
     factual_premises: tuple[PublicPremiseV1, ...] = ()
     schema_version: Literal[1] = 1
@@ -171,6 +174,8 @@ class ReaderAgentDTO(_ReaderModel):
     @model_serializer(mode="wrap")
     def compatible_review_shape(self, handler):
         value = handler(self)
+        if self.insight_record is None:
+            value.pop('insight_record', None)
         if not self.challenge_reviews:
             value.pop("challenge_reviews", None)
         return value

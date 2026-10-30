@@ -211,19 +211,56 @@ class NativeFixtureCaller:
         return {"challenges":[]} if stage == "challenge" else {"hypotheses":[]}
 
 
+class InsightFixtureSources:
+    def __init__(self, request, run_id, session, fetch, coordinator):
+        self.request, self.run_id = request, run_id
+
+    def collect(self):
+        from tests.search_fixtures import make_v2_record
+        from tests.test_insight_protocol import catalog
+        from tradingagents.agents.schemas._research_record_v2 import make_evidence_snapshot_v2
+        base = make_v2_record()
+        source = catalog().sources[0].model_copy(update={'source_name': 'web.fixture'})
+        facts = tuple(c.model_copy(update={'evidence_ids': (source.evidence_id,),
+            'limitations': ('native_dimension:operating_quality', 'synthetic_fixture')}) for c in base.claims if c.kind == 'fact')
+        record = make_v2_record(run_id=self.run_id, ticker=self.request.ticker,
+            analysis_date=self.request.analysis_date, hypotheses=(), challenges=(), assessment=None,
+            evidence=(source,), snapshots=(make_evidence_snapshot_v2((source,)),), claims=facts)
+        return record, {}
+
+
+class InsightFixtureCaller:
+    def __init__(self, **kwargs):
+        self.fail_synthesis = kwargs.get('fail_synthesis', False)
+
+    def __call__(self, stage, context, *, phase='main'):
+        if stage == 'challenge':
+            return {'reviews': [{'target': i['ref'], 'concern': None,
+                'reasoning': '已审阅合成测试资料，未发现额外反证。', 'evidence_refs': []} for i in context['insights']]}
+        if stage == 'synthesis':
+            return {'judgement': '合成测试：现有研究仅提供有限支持。', 'stance': 'neutral',
+                'insight_refs': ['I999'] if self.fail_synthesis else [context['insights'][0]['ref']],
+                'reasoning': '结论来自已保存的专项观点。', 'limitations': '全部内容仅用于离线界面测试。',
+                'next_check': '另行验证真实模型和来源。'}
+        return {'insights': [{'claim': '合成测试：客户结构需要持续核查。' if stage != 'focus_response' else '合成测试：回应用户关注问题。',
+            'evidence_refs': [context['evidence'][0]['ref']], 'reasoning': '保存片段支持有边界的研究解释。',
+            'limitations': '无法从本测试判断未来业绩。'}], 'search_requests': []}
+
+
 def build_app():
     from scripts.e2e_server import _fake_runner_factory, _stub_summary_llm
     from tradingagents.execution import native_runner
     # The synthetic source and caller below model the frozen V7 protocol.
-    native_runner.WORKFLOW_VERSION = "evidence-production-v7"
+    insight = os.environ.get("TRADINGAGENTS_E2E_INSIGHT") == "1"
+    native_runner.WORKFLOW_VERSION = "evidence-production-v9" if insight else "evidence-production-v7"
     root = os.environ.get("TRADINGAGENTS_E2E_RUN_ROOT") or tempfile.mkdtemp(prefix="catalyst-e2e-")
     store = RunStore(root)
     broker = EventBroker(store)
     def factory(request, observer):
         if request.research_profile == "evidence_v1":
             from tradingagents.execution.native_runner import NativeRunner
-            return NativeRunner(observer, sources_factory=NativeFixtureSources,
-                caller_factory=lambda **kwargs: NativeFixtureCaller(fail_synthesis=request.ticker.startswith("600418"), **kwargs))
+            return NativeRunner(observer, sources_factory=InsightFixtureSources if insight else NativeFixtureSources,
+                caller_factory=lambda **kwargs: (InsightFixtureCaller if insight else NativeFixtureCaller)(fail_synthesis=request.ticker.startswith("600418"), **kwargs))
         if request.research_profile == "catalyst_v1":
             return CatalystRunner(observer, sources_factory=FixtureSources, caller_factory=FixtureCaller)
         return _fake_runner_factory(request, observer)

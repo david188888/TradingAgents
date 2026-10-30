@@ -45,6 +45,7 @@ from tradingagents.web.reader_process_models import (
 from tradingagents.web.research_record_projection import project_research_record
 
 VERSIONS = {
+    "evidence-production-v9": "insight-research-v1",
     "evidence-production-v1": "native-research-kernel-v1",
     "evidence-production-v2": "native-research-kernel-v1",
     "evidence-production-v3": "native-research-kernel-v2",
@@ -266,6 +267,11 @@ def _context(store, run_id, through=None):
             snapshot.analysis_date,
         ):
             raise ValueError("identity")
+        if version == 'evidence-production-v9':
+            from tradingagents.research.insight_report import parse_insight_report
+            public = project_research_record(store, run_id, through=sequence)
+            record = parse_insight_report(public['record']) if public['state'] == 'insight_ready' else None
+            return Context(snapshot, sequence, events, cp, record, None, None, store)
         published = project_research_record(store, run_id, through=sequence)
         if published["state"] != "ready":
             if version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
@@ -499,12 +505,8 @@ def _proposal(ctx, role):
                 (target.claim_id,),
             ):
                 raise ValueError("challenge_binding")
-            if (
-                item.condition_id
-                and cp.get("native_conditions", {}).get(item.condition_id, {}).get("hypothesis_id")
-                != item.hypothesis_id
-            ):
-                raise ValueError("challenge_condition")
+            from tradingagents.research.challenge_checks import resolve_challenge_condition
+            resolve_challenge_condition(item, cp.get("native_conditions", {}))
             if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
                 binding = next(b for b in record.challenge_bindings if b.challenge_id == cid)
                 if (binding.check_id, binding.observed_risk, binding.observation_date) != (
@@ -558,6 +560,9 @@ def _proposal(ctx, role):
 
 
 def _agent(ctx, role):
+    if ctx.checkpoint and ctx.checkpoint['identity'].get('workflow_version') == 'evidence-production-v9' and ctx.reason is None:
+        from tradingagents.web.insight_process import insight_agent
+        return insight_agent(ctx, role)
     from tradingagents.research.factual_premises import stage_premises
     origin = "code" if role in {"evidence", "code_checks"} else "model"
     base = {
@@ -725,6 +730,9 @@ def _agent(ctx, role):
 
 
 def _process(ctx):
+    if ctx.checkpoint and ctx.checkpoint['identity'].get('workflow_version') == 'evidence-production-v9' and ctx.reason is None:
+        from tradingagents.web.insight_process import insight_process
+        return insight_process(ctx)
     snapshot, cp = ctx.snapshot, ctx.checkpoint
     metadata = snapshot.metadata or {}
     profile = metadata.get("research_profile", "classic")

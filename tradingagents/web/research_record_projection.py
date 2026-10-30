@@ -100,6 +100,10 @@ def project_research_record(store: Any, run_id: str, *, through: int | None = No
     if through is not None:
         events = [event for event in events if not isinstance(event.payload.get("committed_sequence"), int)
                   or event.payload["committed_sequence"] <= through]
+    insight_event = _latest(events, 'insight-research-v1')
+    if insight_event is not None:
+        from tradingagents.web.insight_projection import project_insight_record
+        return project_insight_record(store, snapshot, events, insight_event)
     events_by_contract = [_latest(events, version) for version in ('research-record-v1', 'research-record-v2')]
     event = max((e for e in events_by_contract if e is not None), key=lambda e: (e.payload['committed_sequence'], e.sequence), default=None)
     reason = "not_published"

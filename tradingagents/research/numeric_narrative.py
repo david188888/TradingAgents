@@ -52,6 +52,8 @@ _CODES = {
     "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
     "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
         "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit",
+    "numeric_proposal_schema", "numeric_envelope_schema", "numeric_catalog_invalid",
+    "numeric_cutoff_invalid", "numeric_condition_reference", "numeric_receipt_invalid",
 }
 
 
@@ -64,10 +66,12 @@ BINDING_ISSUES = frozenset({
 class NumericNarrativeError(ValueError):
     """Safe diagnostics: never interpolate invalid model text or numbers."""
 
-    def __init__(self, code, field_path="", *, index=None, binding_issue=None):
+    def __init__(self, code, field_path="", *, index=None, binding_issue=None, validation_error=None, locations=()):
         if code not in _CODES:
             code = "numeric_manifest_binding"
         self.code, self.field_path, self.index = code, field_path, index
+        self.validation_locations = tuple(issue["loc"] for issue in validation_error.errors(
+            include_input=False, include_context=False, include_url=False)) if validation_error is not None else tuple(locations)
         parts = field_path.split(".") if isinstance(field_path, str) else []
         name = parts[-2] if len(parts) > 1 and parts[-1].isdigit() else parts[-1] if parts else None
         self.field_name = name if name in _TEXT_FIELDS else None
@@ -182,11 +186,13 @@ def numeric_prompt_schema(base_schema, *, premises=False):
 
 
 def _schema_validate(schema, proposal):
-    # Schemas are canonical Pydantic classes; JSON Schema is prompt-only.
+    # Pydantic remains authoritative even when the transport constrains JSON shape.
     try:
         return schema.model_validate(proposal).model_dump(mode="json")
-    except (ValidationError, ValueError, TypeError, KeyError):
-        raise NumericNarrativeError("numeric_manifest_binding") from None
+    except ValidationError as exc:
+        raise NumericNarrativeError("numeric_proposal_schema", validation_error=exc) from None
+    except (ValueError, TypeError, KeyError):
+        raise NumericNarrativeError("numeric_proposal_schema") from None
 
 
 def _scan_literal(text, path):
@@ -316,11 +322,11 @@ def _plan_allowed(path):
 def _cutoff(context):
     raw = context.get("numeric_analysis_date") or _record(context).get("analysis_date")
     if raw is None:
-        raise NumericNarrativeError("numeric_manifest_binding")
+        raise NumericNarrativeError("numeric_cutoff_invalid", locations=[("numeric_analysis_date",)])
     try:
         return date.fromisoformat(str(raw))
     except ValueError:
-        raise NumericNarrativeError("numeric_manifest_binding") from None
+        raise NumericNarrativeError("numeric_cutoff_invalid", locations=[("numeric_analysis_date",)]) from None
 
 
 def _render_plan(plan, context, path):
@@ -349,8 +355,9 @@ def _compile_field(stage, path, template, proposal, context, plans, counts):
         parent = next((h for h in _record(context).get("hypotheses", [])
                        if h["hypothesis_id"] == item["hypothesis_id"]), None)
         index = item["invalidation_index"]
-        if parent is None or index >= len(parent["invalidation_conditions"]):
-            raise NumericNarrativeError("numeric_manifest_binding", path)
+        if parent is None or not 0 <= index < len(parent["invalidation_conditions"]):
+            raise NumericNarrativeError("numeric_condition_reference", path,
+                locations=[tuple(int(p) if p.isdigit() else p for p in path.split("."))])
         text = parent["invalidation_conditions"][index]
         return text, {"path": path, "segments": [{"kind": "inherited", "text": text,
             "parameters": {"hypothesis_id": item["hypothesis_id"], "invalidation_index": index}}],
@@ -445,8 +452,10 @@ def validate_numeric_field(field, catalog, *, metadata=None):
     try:
         receipt = NumericFieldProofV1.model_validate(field).model_dump(mode="json")
         NumericCatalogV1.model_validate(catalog)
-    except (ValidationError, ValueError, TypeError):
-        raise NumericNarrativeError("numeric_manifest_binding") from None
+    except ValidationError as exc:
+        raise NumericNarrativeError("numeric_receipt_invalid", validation_error=exc) from None
+    except (ValueError, TypeError):
+        raise NumericNarrativeError("numeric_receipt_invalid") from None
     anchors = {a["anchor_id"]: a for a in catalog["anchors"]}
     meta_values = [m for key, m in (metadata or {}).items()
                    if key != "inherited_conditions"] or catalog.get("metadata", [])
@@ -458,30 +467,30 @@ def validate_numeric_field(field, catalog, *, metadata=None):
         elif kind == "num":
             anchor = anchors.get(segment["anchor_id"])
             if anchor is None or text != render_numeric_anchor(anchor):
-                raise NumericNarrativeError("numeric_manifest_binding", receipt["path"])
+                raise NumericNarrativeError("numeric_receipt_invalid", receipt["path"])
         elif kind == "meta":
             labels = {"identity": "身份", "period": "期次", "source_title": "来源标题"}
             candidates = [f"{labels[m['kind']]}：{m['text']}" for m in meta_values if m["kind"] in labels]
             if text not in candidates:
-                raise NumericNarrativeError("numeric_manifest_binding", receipt["path"])
+                raise NumericNarrativeError("numeric_receipt_invalid", receipt["path"])
         elif kind == "inherited":
             inherited = (metadata or {}).get("inherited_conditions", {})
             parameters = segment["parameters"] or {}
             key = (parameters.get("hypothesis_id"), parameters.get("invalidation_index"))
             if inherited.get(key) != text:
-                raise NumericNarrativeError("numeric_manifest_binding", receipt["path"])
+                raise NumericNarrativeError("numeric_receipt_invalid", receipt["path"])
         else:
             plan = segment["parameters"]
             if plan is None:
-                raise NumericNarrativeError("numeric_manifest_binding", receipt["path"])
+                raise NumericNarrativeError("numeric_receipt_invalid", receipt["path"])
             # Stage replay checks the cutoff; field replay still checks exact rendering.
             context = {"numeric_analysis_date": "0001-01-01"}
             if text != _render_plan(plan, context, receipt["path"]):
-                raise NumericNarrativeError("numeric_manifest_binding", receipt["path"])
+                raise NumericNarrativeError("numeric_receipt_invalid", receipt["path"])
         pieces.append(text)
     rendered = "".join(pieces)
     if _text_hash(rendered) != receipt["text_sha256"]:
-        raise NumericNarrativeError("numeric_manifest_binding", receipt["path"])
+        raise NumericNarrativeError("numeric_receipt_invalid", receipt["path"])
     return rendered
 
 
@@ -606,8 +615,10 @@ def _canonical_envelope(envelope, schema, *, discard_extra_premises=False):
         envelope = discard_redundant_bindings(envelope, proposal=proposal)
     try:
         result = NumericStageEnvelopeV1.model_validate(envelope).model_dump(mode="json")
-    except (ValidationError, ValueError, TypeError):
-        raise NumericNarrativeError("numeric_manifest_binding") from None
+    except ValidationError as exc:
+        raise NumericNarrativeError("numeric_envelope_schema", validation_error=exc) from None
+    except (ValueError, TypeError):
+        raise NumericNarrativeError("numeric_envelope_schema") from None
     result["proposal"] = _schema_validate(schema, result["proposal"])
     plans = result["plans"]
     if len({p["alias"] for p in plans}) != len(plans):
@@ -638,8 +649,11 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
         raise NumericNarrativeError("numeric_manifest_binding")
     try:
         NumericCatalogV1.model_validate(context["numeric_catalog"])
+    except ValidationError as exc:
+        raise NumericNarrativeError("numeric_catalog_invalid",
+            locations=[("numeric_catalog", *issue["loc"]) for issue in exc.errors()]) from None
     except (KeyError, ValueError, TypeError):
-        raise NumericNarrativeError("numeric_manifest_binding") from None
+        raise NumericNarrativeError("numeric_catalog_invalid", locations=[("numeric_catalog",)]) from None
     if stage == "synthesis" and isinstance(envelope, dict) and isinstance(envelope.get("proposal"), dict):
         envelope = deepcopy(envelope)
         raw = envelope["proposal"]
@@ -708,6 +722,10 @@ def _compile(stage, envelope, context, schema, *, isolate=False, indices=None, r
                     exc.hypothesis_index = index
                     raise
                 rejected.append({"index": index, "code": exc.code})
+                if issues is not None and exc.validation_locations:
+                    issues.append({"index": index, "locations": [
+                        (collection, index, *path[2:]) if path[:2] == (collection, 0) else path
+                        for path in exc.validation_locations]})
                 if issues is not None and exc.binding_issue:
                     # Diagnostics only; the saved proof keeps its closed rejection shape.
                     issues.append({"index": index, "binding_issue": exc.binding_issue})

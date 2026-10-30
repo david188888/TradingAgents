@@ -22,7 +22,7 @@ export function useResearchRecord(runId: string | null): {
     if (runId !== null) {
       void getResearchRecord(runId, controller.signal).then((next) => {
         if (!controller.signal.aborted) {
-          if (next.run_id !== runId || (next.state === "ready" && next.record.run_id !== runId)) setError(true);
+          if (next.run_id !== runId || ((next.state === "ready" || next.state === "insight_ready") && next.record.run_id !== runId)) setError(true);
           else setResponse(next);
         }
       }).catch(() => {

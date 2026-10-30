@@ -22,6 +22,9 @@ from tradingagents.web.research_record_projection import project_research_record
 
 def load_explanation_record(store, run_id):
     projected = project_research_record(store, run_id)
+    if projected['state'] == 'insight_ready':
+        from tradingagents.research.insight_report import parse_insight_report
+        return parse_insight_report(projected['record']), None
     if projected["state"] != "ready":
         raise ValueError("base_unavailable")
     record = parse_research_record(projected["record"])

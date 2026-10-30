@@ -41,10 +41,13 @@ def validate_assessment_version(record, version):
 
 # V8 remains separately dispatched; saved V7 identities never change.
 SEARCH_WORKFLOW_VERSION = 'evidence-production-v8'
+INSIGHT_WORKFLOW_VERSION = 'evidence-production-v9'
+INSIGHT_POLICY = 'insight-first-v1'
 SEARCH_KERNEL_VERSION = 'native-research-kernel-v7'
 CHALLENGE_INPUT_POLICY = 'search-trace-summary-v1'
 SEARCH_GAP_GUIDANCE_POLICY = 'supplied-gap-targets-v1'
 MODEL_BINDING_POLICY = 'inline-bindings-v1'
+CHALLENGE_REFERENCE_POLICY = 'hypothesis-condition-index-v1'
 RESEARCH_DELIVERY_POLICY = {
     'version': 'evidence-packets-v1',
     'repair_limits': {'structured_repair': 8, 'basic_model_attempts': 20, 'model_attempts': 29},

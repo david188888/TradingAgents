@@ -204,14 +204,38 @@ def validate_test(record, test):
     return inputs
 
 
+def condition_choices(conditions):
+    """Stable per-hypothesis order survives JSON key sorting and checkpoint reload."""
+    result = {}
+    for cid in sorted(conditions):
+        condition = conditions[cid]
+        items = result.setdefault(condition["hypothesis_id"], [])
+        items.append({"condition_index": len(items), "condition_id": cid, "text": condition["text"]})
+    return result
+
+
+def resolve_challenge_condition(proposal, conditions):
+    """Resolve the local index, retaining strict consistency for legacy IDs."""
+    cid = proposal.condition_id
+    if proposal.condition_index is not None:
+        choices = condition_choices(conditions).get(proposal.hypothesis_id, [])
+        if proposal.condition_index >= len(choices):
+            raise ChallengeValidationError("challenge_condition_reference")
+        selected = choices[proposal.condition_index]["condition_id"]
+        if cid is not None and cid != selected:
+            raise ChallengeValidationError("challenge_condition_reference")
+        cid = selected
+    if cid and (cid not in conditions or conditions[cid]["hypothesis_id"] != proposal.hypothesis_id):
+        raise ChallengeValidationError("challenge_condition_reference")
+    return cid
+
+
 def validate_challenge(record, proposal, conditions=None):
     hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
     if proposal.hypothesis_id not in hypotheses:
         raise ChallengeValidationError("challenge_target_reference")
-    if proposal.condition_id and conditions is not None:
-        condition = conditions.get(proposal.condition_id)
-        if condition is None or condition["hypothesis_id"] != proposal.hypothesis_id:
-            raise ChallengeValidationError("challenge_condition_reference")
+    if conditions is not None:
+        resolve_challenge_condition(proposal, conditions)
     return validate_test(record, challenge_test(proposal))
 
 

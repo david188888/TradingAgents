@@ -102,7 +102,7 @@ def test_invalid_challenge_view_policy_refuses_model_dispatch(journal, monkeypat
 def test_new_identity_freezes_challenge_view_and_legacy_resume_stays_unchanged(journal):
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1",
                               effective_config=model_tests.CONFIG)
-    fresh = native_identity(request)
+    fresh = native_identity(request, workflow_version="evidence-production-v8")
     assert fresh["challenge_input_policy"] == POLICY
     journal.put("identity", fresh)
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)

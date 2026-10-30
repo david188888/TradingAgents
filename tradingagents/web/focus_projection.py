@@ -2,8 +2,9 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
+from tradingagents.agents.schemas._insight import SavedInsight
 from tradingagents.agents.schemas._research_focus import ResearchFocusResponseV1
 from tradingagents.research.native_versions import (
     FOCUS_WORKFLOW_VERSION,
@@ -28,11 +29,19 @@ class ReaderFocusDTO(BaseModel):
     state: Literal["ready", "pending", "unavailable", "not_applicable"]
     focus: str | None = None
     response: ResearchFocusResponseV1 | None = None
+    insight_response: tuple[SavedInsight, ...] | None = None
     reason_code: Literal[
         "focus_not_requested", "legacy_question_semantics", "unsupported_profile",
         "workflow_unsupported", "publication_pending", "not_published", "publication_failed",
         "corrupt", "base_unavailable",
     ] | None = None
+
+    @model_serializer(mode='wrap')
+    def compatible_shape(self, handler):
+        value = handler(self)
+        if self.insight_response is None:
+            value.pop('insight_response', None)
+        return value
 
 
 def project_reader_focus(store, run_id, *, through=None):
@@ -50,6 +59,17 @@ def project_reader_focus(store, run_id, *, through=None):
         events = store.read_events(run_id, through=sequence)
         version = cp["identity"].get("workflow_version") if cp else snapshot.metadata.get("native_workflow_version")
         base["workflow_version"] = version
+        if version == 'evidence-production-v9':
+            focus = snapshot.metadata.get('research_question')
+            if not focus:
+                return result('not_applicable', 'focus_not_requested')
+            base['focus'] = focus
+            projected = project_research_record(store, run_id, through=sequence)
+            if projected['state'] != 'insight_ready':
+                ended = any(e.type in {'run.completed', 'run.failed', 'run.cancelled', 'run.interrupted'} for e in events)
+                return result('unavailable' if ended else 'pending', 'base_unavailable' if ended else 'publication_pending')
+            items = projected['record']['focus_insights']
+            return result('ready' if items else 'unavailable', None if items else 'not_published', insight_response=items)
         if version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
             if version is not None and version not in {f"evidence-production-v{i}" for i in range(1, 6)}:
                 return result("unavailable", "workflow_unsupported")

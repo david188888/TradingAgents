@@ -2,6 +2,8 @@
 
 Status: Current — navigation pointer.
 
+New Insight explanations are optional reading aids over saved claims, reasoning and limitations; coverage never gates research acceptance.
+
 Maintained explanation: [owning reference](research-record.md#reader-focus-and-explanations).
 Canonical detail or related owner: [source](../../tradingagents/execution/report_explanation.py).
 

@@ -180,7 +180,11 @@ export interface ResearchAssessmentV3DTO extends Omit<ResearchAssessmentV2DTO, "
     sections: Array<{section_id: string; status: "accepted" | "unavailable"; phase: "main" | "repair" | null;
       reason_code: "missing_section" | "schema_validation" | "reference_validation" | "numeric_literal_unbound" |
         "numeric_anchor_unknown" | "numeric_anchor_scope" | "numeric_basis_mismatch" | "numeric_plan_mismatch" |
-        "numeric_render_limit" | "numeric_manifest_binding" | "numeric_catalog_limit" | null}>;
+        "numeric_render_limit" | "numeric_manifest_binding" | "numeric_catalog_limit" |
+        "numeric_proposal_schema" | "numeric_envelope_schema" | "numeric_catalog_invalid" |
+        "numeric_cutoff_invalid" | "numeric_condition_reference" | "numeric_receipt_invalid" |
+        "premise_binding_invalid" | "premise_binding_missing" | "premise_observation_unknown" |
+        "premise_observation_scope" | "premise_support_missing" | null}>;
   } | null;
 }
 export interface CompanyBasicsV1DTO {
@@ -392,8 +396,38 @@ export interface ResearchRecordV2DTO extends Omit<ResearchRecordV1DTO, "schema_v
 }
 export type ResearchRecordDTO = ResearchRecordV1DTO | ResearchRecordV2DTO;
 
+/** Independent Insight wire contract, owned by agents/schemas/_insight.py. */
+export interface InsightProposalDTO {
+  claim: string; evidence_refs: string[]; reasoning: string; limitations: string;
+}
+export interface SavedInsightDTO {
+  insight_id: string; role: string; index: number; revision: number; snapshot_id: string; catalog_id: string;
+  status: "accepted" | "pending" | "excluded"; proposal: InsightProposalDTO;
+  rendered: { claim: string; reasoning: string; limitations: string };
+  fact_ids: string[]; source_ids: string[]; numeric_ids: string[]; issues: string[];
+}
+export interface InsightReportDTO {
+  schema_version: "insight-research-v1"; construction: "native"; run_id: string; ticker: string;
+  mode: "company_research"; analysis_date: string;
+  catalogs: Record<string, { snapshot_id: string; sources: SourceEvidenceV1DTO[];
+    evidence: Array<{ ref: string; fact_id: string; text: string; source_ids: string[] }>;
+    numbers: Array<{ ref: string; anchor: NumericAnchorV1DTO }> }>;
+  insights: SavedInsightDTO[];
+  reviews: Array<{ target_id: string; status: "challenged" | "no_counterevidence" | "unreviewed" | "failed";
+    concern: string | null; reasoning: string; source_ids: string[]; note: SavedInsightDTO | null }>;
+  responses: Array<{ target_id: string; action: "maintain" | "revise" | "withdraw" | "uncertain";
+    reasoning: string; source_ids: string[]; replacement_id: string | null; note: SavedInsightDTO }>;
+  synthesis: { judgement: string; stance: "favorable" | "neutral" | "unfavorable" | null;
+    reasoning: string; limitations: string; next_check: string; insight_ids: string[]; reference_ids: Record<string, string> } | null;
+  gaps: string[]; stages: Record<string, string>;
+  company_basics?: CompanyBasicsV1DTO | null;
+  focus_question: string | null; focus_insights: SavedInsightDTO[];
+  superseded_ids: string[]; search_requests: Record<string, string[]>;
+}
+
 export type ResearchRecordResponseDTO =
   | { state: "ready"; schema_version: 1; run_id: string; record: ResearchRecordDTO }
+  | { state: "insight_ready"; schema_version: 1; run_id: string; record: InsightReportDTO }
   | { state: "unavailable"; schema_version: 1; run_id: string; reason_code: "not_published" | "publication_failed" | "corrupt" | "source_case_mismatch" };
 
 /** SSE terminal events — the stream is closed by the server after these. */
@@ -2453,7 +2487,7 @@ export interface CatalystLegacyRecordDTO {
 
 // Canonical: web/reader_process_models.py; proposals: agents/schemas/_native_stage.py.
 export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks" | "focus_response" | "response_operating_quality" | "response_event_context" | "response_market_context";
-export type OutputAvailability = "available" | "stage_available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
+export type OutputAvailability = "available" | "stage_available" | "insight_stage_available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
 export interface ObservedCountDTO { value: number | null; completeness: "complete" | "known_lower_bound" | "not_recorded" | "unavailable"; basis: string }
 export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO; focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null }
 export interface ReaderRoleDTO {
@@ -2497,7 +2531,7 @@ export interface ChallengeCheckOutcomeV1DTO {
   reason: ChallengeVerifiabilityDTO | "minor_unclassified" | null; task_id: string | null; plan_sha256: string | null;
   inputs: Array<{ input_index: number; availability: "available" | "missing" | "unqualified" | "availability_unknown"; reason: string; evidence_ids: string[] }>;
 }
-export interface ChallengesProposalDTO { challenges: Array<Partial<ChallengeTestV1DTO> & { hypothesis_id: string; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; proposed_test: string; condition_id: string | null; check_id?: EvidenceCheckId | null; observed_risk?: "cash_conversion.cfo_yoy_decline" | null; observation_date?: string | null }> }
+export interface ChallengesProposalDTO { challenges: Array<Partial<ChallengeTestV1DTO> & { hypothesis_id: string; statement: string; severity: "minor" | "material" | "critical"; risk_type: "evidence_quality" | "operations" | "governance" | "market" | "valuation" | "unclassified"; proposed_test: string; condition_id: string | null; condition_index?: number | null; check_id?: EvidenceCheckId | null; observed_risk?: "cash_conversion.cfo_yoy_decline" | null; observation_date?: string | null }> }
 export interface SynthesisProposalDTO { judgement: string; dimensions: DimensionAssessmentV1DTO[]; key_claim_ids: string[]; primary_challenge_id: string | null; next_check: string; challenge_assessments: Array<{ challenge_id: string; outcome: "unresolved"; rationale: string }> }
 export interface SynthesisProposalV3DTO extends SynthesisProposalDTO, InvestmentFieldsDTO {
   investment_stance: Exclude<InvestmentFieldsDTO["investment_stance"], null>;
@@ -2505,6 +2539,7 @@ export interface SynthesisProposalV3DTO extends SynthesisProposalDTO, Investment
 }
 export interface ResponsesProposalDTO { responses: ResearchResponseProposalDTO[] }
 export interface ReaderAgentDTO {
+  insight_record?: InsightReportDTO | null;
   challenge_reviews?: Array<{hypothesis_id: string; disposition: "challenged" | "no_additional_counterevidence"; rationale: string; supporting_fact_ids: string[]}>;
   factual_premises?: Array<PremiseReceiptV1DTO & {text: string}>;
   schema_version: 1; run_id: string; source_sequence: number; role_key: AgentKey; availability: OutputAvailability; reason_code: string | null; origin: "model" | "code"; input_description: string;
@@ -2528,6 +2563,7 @@ export interface ResearchFocusResponseDTO {
   numeric_attribution?: NumericRecordedStageV1DTO | null;
 }
 export interface ReaderFocusDTO {
+  insight_response?: SavedInsightDTO[] | null;
   schema_version: 1; run_id: string; source_sequence: number; workflow_version: string | null;
   state: "ready" | "pending" | "unavailable" | "not_applicable"; focus: string | null; response: ResearchFocusResponseDTO | null;
   reason_code: "focus_not_requested" | "legacy_question_semantics" | "unsupported_profile" | "workflow_unsupported" | "publication_pending" | "not_published" | "publication_failed" | "corrupt" | "base_unavailable" | null;

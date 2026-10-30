@@ -59,7 +59,7 @@ export function useReaderFocus(runId: string, process: ReaderProcessDTO | null) 
   useEffect(() => {
     const controller = new AbortController();
     setResponse(null); setError(false);
-    if (sequence === undefined || !["evidence-production-v6", "evidence-production-v7", "evidence-production-v8"].includes(version ?? "")) return () => controller.abort();
+    if (sequence === undefined || !["evidence-production-v6", "evidence-production-v7", "evidence-production-v8", "evidence-production-v9"].includes(version ?? "")) return () => controller.abort();
     void getReaderFocus(runId, sequence, controller.signal).then(next => {
       if (controller.signal.aborted) return;
       if (next.run_id !== runId || next.source_sequence !== sequence || next.workflow_version !== version) throw new Error("Reader focus identity mismatch");

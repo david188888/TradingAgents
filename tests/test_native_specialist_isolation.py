@@ -32,7 +32,7 @@ def checkpoint(tmp_path):
     store.create_run(snapshot)
     # This suite freezes the pre-numeric V7 protocol. Fresh numeric identities
     # are exercised separately with their required envelope and catalog.
-    return CatalystJournal(DurableRunObserver(store, snapshot.run_id, development_assertions=False), native_identity(request, numeric_narrative_policy=False))
+    return CatalystJournal(DurableRunObserver(store, snapshot.run_id, development_assertions=False), native_identity(request, numeric_narrative_policy=False, workflow_version="evidence-production-v8"))
 
 
 def mixed(kind="fact"):
@@ -179,7 +179,7 @@ def test_resume_accepts_absent_policy_and_rejects_unknown_policy(checkpoint):
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1", effective_config=CONFIG)
     assert checkpoint.state["identity"]["specialist_reference_policy"] == SPECIALIST_REFERENCE_POLICY
     validate_native_resume(checkpoint.observer.store, checkpoint.ledger.run_id, request)
-    identity = native_identity(request, specialist_reference_policy=False, numeric_narrative_policy=False)
+    identity = native_identity(request, specialist_reference_policy=False, numeric_narrative_policy=False, workflow_version="evidence-production-v8")
     checkpoint.put("identity", identity)
     validate_native_resume(checkpoint.observer.store, checkpoint.ledger.run_id, request)
     identity["specialist_reference_policy"] = "unknown"

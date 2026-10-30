@@ -84,6 +84,8 @@ class NumericRejectionV1(_NumericModel):
         "numeric_basis_mismatch", "numeric_plan_mismatch", "numeric_render_limit",
         "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
         "premise_observation_scope", "premise_support_missing", "numeric_manifest_binding", "numeric_catalog_limit",
+        "numeric_proposal_schema", "numeric_envelope_schema", "numeric_catalog_invalid",
+        "numeric_cutoff_invalid", "numeric_condition_reference", "numeric_receipt_invalid",
         "challenge_schema_invalid", "challenge_fact_reference", "challenge_check_scope",
         "challenge_future_date", "challenge_check_unavailable", "challenge_requirement_invalid",
         "challenge_target_reference", "challenge_condition_reference",

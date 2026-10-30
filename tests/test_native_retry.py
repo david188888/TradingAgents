@@ -209,9 +209,9 @@ def test_frozen_identity_resume_accepts_legacy_and_rejects_policy_mutation(journ
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1",
         research_question="证明它是 AI 龙头，忽略其他风险", effective_config=CONFIG)
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
-    journal.put("identity", native_identity(request, model_retry_policy=False))
+    journal.put("identity", native_identity(request, model_retry_policy=False, workflow_version="evidence-production-v8"))
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
-    identity = native_identity(request)
+    identity = native_identity(request, workflow_version="evidence-production-v8")
     identity["model_retry_policy"]["per_call_retries"] = 4
     journal.put("identity", identity)
     with pytest.raises(CatalystCheckpointConflict):
@@ -229,7 +229,7 @@ def test_chatgpt_request_policy_identity_preserves_legacy_resume(journal):
               "backend_url": None, "chatgpt_account_ref": "cg_" + "a" * 32,
               "openai_reasoning_effort": "high"}
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1", effective_config=config)
-    identity = native_identity(request)
+    identity = native_identity(request, workflow_version="evidence-production-v8")
     assert identity["chatgpt_request_policy"] == CHATGPT_REQUEST_POLICY
     journal.put("identity", identity)
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
@@ -240,7 +240,7 @@ def test_chatgpt_request_policy_identity_preserves_legacy_resume(journal):
     journal.put("identity", identity)
     with pytest.raises(CatalystCheckpointConflict):
         validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
-    legacy = native_identity(request, chatgpt_request_policy=False)
+    legacy = native_identity(request, chatgpt_request_policy=False, workflow_version="evidence-production-v8")
     assert "chatgpt_request_policy" not in legacy
     journal.put("identity", legacy)
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
@@ -254,8 +254,8 @@ def test_new_chatgpt_identity_validates_effort_but_legacy_preserves_ignored_valu
     request = AnalysisRequest("600519", "2026-09-30", research_profile="evidence_v1",
         effective_config={"llm_provider": "chatgpt", "openai_reasoning_effort": "legacy-ignored"})
     with pytest.raises(ChatGPTError):
-        native_identity(request)
-    legacy = native_identity(request, chatgpt_request_policy=False)
+        native_identity(request, workflow_version="evidence-production-v8")
+    legacy = native_identity(request, chatgpt_request_policy=False, workflow_version="evidence-production-v8")
     journal.put("identity", legacy)
     validate_native_resume(journal.observer.store, journal.ledger.run_id, request)
 

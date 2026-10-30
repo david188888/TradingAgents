@@ -71,10 +71,16 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, envelope_
         code = diagnostic.upstream_code
     if isinstance(code, str) and code in _UPSTREAM_CODES:
         value["upstream_code"] = code
-    if isinstance(exc, SynthesisReferenceError):
-        value.update(category="reference_validation", detail_code=exc.code,
-                     synthesis_reference_issues=[{"code": code, "path": list(path)}
-                                                 for code, path in exc.issues[:8]])
+    if isinstance(exc, SynthesisReferenceError) or getattr(exc, "section_issues", None):
+        sections = exc.issues if isinstance(exc, SynthesisReferenceError) else exc.section_issues
+        value.update(category="reference_validation", detail_code="section_validation",
+                     detail_codes=sorted({code for code, _ in sections}),
+                     **{"synthesis_reference_issues" if stage == "synthesis" else "section_reference_issues":
+                        [{"code": code, "path": list(path)} for code, path in sections[:8]]})
+        if getattr(exc, "field_name", None):
+            from tradingagents.research.numeric_narrative import _TEXT_FIELDS
+            if exc.field_name in _TEXT_FIELDS:
+                value["field_name"] = exc.field_name
     elif isinstance(exc, json.JSONDecodeError):
         value.update(category="invalid_json", json_error_offset=exc.pos)
     elif isinstance(exc, BudgetExhausted):
@@ -86,6 +92,8 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, envelope_
         "premise_binding_invalid", "premise_binding_missing", "premise_observation_unknown",
         "premise_observation_scope", "premise_support_missing",
         "numeric_manifest_binding", "numeric_catalog_limit",
+        "numeric_proposal_schema", "numeric_envelope_schema", "numeric_catalog_invalid",
+        "numeric_cutoff_invalid", "numeric_condition_reference", "numeric_receipt_invalid",
         "challenge_review_coverage", "challenge_schema_invalid", "challenge_fact_reference", "challenge_check_scope",
         "challenge_future_date", "challenge_check_unavailable", "challenge_requirement_invalid",
         "challenge_target_reference", "challenge_condition_reference",
@@ -135,6 +143,19 @@ def safe_model_diagnostic(stage, phase, category, exc, *, schema=None, envelope_
     elif isinstance(exc, ValueError) and str(exc) in _BINDINGS:
         value.update(category="invalid_json" if str(exc) == "duplicate JSON key" else "reference_validation",
                      detail_code=_BINDINGS[str(exc)])
+    locations = getattr(exc, "validation_locations", ())
+    if locations:
+        from tradingagents.agents.schemas._numeric_narrative import NumericCatalogV1
+        from tradingagents.agents.schemas._numeric_stage import (
+            NumericFieldProofV1,
+            NumericStageEnvelopeV1,
+        )
+        names = {"numeric_catalog", "numeric_analysis_date", "change_conditions", "text"}
+        for model in (schema, envelope_schema, NumericStageEnvelopeV1, NumericFieldProofV1, NumericCatalogV1):
+            if model is not None:
+                names.update(_fields(model))
+        value["issues"] = [{"path": [p if type(p) is int or p in names else "<undeclared>" for p in path]}
+                           for path in locations[:8]]
     metadata = getattr(response, "response_metadata", None)
     if (isinstance(metadata, dict) and isinstance(metadata.get("finish_reason"), str)
             and metadata["finish_reason"] in {"length", "stop", "content_filter", "tool_calls"}):

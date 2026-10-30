@@ -23,6 +23,13 @@ function show(value: ReaderAgentDTO, role: AgentKey = value.role_key) {
 
 describe("independently readable saved stage outputs",()=>{
   beforeEach(()=>{HTMLElement.prototype.scrollIntoView=vi.fn();});
+  it("shows bound condition details for zero-based index references",()=>{
+    show({...output("challenge"),challenge_ids:["challenge.saved"],proposal:{challenges:[{
+      hypothesis_id:record.hypotheses[0].hypothesis_id,statement:"条件引用待核查",severity:"minor",
+      risk_type:"operations",proposed_test:"复核后续披露",condition_id:null,condition_index:0,
+    }]}});
+    expect(screen.getByText("绑定的条件与研究字段",{selector:"summary"})).toBeVisible();
+  });
   it("shows explicit no-counterevidence reviews even with an empty challenge list",()=>{
     show({...output("challenge"),proposal:{challenges:[]},challenge_reviews:[{
       hypothesis_id:record.hypotheses[0].hypothesis_id,disposition:"no_additional_counterevidence",

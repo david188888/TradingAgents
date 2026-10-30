@@ -2,7 +2,9 @@
 
 Status: Current — navigation pointer.
 
-Maintained explanation: [owning reference](research-record.md#numeric-and-factual-support).
+New Insight output: [V9 references and numeric tokens](research-record.md#insight-first-v9).
+
+Retained V1/V2 envelope explanation: [owning reference](research-record.md#numeric-and-factual-support).
 Canonical detail or related owner: [source](../../tradingagents/research/numeric_narrative.py).
 
 Numeric fragment qualification, scoped compilation and receipt replay are summarized in the shared contract; the compiler owns the full grammar and limits.

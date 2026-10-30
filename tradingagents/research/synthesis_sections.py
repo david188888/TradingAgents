@@ -154,7 +154,7 @@ def _extract(envelope, section_id):
     return result
 
 
-def parse_sections(envelope, context, *, phase, previous=None, on_progress=None):
+def parse_sections(envelope, context, *, phase, previous=None, on_progress=None, diagnostics=None):
     from tradingagents.research.numeric_narrative import (
         NumericNarrativeError,
         compile_numeric_stage,
@@ -193,6 +193,16 @@ def parse_sections(envelope, context, *, phase, previous=None, on_progress=None)
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             failures[section_id] = (exc.code if isinstance(exc, NumericNarrativeError) else
                                     "schema_validation" if isinstance(exc, (ValidationError, TypeError)) else "reference_validation")
+            if diagnostics is not None:
+                locations = (tuple(e["loc"] for e in exc.errors()) if isinstance(exc, ValidationError)
+                             else getattr(exc, "validation_locations", ()))
+                for path in locations:
+                    if len(path) > 1 and path[0] in {"dimensions", "adjudications"}:
+                        identifier = "dimension" if path[0] == "dimensions" else "challenge_id"
+                        index = next(i for i, item in enumerate(envelope["proposal"][path[0]])
+                                     if isinstance(item, dict) and item.get(identifier) == section_id.split(":", 1)[1])
+                        path = (path[0], index, *path[2:])
+                    diagnostics.append(path)
         else:
             receipts.append(receipt)
             accepted.add(section_id)
