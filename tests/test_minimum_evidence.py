@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from tradingagents.agents.schemas._evidence_checks import OfficialNumericRowV1
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
+from tradingagents.agents.schemas._evidence_record import EvidenceRecord
 from tradingagents.dataflows.disclosure_documents_v2 import (
     NUMERIC_SOURCE,
     cash_bridge_rows,
@@ -32,9 +32,7 @@ from tradingagents.research.evidence_freeze import (
     FrozenEvidenceDraft,
 )
 from tradingagents.research.minimum_evidence import (
-    CALCULATION_VERSION,
     cfo_decline,
-    challenge_assessments,
     compute_checks,
 )
 from tradingagents.research.native_record import build_native_record
@@ -98,7 +96,7 @@ def fixture(*, forecasts=True, peers=True, snapshot=True, numeric_mutator=None):
             "time_basis": "offline fixture", "value_basis": "explicit units"})
         context[key] = payload
     caps = tuple(FrozenCapability(capability=cap, status=CapabilityStatus.QUALIFIED, reason="offline fixture") for cap in sorted({p[0] for p in payloads}))
-    draft = FrozenEvidenceDraft(run_id="minimum-600803", ticker="600803", cutoff="2026-10-05", policy_version="catalyst-evidence-policy-v1",
+    draft = FrozenEvidenceDraft(run_id="minimum-600803", ticker="600803", cutoff="2026-10-05", policy_version="source-collection-policy-v1",
         draft_id="minimum-fixture", frozen_at=datetime(2026, 10, 5, 8, tzinfo=timezone.utc), evidence=tuple(evidence), capabilities=caps)
     return draft, context
 
@@ -172,24 +170,13 @@ def test_dated_forecast_passes_without_a_target_snapshot():
     assert checks["operating_disclosures"].status == checks["cash_conversion"].status == "passed"
 
 
-def test_legacy_calculation_version_record_stays_readable():
-    """A v1 record replays under the rule that produced it, not the new rule."""
+def test_retired_calculation_version_cannot_impersonate_current_checks():
     current = record()
-    assert current.evidence_checks.calculation_version == CALCULATION_VERSION
     assert compute_checks(current) == current.evidence_checks
-
     payload = current.model_dump(mode="json")
     payload["evidence_checks"]["calculation_version"] = "minimum-evidence-v1"
-    # Make the stored checks disagree with the v2 rule so the gate is load-bearing.
-    payload["evidence_checks"]["checks"][2]["status"] = "passed" if payload["evidence_checks"]["checks"][2]["status"] != "passed" else "unavailable"
-    legacy = ResearchRecordV1.model_validate(payload)
-    assert legacy.evidence_checks != compute_checks(legacy)
-
-    # An unrecognized version is rejected by the closed literal rather than
-    # being replayed under the current rule.
-    payload["evidence_checks"]["calculation_version"] = "minimum-evidence-v3"
     with pytest.raises(ValidationError):
-        ResearchRecordV1.model_validate(payload)
+        EvidenceRecord.model_validate(payload)
 
 
 def test_cash_bridge_blank_required_cell_duplicate_or_changed_sum_cannot_pass():
@@ -247,7 +234,7 @@ def test_saved_record_recomputes_input_binding_requirements_and_arithmetic():
         else:
             value["evidence_checks"]["checks"][0]["satisfied"] = []
         with pytest.raises(ValidationError, match="checks"):
-            ResearchRecordV1.model_validate(value)
+            EvidenceRecord.model_validate(value)
 
 
 def test_forecast_window_years_positive_numbers_and_institution_dedup():
@@ -284,10 +271,6 @@ def test_peer_candidates_exclude_aggregates_target_and_duplicate_wrappers():
         peer_candidates({"success": True, "result": {"data": rows}}, ts_code="600803.SH")
 
 
-def test_old_record_has_no_new_fields_and_no_checks_by_default():
-    old = build_native_record(*fixture(), mode="company_research", include_valuation=True)
-    assert "evidence_checks" not in old.model_dump() and "challenge_bindings" not in old.model_dump()
-    assert ResearchRecordV1.model_validate_json(old.model_dump_json()).model_dump_json() == old.model_dump_json()
 
 
 def bound_record(binding):
@@ -296,16 +279,9 @@ def bound_record(binding):
     value = {**original.model_dump(mode="json"), "challenges": [{"challenge_id": "challenge.fixture", "target_claim_ids": [fact.claim_id],
         "statement": "现金流原因与持续性仍不确定。", "severity": "critical", "risk_type": "operations", "proposed_test": "核对本期并保留后续观察。"}],
         "challenge_bindings": [{"challenge_id": "challenge.fixture", **binding}]}
-    return ResearchRecordV1.model_validate(value)
+    return EvidenceRecord.model_validate(value)
 
 
-@pytest.mark.parametrize("binding,outcome", [({"check_id": "cash_conversion"}, "evidence_sufficient"),
-    ({"check_id": "cash_conversion", "observed_risk": "cash_conversion.cfo_yoy_decline"}, "risk_supported"),
-    ({"check_id": "cash_conversion", "observation_date": "2027-03-31"}, "future_observation"), ({}, "unresolved")])
-def test_local_resolution_never_resolves_economic_parent(binding, outcome):
-    result = challenge_assessments(bound_record(binding))[0]
-    assert result.outcome == outcome and result.economic_outcome == "unresolved"
-    assert result.answered_question is None or result.answered_question == "当前及上年同期间的净利润到经营现金流桥是否完整、可核对？"
 
 
 def test_nonpositive_base_cannot_manufacture_decline_risk():

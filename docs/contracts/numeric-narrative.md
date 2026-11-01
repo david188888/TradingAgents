@@ -1,17 +1,5 @@
-# Numeric narrative
+# numeric-narrative
 
-Status: Current — navigation pointer.
+Status: Retired
 
-New Insight output: [V9 references and numeric tokens](research-record.md#insight-first-v9).
-
-Retained V1/V2 envelope explanation: [owning reference](research-record.md#numeric-and-factual-support).
-Canonical detail or related owner: [source](../../tradingagents/research/numeric_narrative.py).
-
-Numeric fragment qualification, scoped compilation and receipt replay are summarized in the shared contract; the compiler owns the full grammar and limits.
-
-<!-- Compatibility anchors for existing section links. -->
-<a id="frozen-numeric-narrative"></a>
-<a id="limits-and-validation-evidence"></a>
-<a id="model-envelope-and-compilation"></a>
-<a id="persistence-publication-and-reading"></a>
-<a id="qualification-and-formatting"></a>
+This document's former workflow was removed during the V9-only cleanup. Its executors, model-output adapters and diagnostic tools are no longer supported. See the [current Insight contract](research-record.md) and [architecture](../../ARCHITECTURE.md). Dated implementation history remains in the [archive](../archive/README.md).

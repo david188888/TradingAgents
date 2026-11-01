@@ -33,8 +33,8 @@ See the [documentation index](../../README.md).
 
 ## evidence_v1：实际五个模型阶段
 
-入口为 [NativeModelCaller](../../../tradingagents/execution/native_model.py)，
-流程由 [native_research.py](../../../tradingagents/graph/native_research.py) 固定组织。
+入口为 `NativeModelCaller`（历史路径 `../../../tradingagents/execution/native_model.py`，V9 清理已移除），
+流程由 `native_research.py`（历史路径 `../../../tradingagents/graph/native_research.py`，V9 清理已移除） 固定组织。
 当前全部读取同一全局 effort；只有 synthesis 选择 deep 模型，其余选择 quick 模型。
 
 | 阶段 | 当前任务 | 候选 effort | 调整边界与验收重点 |
@@ -54,7 +54,7 @@ C1 确定性核查、资格校验与 Reader/Markdown 渲染不需要模型 effor
 
 ## classic：默认路径的主要 agent
 
-[GraphSetup](../../../tradingagents/graph/setup.py) 将四个分析师及多空研究者连接到 quick
+`GraphSetup`（历史路径 `../../../tradingagents/graph/setup.py`，V9 清理已移除） 将四个分析师及多空研究者连接到 quick
 客户端，Research Manager 使用 deep 客户端；两个客户端仍用同一全局 effort。
 “quick”不是低档位，“deep”也不是另一种 effort。
 
@@ -78,11 +78,11 @@ classic 的 analyst 工具循环、结构化回退、经理纠错可能产生额
 | 调用位置 | 什么时候执行/当前设置 | 候选与风险 |
 | --- | --- | --- |
 | [新闻语义聚类](../../../tradingagents/dataflows/consistency.py) | consistency 默认开启；有模型且多于一条新闻时可调用。curator 在多源成功时使用，Evidence Steward 评估原始/补充新闻也使用；读取全局 effort | `low` 候选。必须检查不同公司、不同报告期、意向与履行被误合并；聚类影响 cross_source 权重，不是无风险去重。 |
-| [新闻覆盖顾问](../../../tradingagents/dataflows/news_advisor.py) | news_advisor 默认开启；Evidence Steward 初始资格不足且未硬停时识别缺口并生成最多三条查询；读取全局 effort | `low` 对照候选。检查关键公告/财务缺口遗漏、无必要搜索；涉及关键资料取舍时不宜直接降档。 |
+| `新闻覆盖顾问`（历史路径 `../../../tradingagents/dataflows/news_advisor.py`，V9 清理已移除） | news_advisor 默认开启；Evidence Steward 初始资格不足且未硬停时识别缺口并生成最多三条查询；读取全局 effort | `low` 对照候选。检查关键公告/财务缺口遗漏、无必要搜索；涉及关键资料取舍时不宜直接降档。 |
 | 单条新闻 Layer 1 分类 | 默认关闭；显式开启后一次紧凑批量分类，仍用传入的全局客户端 | 较适合 `low`。只做方向分类，保留“不足以判断”，校验 ID、遗漏和否定语义；不要为了测试降档而启用当前关闭的调用。 |
 | 新闻 Layer 2 复查 | 默认关闭；启用后按冲突/不足触发，且需要缓存目录；仍用同一客户端 | `high`。它整理重大风险与证据缺口，名称中的“deeper”目前没有自动提高 effort。 |
-| [辩论上下文压缩](../../../tradingagents/graph/setup.py) | 超过上下文限制或溢出时摘要早期公开主张，使用 quick 客户端；有代码提取回退 | `low` 候选。保留原文出处、否定、分歧、未解决风险；不能将压缩变成第二次裁决。需比较代码提取是否已足够。 |
-| [classic 完成后辩论索引](../../../tradingagents/web/debate_summary.py) | 完成后后台生成，缺缓存的 classic 读取也可生成；仅传 provider/model，**未传全局 effort**，官方当前默认 high | `low` 候选，失败不改原运行结果。摘要仍可能误导阅读，要保留争议及原记录入口。native/catalyst 跳过后台调度；通用视图缓存仍可进入 helper，但无辩论轮次时不调用模型。不能为 native Reader 新增此调用。 |
+| `辩论上下文压缩`（历史路径 `../../../tradingagents/graph/setup.py`，V9 清理已移除） | 超过上下文限制或溢出时摘要早期公开主张，使用 quick 客户端；有代码提取回退 | `low` 候选。保留原文出处、否定、分歧、未解决风险；不能将压缩变成第二次裁决。需比较代码提取是否已足够。 |
+| `classic 完成后辩论索引`（历史路径 `../../../tradingagents/web/debate_summary.py`，V9 清理已移除） | 完成后后台生成，缺缓存的 classic 读取也可生成；仅传 provider/model，**未传全局 effort**，官方当前默认 high | `low` 候选，失败不改原运行结果。摘要仍可能误导阅读，要保留争议及原记录入口。native/catalyst 跳过后台调度；通用视图缓存仍可进入 helper，但无辩论轮次时不调用模型。不能为 native Reader 新增此调用。 |
 
 这里的默认来自仓库配置，不代表用户本地覆盖值；本轮未读取密钥、用户预设或历史报告。
 

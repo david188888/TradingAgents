@@ -1,6 +1,6 @@
 """Host-assigned search scope, shared budget and recovery without model gates."""
 
-from tests.test_search_reviews import harness
+from tests.v9_search_fixtures import harness
 from tradingagents.execution.budget import BudgetBucket
 from tradingagents.execution.insight_search import collect_insight_supplement
 

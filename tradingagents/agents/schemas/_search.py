@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ._research_record import RecordClaimV1, SourceEvidenceV1
+from ._evidence import RecordClaimV1, SourceEvidenceV1
 
 Provider = Literal['deepseek', 'tavily']
 Role = Literal['operating_quality', 'event_context', 'market_context']

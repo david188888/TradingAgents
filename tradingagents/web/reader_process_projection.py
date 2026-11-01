@@ -1,60 +1,18 @@
-"""Bounded, read-only native process and validated role output projections."""
-
-from __future__ import annotations
-
+"""Read-only current Insight stage material and budget observations."""
 from dataclasses import dataclass
 from typing import Any
 
-from tradingagents.agents.schemas._native_stage import (
-    ChallengesProposalV1,
-    ChallengesProposalV2,
-    ChallengesProposalV3,
-    SpecialistProposalV1,
-    SynthesisProposalV1,
-    SynthesisProposalV2,
-    SynthesisProposalV3,
-    saved_specialist_acceptance,
-)
-from tradingagents.agents.schemas._verification_plan import canonical_sha256
-from tradingagents.research.native_versions import (
-    BASE_QUESTIONS,
-    FOCUS_KERNEL_VERSION,
-    FOCUS_WORKFLOW_VERSION,
-    RESPONSE_ROLES,
-    SEARCH_WORKFLOW_VERSION,
-    SPECIALIST_REFERENCE_POLICY,
-    UNIFIED_KERNEL_VERSION,
-    UNIFIED_QUESTION,
-    UNIFIED_WORKFLOW_VERSION,
-)
-from tradingagents.research.record_codec import ResearchRecord, parse_research_record
-from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
-from tradingagents.runtime.native_observation import SDK_OBSERVATION_KEY, NativeSDKObservationV1
-from tradingagents.web.focus_projection import project_reader_focus
-from tradingagents.web.native_reader_versions import saved_dimensions_match, saved_fact_views
+from tradingagents.research.insight_report import parse_insight_report
+from tradingagents.runtime.research_checkpoint import load_checkpoint
 from tradingagents.web.reader_process_models import (
     AgentKey,
-    ClaimOrigin,
     NativeCounts,
     ObservedCount,
-    OutputRelation,
     ReaderAgentDTO,
     ReaderProcessDTO,
-    ReaderRole,
 )
 from tradingagents.web.research_record_projection import project_research_record
 
-VERSIONS = {
-    "evidence-production-v9": "insight-research-v1",
-    "evidence-production-v1": "native-research-kernel-v1",
-    "evidence-production-v2": "native-research-kernel-v1",
-    "evidence-production-v3": "native-research-kernel-v2",
-    "evidence-production-v4": "native-research-kernel-v3",
-    "evidence-production-v5": "native-research-kernel-v4",
-    FOCUS_WORKFLOW_VERSION: FOCUS_KERNEL_VERSION,
-    UNIFIED_WORKFLOW_VERSION: UNIFIED_KERNEL_VERSION,
-    SEARCH_WORKFLOW_VERSION: "native-research-kernel-v7",
-}
 ROLE_INFO = {
     "evidence": (
         "证据冻结",
@@ -94,17 +52,9 @@ ROLE_INFO = {
     "focus_response": ("关注点回应", "在独立研究保存之后，依据已有证据补充回应用户关注点。",
                        "已保存的基础研究与用户关注点；不参与基础专项、挑战或综合。"),
 }
-for _key in RESPONSE_ROLES:
+for _key in ("response_operating_quality", "response_event_context", "response_market_context"):
     ROLE_INFO[_key] = ({"response_operating_quality": "经营与估值回应", "response_event_context": "事件回应", "response_market_context": "市场回应"}[_key],
         "逐条回应独立挑战，修正或撤回观点并保留未知项。", "自己的冻结事实、定向挑战和已保存核查；只回应一次。")
-
-SAFE_FAILURES = {
-    "document_parser_not_installed",
-    "source_transport_unavailable",
-    "document_fetch_failed",
-    "document_parse_failed",
-}
-MODEL_ROLES = tuple(key for key in ROLE_INFO if key not in {"evidence", "code_checks", "focus_response"})
 
 
 def count(value=None, *, complete="not_recorded", basis="not_recorded"):
@@ -112,118 +62,20 @@ def count(value=None, *, complete="not_recorded", basis="not_recorded"):
 
 
 def native_counts(checkpoint, *, role=None):
-    """Budget dispatch and SDK authorization are different measurements."""
-    if checkpoint is None:
-        missing = count()
-        return NativeCounts(
-            main_budget=missing,
-            repair_budget=missing,
-            sdk_main=missing,
-            sdk_repair=missing,
-            sdk_total=missing,
-            data_capability=missing,
-            data_http=missing,
-        )
-    records = [r for r in checkpoint["records"] if r.get("dispatched_at") is not None]
+    records = [r for r in checkpoint.get("records", ()) if r.get("dispatched_at") is not None] if checkpoint else []
     scoped = [r for r in records if role is None or r.get("stage") == "native." + role]
-
     def budget(bucket, rows=scoped):
-        return count(
-            sum(r["bucket"] == bucket for r in rows),
-            complete="complete",
-            basis="budget_dispatch_authorization",
-        )
-
-    coverage = False
-    focus_coverage = False
-    try:
-        marker = NativeSDKObservationV1.model_validate(checkpoint.get(SDK_OBSERVATION_KEY))
-        coverage = marker.complete and checkpoint["identity"].get("workflow_version") in VERSIONS
-        focus_coverage = coverage and marker.prior_focus_authorizations is not None
-    except (ValueError, TypeError):
-        pass
-    known_workflow = checkpoint["identity"].get("workflow_version") in VERSIONS
-    flags = (
-        sum(
-            checkpoint.get("native.model." + key + ".dispatched") is True
-            for key in ((role,) if role in MODEL_ROLES else () if role else MODEL_ROLES)
-        )
-        if known_workflow
-        else 0
-    )
-    repair = sum(r["bucket"] == "structured_repair" for r in scoped) if known_workflow else 0
-    from tradingagents.execution.native_retry import MODEL_RETRY_POLICY
-
-    policy_recorded = checkpoint["identity"].get("model_retry_policy") == MODEL_RETRY_POLICY
-    retry_rows = [r for r in scoped if r["bucket"] == "network_retry"]
-    if retry_rows and (not policy_recorded or any(
-            checkpoint.get(r["logical_call_id"].replace("native.", "native.model.", 1) + ".dispatched") is not True
-            for r in retry_rows)):
-        coverage = False
-    if known_workflow and policy_recorded:
-        roles = (role,) if role in MODEL_ROLES else () if role else MODEL_ROLES
-        flags += sum(checkpoint.get(f"native.model.{key}.main.retry.{index}.dispatched") is True
-                     for key in roles for index in range(1, 4))
-        repair += sum(checkpoint.get(f"native.model.{key}.repair.retry.{index}.dispatched") is True
-                      for key in roles for index in range(1, 4))
-
-    if checkpoint['identity'].get('workflow_version') == SEARCH_WORKFLOW_VERSION:
-        def review_scope(key, prefix):
-            parts = key.removeprefix(prefix).split('.')
-            return len(parts) >= 3 and (role is None or parts[1] == role)
-
-        # Review main/retry authorizations use dynamic snapshot-bound stage
-        # names. Repair dispatch is recorded directly on its budget token.
-        for key, value in checkpoint.items():
-            if (key.startswith('native.model.search_review.') and key.endswith('.dispatched')
-                    and value is True and review_scope(key, 'native.model.search_review.')):
-                if '.repair.retry.' in key:
-                    repair += 1
-                else:
-                    flags += 1
-        repair += sum(r['bucket'] == 'search_review' and r['logical_call_id'].endswith('.repair')
-                      and review_scope(r['logical_call_id'], 'native.search_review.') for r in records)
-
-    def sdk(value):
-        return count(
-            value if coverage or value else None,
-            complete="complete" if coverage else "known_lower_bound" if value else "not_recorded",
-            basis="sdk_dispatch_authorization",
-        )
-
-    main, repairs = sdk(flags), sdk(repair)
-    has_focus = checkpoint["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
-    focus_flags = int(checkpoint.get("native.model.focus_response.dispatched") is True) if role in {None, "focus_response"} else 0
-    focus = count(focus_flags if focus_coverage or focus_flags else None,
-                  complete="complete" if focus_coverage else "known_lower_bound" if focus_flags else "not_recorded",
-                  basis="sdk_dispatch_authorization") if has_focus else count(0, complete="complete", basis="workflow_no_focus")
-    if has_focus and role is not None and role != "focus_response":
-        focus = count(0, complete="complete", basis="workflow_baseline_no_focus")
-    if has_focus and not checkpoint["identity"].get("research_question"):
-        focus = count(0, complete="complete", basis="workflow_focus_not_requested")
-    if role in {"evidence", "code_checks"}:
-        main = repairs = count(0, complete="complete", basis="code_no_model")
-    if role == "focus_response" and has_focus:
-        main = repairs = count(0, complete="complete", basis="workflow_focus_only")
-    total_complete = main.completeness == repairs.completeness == focus.completeness == "complete"
-    known = [item.value for item in (main, repairs, focus) if item.value is not None]
-    if not has_focus:
-        known = [item.value for item in (main, repairs) if item.value is not None]
-    total = count(
-        sum(known) if known else None,
-        complete="complete" if total_complete else "known_lower_bound" if known else "not_recorded",
-        basis="sdk_dispatch_authorization",
-    )
-    return NativeCounts(
-        main_budget=budget("main_analysis"),
-        repair_budget=budget("structured_repair"),
-        sdk_main=main,
-        sdk_repair=repairs,
-        sdk_total=total,
-        data_capability=budget("data_capability_calls", records),
-        data_http=budget("data_http_attempts", records),
-        focus_budget=budget("focus_response"), sdk_focus=focus,
-    )
+        return count(sum(r["bucket"] == bucket for r in rows), complete="complete" if checkpoint else "not_recorded",
+            basis="budget_dispatch_authorization")
+    # Each Insight transport has one durable dispatch authorization; no SDK retries.
+    def sdk(buckets):
+        return count(sum(r["bucket"] in buckets for r in scoped),
+            complete="complete" if checkpoint else "not_recorded", basis="sdk_dispatch_authorization")
+    return NativeCounts(main_budget=budget("main_analysis"), repair_budget=budget("structured_repair"),
+        sdk_main=sdk({"main_analysis", "search_review"}), sdk_repair=sdk({"structured_repair"}),
+        sdk_total=sdk({"main_analysis", "search_review", "structured_repair", "focus_response"}),
+        data_capability=budget("data_capability_calls", records), data_http=budget("data_http_attempts", records),
+        focus_budget=budget("focus_response"), sdk_focus=sdk({"focus_response"}))
 
 
 @dataclass
@@ -232,663 +84,48 @@ class Context:
     sequence: int
     events: list
     checkpoint: dict | None
-    record: ResearchRecord | None
-    seed: ResearchRecord | None
-    reason: str | None
-    store: Any = None
-    stage_reader: Any = None
+    record: Any
+    reason: str | None = None
 
 
 def _context(store, run_id, through=None):
     snapshot = store.read_snapshot(run_id)
     sequence = snapshot.latest_sequence if through is None else through
-    if sequence < 0 or sequence > snapshot.latest_sequence:
+    if not 0 <= sequence <= snapshot.latest_sequence:
         raise ValueError("reader_sequence_unavailable")
     events = store.read_events(run_id, through=sequence)
-    reason, cp, seed, record = None, None, None, None
-    if (snapshot.metadata or {}).get("research_profile") != "evidence_v1":
-        return Context(snapshot, sequence, events, None, None, None, "profile_not_applicable", store)
+    if snapshot.metadata.get("native_workflow_version") != "evidence-production-v9":
+        return Context(snapshot, sequence, events, None, None, "unsupported_version")
     try:
         cp = load_checkpoint(store, run_id, through=sequence)
-    except Exception:
-        reason = "checkpoint_unavailable"
-    if cp is None:
-        return Context(
-            snapshot, sequence, events, None, None, None, reason or "checkpoint_not_recorded", store
-        )
-    version = cp["identity"].get("workflow_version")
-    if version not in VERSIONS:
-        return Context(snapshot, sequence, events, cp, None, None, "workflow_unsupported", store)
-    try:
+        if cp is None:
+            return Context(snapshot, sequence, events, None, None, "checkpoint_not_recorded")
         identity = cp["identity"]
-        if (identity.get("ticker"), identity.get("mode"), identity.get("cutoff")) != (
-            snapshot.ticker,
-            snapshot.mode,
-            snapshot.analysis_date,
-        ):
-            raise ValueError("identity")
-        if version == 'evidence-production-v9':
-            from tradingagents.research.insight_report import parse_insight_report
-            public = project_research_record(store, run_id, through=sequence)
-            record = parse_insight_report(public['record']) if public['state'] == 'insight_ready' else None
-            return Context(snapshot, sequence, events, cp, record, None, None, store)
-        published = project_research_record(store, run_id, through=sequence)
-        if published["state"] != "ready":
-            if version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
-                return Context(snapshot, sequence, events, cp, None, None, "publication_pending", store)
-            reason = "publication_pending" if published["reason_code"] in {"not_published", "publication_failed"} else "output_identity_unavailable"
-            if reason != "publication_pending" or cp["results"].get("native.output") is None:
-                return Context(snapshot, sequence, events, cp, None, None, reason, store)
-        record = parse_research_record(published["record"] if published["state"] == "ready"
-                                                 else cp["results"]["native.output"]["record"])
-        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and record.assessment.research_question != (UNIFIED_QUESTION if version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else BASE_QUESTIONS[record.mode]):
-            raise ValueError("baseline_objective")
-        seed = parse_research_record(cp["native_seed"])
-        native_input = cp["native_input"]
-        expected_input = {
-            "workflow_version": VERSIONS[version],
-            "seed_sha256": canonical_sha256(seed),
-            "research_question": record.assessment.research_question,
-        }
-        from tradingagents.research.native_versions import COMPANY_RESEARCH_POLICY
-        company_policy = cp["identity"].get("company_research_policy")
-        if company_policy is not None:
-            if (company_policy != COMPANY_RESEARCH_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
-                    or company_policy not in record.limitations):
-                raise ValueError("company_policy")
-            expected_input["company_research_policy"] = company_policy
-        from tradingagents.research.native_versions import REPORT_DELIVERY_POLICY
-        report_policy = cp["identity"].get("report_delivery_policy")
-        if report_policy is not None:
-            if (report_policy != REPORT_DELIVERY_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
-                    or report_policy not in record.limitations):
-                raise ValueError("report_policy")
-            expected_input["report_delivery_policy"] = report_policy
-        policy = cp["identity"].get("specialist_reference_policy")
-        if policy is not None:
-            if policy != SPECIALIST_REFERENCE_POLICY or version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
-                raise ValueError("specialist_policy")
-            expected_input["specialist_reference_policy"] = policy
-        from tradingagents.research.numeric_integration import (
-            numeric_enabled,
-            validate_record_numeric,
-        )
-        if numeric_enabled(cp["identity"]):
-            from tradingagents.research.native_versions import NUMERIC_NARRATIVE_POLICY
-            expected_input["numeric_narrative_policy"] = NUMERIC_NARRATIVE_POLICY
-        from tradingagents.research.factual_premises import premise_enabled
-        if premise_enabled(cp["identity"]):
-            if version not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
-                raise ValueError("factual_premise_policy")
-            expected_input["factual_premise_policy"] = cp["identity"]["factual_premise_policy"]
-        if cp["identity"].get("challenge_check_policy") is not None:
-            from tradingagents.agents.schemas._challenge_verification import CHALLENGE_CHECK_POLICY
-            if cp["identity"]["challenge_check_policy"] != CHALLENGE_CHECK_POLICY:
-                raise ValueError("challenge_policy")
-            expected_input["challenge_check_policy"] = CHALLENGE_CHECK_POLICY
-        validate_record_numeric(seed, cp["identity"])
-        validate_record_numeric(record, cp["identity"])
-        if native_input != expected_input:
-            raise ValueError("input")
-        output = cp["results"]["native.output"]
-        if output["identity"] != native_input or canonical_sha256(
-            parse_research_record(output["record"])
-        ) != canonical_sha256(record):
-            raise ValueError("output")
-        if (seed.run_id, seed.ticker, seed.mode, seed.analysis_date, seed.construction) != (
-            record.run_id,
-            record.ticker,
-            record.mode,
-            record.analysis_date,
-            "native",
-        ):
-            raise ValueError("seed")
-        if (
-            seed.assessment
-            or seed.dialogue is not None
-            or seed.hypotheses
-            or seed.challenges
-            or seed.verifications
-            or len(seed.snapshots) != 1
-            or any(c.kind != "fact" for c in seed.claims)
-        ):
-            raise ValueError("seed_shape")
-        claims = {c.claim_id: c for c in record.claims}
-        sources = {s.evidence_id: s for s in record.evidence}
-        if (
-            any(claims.get(c.claim_id) != c for c in seed.claims)
-            or any(sources.get(s.evidence_id) != s for s in seed.evidence)
-            or seed.snapshots[0] not in record.snapshots
-        ):
-            raise ValueError("seed_content")
-    except Exception:
-        return Context(snapshot, sequence, events, cp, record, None, "output_identity_unavailable", store)
-    return Context(snapshot, sequence, events, cp, record, seed, reason, store)
-
-
-def _proposal(ctx, role):
-    cp, record, seed = ctx.checkpoint, ctx.record, ctx.seed
-    version = cp["identity"]["workflow_version"]
-    saved = cp["results"].get("native." + role)
-    if saved is None:
-        return None, (), ()
-    from tradingagents.agents.schemas._research_dialogue import ResponsesProposalV1
-    schema = (
-        ResponsesProposalV1 if role in RESPONSE_ROLES else
-        SpecialistProposalV1
-        if role in {"operating_quality", "event_context", "market_context"}
-        else (ChallengesProposalV3 if cp["identity"].get("challenge_check_policy") else ChallengesProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else ChallengesProposalV1)
-        if role == "challenge"
-        else (SynthesisProposalV3 if version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else SynthesisProposalV2 if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else SynthesisProposalV1)
-    )
-    proposal = schema.model_validate(saved["proposal"])
-    from tradingagents.research.numeric_integration import validate_cached_numeric
-    numeric_context = cp["results"].get("native.numeric.accepted." + role, {}).get("context")
-    if numeric_context is not None:
-        from types import SimpleNamespace
-        journal = SimpleNamespace(state=cp, ledger=SimpleNamespace(cached_result=lambda key: cp["results"].get(key)))
-        validate_cached_numeric(journal, role, proposal.model_dump(mode="json"), numeric_context, schema)
-    elif cp["identity"].get("numeric_narrative_policy") is not None:
-        raise ValueError("numeric role receipt missing")
-    claims = {c.claim_id: c for c in record.claims}
-    hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
-    cids, chids = [], []
-    if isinstance(proposal, ResponsesProposalV1):
-        from tradingagents.research.unified_dialogue import validate_response_proposal
-        specialist = role.removeprefix("response_")
-        saved_replies = [r for r in record.dialogue.responses if r.role == specialist]
-        assignments = {r.challenge_id: r.hypothesis_id for r in saved_replies}
-        validate_response_proposal(record, specialist, proposal, assignments)
-        if tuple(r.model_dump() for r in proposal.responses) != tuple(
-            {k: v for k, v in r.model_dump().items() if k not in {"response_id", "role", "status", "reason_code"}} for r in saved_replies):
-            raise ValueError("reply_binding")
-        cids.extend(f for r in saved_replies for f in r.supporting_fact_ids)
-        chids.extend(assignments)
-    elif isinstance(proposal, SpecialistProposalV1):
-        allowed = {f.claim_id for f in saved_fact_views(seed, version)[role]}
-        accepted = saved_specialist_acceptance(cp, role, proposal)
-        if accepted and any(f"native_hypothesis_rejected:{role}:{r.code}:{r.index}" not in record.limitations for r in accepted.rejections):
-            raise ValueError("specialist_rejection_binding")
-        indices = accepted.indices if accepted else tuple(range(len(proposal.hypotheses)))
-        for index, item in zip(indices, proposal.hypotheses, strict=True):
-            hid = "h." + canonical_sha256(
-                {
-                    "input": cp["native_input"],
-                    "role": role,
-                    "index": index,
-                    "proposal": item.model_dump(mode="json"),
-                }
-            )
-            cid = "i." + hid[2:]
-            claim, hypothesis = claims[cid], hypotheses[hid]
-            if (
-                not set(item.supporting_fact_ids) <= allowed
-                or claim.kind != "inference"
-                or claim.statement != item.statement
-                or claim.supporting_fact_ids != item.supporting_fact_ids
-                or claim.evidence_ids
-                != tuple(
-                    dict.fromkeys(
-                        e for fid in item.supporting_fact_ids for e in claims[fid].evidence_ids
-                    )
-                )
-            ):
-                raise ValueError("specialist_binding")
-            if (
-                hypothesis.claim_id != cid
-                or hypothesis.input_snapshot_id != seed.snapshots[0].snapshot_id
-                or hypothesis.assumptions
-                != tuple(c.text for c in item.conditions if c.condition_role == "necessary")
-                or hypothesis.invalidation_conditions
-                != tuple(c.text for c in item.conditions if c.condition_role == "invalidation")
-                or hypothesis.limitations
-                != ("alternative_explanation:" + item.alternative_explanation,)
-            ):
-                raise ValueError("hypothesis_binding")
-            for condition in item.conditions:
-                check = condition.check
-                if check is not None:
-                    if check.kind == "financial":
-                        operands = (
-                            (check.current,) if check.base is None else (check.current, check.base)
-                        )
-                        if any(o.evidence_id not in claim.evidence_ids for o in operands):
-                            raise ValueError("condition_evidence_scope")
-                    else:
-                        metric = next(
-                            (m for m in seed.metrics if m.metric_id == check.metric_id), None
-                        )
-                        if metric is None or not set(metric.input_evidence_ids) <= set(
-                            claim.evidence_ids
-                        ):
-                            raise ValueError("condition_metric_scope")
-                bound = {
-                    "hypothesis_id": hid,
-                    "input_snapshot_id": seed.snapshots[0].snapshot_id,
-                    **condition.model_dump(mode="json"),
-                }
-                if (
-                    cp.get("native_conditions", {}).get("condition." + canonical_sha256(bound))
-                    != bound
-                ):
-                    raise ValueError("condition_binding")
-            cids.append(cid)
-    elif isinstance(proposal, (ChallengesProposalV1, ChallengesProposalV2, ChallengesProposalV3)):
-        challenges = {c.challenge_id: c for c in record.challenges}
-        from tradingagents.agents.schemas._native_stage import saved_challenge_acceptance
-        accepted = saved_challenge_acceptance(cp, proposal) if isinstance(proposal, ChallengesProposalV3) else None
-        indices = accepted.indices if accepted else range(len(proposal.challenges))
-        for index, item in zip(indices, proposal.challenges, strict=True):
-            cid = "c." + canonical_sha256(
-                {
-                    "input": cp["native_input"],
-                    "index": index,
-                    "challenge": item.model_dump(mode="json"),
-                }
-            )
-            target, challenge = hypotheses[item.hypothesis_id], challenges[cid]
-            if isinstance(proposal, ChallengesProposalV3):
-                from tradingagents.research.challenge_checks import challenge_test
-                if challenge.test != challenge_test(item):
-                    raise ValueError("challenge_test_binding")
-            if (
-                challenge.statement,
-                challenge.severity,
-                challenge.risk_type,
-                challenge.proposed_test,
-                challenge.target_claim_ids,
-            ) != (
-                item.statement,
-                item.severity,
-                item.risk_type,
-                item.proposed_test,
-                (target.claim_id,),
-            ):
-                raise ValueError("challenge_binding")
-            from tradingagents.research.challenge_checks import resolve_challenge_condition
-            resolve_challenge_condition(item, cp.get("native_conditions", {}))
-            if version in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
-                binding = next(b for b in record.challenge_bindings if b.challenge_id == cid)
-                if (binding.check_id, binding.observed_risk, binding.observation_date) != (
-                    item.check_id,
-                    item.observed_risk,
-                    item.observation_date,
-                ):
-                    raise ValueError("check_binding")
-            chids.append(cid)
-        if tuple(chids) != tuple(c.challenge_id for c in record.challenges):
-            raise ValueError("challenge_coverage_binding")
-    else:
-        assessment = record.assessment
-        expected_judgement = proposal.judgement
-        if version in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
-            from tradingagents.research.unified_synthesis import investment_fields
-            extra = investment_fields(record, proposal, assessment.dimensions)
-            if extra.pop("force_insufficient", False):
-                expected_judgement = "关键经营或估值依据不足，暂不能形成完整投资吸引力判断。"
-            if any(getattr(assessment, key) != value for key, value in extra.items()):
-                raise ValueError("investment_binding")
-        if (expected_judgement, proposal.next_check, proposal.key_claim_ids) != (
-            assessment.judgement,
-            assessment.next_check,
-            assessment.key_claim_ids,
-        ):
-            raise ValueError("synthesis_binding")
-        if not saved_dimensions_match(record, proposal.dimensions, version):
-            raise ValueError("dimension_binding")
-        primary = proposal.primary_challenge_id
-        critical = [c.challenge_id for c in record.challenges if c.severity == "critical"]
-        if critical and primary not in critical:
-            primary = critical[0]
-        if primary != assessment.primary_challenge_id:
-            raise ValueError("primary_binding")
-        if (
-            version not in {"evidence-production-v5", FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
-            and proposal.challenge_assessments != assessment.challenge_assessments
-        ):
-            raise ValueError("assessment_binding")
-        if len({a.challenge_id for a in proposal.challenge_assessments}) != len(
-            proposal.challenge_assessments
-        ) or any(
-            a.challenge_id not in {c.challenge_id for c in record.challenges}
-            for a in proposal.challenge_assessments
-        ):
-            raise ValueError("synthesis_challenge_reference")
-        cids.extend(proposal.key_claim_ids)
-        chids.extend(a.challenge_id for a in proposal.challenge_assessments)
-    return proposal, tuple(cids), tuple(chids)
-
-
-def _agent(ctx, role):
-    if ctx.checkpoint and ctx.checkpoint['identity'].get('workflow_version') == 'evidence-production-v9' and ctx.reason is None:
-        from tradingagents.web.insight_process import insight_agent
-        return insight_agent(ctx, role)
-    from tradingagents.research.factual_premises import stage_premises
-    origin = "code" if role in {"evidence", "code_checks"} else "model"
-    base = {
-        "run_id": ctx.snapshot.run_id,
-        "source_sequence": ctx.sequence,
-        "role_key": role,
-        "origin": origin,
-        "input_description": ROLE_INFO[role][2],
-    }
-    if ctx.reason is None and ctx.record is not None and ctx.record.numeric_attribution is not None:
-        base["factual_premises"] = tuple(p for s in ctx.record.numeric_attribution.stages
-                                         if s.stage == role for p in stage_premises(s.proof))
-    if role in RESPONSE_ROLES and (ctx.checkpoint is None or ctx.checkpoint["identity"].get("workflow_version") not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
-        return ReaderAgentDTO(**base, availability="not_applicable", reason_code="workflow_has_no_reply_stage")
-    if role == "focus_response":
-        focus = project_reader_focus(ctx.store, ctx.snapshot.run_id, through=ctx.sequence)
-        response = focus.get("response")
-        if focus["state"] == "ready" and response["status"] == "available":
-            from tradingagents.agents.schemas._research_focus import FocusProposalV1
-            proposal = FocusProposalV1.model_validate(response["proposal"])
-            base["factual_premises"] = stage_premises((response.get("numeric_attribution") or {}).get("proof", {}))
-            return ReaderAgentDTO(**base, availability="available", proposal=proposal, claim_ids=proposal.claim_ids)
-        return ReaderAgentDTO(**base, availability="not_applicable" if focus["state"] == "not_applicable"
-                              else "pending_publication" if focus["state"] == "pending" else "unavailable",
-                              reason_code=response["reason_code"] if response else focus["reason_code"])
-    if ctx.reason:
-        if (ctx.reason == "publication_pending" and ctx.checkpoint
-                and ctx.checkpoint["identity"].get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
-                and ctx.checkpoint.get("native_seed") is not None):
-            try:
-                from tradingagents.web.reader_stage_projection import StageReader
-                if ctx.stage_reader is None:
-                    ctx.stage_reader = StageReader(ctx)
-                if ctx.record is not None and origin == "model":
-                    _proposal(ctx, role)
-                material = ctx.stage_reader.read(role)
-                if material is not None:
-                    record, proposal, claims, challenges, inputs = material
-                    receipt = ctx.checkpoint["results"].get("native.numeric.accepted." + role, {})
-                    base["factual_premises"] = stage_premises(receipt.get("proof", {}))
-                    if role == "challenge":
-                        base["challenge_reviews"] = ctx.stage_reader.review_items
-                        review_receipt = ctx.checkpoint["results"].get("native.challenge_reviews", {})
-                        base["factual_premises"].extend(stage_premises(review_receipt.get("proof", {})))
-                    return ReaderAgentDTO(**base, availability="stage_available", reason_code="stage_qualified",
-                        stage_record=record, proposal=proposal, claim_ids=claims, challenge_ids=challenges,
-                        input_fact_ids=inputs, code_sections=("facts", "sources", "checks") if role == "evidence"
-                        else ("checks", "verifications") if role == "code_checks" else ())
-                if role in {"operating_quality", "event_context", "market_context"} and not ctx.stage_reader.views[role]:
-                    return ReaderAgentDTO(**base, availability="not_applicable", reason_code="no_qualified_facts_not_called")
-                status = next((e.payload.get("new_status") for e in reversed(ctx.events)
-                    if e.type == "role.status_changed" and e.actor_id == "native." + role), None)
-                return ReaderAgentDTO(**base, availability="not_applicable" if status == "skipped" else "not_recorded",
-                    reason_code="no_targeted_challenges_not_called" if status == "skipped" and role in RESPONSE_ROLES
-                    else "stage_not_saved" if status in {"failed", "completed"} else "stage_pending")
-            except Exception:
-                return ReaderAgentDTO(**base, availability="unavailable", reason_code="stage_binding_unavailable")
-        pending = ctx.reason == "publication_pending"
-        saved = ctx.checkpoint and ctx.checkpoint["results"].get("native." + role)
-        availability = (
-            "pending_publication"
-            if pending and saved
-            else "not_recorded"
-            if pending
-            else "not_applicable"
-            if ctx.reason == "profile_not_applicable"
-            else "unsupported"
-            if ctx.reason == "workflow_unsupported"
-            else "unavailable"
-        )
-        return ReaderAgentDTO(**base, availability=availability, reason_code=ctx.reason)
-    if origin == "code":
-        return ReaderAgentDTO(
-            **base,
-            availability="available",
-            code_sections=("facts", "sources", "checks")
-            if role == "evidence"
-            else ("checks", "verifications", "publication"),
-            claim_ids=tuple(c.claim_id for c in ctx.seed.claims),
-        )
-    try:
-        proposal, cids, chids = _proposal(ctx, role)
-        if proposal is None:
-            if role in RESPONSE_ROLES:
-                replies = [r for r in ctx.record.dialogue.responses if "response_" + r.role == role]
-                return ReaderAgentDTO(**base, availability="unavailable" if replies else "not_applicable",
-                                      reason_code="native_response_unavailable" if replies else "no_targeted_challenges_not_called")
-            if (
-                role in {"operating_quality", "event_context", "market_context"}
-                and not saved_fact_views(ctx.seed, ctx.checkpoint["identity"]["workflow_version"])[
-                    role
-                ]
-            ):
-                return ReaderAgentDTO(
-                    **base,
-                    availability="not_applicable",
-                    reason_code="no_qualified_facts_not_called",
-                )
-            return ReaderAgentDTO(
-                **base,
-                availability="not_recorded",
-                reason_code="no_hypotheses_not_called"
-                if role == "challenge" and not ctx.record.hypotheses
-                else "proposal_not_recorded",
-            )
-        record = ctx.record
-        if role == "challenge" and ctx.checkpoint["identity"].get("research_delivery_policy") is not None:
-            from tradingagents.web.reader_stage_projection import StageReader
-            if ctx.stage_reader is None:
-                ctx.stage_reader = StageReader(ctx)
-            ctx.stage_reader.read("challenge")
-            base["challenge_reviews"] = ctx.stage_reader.review_items
-            review_receipt = ctx.checkpoint["results"].get("native.challenge_reviews", {})
-            base["factual_premises"] = [*base.get("factual_premises", []), *stage_premises(review_receipt.get("proof", {}))]
-        if (isinstance(proposal, SpecialistProposalV1) and not proposal.hypotheses
-                and "native_stage_unavailable:" + role in record.limitations):
-            return ReaderAgentDTO(**base, availability="unavailable", reason_code="native_stage_unavailable")
-        if (isinstance(proposal, ChallengesProposalV3) and not proposal.challenges
-                and "native_stage_unavailable:challenge" in record.limitations):
-            return ReaderAgentDTO(**base, availability="unavailable", reason_code="native_stage_unavailable")
-        relations = [
-            OutputRelation(
-                entity_id=cid,
-                kind="claim",
-                in_record=True,
-                is_key=cid in record.assessment.key_claim_ids,
-                dimensions=tuple(
-                    d.dimension for d in record.assessment.dimensions if cid in d.claim_ids
-                ),
-                challenge_ids=tuple(
-                    c.challenge_id for c in record.challenges if cid in c.target_claim_ids
-                ),
-            )
-            for cid in cids
-        ]
-        relations += [
-            OutputRelation(
-                entity_id=cid,
-                kind="challenge",
-                in_record=True,
-                is_key=cid == record.assessment.primary_challenge_id,
-            )
-            for cid in chids
-        ]
-        facts = tuple(
-            dict.fromkeys(
-                f
-                for cid in cids
-                for f in next(c for c in record.claims if c.claim_id == cid).supporting_fact_ids
-            )
-        )
-        return ReaderAgentDTO(
-            **base,
-            availability="available",
-            proposal=proposal,
-            relations=tuple(relations),
-            claim_ids=cids,
-            challenge_ids=chids,
-            input_fact_ids=facts,
-        )
-    except Exception:
-        return ReaderAgentDTO(
-            **base, availability="unavailable", reason_code="proposal_binding_unavailable"
-        )
-
-
-def _process(ctx):
-    if ctx.checkpoint and ctx.checkpoint['identity'].get('workflow_version') == 'evidence-production-v9' and ctx.reason is None:
-        from tradingagents.web.insight_process import insight_process
-        return insight_process(ctx)
-    snapshot, cp = ctx.snapshot, ctx.checkpoint
-    metadata = snapshot.metadata or {}
-    profile = metadata.get("research_profile", "classic")
-    statuses = {}
-    for event in ctx.events:
-        if event.type == "role.status_changed" and event.payload.get("new_status") in {
-            "pending",
-            "running",
-            "completed",
-            "failed",
-            "cancelled",
-            "interrupted",
-            "skipped",
-            "not_reached",
-        }:
-            statuses[event.actor_id] = event.payload["new_status"]
-    roles, origins, agents = [], [], {}
-    if profile == "evidence_v1":
-        keys = ("evidence", "operating_quality", "event_context", "market_context", "challenge", "code_checks",
-                *RESPONSE_ROLES, "synthesis", "focus_response") if cp and cp["identity"].get("workflow_version") in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} else tuple(ROLE_INFO)
-        for key in keys:
-            if key in RESPONSE_ROLES and (cp is None or cp["identity"].get("workflow_version") not in {UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}):
-                continue
-            if key == "focus_response" and (cp is None or cp["identity"].get("workflow_version") not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
-                                             or not metadata.get("research_question")):
-                continue
-            agent = _agent(ctx, key)
-            agents[key] = agent
-            n = native_counts(cp, role=key)
-            roles.append(
-                ReaderRole(
-                    role_key=key,
-                    actor_id="native." + key,
-                    label=ROLE_INFO[key][0],
-                    origin=agent.origin,
-                    purpose=ROLE_INFO[key][1],
-                    status=statuses.get("native." + key, "not_recorded")
-                    if key != "code_checks"
-                    else "not_applicable",
-                    output_availability=agent.availability,
-                    reason_code=agent.reason_code,
-                    output_count=None
-                    if agent.availability not in {"available", "stage_available"}
-                    else len(agent.claim_ids)
-                    if key in {"evidence", "operating_quality", "event_context", "market_context"}
-                    else len(agent.proposal.responses)
-                    if key in RESPONSE_ROLES
-                    else len(agent.challenge_ids)
-                    if key == "challenge"
-                    else 1
-                    if agent.proposal is not None
-                    else None,
-                    output_sequence=max((e.sequence for e in ctx.events if e.type == "role.status_changed"
-                        and e.actor_id == "native." + ("challenge" if key == "code_checks" else key)), default=0)
-                    if agent.availability == "stage_available" else max(
-                        (
-                            e.sequence
-                            for e in ctx.events
-                            if e.type == "artifact.written"
-                            and e.status == "committed"
-                            and isinstance(e.payload.get("committed_sequence"), int)
-                            and e.payload["committed_sequence"] <= ctx.sequence
-                            and e.payload.get("public_contract") == ("research-focus-response-v1" if key == "focus_response" else ctx.record.schema_version if ctx.record else "research-record-v1")
-                        ),
-                        default=None,
-                    )
-                    if agent.availability == "available"
-                    else None,
-                    main_budget=n.main_budget,
-                    sdk_main=n.sdk_main,
-                    sdk_repair=n.sdk_repair,
-                    focus_budget=n.focus_budget, sdk_focus=n.sdk_focus,
-                )
-            )
-            if key in {"operating_quality", "event_context", "market_context"} and agent.availability == "available":
-                origins.extend(ClaimOrigin(claim_id=cid, role_key=key) for cid in agent.claim_ids)
-    primary = "not_recorded"
-    if ctx.reason is None and ctx.seed and ctx.record and getattr(ctx.record.assessment, "report_status", None) is not None:
-        origins.extend(ClaimOrigin(claim_id=claim.claim_id, role_key="evidence") for claim in ctx.seed.claims)
-    if ctx.reason is None and ctx.record and getattr(ctx.record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}:
-        primary = "code"
-    if agents.get("synthesis") and agents["synthesis"].availability == "available" and agents["synthesis"].proposal:
-        primary = (
-            "synthesis"
-            if agents["synthesis"].proposal.primary_challenge_id
-            == ctx.record.assessment.primary_challenge_id
-            else "code"
-        )
-    failures = set()
-    if cp:
-        for value in cp["results"].values():
-            code = value.get("source_error_code")
-            if code in SAFE_FAILURES:
-                failures.add(code)
-    model_failures = list((cp or {}).get("native.model_failures", {}).values())
-    failure_stages = {item["stage"] for item in model_failures}
-    # Expose only closed explanations for currently failed roles. An earlier
-    # malformed response followed by a successful repair is not a live failure.
-    explanations = {
-        "schema_validation": "研究输出未通过格式与字段校验，未能形成合格的研究提议。",
-        "reference_validation": "研究提议的依据引用未通过核对，本次输出未采用。",
-        "invalid_json": "研究输出格式不完整，本次输出未采用。",
-    }
-    diagnostics = (cp or {}).get("native.model_diagnostics", {})
-    for role in roles:
-        stage = role.role_key
-        if role.status != "failed" or stage in failure_stages:
-            continue
-        diagnostic = diagnostics.get(stage + ".repair", diagnostics.get(stage + ".main", {}))
-        category = diagnostic.get("category")
-        if category in explanations:
-            model_failures.append({"stage": stage, "category": category,
-                "safe_message": explanations[category], "action": "retry_later"})
-    search_usage = None
-    if cp and cp['identity'].get('workflow_version') == SEARCH_WORKFLOW_VERSION:
-        from tradingagents.web.reader_process_models import SearchUsageV1
-        dispatched = [r for r in cp['records'] if r.get('dispatched_at') is not None]
-        def used(bucket):
-            return sum(r['bucket'] == bucket for r in dispatched)
-        search_usage = SearchUsageV1(deepseek_search=used('deepseek_search'), tavily_search=used('tavily_search'),
-            page_attempts=used('search_page'), review_attempts=used('search_review'), rounds=used('search_rounds'),
-            active_seconds=min(90.0, cp.get('search_activity', {}).get('spent', 0.0)))
-    return ReaderProcessDTO(
-        search_usage=search_usage,
-        run_id=snapshot.run_id,
-        source_sequence=ctx.sequence,
-        profile=profile,
-        workflow_version=cp["identity"].get("workflow_version") if cp else None,
-        availability="not_applicable"
-        if profile != "evidence_v1"
-        else "ready"
-        if ctx.reason is None
-        and all(
-            a.availability in {"available", "not_recorded", "not_applicable"}
-            for a in agents.values()
-        )
-        else "partial"
-        if cp
-        else "unavailable",
-        reason_code=ctx.reason,
-        question_origin="default" if cp and cp["identity"].get("workflow_version") in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}
-        else ("user" if metadata["research_question"] is not None else "default")
-        if "research_question" in metadata
-        else "not_recorded",
-        primary_selection=primary,
-        counts=native_counts(cp),
-        roles=tuple(roles),
-        claim_origins=tuple(origins),
-        source_failures=tuple(sorted(failures)),
-        model_failures=tuple(model_failures),
-    )
+        if (identity.get("workflow_version"), identity.get("ticker"), identity.get("mode"), identity.get("cutoff")) != (
+                "evidence-production-v9", snapshot.ticker, "company_research", snapshot.analysis_date):
+            raise ValueError("checkpoint_identity")
+        public = project_research_record(store, run_id, through=sequence)
+        record = parse_insight_report(public["record"]) if public["state"] == "insight_ready" else None
+        return Context(snapshot, sequence, events, cp, record)
+    except (ValueError, KeyError, TypeError, OSError):
+        return Context(snapshot, sequence, events, None, None, "checkpoint_unavailable")
 
 
 def project_reader_process(store, run_id):
-    return _process(_context(store, run_id)).model_dump(mode="json")
+    from tradingagents.web.insight_process import insight_process
+    ctx = _context(store, run_id)
+    if ctx.reason:
+        return ReaderProcessDTO(run_id=run_id, source_sequence=ctx.sequence, profile="evidence_v1",
+            workflow_version="evidence-production-v9", availability="unavailable", reason_code=ctx.reason,
+            counts=native_counts(None)).model_dump(mode="json")
+    return insight_process(ctx).model_dump(mode="json")
 
 
 def project_reader_agent(store, run_id, role: AgentKey, *, through=None):
-    return _agent(_context(store, run_id, through), role).model_dump(mode="json")
+    from tradingagents.web.insight_process import insight_agent
+    ctx = _context(store, run_id, through)
+    if ctx.reason:
+        return ReaderAgentDTO(run_id=run_id, source_sequence=ctx.sequence, role_key=role,
+            availability="unavailable", reason_code=ctx.reason, origin="code" if role in {"evidence", "code_checks"} else "model",
+            input_description="已保存的研究输出。").model_dump(mode="json")
+    return insight_agent(ctx, role).model_dump(mode="json")

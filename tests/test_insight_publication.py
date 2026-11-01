@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 
 from tests.test_insight_research import execute, response
-from tests.test_native_publication import setup
+from tests.v9_fixtures import journal_setup as setup
 from tradingagents.execution.native_publication import NativePublicationError, publish_native_record
 from tradingagents.runtime.reports import build_markdown_from_native_record
 from tradingagents.web.research_record_projection import project_research_record

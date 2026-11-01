@@ -45,11 +45,11 @@ P1 优先处理持久状态正确性；P2 表示有具体触发条件的功能�
 | P2 | 删除排队批次成员返回 204，留下悬空引用，随后取消批次返回 404 | [api.py](../../tradingagents/web/api.py) |
 | P2 | SSE 重连首次快照 GET 失败即停止后续退避 | [useRunStream](../../frontend/src/hooks/useRunStream.ts) |
 | P2 | queued 被历史过滤；界面只取默认 20 条，忽略后续游标 | [projections](../../tradingagents/web/projections.py)、[useRunHistory](../../frontend/src/hooks/useRunHistory.ts) |
-| P2 | classic 延迟摘要响应可把选中的 B 公司视图覆盖为 A | [useRunView](../../frontend/src/hooks/useRunView.ts) |
+| P2 | classic 延迟摘要响应可把选中的 B 公司视图覆盖为 A | `useRunView`（历史路径 `../../frontend/src/hooks/useRunView.ts`，V9 清理已移除） |
 | P2 | 多缺口搜索把所有命中按第一条需求处理，财务 PDF 恢复依赖排列顺序 | [search_coordinator](../../tradingagents/execution/search_coordinator.py) |
-| P2 | 兼容研究包把相邻季度发布为同比：Q1=100、Q2=120 得到 revenue_yoy=20% | [research_package](../../tradingagents/research/research_package.py) |
+| P2 | 兼容研究包把相邻季度发布为同比：Q1=100、Q2=120 得到 revenue_yoy=20% | `research_package`（历史路径 `../../tradingagents/research/research_package.py`，V9 清理已移除） |
 | P2 | Google/Azure 丢弃共享配置中的输出 token 上限 | [provider_kwargs](../../tradingagents/llm_clients/provider_kwargs.py)、对应 provider client |
-| P2 | benchmark 只找 V1 产物，将已发布 V8/V2 计为没有报告/综合失败 | [eval_benchmark](../../scripts/eval_benchmark.py) |
+| P2 | benchmark 只找 V1 产物，将已发布 V8/V2 计为没有报告/综合失败 | `eval_benchmark`（历史路径 `../../scripts/eval_benchmark.py`，V9 清理已移除） |
 | P2 | wheel 缺少方法论 Markdown；主要影响 built distribution 的 classic 方法论 | [pyproject.toml](../../pyproject.toml)，package-data |
 
 同时补齐全应用 Host/Origin 边界、启动时跨进程单写入者锁、真实模型测试显式 opt-in，以及新研究的独立搜索环境变量开关。

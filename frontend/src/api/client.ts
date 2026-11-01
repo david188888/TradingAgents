@@ -9,34 +9,8 @@
  * No `any`: the only non-typed boundary is fetch()'s Response body, which is
  * decoded via explicit type assertions on the parsed JSON.
  */
-import type {
-  ReportExplanationDTO,
-  AgentKey, ReaderProcessDTO, ReaderAgentDTO, ReaderFocusDTO,
-  ApiErrorCode,
-  ApiErrorResponse,
-  BatchCreateRequestDTO,
-  BatchSnapshotDTO,
-  BatchValidationDTO,
-  SchedulerDTO,
-  ArtifactMetadataDTO,
-  AuditDetailDTO,
-  AuditSelectionDTO,
-  AuditSummaryDTO,
-  CompanionDTO,
-  CompanionSelectionDTO,
-  ConfigResponseDTO,
-  DeleteAllRunsResultDTO,
-  RecentRunsPageDTO,
-  RunViewEnvelopeDTO,
-  ReaderResponseDTO,
-  ResearchPackageDTO,
-  ResearchRecordResponseDTO,
-  RunCreateRequestDTO,
-  RunSnapshotDTO,
-  RunSummaryDTO,
-  CatalystReadState,
-} from "./contracts";
-import { API, CATALYST_CASE_PATH } from "./contracts";
+import type { AgentKey, ReaderAgentDTO, ReportExplanationDTO, ReaderProcessDTO, ApiErrorCode, ApiErrorResponse, BatchCreateRequestDTO, BatchSnapshotDTO, BatchValidationDTO, SchedulerDTO, AuditDetailDTO, AuditSelectionDTO, AuditSummaryDTO, ConfigResponseDTO, DeleteAllRunsResultDTO, RecentRunsPageDTO, ResearchRecordResponseDTO, RunCreateRequestDTO, RunSnapshotDTO } from "./contracts";
+import { API } from "./contracts";
 
 /** Same-origin base; prepended to every API path. */
 export const API_BASE = "";
@@ -172,11 +146,6 @@ export function getConfig(): Promise<ConfigPayload> {
   return request<ConfigPayload>("GET", API.config);
 }
 
-/** GET /api/runs */
-export function listRuns(): Promise<RunSummaryDTO[]> {
-  return request<RunSummaryDTO[]>("GET", API.runs);
-}
-
 /** GET /api/runs?view=recent */
 export function listRecentRuns(
   signal?: AbortSignal,
@@ -185,74 +154,9 @@ export function listRecentRuns(
   return request<RecentRunsPageDTO>("GET", API.recentRuns(20, cursor), undefined, signal);
 }
 
-/** GET /api/runs/{run_id}/view */
-export function getRunView(
-  run_id: string,
-  signal?: AbortSignal,
-): Promise<RunViewEnvelopeDTO> {
-  assertRunId(run_id);
-  return request<RunViewEnvelopeDTO>("GET", API.runView(run_id), undefined, signal);
-}
-
-/**
- * GET /api/runs/{run_id}/catalyst
- *
- * The catalyst read projection. Version routing is by path, never by content
- * sniffing: a caller either asks for the catalyst contract or does not, and a
- * legacy caller keeps using `getRunView`/`getReader` unchanged.
- *
- * Reading this calls no LLM and no data source server-side. It is a plain GET
- * of committed facts, which is why the page may call it on refresh, tab switch
- * and SSE reconnect without a budget consequence.
- */
-export function getCatalyst(
-  run_id: string,
-  signal?: AbortSignal,
-): Promise<CatalystReadState> {
-  assertRunId(run_id);
-  return request<CatalystReadState>("GET", CATALYST_CASE_PATH(run_id), undefined, signal);
-}
-
-/** GET /api/runs/{run_id}/reader */
-export function getReader(
-  run_id: string,
-  signal?: AbortSignal,
-): Promise<ReaderResponseDTO> {
-  assertRunId(run_id);
-  return request<ReaderResponseDTO>("GET", API.reader(run_id), undefined, signal);
-}
-
-/** GET /api/runs/{run_id}/reader/package */
-export function getResearchPackage(
-  run_id: string,
-  signal?: AbortSignal,
-): Promise<ResearchPackageDTO> {
-  assertRunId(run_id);
-  return request<ResearchPackageDTO>("GET", API.readerPackage(run_id), undefined, signal);
-}
-
 export function getResearchRecord(run_id: string, signal?: AbortSignal): Promise<ResearchRecordResponseDTO> {
   assertRunId(run_id);
   return request<ResearchRecordResponseDTO>("GET", API.readerRecord(run_id), undefined, signal);
-}
-
-/** GET /api/runs/{run_id}/reader/companion?kind=...&id=... */
-export function getCompanion(
-  run_id: string,
-  selection: CompanionSelectionDTO,
-  signal?: AbortSignal,
-): Promise<CompanionDTO> {
-  assertRunId(run_id);
-  const query = new URLSearchParams({
-    kind: selection.kind,
-    id: selection.id,
-  });
-  return request<CompanionDTO>(
-    "GET",
-    `${API.readerCompanion(run_id)}?${query.toString()}`,
-    undefined,
-    signal,
-  );
 }
 
 /** GET /api/runs/{run_id}/audit */
@@ -329,18 +233,6 @@ export function cancelBatch(batch_id: string): Promise<BatchSnapshotDTO> {
   return request<BatchSnapshotDTO>("POST", API.batchCancel(batch_id));
 }
 
-/** DELETE /api/batches/{batch_id} */
-export async function deleteBatch(batch_id: string): Promise<void> {
-  assertBatchId(batch_id);
-  const resp = await fetch(`${API_BASE}${API.batchDelete(batch_id)}`, { method: "DELETE", headers: { Accept: "application/json" } });
-  if (!resp.ok) throw await toApiError(resp);
-}
-
-
-export function getScheduler(): Promise<SchedulerDTO> {
-  return request<SchedulerDTO>("GET", API.scheduler);
-}
-
 /** PUT /api/scheduler */
 export function setSchedulerConcurrency(concurrency: 1 | 2 | 3): Promise<SchedulerDTO> {
   return request<SchedulerDTO>("PUT", API.scheduler, { concurrency });
@@ -396,64 +288,15 @@ export async function deleteAllRuns(): Promise<DeleteAllRunsResultDTO> {
   return (await resp.json()) as DeleteAllRunsResultDTO;
 }
 
-/** GET /api/runs/{run_id}/artifacts */
-export function listArtifacts(
-  run_id: string,
-): Promise<ArtifactMetadataDTO[]> {
-  assertRunId(run_id);
-  return request<ArtifactMetadataDTO[]>("GET", API.artifacts(run_id));
-}
-
-/**
- * GET /api/runs/{run_id}/artifacts/{artifact_id} (raw bytes).
- * Returns the binary content and the Content-Type header the server attached.
- * artifact_id is encodeURIComponent'd rather than regex-validated because the
- * backend artifact_id space is opaque (store-generated) and may include dots.
- */
-export async function readArtifact(
-  run_id: string,
-  artifact_id: string,
-  signal?: AbortSignal,
-): Promise<{ content: ArrayBuffer; media_type: string }> {
-  assertRunId(run_id);
-  if (!artifact_id) {
-    throw new RangeError("artifact_id must not be empty");
-  }
-  const path = API.artifact(run_id, encodeURIComponent(artifact_id));
-  const resp = await fetch(`${API_BASE}${path}`, {
-    method: "GET",
-    headers: { Accept: "*/*" },
-    signal,
-  });
-  if (!resp.ok) {
-    throw await toApiError(resp);
-  }
-  const content = await resp.arrayBuffer();
-  const media_type =
-    resp.headers.get("Content-Type") ?? "application/octet-stream";
-  return { content, media_type };
-}
-
-/** Convenience: decode the artifact body as UTF-8 text. */
-export async function readArtifactText(
-  run_id: string,
-  artifact_id: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  const { content } = await readArtifact(run_id, artifact_id, signal);
-  return new TextDecoder("utf-8").decode(content);
-}
-
 export function getReaderProcess(runId: string, signal?: AbortSignal): Promise<ReaderProcessDTO> {
   assertRunId(runId);
   return request<ReaderProcessDTO>("GET", API.readerProcess(runId), undefined, signal);
 }
+
+
+
 export function getReaderAgent(runId: string, role: AgentKey, sourceSequence: number, signal?: AbortSignal): Promise<ReaderAgentDTO> {
   assertRunId(runId);
   if (!Number.isInteger(sourceSequence) || sourceSequence < 0) throw new RangeError("Invalid Reader boundary");
   return request<ReaderAgentDTO>("GET", `${API.readerAgent(runId, role)}?source_sequence=${sourceSequence}`, undefined, signal);
-}
-
-export function getReaderFocus(runId: string, sourceSequence: number, signal?: AbortSignal): Promise<ReaderFocusDTO> {
-  return request<ReaderFocusDTO>("GET", `${API.readerFocus(runId)}?source_sequence=${sourceSequence}`, undefined, signal);
 }

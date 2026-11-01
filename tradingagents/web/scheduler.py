@@ -22,9 +22,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from tradingagents.execution.models import AnalysisRequest, CancellationToken
-
-from .run_models import RunSnapshot
-from .store import RunNotFound, RunStore
+from tradingagents.runtime.run_models import RunSnapshot, UnsupportedResearchVersion
+from tradingagents.runtime.store import RunNotFound, RunStore
 
 # Statuses for which a queued id may still be launched during a drain. A run
 # resumed from "interrupted" is already persisted as "running" by the time it
@@ -151,7 +150,7 @@ class RunScheduler:
                 run_id = self._pending.popleft()
                 try:
                     snapshot = self.store.read_snapshot(run_id)
-                except RunNotFound:
+                except (RunNotFound, UnsupportedResearchVersion):
                     # Deleted between enqueue and drain (e.g. bulk clear): drop
                     # it instead of crashing the scheduling path for later runs.
                     continue
@@ -219,23 +218,17 @@ class RunScheduler:
                 active.phase = "terminalizing"
 
     def sync_batch_for_run(self, run_id: str) -> None:
-        """Best-effort batch-manifest sync after a run changed state."""
         try:
             snapshot = self.store.read_snapshot(run_id)
             batch_id = snapshot.metadata.get("batch_id")
             if not isinstance(batch_id, str):
                 return
             batch = self.store.read_batch(batch_id)
-            next(item for item in batch.items if item.run_id == run_id)
-        except (RunNotFound, StopIteration):
-            # The run or its batch manifest vanished concurrently (bulk
-            # clear); batch sync is best-effort, so degrade to a no-op.
+        except (RunNotFound, UnsupportedResearchVersion):
             return
         error_message = snapshot.error_message if snapshot.status == "failed" else None
-        updated = batch.with_item_status(
-            run_id,
+        updated = batch.with_item_status(run_id,
             snapshot.status if snapshot.status in {"queued", "running", "completed", "failed", "cancelled", "interrupted"} else "queued",
-            error_message=error_message,
-        )
+            error_message=error_message)
         if updated != batch:
             self.store.write_batch_atomic(updated)

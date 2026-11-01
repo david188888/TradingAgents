@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-from tradingagents.agents.schemas._verification_plan import FinancialOperandV1
 from tradingagents.dataflows.native_qualification import (
     CALENDAR_INDEX_SYMBOL,
     NativeSourceUnavailable,
@@ -26,11 +25,9 @@ from tradingagents.dataflows.tushare_price_history import settled_sessions
 from tradingagents.execution.budget import BudgetBucket, BudgetLedger
 from tradingagents.execution.config_identity import SemanticConfigError
 from tradingagents.execution.models import AnalysisCancelled
-from tradingagents.research.catalyst_evidence_policy import catalyst_evidence_policy_v1
-from tradingagents.research.native_policy import dimension_policy, fact_views
+from tradingagents.research.collection_policy import collection_policy
 from tradingagents.research.native_record import build_native_record
-from tradingagents.research.verification_tools import _financial_operand
-from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 PROFILE = '<title>沃尔核材(002130)公司资料_新浪财经_新浪网</title><table id="comInfo1"><tr><td>上市市场：</td><td>深圳证券交易所</td><td>上市日期：</td><td><a>2007-04-20</a></td></tr></table>'
 FIELDS = {"income": ("BIZINCO", "NETPROFIT"), "balancesheet": ("TOTASSET", "TOTLIAB"), "cashflow": ("MANANETR",)}
@@ -44,7 +41,7 @@ def statement(table):
 
 def collector(monkeypatch):
     request = SimpleNamespace(ticker="002130.SZ", analysis_date="2026-10-03",
-        catalyst_policy=catalyst_evidence_policy_v1(), effective_config={
+        collection_policy=collection_policy(), effective_config={
             "evidence_source_vendors": {"identity": ["sina"], "events": [], "calendar": [], "price": []}})
     calls = []
     def fetch(key, operation):
@@ -95,22 +92,6 @@ def test_extended_source_configuration_is_typed_before_collection(config, versio
         factory(request, "configuration-check", None, None)
 
 
-@pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])
-def test_sina_sources_feed_all_mode_facts_c1_and_reports_without_tushare(monkeypatch, mode):
-    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
-    monkeypatch.delenv("TUSHARE_API_KEY", raising=False)
-    sources, calls = collector(monkeypatch)
-    monkeypatch.setattr(sources, "tushare", lambda *a, **k: pytest.fail("primary should not call Tushare"))
-    record = build_native_record(*sources.collect(), mode=mode)
-    assert "security_identity_unqualified" not in record.limitations
-    source = next(s for s in record.evidence if s.source_name == "sina.financial_statements")
-    value, _ = _financial_operand(record, FinancialOperandV1(evidence_id=source.evidence_id,
-        table="income", field="revenue", report_period="2026-06-30"))
-    assert str(value) == "4653091807.210000"
-    assert fact_views(record)["operating_quality"]
-    assert dimension_policy(record)["operating_quality"][0] == "conditional"
-    assert "4653091807.210000" in record.model_dump_json()
-    assert not any("tushare" in c for c in calls)
 
 
 def test_financial_fallback_keeps_partial_primary_and_separate_backup_family(monkeypatch):
@@ -156,7 +137,7 @@ def test_rate_limit_stops_same_run_tushare_but_preserves_public_results(monkeypa
 
 
 @pytest.mark.parametrize("error", [AnalysisCancelled("cancelled"), TimeoutError("deadline"),
-    CatalystCheckpointConflict("disk conflict")])
+    ResearchCheckpointConflict("disk conflict")])
 def test_control_flow_errors_are_not_provider_fallback(monkeypatch, error):
     sources, _ = collector(monkeypatch)
     def fetch(*args):
@@ -322,7 +303,7 @@ class CalendarHarness:
         self.calls = []
         self.tdx = tdx or {}
         request = SimpleNamespace(ticker=ticker, analysis_date="2026-10-16",
-            catalyst_policy=catalyst_evidence_policy_v1(), effective_config=config or {})
+            collection_policy=collection_policy(), effective_config=config or {})
         session = SimpleNamespace(head=self.head)
         self.sources = NativeSources(request, "calendar-run", session, self.fetch)
         def get(url, **kwargs):

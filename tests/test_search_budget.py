@@ -9,13 +9,14 @@ import pytest
 
 from tradingagents.execution.budget import BudgetBucket as B, BudgetExhausted
 from tradingagents.execution.search_budget import SEARCH_BUDGET_POLICY, SearchBudget
-from tradingagents.runtime.catalyst_checkpoint import DurableBudgetLedger, _record_json
+from tradingagents.runtime.research_checkpoint import DurableBudgetLedger, _record_json
 
 
 class Journal:
     def __init__(self, state=None, *, run_id="budget-test"):
         self.state = copy.deepcopy(state) if state else {'identity': {
-            'workflow_version': 'evidence-production-v8',
+            'workflow_version': 'evidence-production-v9',
+            'insight_budget_policy': {'structured_repair': 8, 'basic_model_attempts': 20, 'model_attempts': 29},
             'search_budget_policy': SEARCH_BUDGET_POLICY}, 'records': [], 'results': {}}
         self.observer = SimpleNamespace(run_id=run_id)
         self.last_event = SimpleNamespace(sequence=0)
@@ -56,18 +57,20 @@ def test_pages_8_then_9_refused():
         budget.reserve_page('nine')
 
 
-def test_model_pools_12_9_21():
+def test_current_model_pools_20_9_29():
     j = Journal()
     for bucket, count in ((B.MAIN_ANALYSIS, 8), (B.FOCUS_RESPONSE, 1), (B.NETWORK_RETRY, 3)):
         for i in range(count):
             spent(j.ledger, j.ledger.reserve_or_raise(bucket, stage=f'base-{bucket}-{i}'))
+    for i in range(8):
+        spent(j.ledger, j.ledger.reserve_or_raise(B.STRUCTURED_REPAIR, stage=f"repair-{i}"))
     with pytest.raises(BudgetExhausted):
-        j.ledger.reserve_or_raise(B.STRUCTURED_REPAIR, stage='base-overflow')
+        j.ledger.reserve_or_raise(B.STRUCTURED_REPAIR, stage="base-overflow")
     budget = SearchBudget(j.ledger)
     for r in range(1, 4):
         for i in range(3):
             spent(j.ledger, budget.reserve_review(str(r), 'operating_quality', str(i)))
-    assert j.ledger.consumed(B.MODEL_ATTEMPTS) == 21
+    assert j.ledger.consumed(B.MODEL_ATTEMPTS) == 29
     with pytest.raises(BudgetExhausted):
         budget.reserve_review('3', 'market_context', 'overflow')
 

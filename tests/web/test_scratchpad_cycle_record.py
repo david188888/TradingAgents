@@ -6,8 +6,8 @@ from pydantic import ValidationError
 from tradingagents.observability.cycle_record import CycleRecord
 from tradingagents.observability.observer import DurableRunObserver
 from tradingagents.observability.scratchpad import ScratchpadEntry
-from tradingagents.web.run_models import RunSnapshot
-from tradingagents.web.store import InvalidStorePath, RunStore
+from tradingagents.runtime.run_models import RunSnapshot
+from tradingagents.runtime.store import InvalidStorePath, RunStore
 
 
 def _observer(tmp_path):
@@ -18,7 +18,6 @@ def _observer(tmp_path):
         llm_provider="openai",
         quick_think_llm="small-model",
         deep_think_llm="deep-model",
-        runtime_semantics_hash="a" * 64,
         metadata={"effective_config_artifact_id": "data:" + "b" * 64},
     )
     store.create_run(snapshot)
@@ -113,7 +112,7 @@ def test_cycle_record_captures_non_secret_spec_and_safe_replay_refs(tmp_path):
 
     assert record.run_id == snapshot.run_id
     assert record.query.ticker == "600519.SH"
-    assert record.spec_snapshot.selected_analysts == snapshot.selected_analysts
+    assert record.spec_snapshot.llm_provider == snapshot.llm_provider
     assert record.spec_snapshot.effective_config_artifact_id == "data:" + "b" * 64
     assert record.scratchpad_entry_ids == (scratchpad.entry_id,)
     assert artifact.kind == "cycle-record"

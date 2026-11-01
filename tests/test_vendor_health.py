@@ -116,8 +116,8 @@ def test_legacy_vendor_http_status_text_uses_the_same_policy():
 
 def test_observed_cooldown_skip_is_visible_in_existing_data_progress(monkeypatch, tmp_path):
     from tradingagents.observability.observer import DurableRunObserver
-    from tradingagents.web.run_models import RunSnapshot
-    from tradingagents.web.store import RunStore
+    from tradingagents.runtime.run_models import RunSnapshot
+    from tradingagents.runtime.store import RunStore
 
     clock = [100.0]
     registry = _registry(clock)
@@ -139,7 +139,7 @@ def test_observed_cooldown_skip_is_visible_in_existing_data_progress(monkeypatch
     snapshot = RunSnapshot.create(ticker="AAPL", analysis_date="2026-07-22")
     store.create_run(snapshot)
     observer = DurableRunObserver(store, snapshot.run_id)
-    turn = observer.start_turn(actor_id="analyst.market", graph_task_id="task-health", graph_step=1, turn_index=1)
+    turn = observer.start_turn(actor_id="native.market_context", graph_task_id="task-health", graph_step=1, turn_index=1)
 
     with observer.invocation_scope(turn, graph_task_id="task-health", graph_step=1):
         assert interface.route_to_vendor("get_stock_data", "AAPL", "2026-01-01", "2026-01-10") == "fallback"

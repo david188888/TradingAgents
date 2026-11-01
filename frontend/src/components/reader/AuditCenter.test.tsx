@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuditDetailDTO, AuditSummaryDTO, ReaderProcessDTO, ResearchRecordV1DTO } from "../../api/contracts";
+import type { AuditDetailDTO, AuditSummaryDTO, ReaderProcessDTO, InsightReportDTO } from "../../api/contracts";
 import { useAuditDetail, useAuditResearch, useAuditSummary } from "../../hooks/useAudit";
 import { AuditCenter } from "./AuditCenter";
 
@@ -29,7 +29,7 @@ const summary: AuditSummaryDTO = {
     status: "completed",
     ticker: "000338.SZ",
     mode: "company_research",
-    horizon: "medium",
+
     created_at: "2026-08-11T00:00:00Z",
     completed_at: "2026-08-11T00:01:00Z",
     duration_ms: 60000,
@@ -54,11 +54,11 @@ const summary: AuditSummaryDTO = {
       status: "completed",
       availability: "ready",
       reason_code: null,
-      related_selections: [{ kind: "role", id: "analyst.fundamentals" }],
+      related_selections: [{ kind: "role", id: "native.operating_quality" }],
     },
   ],
   roles: [
-    { item_id: "analyst.fundamentals", actor_id: "analyst.fundamentals", label: "Fundamentals Analyst", status: "completed", turn_count: 1, model_call_count: 1, duration_ms: 900 },
+    { item_id: "native.operating_quality", actor_id: "native.operating_quality", label: "Fundamentals Analyst", status: "completed", turn_count: 1, model_call_count: 1, duration_ms: 900 },
   ],
   capabilities: [],
   tools: [
@@ -68,10 +68,10 @@ const summary: AuditSummaryDTO = {
     { item_id: "report-1", label: "Report Final", artifact_kind: "report-final", media_type: "text/markdown", byte_size: 128, producer_stage: "portfolio", content_exposure: "safe_inline", is_report: true },
   ],
   prompts: [
-    { item_id: "prompt-1", label: "Prompt snapshot", actor_id: "analyst.fundamentals", model_call_id: "model-1", redaction_status: "redacted", byte_size: 80 },
+    { item_id: "prompt-1", label: "Prompt snapshot", actor_id: "native.operating_quality", model_call_id: "model-1", redaction_status: "redacted", byte_size: 80 },
   ],
   configs: [
-    { item_id: "config-1", label: "Effective config", actor_id: "analyst.fundamentals", model_call_id: null, redaction_status: "redacted", byte_size: 90 },
+    { item_id: "config-1", label: "Effective config", actor_id: "native.operating_quality", model_call_id: null, redaction_status: "redacted", byte_size: 90 },
   ],
 };
 
@@ -79,7 +79,7 @@ const detail: AuditDetailDTO = {
   schema_version: 1,
   run_id: summary.run_id,
   source_sequence: summary.source_sequence,
-  selection: { kind: "role", id: "analyst.fundamentals" },
+  selection: { kind: "role", id: "native.operating_quality" },
   availability: "ready",
   reason_code: null,
   title: "Fundamentals Analyst",
@@ -148,12 +148,12 @@ describe("AuditCenter", () => {
       <AuditCenter
         runId={summary.run_id}
         open
-        context={{ section: "roles", itemId: "analyst.fundamentals" }}
+        context={{ section: "roles", itemId: "native.operating_quality" }}
         returnFocus={returnFocus}
         onClose={close}
       />,
     );
-    const role = screen.getByRole("button", { name: /基本面分析师/ });
+    const role = screen.getByRole("button", { name: /经营研究/ });
     expect(role).toHaveAttribute("data-highlighted", "true");
     expect(mockedDetail).toHaveBeenLastCalledWith(summary.run_id, summary.source_sequence, null, refresh);
 
@@ -161,7 +161,7 @@ describe("AuditCenter", () => {
     expect(mockedDetail).toHaveBeenLastCalledWith(
       summary.run_id,
       summary.source_sequence,
-      { kind: "role", id: "analyst.fundamentals" },
+      { kind: "role", id: "native.operating_quality" },
       refresh,
     );
     fireEvent.keyDown(window, { key: "Escape" });
@@ -178,7 +178,7 @@ describe("AuditCenter", () => {
     render(
       <AuditCenter runId={summary.run_id} open context={{ section: "roles" }} returnFocus={null} onClose={vi.fn()} />,
     );
-    const role = screen.getByRole("button", { name: /基本面分析师/ });
+    const role = screen.getByRole("button", { name: /经营研究/ });
     fireEvent.click(role);
     const overlay = screen.getByRole("dialog", { name: "审计详情" });
     expect(overlay).toHaveAttribute("aria-modal", "true");
@@ -239,11 +239,11 @@ describe("AuditCenter", () => {
   });
 
   it("keeps a published partial report's limitations visible", () => {
-    const record: ResearchRecordV1DTO = {schema_version:"research-record-v1",run_id:summary.run_id,ticker:"000338.SZ",mode:"company_research",analysis_date:"2026-08-11",construction:"native",source_case_contract:null,source_case_sha256:null,snapshots:[],evidence:[],claims:[{claim_id:"unknown-1",kind:"unknown",statement:"应收账款回款仍待核查。",evidence_ids:[],supporting_fact_ids:[],limitations:[]}],hypotheses:[],challenges:[],verifications:[],metrics:[],limitations:["经营研究缺少合格输出。"],assessment:{schema_version:"research-assessment-v1",input_snapshot_id:"test",research_question:"test",judgement:"test",dimensions:[],key_claim_ids:[],primary_challenge_id:null,next_check:"test",challenge_assessments:[],completeness:"partial",quality:"LOW_CONFIDENCE",forward_window_calendar_days:null,limitations:[]}};
-    mockedResearch.mockReturnValue({process:null,record:{state:"ready",schema_version:1,run_id:summary.run_id,record},loading:false,error:false,retry});
+    const record: InsightReportDTO = {schema_version:"insight-research-v1",construction:"native",run_id:summary.run_id,ticker:"000338.SZ",mode:"company_research",analysis_date:"2026-08-11",catalogs:{},insights:[],reviews:[],responses:[],synthesis:null,gaps:["经营研究缺少合格输出。", "应收账款回款仍待核查。"],stages:{},focus_question:null,focus_insights:[],superseded_ids:[],search_requests:{}};
+    mockedResearch.mockReturnValue({process:null,record:{state:"insight_ready",schema_version:1,run_id:summary.run_id,record},loading:false,error:false,retry});
     render(<AuditCenter runId={summary.run_id} open context={null} returnFocus={null} onClose={vi.fn()} />);
     expect(screen.getByText("已发布研究报告")).toBeInTheDocument();
-    expect(screen.getByText(/报告存在证据或研究环节限制/)).toBeInTheDocument();
+    expect(screen.getByText(/技术记录完整不代表研究判断可靠/)).toBeInTheDocument();
     expect(screen.getByText("经营研究缺少合格输出。")).toBeInTheDocument();
     expect(screen.getByText("应收账款回款仍待核查。")).toBeInTheDocument();
   });

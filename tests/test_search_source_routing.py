@@ -7,10 +7,9 @@ import pytest
 
 from tests.test_native_multisource import PROFILE, statement
 from tradingagents.agents.schemas._search import SearchBatchV1, SearchHitV1, SearchOutcomeV1
-from tradingagents.dataflows.minimum_sources import MinimumEvidenceSources
 from tradingagents.dataflows.search_sources import SearchEvidenceSources
 from tradingagents.execution.models import AnalysisCancelled
-from tradingagents.research.catalyst_evidence_policy import catalyst_evidence_policy_v1
+from tradingagents.research.collection_policy import collection_policy
 from tradingagents.research.native_versions import (
     REPORT_DELIVERY_POLICY,
 )
@@ -33,7 +32,7 @@ class Coordinator:
 
 def collector(monkeypatch, coordinator=None, *, identity=True, financial=True):
     request = SimpleNamespace(ticker='002130.SZ', analysis_date=date.today().isoformat(),
-        mode='company_research', catalyst_policy=catalyst_evidence_policy_v1(),
+        mode='company_research', collection_policy=collection_policy(),
         report_delivery_policy=REPORT_DELIVERY_POLICY, financial_detail_policy=None,
         effective_config={'evidence_source_vendors': {'identity': ['sina'] if identity else [],
             'financial': ['sina'] if financial else [], 'events': [], 'calendar': [], 'price': [],
@@ -56,7 +55,7 @@ def test_news_search_even_when_data_apis_succeed(monkeypatch):
     record, _ = sources.collect()
     initial = [r for batch in search.calls for r in batch if r.kind == 'initial']
     assert len(initial) == 6 and {r.provider for r in initial} == {'deepseek', 'tavily'}
-    assert record.schema_version == 'research-record-v2' and len(record.snapshots) == 1
+    assert record.schema_version == 'evidence-record-v1' and len(record.snapshots) == 1
     assert any('行业新闻原文' in fact.statement for fact in record.claims)
 
 
@@ -94,12 +93,6 @@ def test_global_control_error_never_falls_back(monkeypatch):
     with pytest.raises(AnalysisCancelled):
         sources.collect()
     assert not search.calls
-
-
-def test_default_current_collector_still_legacy():
-    from tradingagents.research.native_versions import UNIFIED_WORKFLOW_VERSION
-    assert UNIFIED_WORKFLOW_VERSION == 'evidence-production-v7'
-    assert not hasattr(MinimumEvidenceSources, 'coordinator')
 
 
 def test_exhausted_dedicated_pool_still_allows_search_recovery(monkeypatch):

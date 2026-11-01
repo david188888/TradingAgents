@@ -1,7 +1,7 @@
 # Contributing
 
-TradingAgents maintains a local A-share Web research workbench. Preserve evidence provenance,
-saved-run compatibility and unrelated work. Start with [architecture](ARCHITECTURE.md) and the
+TradingAgents maintains CLI and local Web adapters for V9 A-share company research. Preserve evidence provenance,
+current V9 saved-run integrity and unrelated work. Start with [architecture](ARCHITECTURE.md) and the
 [scoped Agent guides](AGENTS.md) for files being changed.
 
 ## Setup
@@ -13,7 +13,7 @@ npm --prefix frontend ci
 ```
 
 Reuse the existing Conda environment; only create it if absent. Copy `.env.example` to `.env` on first
-setup. The legacy CLI may read `tradingagents.local.json`; Web does not. Credentials and runtime data
+setup. The CLI may read `tradingagents.local.json`; Web does not. Credentials and runtime data
 must stay out of commits. Node is for frontend development/builds, not installed-Web runtime.
 
 ## Change routing
@@ -28,7 +28,7 @@ must stay out of commits. Node is for frontend development/builds, not installed
 
 Canonical schemas own fields and validation. Update producers, persistence/replay, projections and
 consumers together; do not derive a new machine contract from Markdown or a rendered report.
-Keep historical identities/prompts and absent-field serialization compatible where supported.
+Only V9 execution, reading and resume are supported. Do not reintroduce older workflow adapters.
 
 ## Scoped Validation
 

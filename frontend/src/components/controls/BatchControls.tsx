@@ -31,8 +31,8 @@ export interface BatchControlsProps {
   onSelectRun: (run_id: string) => void;
 }
 
-function configFromRequest(request: RunCreateRequestDTO): Omit<RunCreateRequestDTO, "ticker" | "mode" | "holding" | "portfolio"> {
-  const { ticker: _ticker, mode: _mode, holding: _holding, portfolio: _portfolio, ...config } = request;
+function configFromRequest(request: RunCreateRequestDTO): Omit<RunCreateRequestDTO, "ticker"> {
+  const { ticker: _ticker, ...config } = request;
   return config;
 }
 

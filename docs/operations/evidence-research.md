@@ -26,7 +26,7 @@ Run one server per run-store directory. Changes to environment configuration req
 Keep credentials in the ignored `.env`, never in reports or committed examples.
 The launcher loads repository `.env` with override, then `.env.enterprise` as fallback;
 direct package launches use their working directory and preserve exported environment values.
-The Web server does not load the retained CLI's `tradingagents.local.json`.
+The Web server does not load the CLI's `tradingagents.local.json`.
 
 | Purpose | Configuration |
 | --- | --- |
@@ -47,12 +47,11 @@ DeepSeek defaults to enabled thinking/high effort. Environment controls include
 `TRADINGAGENTS_OPENAI_REASONING_EFFORT` and optional `TRADINGAGENTS_LLM_MAX_TOKENS`.
 ChatGPT effort support is model-dependent; its output-cap omission is intentional. Google maps the
 shared output cap to `max_output_tokens`, and Azure forwards `max_tokens`; provider-side acceptance
-and enforcement depend on the selected model. Task-effort mappings are programmatic/legacy CLI settings, not Web selectors;
+and enforcement depend on the selected model. Task-effort mappings are programmatic/CLI settings, not Web selectors;
 [task_effort.py](../../tradingagents/llm_clients/task_effort.py) owns valid tasks and values.
 
 Fresh V9 research sends strict structured output on SIWC/OpenAI and JSON mode on the existing
-DeepSeek Chat Completions route. Canonical evidence and numeric checks still apply; old runs keep
-their frozen request format. A successful small schema probe is separate from complete real-model
+DeepSeek Chat Completions route. Canonical evidence and numeric checks still apply; only V9 requests are supported. A successful small schema probe is separate from complete real-model
 research acceptance. See the [output contract](../contracts/research-record.md) for boundaries.
 
 ## Create a study
@@ -151,15 +150,7 @@ Open the workbench through its loopback address; foreign Host/Origin requests ar
 Runs live under `~/.tradingagents/web/runs/`; the stored report is `reports/complete_report.md`.
 Credentials live separately. Do not clear run directories to resolve model or source errors.
 For safe diagnostics and offline reconstruction use [observability/replay](observability-replay.md).
-Historical version behavior, presets and external classic packages are in the
-[compatibility reference](catalyst-research.md).
+Only V9 runs are supported. Earlier workflow execution, reading and recovery have been removed; old files stay on disk without conversion. CLI uses the same runner; see [terminal operations](cli-research.md).
 
-<!-- Compatibility anchors for existing section links. -->
-<a id="current-v8-search-execution"></a>
-<a id="explicit-development-capture"></a>
-<a id="native-valuation-qualification"></a>
 <a id="official-document-admission"></a>
-<a id="v5-minimum-sufficient-evidence"></a>
-<a id="v6-independent-baseline-and-supplementary-focus"></a>
-<a id="v7-unified-company-investment-research"></a>
-<a id="web-evidence-driven-research"></a>
+<a id="explicit-development-capture"></a>

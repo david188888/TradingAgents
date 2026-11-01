@@ -24,24 +24,20 @@ from tradingagents.dataflows.catalyst_events import (
     content_fingerprint,
 )
 from tradingagents.execution.budget import BudgetBucket, BudgetLedger
-from tradingagents.research.catalyst_evidence_policy import catalyst_evidence_policy_v1
+from tradingagents.research.collection_policy import collection_policy
 from tradingagents.research.evidence_freeze import (
     CAP_CONSENSUS,
     CAP_EVENT_COVERAGE,
     CAP_FUNDAMENTALS,
-    CAP_IDENTITY,
     CAP_PRICE,
     CAP_SENTIMENT,
     REQUIRED_CAPABILITIES,
-    ROLE_ORDER,
     CapabilityStatus,
     EvidenceFreezer,
     FreezeInputs,
     FrozenCapability,
     PriceObservation,
     SupplementClosed,
-    build_specialist_view,
-    empty_draft,
     freeze_evidence_draft,
 )
 
@@ -91,7 +87,7 @@ def _inputs(**kwargs) -> FreezeInputs:
         "run_id": "run_freeze",
         "ticker": "600519",
         "cutoff": CUTOFF,
-        "policy": catalyst_evidence_policy_v1(),
+        "policy": collection_policy(),
     }
     base.update(kwargs)
     return FreezeInputs(**base)
@@ -111,74 +107,8 @@ def _complete_inputs(**kwargs) -> FreezeInputs:
 # -- the three answer states ------------------------------------------------
 
 
-def test_a_proven_empty_window_is_usable_and_an_absent_one_is_not() -> None:
-    """Design SS8.4/SS9.1: "found nothing" and "could not look" are different.
-
-    Treating a timeout as an empty result is how a run publishes "no recent
-    catalyst" on the strength of a vendor that never answered.
-    """
-    covered = freeze_evidence_draft(
-        _complete_inputs(event_outcomes=[_covered()])
-    )
-    assert covered.status_of(CAP_EVENT_COVERAGE) is CapabilityStatus.COVERED_NO_MATCH
-    assert covered.status_of(CAP_EVENT_COVERAGE).is_usable is True
-
-    failed = EventQueryOutcomeV1(
-        outcome="coverage_unknown",
-        source_id="eastmoney",
-        item_count=0,
-        reason="request timed out",
-        degradations=("vendor_timeout",),
-    )
-    unknown = freeze_evidence_draft(
-        _complete_inputs(event_outcomes=[failed])
-    )
-    assert unknown.status_of(CAP_EVENT_COVERAGE) is CapabilityStatus.COVERAGE_UNKNOWN
-    assert unknown.status_of(CAP_EVENT_COVERAGE).is_usable is False
-    assert "required_capability_unqualified:event_coverage:coverage_unknown" in (
-        build_specialist_view(unknown, "catalyst_events").limitations
-    )
 
 
-def test_an_unusable_coverage_source_also_withholds_the_events_it_returned() -> None:
-    """A source that could not prove its window is not evidence at all.
-
-    A capability record can be "qualified" while the query that filled it
-    timed out. If the events from that source stayed citable, a specialist
-    could cite a filing whose completeness was never established -- and the
-    role would have no way to know. This is the mutation the
-    ``usable_event`` gate exists to prevent.
-    """
-    # The event cites the coverage evidence record, so the only thing that can
-    # withhold it is the coverage status itself.
-    inputs = _inputs(
-        capabilities=[_qualified(name) for name in REQUIRED_CAPABILITIES],
-        evidence=[
-            {
-                "evidence_id": f"ev.{name}",
-                "capability": name,
-                "evidence_ids": [f"ev.{CAP_EVENT_COVERAGE}"],
-            }
-            for name in REQUIRED_CAPABILITIES
-        ],
-        events=[_event()],
-        event_outcomes=[
-            EventQueryOutcomeV1(
-                outcome="coverage_unknown",
-                source_id="cninfo",
-                item_count=0,
-                reason="request timed out",
-                degradations=("vendor_timeout",),
-            )
-        ],
-    )
-    draft = freeze_evidence_draft(inputs)
-    assert draft.status_of(CAP_EVENT_COVERAGE) is CapabilityStatus.COVERAGE_UNKNOWN
-    assert draft.events, "fixture should have produced an event to withhold"
-
-    view = build_specialist_view(draft, "catalyst_events")
-    assert view.event_ids() == ()
-    assert not any(view.may_cite_event(item.event_id) for item in draft.events)
 
 
 def test_one_unknown_source_makes_a_multi_source_absence_unprovable() -> None:
@@ -197,28 +127,6 @@ def test_one_unknown_source_makes_a_multi_source_absence_unprovable() -> None:
     assert draft.status_of(CAP_EVENT_COVERAGE) is CapabilityStatus.COVERAGE_UNKNOWN
 
 
-def test_truncated_pagination_keeps_found_events_but_forbids_an_absence_claim() -> None:
-    """Incomplete pagination is not a reason to discard real filings.
-
-    The events that were returned are still evidence. What is withheld is the
-    claim that the window is closed, which is a limitation on the finding.
-    """
-    outcomes = [
-        EventQueryOutcomeV1(
-            outcome="partial_pagination",
-            source_id="cninfo",
-            item_count=1,
-            pagination_exhausted=False,
-            reason="page cap reached before the window was exhausted",
-        )
-    ]
-    draft = freeze_evidence_draft(
-        _complete_inputs(events=[_event()], event_outcomes=outcomes)
-    )
-    assert draft.status_of(CAP_EVENT_COVERAGE) is CapabilityStatus.PARTIAL
-    view = build_specialist_view(draft, "catalyst_events")
-    assert view.visible_event_ids, "a returned filing must not be discarded"
-    assert "capability_coverage_incomplete:event_coverage:partial" in view.limitations
 
 
 # -- republication and independence ----------------------------------------
@@ -294,118 +202,12 @@ def test_an_earlier_reporting_period_does_not_rescue_a_future_filing() -> None:
 # -- role isolation ---------------------------------------------------------
 
 
-def test_a_role_cannot_cite_evidence_from_a_capability_it_cannot_see() -> None:
-    """Design SS5.2 duty isolation, enforced by the view rather than by prompt.
-
-    Without this, the market role could cite a fundamentals document it was
-    never shown and the resulting finding would carry a reference no reader
-    could follow.
-    """
-    base = _complete_inputs()
-    draft = freeze_evidence_draft(
-        _inputs(
-            capabilities=[
-                *base.capabilities,
-                _qualified(CAP_SENTIMENT),
-                _qualified(CAP_CONSENSUS),
-            ],
-            evidence=[
-                *base.evidence,
-                {"evidence_id": "ev.sentiment", "capability": CAP_SENTIMENT},
-                {"evidence_id": "ev.consensus", "capability": CAP_CONSENSUS},
-            ],
-        )
-    )
-
-    operating = build_specialist_view(draft, "operating_delivery")
-    market = build_specialist_view(draft, "market_reaction")
-
-    assert "ev.consensus" in operating.citable_evidence_ids
-    assert "ev.consensus" not in market.citable_evidence_ids
-    assert "ev.sentiment" in market.citable_evidence_ids
-    assert "ev.sentiment" not in operating.citable_evidence_ids
-    assert market.may_cite_evidence("ev.consensus") is False
-    assert operating.may_cite_evidence("ev.sentiment") is False
 
 
-def test_evidence_from_an_unusable_capability_is_not_citable() -> None:
-    """A finding citing an unavailable source is an unresolvable reference."""
-    draft = freeze_evidence_draft(
-        _inputs(
-            capabilities=[
-                _qualified(CAP_IDENTITY),
-                _qualified(CAP_EVENT_COVERAGE),
-                _qualified(CAP_PRICE),
-                FrozenCapability(
-                    capability=CAP_FUNDAMENTALS,
-                    status=CapabilityStatus.UNAVAILABLE,
-                    required=True,
-                    reason="vendor returned no parsable statement",
-                    degradations=("parse_failed",),
-                ),
-            ],
-            evidence=[
-                {"evidence_id": f"ev.{name}", "capability": name}
-                for name in REQUIRED_CAPABILITIES
-            ],
-        )
-    )
-    operating = build_specialist_view(draft, "operating_delivery")
-    assert "ev.fundamentals" not in operating.citable_evidence_ids
-    assert draft.missing_required_capabilities() == (CAP_FUNDAMENTALS,)
 
 
-def test_each_role_carries_only_its_own_question() -> None:
-    """Design SS5.2: one question per unit, and roles do not borrow each
-    other's question."""
-    draft = freeze_evidence_draft(_complete_inputs())
-    questions = {build_specialist_view(draft, role).question for role in ROLE_ORDER}
-    assert len(questions) == len(ROLE_ORDER)
 
 
-def test_unverified_adjusted_prices_are_withheld_from_the_market_role() -> None:
-    """Design SS8.5/SS13.5: an unprovable qfq series must not enter the view.
-
-    Passing it with a caveat is not enough: a model handed a plausible price
-    chain will reason from it, and the caveat competes with the numbers for
-    attention.
-    """
-    draft = freeze_evidence_draft(
-        _complete_inputs(
-            prices=[
-                PriceObservation(
-                    observed_on="2026-09-20",
-                    close=10.0,
-                    adjustment="qfq",
-                    pit_verified=False,
-                    source="tencent",
-                ),
-                PriceObservation(
-                    observed_on="2026-09-20",
-                    close=10.4,
-                    adjustment="raw",
-                    pit_verified=False,
-                    source="tencent",
-                ),
-                PriceObservation(
-                    observed_on="2026-09-21",
-                    close=10.6,
-                    adjustment="qfq",
-                    pit_verified=True,
-                    source="wind",
-                ),
-            ]
-        )
-    )
-    market = build_specialist_view(draft, "market_reaction")
-    adjustments = {item.adjustment for item in market.prices}
-    assert "qfq" in adjustments
-    assert all(
-        item.pit_verified or item.adjustment == "raw" for item in market.prices
-    )
-    assert "pit_unverified_price_observations:1" in market.limitations
-    # No other role receives prices at all.
-    assert build_specialist_view(draft, "catalyst_events").prices == ()
 
 
 def test_a_price_observation_after_the_cutoff_is_rejected() -> None:
@@ -424,37 +226,6 @@ def test_a_price_observation_after_the_cutoff_is_rejected() -> None:
 # -- required-capability blocking ------------------------------------------
 
 
-def test_a_role_whose_required_capability_failed_is_told_so() -> None:
-    """Design SS9.1: a degraded required capability caps the final priority.
-
-    The role is not handed a gap and asked to reason about it -- a model given
-    an empty price set will describe the price action it cannot see.
-    """
-    draft = freeze_evidence_draft(
-        _inputs(
-            capabilities=[
-                _qualified(CAP_IDENTITY),
-                _qualified(CAP_EVENT_COVERAGE),
-                _qualified(CAP_FUNDAMENTALS),
-                FrozenCapability(
-                    capability=CAP_PRICE,
-                    status=CapabilityStatus.UNAVAILABLE,
-                    required=True,
-                    reason="no qualifying trading history",
-                    degradations=("insufficient_history",),
-                ),
-            ],
-        )
-    )
-    assert build_specialist_view(draft, "market_reaction").prices == ()
-    assert "required_capability_unqualified:price_history:unavailable" in (
-        build_specialist_view(draft, "market_reaction").limitations
-    )
-    # A required capability for a *different* role is not this role's gap.
-    assert not any(
-        "price_history" in note
-        for note in build_specialist_view(draft, "operating_delivery").limitations
-    )
 
 
 def test_optional_capability_absence_does_not_block() -> None:
@@ -482,15 +253,6 @@ def test_optional_capability_absence_does_not_block() -> None:
     }
 
 
-def test_empty_draft_marks_every_required_capability_unavailable() -> None:
-    """Design SS9.1: a blocked run is an honest artifact, not an absent one."""
-    draft = empty_draft("run_x", "600519", CUTOFF)
-    assert draft.missing_required_capabilities() == REQUIRED_CAPABILITIES
-    for role in ROLE_ORDER:
-        assert any(
-            "required_capability_unqualified" in note
-            for note in build_specialist_view(draft, role).limitations
-        )
 
 
 # -- the freeze boundary ----------------------------------------------------
@@ -564,7 +326,7 @@ def test_a_supplement_outside_the_lookback_window_is_refused() -> None:
     A free-form second retrieval round is how a run quietly becomes a different
     run with a longer horizon than the one that was reviewed and frozen.
     """
-    policy = catalyst_evidence_policy_v1()
+    policy = collection_policy()
     lookback_days = policy.forward_window_max_calendar_days
     inside = (datetime(2026, 9, 29) - timedelta(days=lookback_days - 1)).date().isoformat()
     outside = (datetime(2026, 9, 29) - timedelta(days=lookback_days + 10)).date().isoformat()

@@ -79,8 +79,7 @@ function makeConfig(): ConfigResponseDTO {
       quick_think_llm: "deepseek-chat",
       deep_think_llm: "deepseek-reasoner",
       output_language: "Chinese",
-      research_depth: 1,
-      checkpoint_enabled: false,
+
     },
     wind: { enabled: false, configured: false, capabilities: [] },
   };
@@ -96,12 +95,11 @@ function makeCfg(overrides: Partial<UseConfigResult> = {}): UseConfigResult {
     setTicker: vi.fn(),
     analysis_date: "2026-09-08",
     setAnalysisDate: vi.fn(),
-    selected_analysts: ["market", "news"],
+
     setSelectedAnalysts: vi.fn(),
     toggleAnalyst: vi.fn(),
     selected_preset: null,
     setAnalystPreset: vi.fn(),
-    research_depth: 1,
     setResearchDepth: vi.fn(),
     llm_provider: "deepseek",
     setLlmProvider: vi.fn(),
@@ -117,13 +115,13 @@ function makeCfg(overrides: Partial<UseConfigResult> = {}): UseConfigResult {
     setDeepThinkLlm: vi.fn(),
     output_language: "Chinese",
     setOutputLanguage: vi.fn(),
-    checkpoint_enabled: false,
+
     setCheckpointEnabled: vi.fn(),
     mode: "company_research",
     setMode: vi.fn(),
     research_question: "",
     setResearchQuestion: vi.fn(),
-    horizon: "medium",
+
     setHorizon: vi.fn(),
     holding_quantity: "",
     setHoldingQuantity: vi.fn(),

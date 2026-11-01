@@ -360,7 +360,7 @@ function AuditSection({
         >
           <span className="audit-card-index">RUN / {summary.run.status.toUpperCase()}</span>
           <strong>{summary.run.ticker}</strong>
-          <span>{summary.run.mode ?? "legacy"} · {summary.run.horizon ?? "未记录周期"}</span>
+          <span>{summary.run.mode ?? "legacy"} · 公司研究</span>
         </button>
         <div className="audit-count-grid">
           <Count label="角色" value={summary.counts.roles} />

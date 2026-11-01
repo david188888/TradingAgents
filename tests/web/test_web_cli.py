@@ -7,18 +7,12 @@ import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from typer.testing import CliRunner
 
 from cli.main import app
-from tradingagents.web.preflight import (
-    INSTALL_COMMAND,
-    GraphFeatureProbe,
-    WebCapabilityReport,
-    WebRuntimeError,
-)
 
 pytestmark = pytest.mark.unit
 
@@ -26,8 +20,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOCAL_URL = "http://127.0.0.1:8765"
 
 # Rich honors ``FORCE_COLOR`` in the test environment, so the CliRunner output
-# carries ANSI color spans that split substrings like ``--port`` or the install
-# command across styled runs. Strip ANSI before substring assertions so the
+# carries ANSI color spans that split substrings like ``--port`` across
+# styled runs. Strip ANSI before substring assertions so the
 # contracts are checked against the plain text, not its color markup.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -224,23 +218,3 @@ def test_explicit_open_opens_only_the_printed_localhost_url():
     assert LOCAL_URL in output.call_args.args[0]
     browser_opener.assert_called_once_with(LOCAL_URL)
     assert server_runner.call_args.kwargs == {"host": "127.0.0.1", "port": 8765}
-
-
-def test_runtime_failure_prints_exact_install_command_and_exits_nonzero():
-    report = WebCapabilityReport(
-        versions={"fastapi": None},
-        requirements={"fastapi": ">=0.115,<1"},
-        stream_accepts_durability=False,
-        graph_features=GraphFeatureProbe(),
-        issues=("missing distribution fastapi (>=0.115,<1)",),
-    )
-
-    with patch(
-        "tradingagents.web.preflight.ensure_web_runtime",
-        side_effect=WebRuntimeError(report),
-    ):
-        result = CliRunner().invoke(app, ["web", "--no-open"])
-
-    assert result.exit_code != 0
-    assert INSTALL_COMMAND in _plain(result.output)
-    assert _plain(result.output).count(INSTALL_COMMAND) == 1

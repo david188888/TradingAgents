@@ -2,8 +2,8 @@
 
 from dataclasses import replace
 
-from tests.test_dual_search_pipeline import setup
 from tests.test_insight_protocol import proposal
+from tests.v9_fixtures import setup
 from tradingagents.execution.native_runner import NativeResumeGuard, native_identity
 from tradingagents.runtime.reports import ReportArtifactWriter
 from tradingagents.web.research_record_projection import project_research_record
@@ -11,7 +11,7 @@ from tradingagents.web.research_record_projection import project_research_record
 
 def test_new_version_omits_legacy_output_gates(tmp_path, monkeypatch):
     _, request, _, _, _, _ = setup(tmp_path, monkeypatch, enabled=False)
-    value = native_identity(request, workflow_version='evidence-production-v9')
+    value = native_identity(request)
     assert value['insight_policy'] == 'insight-first-v1'
     assert 'model_binding_policy' not in value
     assert 'factual_premise_policy' not in value

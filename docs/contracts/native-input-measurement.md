@@ -1,15 +1,7 @@
-# Native input measurement
+# native-input-measurement
 
-Status: Current — navigation pointer.
+Status: Retired
 
-Maintained explanation: [owning reference](../operations/observability-replay.md#saved-run-measurement-tools).
-Canonical detail or related owner: [source](../../scripts/profile_native_inputs.py).
+This document's former workflow was removed during the V9-only cleanup. Its executors, model-output adapters and diagnostic tools are no longer supported. See the [current Insight contract](research-record.md) and [architecture](../../ARCHITECTURE.md). Dated implementation history remains in the [archive](../archive/README.md).
 
-V7 hash-verified reconstruction, preservation inventory and reversible comparison are offline tools, not production prompt compression or model-quality evidence.
-
-<!-- Compatibility anchors for existing section links. -->
-<a id="conservative-preservation-contract"></a>
-<a id="measurement-units-and-unknowns"></a>
-<a id="native-input-measurement-and-preservation-inventory"></a>
 <a id="offline-reversible-metadata-comparison"></a>
-<a id="reconstruction-and-integrity"></a>

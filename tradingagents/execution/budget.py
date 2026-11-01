@@ -1,4 +1,4 @@
-"""Budget enforcement for the bounded ``catalyst_v1`` research flow.
+"""Durable budget enforcement for bounded research execution.
 
 Design SS5.5 fixes hard ceilings and the rules for reaching them.  Three of
 those rules are accounting problems rather than modelling problems, and this
@@ -683,57 +683,6 @@ class BudgetLedger:
                     settled.append(updated)
         return tuple(settled)
 
-    def usage_snapshot(
-        self,
-        *,
-        model_usage_available: bool = True,
-        termination_reason: str | None = None,
-    ) -> Any:
-        """Project the ledger onto the canonical ``BudgetUsage`` model.
-
-        Token totals are summed only from attempts that actually reported them.
-        If any attempt's usage is unknown the aggregate is reported as
-        unavailable, because a partial sum presented as a total is how a cost
-        regression stays hidden.
-        """
-        from tradingagents.agents.schemas._catalyst_research import BudgetUsage
-
-        with self._lock:
-            records = tuple(self._records.values())
-            consumed = [item for item in records if item.counts_against_budget()]
-            tokens_known = all(
-                item.usage_available
-                and item.input_tokens is not None
-                and item.output_tokens is not None
-                for item in consumed
-            )
-            input_tokens = (
-                sum(int(item.input_tokens or 0) for item in consumed)
-                if tokens_known and consumed
-                else None
-            )
-            output_tokens = (
-                sum(int(item.output_tokens or 0) for item in consumed)
-                if tokens_known and consumed
-                else None
-            )
-            return BudgetUsage(
-                model_attempts=self.consumed(BudgetBucket.MODEL_ATTEMPTS),
-                structured_output_repairs=self.consumed(BudgetBucket.STRUCTURED_REPAIR),
-                network_retries=self.consumed(BudgetBucket.NETWORK_RETRY),
-                data_capability_calls=self.consumed(BudgetBucket.DATA_CAPABILITY_CALLS),
-                http_attempts=self.consumed(BudgetBucket.DATA_HTTP_ATTEMPTS),
-                semantic_preprocess_calls=self.consumed(BudgetBucket.SEMANTIC_PREPROCESS),
-                model_usage_available=bool(tokens_known and model_usage_available),
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                stage_durations_ms=self.stage_durations_ms(),
-                termination_reason=(
-                    termination_reason
-                    if termination_reason is not None
-                    else self._termination_reason
-                ),
-            )
 
 
 class BudgetConflictError(RuntimeError):

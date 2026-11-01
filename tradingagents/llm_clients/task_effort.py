@@ -5,25 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-CLASSIC_ROLE_TASKS = {
-    "market": "classic.market",
-    "social": "classic.social",
-    "news": "classic.news",
-    "fundamentals": "classic.fundamentals",
-    "bull": "classic.bull",
-    "bear": "classic.bear",
-    "research_manager": "classic.research_manager",
-}
-DEEPSEEK_EFFORT_TASKS = frozenset(CLASSIC_ROLE_TASKS.values()) | frozenset({
+DEEPSEEK_EFFORT_TASKS = frozenset({
     "native.operating_quality", "native.event_context", "native.market_context",
-    "native.challenge", "native.synthesis",
-    "native.focus_response",
-    "catalyst.catalyst_events", "catalyst.operating_delivery", "catalyst.market_reaction",
-    "catalyst.independent_refutation", "catalyst.synthesis",
-    "aux.news_cluster", "aux.news_coverage", "aux.news_sentiment",
-    "aux.news_deep_review", "aux.context_compaction", "aux.debate_summary", "aux.report_explanation",
+    "native.challenge", "native.synthesis", "native.focus_response",
+    "native.response_operating_quality", "native.response_event_context", "native.response_market_context",
+    "aux.report_explanation",
 })
-
 
 def task_effort_overrides(config: Mapping[str, Any]) -> dict[str, str]:
     """Validate the complete optional policy, including unused task entries."""

@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
-from tradingagents.agents.schemas._research_record import (
+from tradingagents.agents.schemas._evidence import (
     RecordClaimV1,
     SourceContentV1,
     SourceEvidenceV1,

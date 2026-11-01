@@ -7,29 +7,23 @@ from tradingagents.agents.schemas._report_explanation import (
     EXPLANATION_POLICY,
     ReportExplanationView,
 )
-from tradingagents.agents.schemas._research_focus import ResearchFocusResponseV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
-from tradingagents.research.record_codec import parse_research_record
 from tradingagents.research.report_explanation import (
     explanation_targets,
     indicator_presentations,
     validate_explanation_entry,
 )
 from tradingagents.runtime.report_explanation import read_explanation_job
-from tradingagents.web.focus_projection import project_reader_focus
 from tradingagents.web.research_record_projection import project_research_record
 
 
 def load_explanation_record(store, run_id):
+    from tradingagents.research.insight_report import parse_insight_report
     projected = project_research_record(store, run_id)
-    if projected['state'] == 'insight_ready':
-        from tradingagents.research.insight_report import parse_insight_report
-        return parse_insight_report(projected['record']), None
-    if projected["state"] != "ready":
+    if projected["state"] != "insight_ready":
         raise ValueError("base_unavailable")
-    record = parse_research_record(projected["record"])
-    focus = project_reader_focus(store, run_id)
-    return record, ResearchFocusResponseV1.model_validate(focus["response"]) if focus["state"] == "ready" else None
+    return parse_insight_report(projected["record"]), None
+
 
 
 def project_report_explanation(store, run_id, *, service=None):

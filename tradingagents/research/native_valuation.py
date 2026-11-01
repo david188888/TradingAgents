@@ -71,7 +71,7 @@ def valuation_content(payload, source_name, ticker, cutoff):
 
 def assemble_valuation(record, payloads):
     """No snapshot means no native valuation judgement. Missing anchors stay absent."""
-    from tradingagents.agents.schemas._research_record import NativeValuationV1, canonical_sha256
+    from tradingagents.agents.schemas._evidence import NativeValuationV1, canonical_sha256
     eligible = [s for s in record.evidence if s.availability == "available" and s.content is not None]
     snapshot_source = next((s for s in eligible if s.source_name == "tencent.valuation_snapshot"), None)
     if snapshot_source is None:

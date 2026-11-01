@@ -27,7 +27,7 @@ def read_insight_publication(store, run_id, *, events=None, event=None):
             snapshot.run_id, snapshot.ticker, snapshot.analysis_date, snapshot.mode):
         raise ValueError('insight_publication_identity')
     barrier = next((e for e in events if e.event_id == event.parent_event_id), None)
-    if (barrier is None or barrier.status != 'committed' or barrier.payload.get('kind') != 'catalyst-checkpoint'
+    if (barrier is None or barrier.status != 'committed' or barrier.payload.get('kind') != 'research-checkpoint'
             or barrier.sequence != event.payload.get('committed_sequence') or barrier.sequence >= event.sequence
             or event.payload.get('graph_task_id') != 'native.final'):
         raise ValueError('insight_publication_barrier')

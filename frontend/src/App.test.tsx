@@ -13,6 +13,6 @@ describe("App shell", () => {
     expect(screen.getByRole("heading", { name: "研究输入" })).toBeInTheDocument();
     // With no run selected the main surface shows the reader empty state;
     // the audit rail is opt-in (mounted only when opened), not permanent.
-    expect(screen.getByText("选择一次运行")).toBeInTheDocument();
+    expect(screen.getByText("选择一次研究，或输入股票代码开始")).toBeInTheDocument();
   });
 });

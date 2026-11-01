@@ -6,8 +6,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from ._company_basics import CompanyBasicsV1
+from ._evidence import SourceEvidenceV1
 from ._numeric_narrative import NumericAnchorV1
-from ._research_record import SourceEvidenceV1
 
 
 class _InsightModel(BaseModel):

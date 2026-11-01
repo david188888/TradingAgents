@@ -18,7 +18,7 @@ from tradingagents.agents.schemas._insight import (
 from tradingagents.agents.schemas._numeric_narrative import NumericCatalogV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
 from tradingagents.research.numeric_catalog import build_numeric_catalog, render_numeric_anchor
-from tradingagents.research.numeric_narrative import _CN_QUANTITY, _EN_QUANTITY
+from tradingagents.research.quantity_tokens import _CN_QUANTITY, _EN_QUANTITY
 
 _REFERENCE = re.compile(r'\[([ENI][0-9]+)\]')
 _QUANTITY = re.compile(

@@ -28,9 +28,9 @@ from tradingagents.execution.models import (
 )
 from tradingagents.observability.observer import DurableRunObserver
 from tradingagents.observability.roles import ROLE_REGISTRY
+from tradingagents.runtime.store import RunStore
 from tradingagents.web.api import create_app
 from tradingagents.web.manager import SingleRunManager
-from tradingagents.web.store import RunStore
 
 pytestmark = pytest.mark.unit
 

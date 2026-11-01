@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 
 from tradingagents.observability.events import PersistedEvent, RunEventDraft
+from tradingagents.runtime.run_models import RunSnapshot, generate_run_id
+from tradingagents.runtime.store import RunStore
 from tradingagents.web.broker import EventBroker, Keepalive, SubscriptionClosed
-from tradingagents.web.run_models import RunSnapshot, generate_run_id
-from tradingagents.web.store import RunStore
 
 
 def _run(coroutine: Coroutine[Any, Any, None]) -> None:
@@ -28,7 +28,6 @@ def _store_with_run(tmp_path) -> tuple[RunStore, str]:
             run_id=run_id,
             ticker="AAPL",
             analysis_date="2026-07-18",
-            selected_analysts=("market",),
             llm_provider="openai",
             quick_think_llm="quick",
             deep_think_llm="deep",
@@ -73,7 +72,6 @@ def test_publish_fsyncs_before_delivery_under_the_shared_run_lock(tmp_path):
                 run_id=run_id,
                 ticker="AAPL",
                 analysis_date="2026-07-18",
-                selected_analysts=("market",),
             )
         )
         broker = EventBroker(store)
@@ -133,7 +131,6 @@ def test_subscribe_watermark_handoff_has_no_gap_or_duplicate(tmp_path):
                 run_id=run_id,
                 ticker="AAPL",
                 analysis_date="2026-07-18",
-                selected_analysts=("market",),
             )
         )
         broker = EventBroker(store)

@@ -3,7 +3,7 @@ from datetime import date
 
 from tests.test_insight_protocol import catalog, proposal
 from tests.test_insight_research import response
-from tests.test_native_publication import setup
+from tests.v9_fixtures import journal_setup as setup
 from tradingagents.agents.schemas._insight import EvidenceCard
 from tradingagents.graph.insight_research import catalog_prompt, run_insight_research
 
@@ -63,22 +63,17 @@ def test_invalid_response_preserves_safe_reason_without_rejected_prose(tmp_path)
     assert 'PRIVATE_REPLY' not in str(journal.state)
 
 
-def test_saved_v9_identity_without_compaction_resumes_unchanged(tmp_path):
+def test_saved_v9_identity_requires_current_context_policy(tmp_path):
     import pytest
 
     from tradingagents.execution.models import AnalysisRequest
     from tradingagents.execution.native_runner import native_identity, validate_native_resume
-    from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
-
+    from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
     observer, journal, _ = setup(tmp_path)
-    request = AnalysisRequest('600519', '2026-09-30', research_profile='evidence_v1', effective_config={})
-    identity = native_identity(request, workflow_version='evidence-production-v9', insight_context_policy=False)
-    journal.put('identity', identity)
-    validate_native_resume(observer.store, observer.run_id, request)
-    assert 'insight_context_policy' not in journal.state['identity']
-    identity = native_identity(request, workflow_version='evidence-production-v9')
+    request = AnalysisRequest('002130.SZ', '2026-10-28')
+    identity = native_identity(request)
     journal.put('identity', identity)
     validate_native_resume(observer.store, observer.run_id, request)
     journal.put('identity', {**identity, 'insight_context_policy': 'unknown-policy'})
-    with pytest.raises(CatalystCheckpointConflict):
+    with pytest.raises(ResearchCheckpointConflict):
         validate_native_resume(observer.store, observer.run_id, request)

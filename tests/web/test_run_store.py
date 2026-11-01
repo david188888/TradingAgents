@@ -9,8 +9,8 @@ import pandas as pd
 import pytest
 
 from tradingagents.observability.events import RunEventDraft
-from tradingagents.web.run_models import RunSnapshot, generate_run_id
-from tradingagents.web.store import (
+from tradingagents.runtime.run_models import RunSnapshot, generate_run_id
+from tradingagents.runtime.store import (
     InvalidStorePath,
     RunAlreadyExists,
     RunNotFound,
@@ -38,7 +38,6 @@ def _snapshot(*, run_id=None, ticker="AAPL", captured=None, metadata=None):
         run_id=run_id or generate_run_id(captured),
         ticker=ticker,
         analysis_date="2026-07-17",
-        selected_analysts=("market", "fundamentals"),
         llm_provider="openai",
         quick_think_llm="gpt-quick",
         deep_think_llm="gpt-deep",

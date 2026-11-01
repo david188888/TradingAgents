@@ -8,8 +8,8 @@ from tradingagents.dataflows import interface
 from tradingagents.dataflows.interface import _news_result_cache, route_to_vendor
 from tradingagents.observability.observer import DurableRunObserver
 from tradingagents.observability.provenance import CacheOrigin
-from tradingagents.web.run_models import RunSnapshot
-from tradingagents.web.store import RunStore
+from tradingagents.runtime.run_models import RunSnapshot
+from tradingagents.runtime.store import RunStore
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def _observer(tmp_path):
     store.create_run(snapshot)
     observer = DurableRunObserver(store, snapshot.run_id)
     turn = observer.start_turn(
-        actor_id="analyst.news",
+        actor_id="native.event_context",
         graph_task_id="task-news",
         graph_step=1,
         turn_index=1,

@@ -11,13 +11,14 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from tradingagents.agents.schemas._insight import InsightReport
 from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.execution.output_publisher import promote_derived_public_artifact
-from tradingagents.research.record_codec import ResearchRecord, parse_research_record
-from tradingagents.runtime.catalyst_checkpoint import (
+from tradingagents.research.insight_report import parse_insight_report
+from tradingagents.runtime.research_checkpoint import (
     CHECKPOINT_KIND,
-    CatalystJournal,
     DurableBudgetLedger,
+    ResearchJournal,
 )
 
 NATIVE_PUBLIC_TASK = "native.final"
@@ -35,18 +36,14 @@ def _digest(value: dict[str, Any]) -> str:
 
 
 def _parse_public_record(value):
-    if value.get('schema_version') == 'insight-research-v1':
-        from tradingagents.research.insight_report import parse_insight_report
-        return parse_insight_report(value)
-    return parse_research_record(value)
+    return parse_insight_report(value)
 
-
-def _existing_artifact(observer: Any, record: ResearchRecord) -> str | None:
+def _existing_artifact(observer: Any, record: InsightReport) -> str | None:
     artifact_id = None
     events = observer.store.read_events(observer.run_id)
     event_index = {event.event_id: event for event in events}
     for event in events:
-        if event.type != "artifact.written" or event.status != "committed" or event.payload.get("public_contract") not in {"research-record-v1", "research-record-v2", "insight-research-v1"}:
+        if event.type != "artifact.written" or event.status != "committed" or event.payload.get("public_contract") != "insight-research-v1":
             continue
         try:
             raw = observer.store.read_artifact(observer.run_id, event.payload["artifact_id"])
@@ -74,9 +71,9 @@ def _existing_artifact(observer: Any, record: ResearchRecord) -> str | None:
 def publish_native_record(
     observer: Any,
     *,
-    record: ResearchRecord,
+    record: InsightReport,
     ledger: DurableBudgetLedger,
-    publication_authorizer: Callable[[CatalystJournal], None],
+    publication_authorizer: Callable[[ResearchJournal], None],
 ) -> str:
     """Save the candidate, arbitrate cancellation, then publish the exact record.
 
@@ -87,25 +84,16 @@ def publish_native_record(
     """
     try:
         record = _parse_public_record(record.model_dump(mode="json"))
-        insight = record.schema_version == 'insight-research-v1'
         journal = ledger.journal
         if journal.observer.store is not observer.store or journal.observer.run_id != observer.run_id or record.run_id != observer.run_id or ledger.run_id != observer.run_id:
             raise NativePublicationError("native publication identity mismatch")
-        if record.construction != "native" or not insight and record.assessment is None:
+        if record.construction != "native":
             raise NativePublicationError("native publication requires a native assessment")
         if not callable(publication_authorizer):
             raise NativePublicationError("native publication requires a lifecycle authorizer")
-        if insight:
-            if (journal.state['identity'].get('workflow_version') != 'evidence-production-v9'
-                    or journal.state.get('insight.report') != record.model_dump(mode='json')):
-                raise NativePublicationError('insight publication identity mismatch')
-        else:
-            from tradingagents.research.native_versions import validate_assessment_version
-            validate_assessment_version(record, journal.state["identity"].get("workflow_version"))
-            from tradingagents.research.numeric_integration import validate_record_numeric
-            validate_record_numeric(record, journal.state["identity"])
-            if record.numeric_attribution is not None and record.numeric_attribution.input_identity != journal.state.get("native_input"):
-                raise NativePublicationError("native numeric input binding mismatch")
+        if (journal.state['identity'].get('workflow_version') != 'evidence-production-v9'
+                or journal.state.get('insight.report') != record.model_dump(mode='json')):
+            raise NativePublicationError('insight publication identity mismatch')
         candidate = record.model_dump(mode="json")
         digest = _digest(candidate)
         with journal.lock:

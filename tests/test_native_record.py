@@ -62,24 +62,12 @@ def fixture(*, financial_payload=None, statuses=None, extra=()):
         degradations=("fixture_partial",) if statuses.get(cap) == CapabilityStatus.PARTIAL else (),
         detail={"fixture": True}) for cap in (CAP_IDENTITY, CAP_FUNDAMENTALS, CAP_EVENT_COVERAGE, CAP_PRICE))
     draft = FrozenEvidenceDraft(run_id="native-run", ticker="600519", cutoff="2026-09-30",
-        policy_version="catalyst-evidence-policy-v1", draft_id="native-fixture",
+        policy_version="source-collection-policy-v1", draft_id="native-fixture",
         frozen_at=datetime(2026, 9, 30, 8, tzinfo=timezone.utc), evidence=evidence,
         capabilities=capabilities)
     return draft, context
 
 
-@pytest.mark.parametrize("mode", ["company_research", "catalyst_research", "holding_review"])
-def test_three_modes_start_from_same_code_owned_facts_without_model_judgement(mode):
-    record = build_native_record(*fixture(), mode=mode)
-    assert record.mode == mode and record.construction == "native"
-    assert record.assessment is None
-    assert record.hypotheses == record.challenges == record.verifications == ()
-    assert len(record.snapshots) == 1 and record.snapshots[0].version == 0
-    assert all(item.kind == "fact" for item in record.claims)
-    assert len(record.claims) == 11
-    assert "must-never" not in record.model_dump_json()
-    assert "never-copy" not in record.model_dump_json()
-    assert build_native_record(*fixture(), mode=mode) == record
 
 
 def test_all_eight_periods_are_saved_exactly_without_changing_c1_numeric_parser():
@@ -175,13 +163,17 @@ def test_invalid_financial_rows_do_not_become_facts(defect):
 def test_source_point_in_time_failures_keep_gap_without_claims(change):
     draft, context = fixture()
     draft = draft.model_copy(update={"evidence": (draft.evidence[0], {**draft.evidence[1], **change}, draft.evidence[2])})
-    record = build_native_record(draft, context, mode="company_research")
-    assert len(record.claims) == 1
-    assert record.evidence[1].availability == "unavailable"
+    if "published_at" in change:
+        with pytest.raises(ValueError, match="after cutoff"):
+            build_native_record(draft, context, mode="company_research")
+    else:
+        record = build_native_record(draft, context, mode="company_research")
+        assert len(record.claims) == 1
+        assert record.evidence[1].availability == "unavailable"
 
 
 def test_announcement_title_is_locatable_and_does_not_prove_implementation():
-    record = build_native_record(*fixture(), mode="catalyst_research")
+    record = build_native_record(*fixture(), mode="company_research")
     claim = next(item for item in record.claims if "event_context" in item.limitations[-1])
     assert "签订重大合同的公告" in claim.statement
     assert "尚未核对正文或实施情况" in claim.statement
@@ -191,27 +183,10 @@ def test_announcement_title_is_locatable_and_does_not_prove_implementation():
     assert "Title;Published" in claim.limitations[-2]
 
 
-def test_user_original_thesis_is_a_saved_declaration_not_an_economic_fact():
-    record = build_native_record(*fixture(), mode="holding_review", original_thesis="现金流改善可以延续",
-        holding_facts_as_of="2026-09-01")
-    user_source = next(item for item in record.evidence if item.source_name == "user.original_thesis")
-    assert user_source.content.text == "现金流改善可以延续"
-    claim = next(item for item in record.claims if item.evidence_ids == (user_source.evidence_id,))
-    assert "不证明该论点为真" in claim.statement
-    assert "user_declaration_not_independently_verified" in claim.limitations
 
 
-def test_missing_original_thesis_does_not_remove_company_operating_facts():
-    record = build_native_record(*fixture(), mode="holding_review")
-    assert len(record.claims) == 11
-    assert not any(item.source_name == "user.original_thesis" for item in record.evidence)
 
 
-@pytest.mark.parametrize("mode,date", [("company_research", "2026-09-01"), ("holding_review", None),
-    ("holding_review", "2026-10-01")])
-def test_original_thesis_cannot_be_silently_assigned_an_invented_or_future_date(mode, date):
-    with pytest.raises(ValueError):
-        build_native_record(*fixture(), mode=mode, original_thesis="original", holding_facts_as_of=date)
 
 
 @pytest.mark.parametrize("qualified", [True, False])

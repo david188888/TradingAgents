@@ -202,15 +202,15 @@ def test_optional_pdf_transport_failure_preserves_original_body(monkeypatch, err
 
 def test_pdf_checkpoint_conflict_is_never_degraded(monkeypatch):
     from tests.test_search_recovery import demand
-    from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+    from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
     monkeypatch.setenv('DEEPSEEK_API_KEY', 'not-real')
     s = Session(data={'results': [{'url': 'https://example.com/report.pdf', 'content': '已有原文'}]})
     j = Journal()
     c = SearchCoordinator(s, SearchBudget(j.ledger), j)
     def fail(*a, **kw):
-        raise CatalystCheckpointConflict('offline conflict')
+        raise ResearchCheckpointConflict('offline conflict')
     monkeypatch.setattr('tradingagents.execution.search_coordinator.download_public_document', fail)
-    with pytest.raises(CatalystCheckpointConflict):
+    with pytest.raises(ResearchCheckpointConflict):
         c.collect((make_search_request(requirements=(demand(),)),), input_snapshot_id='v0')
 
 

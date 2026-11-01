@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 
 import pytest
 
+from tradingagents.agents.schemas._evidence import SourceContentV1, SourceEvidenceV1
 from tradingagents.agents.schemas._insight import EvidenceCard, InsightCatalog, NumericReference
 from tradingagents.agents.schemas._numeric_narrative import NumericAnchorV1
-from tradingagents.agents.schemas._research_record import SourceContentV1, SourceEvidenceV1
 from tradingagents.research.insights import compile_insights
 
 

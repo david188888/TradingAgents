@@ -12,7 +12,7 @@ function role(key: AgentKey, status="completed", availability: ReaderRoleDTO["ou
     purpose:"给定事实范围",status,output_availability:availability,reason_code:availability === "pending_publication" ? "publication_pending":null,
     output_count:null,output_sequence:null,main_budget:count,sdk_main:count,sdk_repair:count};
 }
-function process(version="evidence-production-v7"): ReaderProcessDTO {
+function process(version="evidence-production-v9"): ReaderProcessDTO {
   return {schema_version:1,run_id:"flow-run",source_sequence:202,profile:"evidence_v1",workflow_version:version,
     availability:"partial",reason_code:"publication_pending",question_origin:"default",primary_selection:"not_recorded",
     counts:{main_budget:count,repair_budget:count,sdk_main:count,sdk_repair:count,sdk_total:count,data_capability:count,data_http:count},
@@ -37,7 +37,7 @@ describe("truthful dependency flow",()=>{
     }
     value.roles[0].output_count=132;
     render(<Harness value={value} status="running"/>);
-    expect(screen.getByText(/132 条事实/)).toBeVisible();
+    expect(screen.getByText(/132 项/)).toBeVisible();
     const publication=screen.getByRole("heading",{name:"基础研究发布"}).closest("article")!;
     expect(publication).toHaveTextContent("最终研究尚未发布");
     expect(publication).not.toHaveTextContent("已发布，可回顾");
@@ -65,24 +65,11 @@ describe("truthful dependency flow",()=>{
     fireEvent.click(within(detail).getByRole("button",{name:"收起角色回顾"}));
     expect(button).toHaveFocus();expect(button).toHaveAttribute("aria-expanded","false");
   });
-  it("uses two code positions with shared selection and only one displayed count",()=>{
-    const value=process();value.roles.find(r=>r.role_key==="code_checks")!.output_count=7;
-    render(<Harness value={value}/>);
-    fireEvent.click(screen.getByRole("button",{name:"查看基础研究发布环节与保存产物"}));
-    expect(screen.getByRole("button",{name:"查看代码条件核查环节与保存产物"})).toHaveAttribute("aria-expanded","true");
-    expect(screen.getAllByText(/7 项/)).toHaveLength(1);
-    expect(screen.getByRole("region",{name:"所选环节详情"})).toHaveTextContent("代码核查与发布");
-  });
-  it("renders V6 focus only after baseline publication and leaves conditional replies out",()=>{
-    const value=process("evidence-production-v6");value.roles=value.roles.filter(r=>!r.role_key.startsWith("response_"));value.roles.push(role("focus_response"));
-    const {container}=render(<Harness value={value} status="completed"/>);
-    const groups=Array.from(container.querySelectorAll(".rf-group"));
-    expect(groups.at(-1)).toHaveAttribute("data-group","focus");
-    expect(screen.queryByRole("group",{name:"被质疑专项回应"})).toBeNull();
-  });
+
+
   it("preserves explicitly requested focus while process data is loading",()=>{
     const state=createInitialState();state.meta.focus_requested=true;
-    render(<ResearchFlow process={null} workflowVersion="evidence-production-v7" state={state} runStatus="running"
+    render(<ResearchFlow process={null} workflowVersion="evidence-production-v9" state={state} runStatus="running"
       selectedRole={null} onSelect={vi.fn()} onClose={vi.fn()}/>);
     expect(screen.getByRole("group",{name:"基础研究保存后的补充"})).toHaveTextContent("关注点回应");
     expect(screen.queryByText(/条事实/)).toBeNull();

@@ -10,13 +10,13 @@ from tests.test_minimum_evidence import documents, forecast
 from tradingagents.dataflows.minimum_sources import MinimumEvidenceSources
 from tradingagents.execution.budget import BudgetBucket, BudgetLedger
 from tradingagents.execution.models import AnalysisCancelled
-from tradingagents.research.catalyst_evidence_policy import catalyst_evidence_policy_v1
+from tradingagents.research.collection_policy import collection_policy
 from tradingagents.research.evidence_freeze import CapabilityStatus, FreezeInputs
-from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 
 def inputs():
-    return FreezeInputs("bounded", "600803", datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat(), catalyst_evidence_policy_v1())
+    return FreezeInputs("bounded", "600803", datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat(), collection_policy())
 
 
 def sources(fetch, config=None):
@@ -41,7 +41,7 @@ def test_zero_remaining_optional_budget_preserves_existing_evidence():
     assert ledger.consumed(BudgetBucket.DATA_HTTP_ATTEMPTS) == 0
 
 
-@pytest.mark.parametrize("error", [AnalysisCancelled("cancelled"), TimeoutError("deadline"), CatalystCheckpointConflict("response unknown")])
+@pytest.mark.parametrize("error", [AnalysisCancelled("cancelled"), TimeoutError("deadline"), ResearchCheckpointConflict("response unknown")])
 def test_optional_branch_never_converts_run_control_failure_to_provider_fallback(error):
     calls = []
     def fetch(key, operation):

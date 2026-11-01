@@ -5,18 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from tradingagents.agents.schemas._insight import SavedInsight
-from tradingagents.agents.schemas._research_focus import ResearchFocusResponseV1
-from tradingagents.research.native_versions import (
-    FOCUS_WORKFLOW_VERSION,
-    SEARCH_WORKFLOW_VERSION,
-    UNIFIED_WORKFLOW_VERSION,
-)
-from tradingagents.research.record_codec import parse_research_record
-from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
-from tradingagents.runtime.focus_artifacts import (
-    read_focus_artifact,
-    read_focus_publication_failure,
-)
+from tradingagents.runtime.research_checkpoint import load_checkpoint
 from tradingagents.web.research_record_projection import project_research_record
 
 
@@ -28,7 +17,7 @@ class ReaderFocusDTO(BaseModel):
     workflow_version: str | None = None
     state: Literal["ready", "pending", "unavailable", "not_applicable"]
     focus: str | None = None
-    response: ResearchFocusResponseV1 | None = None
+    response: None = None
     insight_response: tuple[SavedInsight, ...] | None = None
     reason_code: Literal[
         "focus_not_requested", "legacy_question_semantics", "unsupported_profile",
@@ -70,27 +59,6 @@ def project_reader_focus(store, run_id, *, through=None):
                 return result('unavailable' if ended else 'pending', 'base_unavailable' if ended else 'publication_pending')
             items = projected['record']['focus_insights']
             return result('ready' if items else 'unavailable', None if items else 'not_published', insight_response=items)
-        if version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
-            if version is not None and version not in {f"evidence-production-v{i}" for i in range(1, 6)}:
-                return result("unavailable", "workflow_unsupported")
-            return result("not_applicable", "legacy_question_semantics")
-        focus = snapshot.metadata.get("research_question")
-        if not focus:
-            return result("not_applicable", "focus_not_requested")
-        base["focus"] = focus
-        ended = any(e.type in {"run.completed", "run.failed", "run.cancelled", "run.interrupted"} for e in events)
-        record = project_research_record(store, run_id, through=sequence)
-        if record["state"] != "ready":
-            return result("unavailable" if ended else "pending", "base_unavailable" if ended else "publication_pending")
-        if cp is None:
-            return result("unavailable", "corrupt")
-        saved = read_focus_artifact(store, run_id, parse_research_record(record["record"]), cp, events)
-        failure = read_focus_publication_failure(store, run_id, parse_research_record(record["record"]), cp, events)
-        if failure:
-            return result("unavailable", failure)
-        if saved is None:
-            return result("unavailable" if ended else "pending", "not_published" if ended else "publication_pending")
-        response, _ = saved
-        return result("ready", response=response)
+        return result("unavailable", "workflow_unsupported")
     except Exception:
         return result("unavailable", "corrupt")

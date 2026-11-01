@@ -1,35 +1,4 @@
-"""Assembly of the frozen evidence draft for one ``catalyst_v1`` run.
-
-Design SS5.1 places a freeze between bounded fetching and the specialist
-fan-out, and SS9 defines the preconditions a specialist input must satisfy
-before it may be shown to a reader.  The per-capability pieces those two
-sections need already exist in :mod:`tradingagents.dataflows.catalyst_events`
-(deterministic dedup, source families, point-in-time admissibility) and in
-:mod:`tradingagents.research.catalyst_evidence_policy` (the window
-parameters).  What was missing is the thing that joins them: a snapshot, taken
-once, after which the specialists no longer fetch anything.
-
-Three properties make the freeze worth having, and all three are enforced here
-rather than documented:
-
-* **Immutable.**  ``FrozenEvidenceDraft`` is a frozen dataclass holding tuples.
-  A specialist cannot append to the draft it was handed, so "no free retrieval
-  after the freeze" is a property of the type rather than a convention.
-* **Per-role views.**  Each specialist receives a projection of the draft, not
-  the draft.  SS5.2 requires duty isolation, and a view that omits what the
-  role may not see is what makes the isolation testable instead of aspirational.
-* **One supplement round, bounded.**  SS5.1 allows at most one pre-freeze
-  supplement covering at most three missing capabilities, charged to the same
-  run budget.  ``supplement`` accepts the extra capability results only while
-  the round is open and refuses everything afterwards, and it charges the
-  budget before accepting, so a supplement cannot be free.
-
-A capability that failed is recorded as ``unavailable`` with its reason.  It is
-never turned into an empty result: SS9.1 distinguishes "the source proved the
-window and found nothing" from "the source could not answer", and collapsing
-the second into the first is how a run concludes there is no catalyst because
-the news vendor timed out.
-"""
+"""Immutable source snapshots with point-in-time admission and bounded collection."""
 
 from __future__ import annotations
 
@@ -52,10 +21,10 @@ from tradingagents.dataflows.catalyst_events import (
     source_family_id,
     strictest_outcome,
 )
-from tradingagents.research.catalyst_evidence_policy import (
-    CATALYST_EVIDENCE_POLICY_VERSION,
-    CatalystEvidencePolicyV1,
-    catalyst_evidence_policy_v1,
+from tradingagents.research.collection_policy import (
+    COLLECTION_POLICY_VERSION,
+    CollectionPolicy,
+    collection_policy,
 )
 
 # Capability identifiers are a public contract: they appear in reason codes and
@@ -84,54 +53,6 @@ REQUIRED_CAPABILITIES: tuple[str, ...] = (
 # must not block formal event research, and a strong high-frequency reading
 # must not stand in for evidence that is actually required.
 OPTIONAL_CAPABILITIES: tuple[str, ...] = (CAP_SENTIMENT, CAP_CONSENSUS)
-
-SpecialistRole = Literal["catalyst_events", "operating_delivery", "market_reaction"]
-
-# Fixed read order for the merge node (design SS5.4).  Results must not depend
-# on completion order, so the merge sorts by this tuple rather than by arrival.
-ROLE_ORDER: tuple[SpecialistRole, ...] = (
-    "catalyst_events",
-    "operating_delivery",
-    "market_reaction",
-)
-
-# The single question each specialist answers (design SS5.2).  It is part of the
-# role's definition because a role that drifts from its question is no longer
-# the role the budget and the audit trail assume.
-ROLE_QUESTIONS: Mapping[SpecialistRole, str] = {
-    "catalyst_events": (
-        "为什么现在研究，什么事件可能在窗口内改变判断？"
-        " Why now, and which events could change the judgement inside the window?"
-    ),
-    "operating_delivery": (
-        "催化如何到收入、利润、现金流或约束条件？"
-        " How does the catalyst reach revenue, profit, cash flow, or a constraint?"
-    ),
-    "market_reaction": (
-        "已观察到什么价格/成交/关注变化，还有什么不能判断？"
-        " What price, volume, or attention change is observed, and what cannot be judged?"
-    ),
-}
-
-# Which capabilities each specialist is entitled to see.  Isolation is not
-# about hiding one specialist's *output* from another -- it is about not mixing
-# a market-reaction reading into the operating-delivery reasoning, which is how
-# a sentiment spike ends up presented as operating evidence.
-ROLE_CAPABILITY_ACCESS: Mapping[SpecialistRole, tuple[str, ...]] = {
-    "catalyst_events": (CAP_IDENTITY, CAP_EVENT_COVERAGE, CAP_FUNDAMENTALS),
-    "operating_delivery": (CAP_IDENTITY, CAP_EVENT_COVERAGE, CAP_FUNDAMENTALS, CAP_CONSENSUS),
-    "market_reaction": (CAP_IDENTITY, CAP_PRICE, CAP_SENTIMENT, CAP_EVENT_COVERAGE),
-}
-
-# What each specialist may emit.  A role that cannot see a capability cannot
-# make a finding that depends on it: allowing it would put an unresolvable
-# citation in the public case.
-ROLE_REQUIRED_CAPABILITIES: Mapping[SpecialistRole, tuple[str, ...]] = {
-    "catalyst_events": (CAP_EVENT_COVERAGE,),
-    "operating_delivery": (CAP_FUNDAMENTALS,),
-    "market_reaction": (CAP_PRICE,),
-}
-
 
 class CapabilityStatus(str, Enum):
     """Whether a capability produced usable evidence for this run.
@@ -376,150 +297,6 @@ class FrozenEvidenceDraft(BaseModel):
         }
 
 
-@dataclass(frozen=True)
-class SpecialistEvidenceView:
-    """The one thing a specialist role is allowed to read.
-
-    Deliberately not a dict.  A role receives a projection that physically
-    cannot carry another role's findings, so "specialists do not read each
-    other" is checked by construction rather than by a convention a future
-    edit could quietly break.
-    """
-
-    role: SpecialistRole
-    run_id: str
-    ticker: str
-    cutoff: str
-    question: str
-    draft_id: str
-    # Event ids this role may read, in draft order.
-    visible_event_ids: tuple[str, ...]
-    # Evidence ids this role may cite, restricted to its capability access.
-    citable_evidence_ids: tuple[str, ...]
-    # The visible events themselves, already filtered.  Present so a role does
-    # not have to reach back into the draft and re-derive the filter.
-    events: tuple[FrozenEvent, ...]
-    prices: tuple[PriceObservation, ...] = ()
-    capability_status: Mapping[str, str] = field(default_factory=dict)
-    limitations: tuple[str, ...] = ()
-
-    def event_ids(self) -> tuple[str, ...]:
-        return tuple(item.event_id for item in self.events)
-
-    def may_cite_event(self, event_id: str) -> bool:
-        return event_id in self.visible_event_ids
-
-    def may_cite_evidence(self, evidence_id: str) -> bool:
-        return evidence_id in self.citable_evidence_ids
-
-
-def build_specialist_view(
-    draft: FrozenEvidenceDraft, role: SpecialistRole
-) -> SpecialistEvidenceView:
-    """Project the frozen draft into one role's bounded input.
-
-    The projection is the enforcement point for SS5.2's isolation rule and
-    SS9's PIT rule: a role that is not entitled to a capability simply does not
-    receive its evidence ids, and a price series that cannot be proven
-    point-in-time is withheld from the market role rather than passed with a
-    caveat attached.
-    """
-    access = ROLE_CAPABILITY_ACCESS[role]
-    usable = {
-        item.capability
-        for item in draft.capabilities
-        if item.status.is_usable and item.capability in access
-    }
-    citable = tuple(
-        str(item["evidence_id"])
-        for item in draft.evidence
-        if item.get("capability") in usable
-    )
-    visible = tuple(item for item in draft.events if item.event_id and usable_event(item, draft, role))
-    # SS8.5 / SS9.1: an unverified adjusted series may not enter the market
-    # role's judgement context at all. Raw closes may still be shown as a
-    # labelled audit observation, which is what an explicit limitation is for.
-    prices = tuple(
-        observation
-        for observation in draft.prices
-        if observation.pit_verified or observation.adjustment == "raw"
-    )
-    limitations = list(draft_view_limitations(draft, role))
-    return SpecialistEvidenceView(
-        role=role,
-        run_id=draft.run_id,
-        ticker=draft.ticker,
-        cutoff=draft.cutoff,
-        question=ROLE_QUESTIONS[role],
-        draft_id=draft.draft_id,
-        visible_event_ids=tuple(item.event_id for item in visible),
-        citable_evidence_ids=citable,
-        events=visible,
-        prices=prices if role == "market_reaction" else (),
-        capability_status={
-            name: draft.status_of(name).value for name in access
-        },
-        limitations=tuple(limitations),
-    )
-
-
-def usable_event(event: FrozenEvent, draft: FrozenEvidenceDraft, role: SpecialistRole) -> bool:
-    """Whether a role may see this event at all.
-
-    An event backed only by a capability the role cannot read is not merely
-    unreadable evidence -- presenting it would invite an inference the role has
-    no evidence to support.
-    """
-    if draft.status_of(CAP_EVENT_COVERAGE).blocks_specialists:
-        return False
-    citable = {
-        str(item["evidence_id"])
-        for item in draft.evidence
-        if item.get("capability") in ROLE_CAPABILITY_ACCESS[role]
-    }
-    return bool(set(event.evidence_ids) & citable)
-
-
-def draft_view_limitations(
-    draft: FrozenEvidenceDraft, role: SpecialistRole
-) -> list[str]:
-    """The limitations a role must be told about before it reasons.
-
-    SS9.1: a degraded *required* capability caps the final priority, and a
-    missing *optional* one is a disclosed gap rather than a blocker. The
-    difference is what the reader sees, so the role is told which is which.
-    """
-    notes: list[str] = []
-    for name in ROLE_REQUIRED_CAPABILITIES[role]:
-        status = draft.status_of(name)
-        if status.blocks_specialists:
-            notes.append(
-                f"required_capability_unqualified:{name}:{status.value}"
-            )
-        elif not status.is_usable:
-            # Usable but not complete. The role may reason over what was
-            # found; it may not claim the window is closed.
-            notes.append(
-                f"capability_coverage_incomplete:{name}:{status.value}"
-            )
-    for name in draft.degraded_optional_capabilities():
-        if name in ROLE_CAPABILITY_ACCESS[role]:
-            notes.append(f"optional_capability_missing:{name}:{draft.status_of(name).value}")
-    withheld = sum(
-        1
-        for item in draft.prices
-        if not item.pit_verified and item.adjustment != "raw"
-    )
-    if withheld and role == "market_reaction":
-        notes.append(f"pit_unverified_price_observations:{withheld}")
-    return notes
-
-
-# ---------------------------------------------------------------------------
-# Assembly
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class FreezeInputs:
     """What the fetcher hands to the freeze.
@@ -532,7 +309,7 @@ class FreezeInputs:
     run_id: str
     ticker: str
     cutoff: str
-    policy: CatalystEvidencePolicyV1
+    policy: CollectionPolicy
     events: list[CatalystEventV1] = field(default_factory=list)
     event_outcomes: list[EventQueryOutcomeV1] = field(default_factory=list)
     capabilities: list[FrozenCapability] = field(default_factory=list)
@@ -675,7 +452,7 @@ def freeze_evidence_draft(inputs: FreezeInputs) -> FrozenEvidenceDraft:
         run_id=inputs.run_id,
         ticker=inputs.ticker,
         cutoff=inputs.cutoff,
-        policy_version=CATALYST_EVIDENCE_POLICY_VERSION,
+        policy_version=COLLECTION_POLICY_VERSION,
         draft_id=compute_draft_id(inputs),
         frozen_at=datetime.now(timezone.utc),
         capabilities=tuple(capabilities),
@@ -747,7 +524,7 @@ def empty_draft(
     ticker: str,
     cutoff: str,
     *,
-    policy: CatalystEvidencePolicyV1 | None = None,
+    policy: CollectionPolicy | None = None,
     blocked_reason: str = "no_evidence_was_produced",
 ) -> FrozenEvidenceDraft:
     """A draft for a run that produced no usable evidence at all.
@@ -757,7 +534,7 @@ def empty_draft(
     that carries this draft is capped at insufficient information by
     construction instead of by a special case in the assembler.
     """
-    active = policy or catalyst_evidence_policy_v1()
+    active = policy or collection_policy()
     capabilities = [
         FrozenCapability(
             capability=name,
@@ -776,7 +553,7 @@ def empty_draft(
         run_id=run_id,
         ticker=ticker,
         cutoff=cutoff,
-        policy_version=CATALYST_EVIDENCE_POLICY_VERSION,
+        policy_version=COLLECTION_POLICY_VERSION,
         draft_id=f"draft_empty_{abs(hash((run_id, ticker, cutoff))) % (10**16):016d}",
         frozen_at=datetime.now(timezone.utc),
         capabilities=tuple(capabilities),

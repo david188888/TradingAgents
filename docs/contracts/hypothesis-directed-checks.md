@@ -1,14 +1,5 @@
-# Hypothesis-directed checks
+# hypothesis-directed-checks
 
-Status: Current — navigation pointer.
+Status: Retired
 
-Maintained explanation: [owning reference](research-record.md#challenge-and-verification).
-Canonical detail or related owner: [source](../../tradingagents/research/challenge_checks.py).
-
-Independent propositions and task outcomes do not rewrite original hypothesis conditions or automatically close economic risks.
-
-<!-- Compatibility anchors for existing section links. -->
-<a id="classification-and-execution"></a>
-<a id="hypothesis-directed-challenge-checks"></a>
-<a id="measurement"></a>
-<a id="ownership-and-evidence-scope"></a>
+This document's former workflow was removed during the V9-only cleanup. Its executors, model-output adapters and diagnostic tools are no longer supported. See the [current Insight contract](research-record.md) and [architecture](../../ARCHITECTURE.md). Dated implementation history remains in the [archive](../archive/README.md).

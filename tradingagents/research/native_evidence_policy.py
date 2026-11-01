@@ -33,6 +33,6 @@ class NativeEvidencePolicyV1(BaseModel):
     def collector_policy(self):
         # This adapter reuses the proven collector's source windows. Its
         # legacy forward field does not become a company/holding outlook.
-        from .catalyst_evidence_policy import catalyst_evidence_policy_v1
+        from .collection_policy import collection_policy
 
-        return catalyst_evidence_policy_v1()
+        return collection_policy()

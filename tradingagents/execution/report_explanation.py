@@ -19,7 +19,7 @@ from tradingagents.agents.schemas._report_explanation import (
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
 from tradingagents.execution.config_identity import restore_endpoint_identity
 from tradingagents.execution.model_request import invoke_model_request
-from tradingagents.graph.catalyst_workflow import global_model_slots
+from tradingagents.execution.model_support import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
@@ -29,8 +29,8 @@ from tradingagents.research.report_explanation import (
     indicator_presentations,
     validate_explanation_entry,
 )
-from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
 from tradingagents.runtime.report_explanation import read_explanation_job, save_explanation_job
+from tradingagents.runtime.research_checkpoint import load_checkpoint
 
 
 def _now():
@@ -69,7 +69,7 @@ class ExplanationService:
         record, focus = self.loader(run_id)
         snapshot = self.store.read_snapshot(run_id)
         if (snapshot.status != "completed" or snapshot.metadata.get("report_explanation_policy") != EXPLANATION_POLICY
-                or record.construction != "native" or record.schema_version != "insight-research-v1" and record.assessment is None):
+                or record.construction != "native" or record.schema_version != "insight-research-v1"):
             raise ValueError("explanation_not_eligible")
         batched = snapshot.metadata.get("research_delivery_policy") == "evidence-packets-v1"
         targets, excluded = explanation_targets(record, indicator_presentations(record), focus, batched=batched)

@@ -3,12 +3,12 @@
 from types import SimpleNamespace
 
 from tests.test_search_contracts import record_payload
-from tradingagents.agents.schemas._research_record_v2 import ResearchRecordV2
+from tradingagents.agents.schemas._evidence_record import EvidenceRecord
 from tradingagents.agents.schemas._search import EvidenceGapV1, SearchRequestV1
 
 
 def make_v2_record(**changes):
-    return ResearchRecordV2.model_validate({**record_payload(), **changes})
+    return EvidenceRecord.model_validate({**record_payload(), **changes})
 
 
 def make_search_request(**changes):

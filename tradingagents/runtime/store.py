@@ -19,7 +19,13 @@ from tradingagents.observability.events import ArtifactRef, PersistedEvent, RunE
 from tradingagents.observability.redaction import redact_recursive
 
 from .batch_models import BatchSnapshot, validate_batch_id
-from .run_models import RunSnapshot, RunSummary, utc_timestamp as utc_timestamp, validate_run_id
+from .run_models import (
+    RunSnapshot,
+    RunSummary,
+    UnsupportedResearchVersion,
+    utc_timestamp as utc_timestamp,
+    validate_run_id,
+)
 
 ARTIFACT_KIND_DIRECTORIES = {
     "data": "data",
@@ -33,9 +39,6 @@ ARTIFACT_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 FIXED_JSON_LOCATORS = frozenset(
     {
-        "projections/reader-brief-v1.json",
-        "projections/run-view-v1.json",
-        "projections/debate-summary-v1.json",
         "supplements/report-explanation-v1.json",
     }
 )
@@ -404,7 +407,11 @@ class RunStore:
             raise RunNotFound(batch_id) from exc
         except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             raise RunStoreCorruption(f"invalid batch snapshot for {batch_id}") from exc
-        return BatchSnapshot.from_dict(payload)
+        snapshot = BatchSnapshot.from_dict(payload)
+        # Batch identity is proven by its persisted children, never its old request DTO.
+        for item in snapshot.items:
+            self._read_snapshot_fast(self._run_dir(item.run_id))
+        return snapshot
 
     def write_batch_atomic(self, snapshot: BatchSnapshot) -> BatchSnapshot:
         validate_batch_id(snapshot.batch_id)
@@ -582,6 +589,8 @@ class RunStore:
         try:
             payload = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
             return RunSnapshot.from_dict(payload)
+        except UnsupportedResearchVersion:
+            raise
         except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
             raise RunStoreCorruption(f"invalid run snapshot for {run_dir.name}") from exc
 

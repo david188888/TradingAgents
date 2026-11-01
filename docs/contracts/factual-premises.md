@@ -1,13 +1,5 @@
-# Factual premises
+# factual-premises
 
-Status: Current — navigation pointer.
+Status: Retired
 
-Maintained explanation: [owning reference](research-record.md#numeric-and-factual-support).
-Canonical detail or related owner: [source](../../tradingagents/research/factual_premises.py).
-
-Host observations, interpretations and pending questions remain distinct. Structural support does not certify arbitrary prose entailment.
-
-<!-- Compatibility anchors for existing section links. -->
-<a id="compatibility-and-validation"></a>
-<a id="observation-ownership"></a>
-<a id="workflow-and-delivery"></a>
+This document's former workflow was removed during the V9-only cleanup. Its executors, model-output adapters and diagnostic tools are no longer supported. See the [current Insight contract](research-record.md) and [architecture](../../ARCHITECTURE.md). Dated implementation history remains in the [archive](../archive/README.md).

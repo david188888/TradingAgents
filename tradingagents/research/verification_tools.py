@@ -6,16 +6,15 @@ import json
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation, localcontext
-from typing import Literal
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict
 
-from tradingagents.agents.schemas._research_record import ResearchRecordV1, SourceEvidenceV1
+from tradingagents.agents.schemas._evidence import SourceEvidenceV1
 from tradingagents.agents.schemas._verification_plan import (
     FinancialConditionV1,
     FinancialOperandV1,
-    VerificationTaskV1,
     predicate_matches,
 )
 
@@ -48,11 +47,11 @@ class _Unavailable(ValueError):
         self.reason = reason
 
 
-def _qualified_source(record: ResearchRecordV1, evidence_id: str) -> SourceEvidenceV1:
+def _qualified_source(record: Any, evidence_id: str) -> SourceEvidenceV1:
     source = next((item for item in record.evidence if item.evidence_id == evidence_id), None)
-    if source is None or evidence_id not in record.snapshots[-1 if record.schema_version == "research-record-v2" else 0].evidence_ids:
+    if source is None or evidence_id not in record.snapshots[-1 if record.schema_version == "evidence-record-v1" else 0].evidence_ids:
         raise _Unavailable("source_unqualified")
-    if (record.schema_version == 'research-record-v2' and
+    if (record.schema_version == 'evidence-record-v1' and
             record.superseded_evidence.get(evidence_id) in record.snapshots[-1].evidence_ids):
         raise _Unavailable('source_unqualified')
     if source.availability != "available" or source.usable_as_of is None:
@@ -111,12 +110,12 @@ def _invalid_constant(_):
 
 
 def _financial_operand(
-    record: ResearchRecordV1, operand: FinancialOperandV1
+    record: Any, operand: FinancialOperandV1
 ) -> tuple[Decimal, dict]:
     from tradingagents.research.source_families import FINANCIAL_DETAIL_SOURCES, FINANCIAL_SOURCES
 
     source = _qualified_source(record, operand.evidence_id)
-    if record.schema_version == "research-record-v2":
+    if record.schema_version == "evidence-record-v1":
         from tradingagents.research.search_recovery import recovered_statement
         rows = recovered_statement(record, source).get(operand.table, [])
         candidates = [r for r in rows if r['end_date'] == operand.report_period and operand.field in r]
@@ -166,14 +165,7 @@ def _financial_operand(
     }
 
 
-def evaluate_condition(
-    record: ResearchRecordV1, task: VerificationTaskV1
-) -> VerificationToolResultV1:
-    """Evaluate exactly the saved predicate, never the economic hypothesis itself."""
-    return inspect_predicate(record, task.check, invalidation=getattr(task, "condition_role", None) == "invalidation")
-
-
-def inspect_predicate(record: ResearchRecordV1, check, *, invalidation=False) -> VerificationToolResultV1:
+def inspect_predicate(record: Any, check, *, invalidation=False) -> VerificationToolResultV1:
     """Pure arithmetic replay for admission and saved-result validation; no dispatch."""
     try:
         if isinstance(check, FinancialConditionV1):

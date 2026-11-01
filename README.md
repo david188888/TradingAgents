@@ -67,11 +67,20 @@ tradingagents web --port 8765 --open
 
 Web 仅绑定 `127.0.0.1`，自带前端，运行时无需 Node.js；运行记录保存在 `~/.tradingagents/`。凭据仅放在被 Git 忽略的本地配置中。数据权限与配置见 [.env.example](.env.example) 和 [Web 操作说明](docs/operations/evidence-research.md)。
 
+## 终端研究
+
+```bash
+tradingagents analyze --ticker 002130 --show
+tradingagents analyze --resume RUN_ID
+```
+
+终端与 Web 使用同一个 V9 执行器。终端进度、证据及报告保存在 `~/.tradingagents/cli/runs/`，与 Web 的运行目录分别持有写锁。使用 `--config` 读取本地 JSON、`--focus` 添加关注问题，或用 `--output report.md` 导出 Markdown。V9 自动保存进度，不再选择多空轮次或交易阶段。详见 [终端操作](docs/operations/cli-research.md)。
+
 ## 当前限制
 
 - **覆盖有限**：公开来源可能缺失、限流或无法验证历史时点；部分历史估值能力依赖 Tushare 凭据和权限。交易日历优先使用深交所官方月历，结合指数日期与通达信见证，Tushare 仅作最后备源。
 - **研究质量仍需验证**：运行完成可能仍是 `partial / LOW_CONFIDENCE`；证据核查通过不代表经济原因或合理价值已确定，也未证明预测准确率提升。
-- **产品范围明确**：当前维护本地 A 股 Web 研究；CLI 分析不再维护，旧流程保留历史读取与兼容恢复。
+- **产品范围明确**：CLI 与本地 Web 共用 V9 Insight 公司研究；仅支持 A 股普通股票。旧多空、旧催化及 V1–V8 的执行、读取和恢复代码已退役；磁盘上的历史数据不自动删除或升级。
 
 ## 深入了解
 

@@ -2,151 +2,50 @@
 
 Status: Current
 
-## Goal and reading path
+TradingAgents is an A-share company-research application with CLI and loopback Web adapters. Both execute `evidence_v1` / `evidence-production-v9` and publish `insight-research-v1`. Its outputs are inspectable research, not orders or target positions. Classic multi/bear debate, catalyst execution and V1–V8 adapters are retired. Existing user files remain untouched; no automatic conversion is performed.
 
-TradingAgents is a local China A-share company-research workbench. It should make a judgement's
-supporting evidence, counterevidence and unresolved questions inspectable. It produces research,
-not orders or target positions. Start with [README](README.md); use this page to locate a change,
-[Web operations](docs/operations/evidence-research.md) to use the product, and
-[CONTRIBUTING](CONTRIBUTING.md) to develop it.
+## Entry and execution
 
-## Consumers And Entry Flow
-
-`tradingagents web --port 8765 --open` starts one loopback FastAPI service and its bundled React SPA.
-The Web adapter creates and schedules runs, streams saved events, and projects saved artifacts.
-Execution and domain models remain independent of HTTP/UI concerns.
+`tradingagents web --port 8765 --open` starts FastAPI and the bundled React SPA. `tradingagents analyze --ticker 002130` runs synchronously in the terminal. Adapters construct the same `AnalysisRequest` and invoke `NativeRunner`; execution stays independent of HTTP and terminal presentation.
 
 ```mermaid
 flowchart LR
-    UI[React workbench] --> W[Web API and scheduler]
-    W --> E[NativeRunner]
-    E --> D[Qualified sources and frozen facts]
-    D --> K[Native research kernel]
-    K --> P[Validated record and publication barrier]
-    P --> S[Durable run store]
-    S --> R[Reader and Markdown]
+  CLI[Terminal adapter] --> E[NativeRunner]
+  UI[React workbench] --> W[Web API and scheduler]
+  W --> E
+  E --> D[Qualified sources and frozen facts]
+  D --> K[V9 Insight research]
+  K --> P[Validated report and publication barrier]
+  P --> S[Durable run store]
+  S --> R[Insight Reader and Markdown]
 ```
 
-## Native Research Architecture
+Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add qualified context. Operating, event and market specialists independently propose four-field Insights. Code resolves references, renders exact numbers, saves valid siblings, and bounds supplementary search. Only affected specialties revisit new evidence. One critique/reply round precedes synthesis, which uses saved effective Insights. Missing overall support suppresses the rating without discarding usable research. Optional focus follows the baseline and cannot change it.
 
-New single and batch studies use `evidence_v1` / `evidence-production-v9` and the independent
-`insight-research-v1` contract. Source collection still uses V2 evidence snapshots; model output is
-not converted into the legacy hypothesis/envelope contracts. New creation supports company research.
+## Owners and boundaries
 
-1. Dedicated APIs collect company and quantitative data; DeepSeek/Tavily add qualified context.
-2. Isolated operating, event and market specialists produce four-field Insights. Code compiles short
-   evidence references and numeric tokens, saving valid siblings when another item fails.
-3. Explicit outer `search_requests` trigger bounded supplementary collection. Only affected roles
-   are reanalysed; superseded versions remain saved and cannot support synthesis.
-4. One critique/reply round examines weak judgements and alternative explanations. Synthesis chooses
-   its stance from saved effective Insights; invalid overall support suppresses only the rating.
-5. The optional focus follows saved synthesis and cannot change it. Existing publication barriers
-   protect the independent record; Reader, stage views and Markdown replay its references.
-
-Owners: [_insight.py](tradingagents/agents/schemas/_insight.py),
-[insights.py](tradingagents/research/insights.py), [insight_research.py](tradingagents/graph/insight_research.py),
-[insight_model.py](tradingagents/execution/insight_model.py) and
-[insight_search.py](tradingagents/execution/insight_search.py). All fact cards remain visible to the
-model; bounded exact saved-source passages replace duplicated full source bodies. Program-rendered
-numeric labels retain subject, period and units. These checks do not prove causal entailment or value.
-
-New studies default to the current Asia/Shanghai date. SIWC/OpenAI use strict structured output;
-the existing DeepSeek Chat Completions route uses JSON mode. Canonical Pydantic field types retain
-their semantics. Source and execution budgets are unchanged; details and compatibility are owned by
-[the research contract](docs/contracts/research-record.md#insight-first-v9).
-
-V1–V8 runs keep their frozen versions, prompts, envelopes, condition checks and rating gates.
-`native_research.py`, `native_model.py`, `inline_bindings.py` and `synthesis_sections.py` remain
-compatibility owners; they are not the new Insight model-output path.
-
-## Publication And Projections
-
-### Shared Projections And Native Publication
-
-A saved stage proposal and a published report have different qualification gates. The Reader can
-show validated intermediate outputs without presenting them as final conclusions. Final native
-publication requires an assessed versioned record, matching frozen input and a durable authorization
-barrier. Cancellation and publication authorization are arbitrated under the same lifecycle lock.
-
-Publication failure cannot become `run.completed` or silently fall back to a legacy case. Partial
-synthesis retains usable evidence; missing overall judgement or critical adjudication suppresses the
-rating. `completed`, readable, evidence-complete and research-quality are distinct states.
-
-Reader, stage, focus and export projections read qualified saved content; they do not fetch new
-research or dispatch models. Missing or corrupt bindings remain unavailable. API/DTO ownership,
-financial and numeric rules, search budgets and snapshot semantics are in the
-[research contract](docs/contracts/research-record.md).
-
-### Plain-language reading supplement
-
-Eligible new studies can run a separate post-completion explanation job using the frozen quick-model
-configuration. It owns its manifest/artifact and does not change the baseline, ratings or research
-budgets. Fresh-policy jobs process bounded batches, save accepted entries after each response, and
-expose explained/pending/unavailable counts. Reading is a GET; explicit explanation generation/retry is a POST. Historical reads never
-acquire this job automatically. See [reading semantics](docs/contracts/research-record.md#reader-focus-and-explanations).
-
-## Module Ownership And Extension Points
-
-| Change | Owner and first source | What must stay true |
-| --- | --- | --- |
-| Request, run orchestration and model dispatch | [execution](tradingagents/execution/), `models.py`, `native_runner.py`, `native_model.py` | Freeze configuration and identity before collection; preserve attempt accounting. |
-| Research sequence and isolated role inputs | [graph/native_research.py](tradingagents/graph/native_research.py), [native policy](tradingagents/research/native_policy.py) | Fixed merge order; explicit scopes, replies and current applicability. |
-| Public record, hypothesis and assessment | [agents/schemas](tradingagents/agents/schemas/), [research](tradingagents/research/) | Start at canonical models; update producers, replay, publication and projections together. |
-| Provider or source qualification | [dataflows](tradingagents/dataflows/) | Typed source-labelled results; preserve cutoff, units, periods and coverage. |
-| Events, checkpoints and reports | [runtime](tradingagents/runtime/), [observability](tradingagents/observability/) | Durable attempt state, batch contracts, publication barriers and saved-history compatibility. |
-| HTTP, SSE and Reader/Audit projection | [web](tradingagents/web/) | Closed DTOs from qualified artifacts, with explicit missing/unsupported states. |
-| Browser transport, state and presentation | [frontend/src](frontend/src/), `api/contracts.ts` | Preserve run/sequence identity; rebuild the tracked SPA after source changes. |
-
-Dependency direction is adapters → execution/runtime → graph/research/dataflows/domain schemas.
-Do not introduce Web/HTTP types into domain execution. Provider implementations belong in dataflows;
-projections do not become canonical domain schemas. Methodology role mapping belongs to
-[skills/registry.py](tradingagents/skills/registry.py); the bundled Markdown library currently serves
-statically mapped classic roles, not the native specialists.
-
-## Persistence
-
-| Data | Default location |
+| Responsibility | Owner |
 | --- | --- |
-| Durable Web runs, append-only events, artifacts and reports | `~/.tradingagents/web/runs/` |
-| Cache and classic checkpoints | `~/.tradingagents/cache/` |
-| Non-Web reports/logs | `~/.tradingagents/logs/` |
-| Web server log | `~/.tradingagents/web/logs/server.log` |
-| ChatGPT registrations | `~/.tradingagents/auth/chatgpt/registrations.json` |
+| Consumer-neutral request, execution and model dispatch | `execution/models.py`, `native_runner.py`, `insight_model.py` |
+| V9 sequence, review, response and synthesis | `graph/insight_research.py`, `research/insights.py` |
+| Public Insight report and reference/numeric validation | `agents/schemas/_insight.py`, `research/insight_report.py` |
+| Source retrieval, qualification and calculations | `dataflows/`, `research/` |
+| Append-only attempts, budgets, events and report publication | `runtime/`, `execution/budget.py`, `native_publication.py` |
+| HTTP, scheduling and saved projections | `web/` |
+| Terminal configuration, lifecycle and presentation | `cli/config.py`, `cli/research.py`, `cli/main.py` |
+| Browser transport and presentation | `frontend/src/api/`, `state/`, `hooks/`, `components/` |
 
-Run directories are user records. Do not clear or rewrite them during routine development.
-A single store owner is required. The supported Web launcher holds a cross-process owner lock
-before recovery until shutdown; directly constructed store instances do not share a writer lock.
-Resume reuses saved versions, qualified inputs and spent budgets. Dispatched attempts with unknown
-outcomes stay consumed and are not automatically replayed. Recovery and diagnostics are described in
-[observability](docs/operations/observability-replay.md).
+Dependency direction is adapters → execution/runtime → graph/research/dataflows/domain schemas. Provider I/O stays outside the graph. Source and numeric evidence structures that V9 needs remain current infrastructure; their schema version numbers do not select an older workflow.
 
-## Legacy Workflow And Research Routing
+## Persistence and publication
 
-`TradingAgentsGraph → AnalysisRunner → LangGraph` remains a public classic compatibility path;
-CLI analysis is outside continued maintenance. Historical native and catalyst runs preserve their
-saved identity for reading/recovery. Retired classic/catalyst profile creation returns 410; new
-native catalyst/holding mode creation returns 422. Neither old profiles nor old modes are silently
-upgraded to current research.
+Web stores run data under `~/.tradingagents/web/runs/`; CLI uses `~/.tradingagents/cli/runs/`. Each adapter holds its store's cross-process writer lock. User data is never cleared during development.
 
-### Legacy Catalyst Publication
+Request identity and budgets freeze before dispatch. Resume checks current V9 identity and replays saved valid results; unknown provider outcomes remain spent. A frozen report candidate and durable lifecycle authorization must precede committed publication. Cancellation and publication are serialized by the owning lifecycle lock. A publication failure cannot become completion.
 
-The retained catalyst executor publishes its case and additive record under its original budget and
-publication rules. Classic publishes case/package artifacts. These are compatibility surfaces,
-not alternative new Web workflows. See [legacy reference](docs/operations/catalyst-research.md).
+Reader, stage views and Markdown expose saved qualified content. Reading never fetches new research or dispatches a model. Optional explanations run as explicit bounded jobs with their own artifacts, preserving baseline evidence and judgement. Completed, readable, evidence-complete and research-quality remain separate states; passing structural checks does not establish economic correctness.
 
-## Runtime Policy
+Use [Web operations](docs/operations/evidence-research.md), [CLI operations](docs/operations/cli-research.md), [research contracts](docs/contracts/research-record.md) and [contributor guidance](CONTRIBUTING.md) for the owning details. Dated archived plans describe their writing-time state, not current support.
 
-Classic production runtime selects `horizon-policy-v2` in
-[runtime/contracts.py](tradingagents/runtime/contracts.py); v3 is an internal test gate.
-Native research has its own evidence/workflow identity. Optional classic checkpoint settings do not
-disable durable native/catalyst attempt and publication state.
-
-## Current development priorities
-
-Preserve the evidence/publication boundaries while improving source coverage, dependable recovery and
-reader comprehension. Fixed-input comparisons, real-model quality/cost evaluation and human reading
-acceptance remain separate from passing schema or fixture tests. The
-[2026-10-25 review](docs/reviews/2026-10-25-documentation-code-audit.md) records the audit and scoped
-recovery, history, configuration and measurement fixes. Further architecture work should clarify
-version-policy ownership and graph/execution interfaces without deleting historical compatibility.
-Historical implementation discussions remain accessible through the [archive](docs/archive/README.md).
+<a id="publication-and-projections"></a>
+<a id="goal-and-reading-path"></a>

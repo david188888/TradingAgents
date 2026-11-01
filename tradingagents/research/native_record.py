@@ -6,18 +6,16 @@ import hashlib
 import json
 import re
 from contextlib import suppress
-from datetime import date, datetime, time
+from datetime import date
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from tradingagents.agents.schemas._catalyst_research import CatalystEvidence
-from tradingagents.agents.schemas._research_record import (
+from tradingagents.agents.schemas._evidence import (
     RecordClaimV1,
-    ResearchRecordV1,
     SourceContentV1,
     SourceEvidenceV1,
-    make_evidence_snapshot,
 )
+from tradingagents.agents.schemas._source_evidence import CapturedSourceEvidence
 from tradingagents.agents.schemas._verification_plan import (
     DETAIL_FIELDS,
     DETAIL_LABELS,
@@ -39,7 +37,7 @@ from tradingagents.research.native_valuation import (
     assemble_valuation,
     valuation_content,
 )
-from tradingagents.research.record_assembly import _catalyst_content, _price_metrics, _safe_url
+from tradingagents.research.source_content import _price_metrics, _safe_url, source_content
 from tradingagents.research.source_families import (
     BODY_SOURCES,
     FINANCIAL_DETAIL_SOURCES,
@@ -56,7 +54,7 @@ from tradingagents.research.verification_tools import (
 )
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-Mode = Literal["company_research", "catalyst_research", "holding_review"]
+Mode = Literal["company_research"]
 _SOURCE_CAPABILITIES = {
     PROFILE_SOURCE: PROFILE_CAPABILITY,
     **dict.fromkeys(IDENTITY_SOURCES, CAP_IDENTITY),
@@ -148,7 +146,7 @@ def _financial_detail_content(payload, ticker: str) -> SourceContentV1 | None:
     return _content(selected, "已保存单表最多八期财务明细字段；金额 CNY，日期为披露/报告日期")
 
 
-def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceContentV1 | None:
+def _source_content(item: CapturedSourceEvidence, payload, ticker: str) -> SourceContentV1 | None:
     if item.source_name == PROFILE_SOURCE:
         from tradingagents.research.company_basics import PROFILE_LABELS
         if (not isinstance(payload, dict) or payload.get("ts_code") != ticker
@@ -189,13 +187,13 @@ def _source_content(item: CatalystEvidence, payload, ticker: str) -> SourceConte
     if item.source_name in FINANCIAL_DETAIL_SOURCES:
         return _financial_detail_content(payload, ticker)
     if item.source_name in IDENTITY_SOURCES:
-        return _catalyst_content("tushare.stock_basic", payload)
+        return source_content("tushare.stock_basic", payload)
     if item.source_name in PRICE_SOURCES:
-        return _catalyst_content("tushare.adjusted_daily", payload)
-    return _catalyst_content(item.source_name, payload)
+        return source_content("tushare.adjusted_daily", payload)
+    return source_content(item.source_name, payload)
 
 
-def _source_record(item: CatalystEvidence, draft: FrozenEvidenceDraft, payload) -> SourceEvidenceV1:
+def _source_record(item: CapturedSourceEvidence, draft: FrozenEvidenceDraft, payload) -> SourceEvidenceV1:
     limitation = ["source_fields_are_not_full_document_text"]
     availability = item.availability
     capability = draft.capability(item.capability)
@@ -282,8 +280,6 @@ def _fact(source: SourceEvidenceV1, dimension: str, locator: str, statement: str
 
 
 def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode,
-                        original_thesis: str | None = None,
-                        holding_facts_as_of: str | None = None,
                         include_coverage: bool = False, include_valuation: bool = False,
                         include_minimum: bool = False, include_basics: bool = False,
                         include_structured_financial: bool = False, search_admission=None, search_batches=()):
@@ -294,25 +290,19 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     A user thesis is retained as a declaration, never as independently verified
     economic evidence. No holdings, value range or inference is invented.
     """
-    record_model, snapshot_factory = ResearchRecordV1, make_evidence_snapshot
-    extra = {}
-    if search_admission is not None:
-        from tradingagents.agents.schemas._research_record_v2 import (
-            ResearchRecordV2,
-            make_evidence_snapshot_v2,
-        )
-        record_model, snapshot_factory = ResearchRecordV2, make_evidence_snapshot_v2
-        extra = {'recovered_fields': search_admission.fields, 'search_batches': search_batches,
-                 'claims': tuple(o.fact for o in search_admission.observations)}
-    if mode not in {"company_research", "catalyst_research", "holding_review"}:
-        raise ValueError("unsupported native research mode")
-    if mode != "holding_review" and (original_thesis is not None or holding_facts_as_of is not None):
-        raise ValueError("holding inputs require holding_review")
+    from tradingagents.agents.schemas._evidence_record import EvidenceRecord, make_evidence_snapshot
+    from tradingagents.agents.schemas._search import AdmissionBatchV1
+    search_admission = search_admission or AdmissionBatchV1(batch_id="collection." + draft.run_id)
+    record_model, snapshot_factory = EvidenceRecord, make_evidence_snapshot
+    extra = {"recovered_fields": search_admission.fields, "search_batches": search_batches,
+        "claims": tuple(o.fact for o in search_admission.observations)}
+    if mode != "company_research":
+        raise ValueError("unsupported research mode")
     cutoff = date.fromisoformat(draft.cutoff)
     sources = []
     payloads = {}
     for raw in draft.evidence:
-        item = CatalystEvidence.model_validate(raw)
+        item = CapturedSourceEvidence.model_validate(raw)
         if (item.run_id, item.ticker) != (draft.run_id, draft.ticker):
             raise ValueError("frozen source identity does not match draft")
         payload = context.get(item.evidence_id)
@@ -340,21 +330,6 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
         except _Unavailable:
             identity_ok = False
 
-    # User declarations require a saved historical date, not an invented "now".
-    if mode == "holding_review" and original_thesis:
-        if not isinstance(original_thesis, str) or len(original_thesis) > 4000:
-            raise ValueError("original thesis must fit saved public content")
-        if holding_facts_as_of is None or date.fromisoformat(holding_facts_as_of) > cutoff:
-            raise ValueError("original thesis requires a holding facts date at cutoff")
-        thesis_time = datetime.combine(date.fromisoformat(holding_facts_as_of), time.min, SHANGHAI)
-        sources.append(SourceEvidenceV1(evidence_id=_opaque_id("e", draft.run_id, "thesis", original_thesis, holding_facts_as_of),
-            source_name="user.original_thesis", source_kind="unknown", availability="available",
-            source_family_id=_opaque_id("user", draft.run_id, original_thesis),
-            published_at=thesis_time, usable_as_of=thesis_time, captured_at=draft.frozen_at,
-            content=SourceContentV1(kind="excerpt", text=original_thesis, locator_label="用户保存的原持仓论点（声明）",
-                content_sha256=hashlib.sha256(original_thesis.encode()).hexdigest()),
-            limitations=("user_declaration_not_independently_verified",)))
-
     if search_admission is not None:
         sources.extend(o.source for o in search_admission.observations)
         if not identity_ok:
@@ -372,7 +347,7 @@ def build_native_record(draft: FrozenEvidenceDraft, context: dict, *, mode: Mode
     structured_limits = (STRUCTURED_FINANCIAL_POLICY,) if include_structured_financial else ()
     snapshot = snapshot_factory(evidence)
     if search_admission is not None:
-        from tradingagents.agents.schemas._research_record_v2 import qualification_key
+        from tradingagents.agents.schemas._evidence_record import qualification_key
         extra['qualification_snapshots'] = {qualification_key(f): snapshot.snapshot_id for f in search_admission.fields}
     seed = record_model(run_id=draft.run_id, ticker=draft.ticker, mode=mode,
         analysis_date=cutoff, construction="native", evidence=evidence,

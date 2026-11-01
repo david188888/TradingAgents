@@ -21,7 +21,7 @@ export function useAuditResearch(runId: string, sequence: number | null, enabled
     void Promise.allSettled([getReaderProcess(runId, controller.signal), getResearchRecord(runId, controller.signal)]).then(([process, record]) => {
       if (controller.signal.aborted) return;
       const validProcess = process.status === "fulfilled" && process.value.run_id === runId && process.value.source_sequence === sequence;
-      const validRecord = record.status === "fulfilled" && record.value.run_id === runId && (record.value.state !== "ready" || record.value.record.run_id === runId);
+      const validRecord = record.status === "fulfilled" && record.value.run_id === runId && (record.value.state !== "insight_ready" || record.value.record.run_id === runId);
       setState({ runId, sequence, process: validProcess ? process.value : null, record: validRecord ? record.value : null, loading: false, error: !validProcess || !validRecord });
     });
     return () => controller.abort();

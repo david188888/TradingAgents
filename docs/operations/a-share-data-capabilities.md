@@ -91,9 +91,8 @@ That checks dependency resolution rather than only metadata; it does not install
 
 ## Supplemental tools and known limits
 
-Classic supplemental capabilities are registered in [registry.py](../../tradingagents/dataflows/registry.py)
-and exposed through [data_meta_tools.py](../../tradingagents/agents/utils/data_meta_tools.py).
-Adding an adapter does not automatically admit it into native research.
+Source capabilities are registered in [registry.py](../../tradingagents/dataflows/registry.py).
+Adding a provider adapter does not automatically admit it into current research.
 
 - EastMoney datacenter screening validates response code, stable pagination/counts and returned filters.
   push2/push2ex tools are separate: several still have single-page/response-shape gaps; an empty table
@@ -111,7 +110,7 @@ Adding an adapter does not automatically admit it into native research.
 
 A-stock-data is a reference used for selected hand-written ports, not a runtime import dependency.
 Historical upstream reviews remain in the [archive](../archive/README.md). Wind is a retained classic
-integration, excluded from native collection; see [compatibility](catalyst-research.md#wind).
+integration, excluded from native collection; see [compatibility](../integrations/wind.md).
 
 <!-- Compatibility anchors for existing section links. -->
 <a id="a-股补充数据能力"></a>

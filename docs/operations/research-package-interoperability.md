@@ -1,14 +1,5 @@
-# Classic package interoperability
+# research-package-interoperability
 
-Status: Current — navigation pointer.
+Status: Retired
 
-Maintained explanation: [owning reference](catalyst-research.md#external-classic-package-consumption).
-Canonical detail or related owner: [source](../../tradingagents/research/research_package.py).
-
-This is a classic public package surface. Native V8 uses /reader/record and publishes V2, without a classic package.
-
-<!-- Compatibility anchors for existing section links. -->
-<a id="agent-consumption"></a>
-<a id="boundary"></a>
-<a id="canonical-package-hashing"></a>
-<a id="research-package-interoperability"></a>
+Older classic/catalyst execution, reading and recovery are removed. No compatibility executor or migration runs behind this page. Existing user records remain untouched on disk. Use [V9 Web research](evidence-research.md) or [V9 CLI research](cli-research.md); current evidence and publication guarantees are in the [Insight contract](../contracts/research-record.md).

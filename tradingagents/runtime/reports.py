@@ -5,33 +5,22 @@ from __future__ import annotations
 import hashlib
 import html
 import os
-import re
 import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from tradingagents.observability.events import ArtifactRef
-from tradingagents.reporting import write_report_tree
 
 from .run_models import utc_timestamp
 from .store import RunStore, RunStoreError
-
-REPORT_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
-REVISION_PATTERN = re.compile(r"^(\d{6})-([0-9a-f]{64})\.md$")
 
 
 class ReportPublicationError(RunStoreError):
     pass
 
 
-@dataclass(frozen=True)
-class ReportRevision:
-    report_kind: str
-    revision: int
-    artifact: ArtifactRef
 
 
 @dataclass(frozen=True)
@@ -46,81 +35,7 @@ class ReportArtifactWriter:
     def __init__(self, store: RunStore):
         self.store = store
 
-    def write_revision(
-        self,
-        run_id: str,
-        report_kind: str,
-        content: str,
-    ) -> ReportRevision:
-        if not REPORT_KIND_PATTERN.fullmatch(report_kind):
-            raise ReportPublicationError("invalid report kind")
-        if not isinstance(content, str) or not content:
-            raise ReportPublicationError("report revision content is required")
-        run_dir = self.store._run_dir(run_id)
-        revision_dir = run_dir / "report-revisions" / report_kind
-        encoded = content.encode("utf-8")
-        digest = hashlib.sha256(encoded).hexdigest()
 
-        with self.store.lock_for(run_id):
-            revision_dir.mkdir(parents=True, exist_ok=True)
-            existing = [
-                int(match.group(1))
-                for path in revision_dir.iterdir()
-                if path.is_file() and (match := REVISION_PATTERN.fullmatch(path.name))
-            ]
-            revision = max(existing, default=0) + 1
-            filename = f"{revision:06d}-{digest}.md"
-            destination = revision_dir / filename
-            if destination.exists():
-                raise ReportPublicationError("report revision path already exists")
-            self.store._write_bytes_atomic(destination, encoded)
-            self.store._fsync_directory(revision_dir)
-
-        locator = destination.relative_to(run_dir).as_posix()
-        return ReportRevision(
-            report_kind=report_kind,
-            revision=revision,
-            artifact=ArtifactRef(
-                artifact_id=f"report-revision:{digest}",
-                kind="report-revision",
-                media_type="text/markdown",
-                content_sha256=digest,
-                byte_size=len(encoded),
-                locator=locator,
-            ),
-        )
-
-    def write_revision_once(
-        self,
-        run_id: str,
-        report_kind: str,
-        content: str,
-    ) -> ReportRevision:
-        """Return the existing content-addressed revision after a promotion retry."""
-        if not REPORT_KIND_PATTERN.fullmatch(report_kind):
-            raise ReportPublicationError("invalid report kind")
-        if not isinstance(content, str) or not content:
-            raise ReportPublicationError("report revision content is required")
-        run_dir = self.store._run_dir(run_id)
-        revision_dir = run_dir / "report-revisions" / report_kind
-        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        with self.store.lock_for(run_id):
-            if revision_dir.is_dir():
-                matches = sorted(revision_dir.glob(f"*-{digest}.md"))
-                if len(matches) > 1:
-                    raise ReportPublicationError(
-                        "duplicate content-addressed report revisions"
-                    )
-                if matches:
-                    match = REVISION_PATTERN.fullmatch(matches[0].name)
-                    if match is None or matches[0].read_text(encoding="utf-8") != content:
-                        raise ReportPublicationError("report revision integrity mismatch")
-                    return ReportRevision(
-                        report_kind=report_kind,
-                        revision=int(match.group(1)),
-                        artifact=self._revision_artifact(run_dir, matches[0], digest),
-                    )
-            return self.write_revision(run_id, report_kind, content)
 
     @staticmethod
     def _revision_artifact(
@@ -138,86 +53,16 @@ class ReportArtifactWriter:
             locator=destination.relative_to(run_dir).as_posix(),
         )
 
-    def publish_final(
-        self,
-        run_id: str,
-        final_state: dict[str, Any],
-        ticker: str,
-    ) -> FinalReportPublication:
-        if "native_research_record" in final_state:
-            return self._publish_native(run_id, final_state["native_research_record"], ticker)
-        if final_state.get("research_profile") == "catalyst_v1":
-            return self._publish_catalyst(run_id, final_state["catalyst_case"])
-        run_dir = self.store._run_dir(run_id)
-        reports_dir = run_dir / "reports"
-        with self.store.lock_for(run_id):
-            if reports_dir.exists():
-                raise ReportPublicationError("canonical reports are already published")
-            temporary = run_dir / f".reports.{uuid.uuid4().hex}.tmp"
-            try:
-                complete = write_report_tree(final_state, ticker, temporary)
-                self._verify_report_tree(temporary, complete, final_state)
-                self._fsync_tree(temporary)
-                os.replace(temporary, reports_dir)
-                self.store._fsync_directory(run_dir)
-            except Exception:
-                shutil.rmtree(temporary, ignore_errors=True)
-                raise
+    def publish_final(self, run_id: str, final_state: dict[str, Any], ticker: str) -> FinalReportPublication:
+        value = final_state.get("native_research_record")
+        if not isinstance(value, dict) or value.get("schema_version") != "insight-research-v1":
+            raise ReportPublicationError("unsupported research report version")
+        from tradingagents.runtime.insight_artifacts import read_insight_publication
+        record = read_insight_publication(self.store, run_id)
+        if record.ticker != ticker or record.model_dump(mode="json") != value:
+            raise ReportPublicationError("insight report publication mismatch")
+        return self._write_native_content(run_id, build_markdown_from_native_record(record))
 
-        artifacts = tuple(self._final_artifacts(run_dir, reports_dir))
-        return FinalReportPublication(
-            reports_directory=reports_dir,
-            complete_report=reports_dir / "complete_report.md",
-            artifacts=artifacts,
-            published_at=utc_timestamp(),
-        )
-
-    def _publish_native(self, run_id: str, value: Any, ticker: str) -> FinalReportPublication:
-        if value.get('schema_version') == 'insight-research-v1':
-            from tradingagents.runtime.insight_artifacts import read_insight_publication
-            record = read_insight_publication(self.store, run_id)
-            if record.ticker != ticker or record.model_dump(mode='json') != value:
-                raise ReportPublicationError('insight report publication mismatch')
-            return self._write_native_content(run_id, build_markdown_from_native_record(record))
-        from tradingagents.research.record_codec import parse_research_record
-
-        record = parse_research_record(value)
-        if record.run_id != run_id or record.ticker != ticker:
-            raise ReportPublicationError("native report identity mismatch")
-        if record.construction != "native" or record.assessment is None:
-            raise ReportPublicationError("native report requires a native assessment")
-        from tradingagents.research.native_versions import (
-            FOCUS_WORKFLOW_VERSION,
-            SEARCH_WORKFLOW_VERSION,
-            UNIFIED_WORKFLOW_VERSION,
-        )
-        from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
-        from tradingagents.runtime.focus_artifacts import (
-            read_focus_artifact,
-            read_focus_publication_failure,
-        )
-
-        checkpoint = load_checkpoint(self.store, run_id)
-        from tradingagents.research.numeric_integration import validate_record_numeric
-        validate_record_numeric(record, checkpoint["identity"] if checkpoint else {})
-        if record.numeric_attribution is not None and record.numeric_attribution.input_identity != checkpoint.get("native_input"):
-            raise ReportPublicationError("native numeric report input mismatch")
-        version = checkpoint["identity"].get("workflow_version") if checkpoint else None
-        response, reason = None, None
-        if version in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION} and checkpoint["identity"].get("research_question"):
-            events = self.store.read_events(run_id)
-            saved = read_focus_artifact(self.store, run_id, record, checkpoint, events)
-            reason = read_focus_publication_failure(self.store, run_id, record, checkpoint, events)
-            if saved is not None:
-                if checkpoint.get("native_focus_publication", {}).get("state") != "committed":
-                    raise ReportPublicationError("focus publication disposition is pending")
-                response = saved[0]
-            elif reason is None:
-                raise ReportPublicationError("focus publication has no durable disposition")
-        content = build_markdown_from_native_record(record, workflow_version=version,
-                                                   focus_response=response, focus_reason=reason,
-                                                   focus_text=checkpoint["identity"].get("research_question") if checkpoint else None)
-        return self._write_native_content(run_id, content)
 
     def _write_native_content(self, run_id: str, content: str) -> FinalReportPublication:
         run_dir = self.store._run_dir(run_id)
@@ -242,80 +87,7 @@ class ReportArtifactWriter:
             complete_report=reports_dir / "complete_report.md",
             artifacts=tuple(self._final_artifacts(run_dir, reports_dir)), published_at=utc_timestamp())
 
-    def _publish_catalyst(self, run_id, value) -> FinalReportPublication:
-        from tradingagents.agents.schemas import CatalystResearchCase
-        from tradingagents.research.case_assembly import build_markdown_from_case
-        case = CatalystResearchCase.model_validate(value)
-        if case.run_id != run_id:
-            raise ReportPublicationError("catalyst report identity mismatch")
-        content = build_markdown_from_case(case)
-        run_dir = self.store._run_dir(run_id)
-        reports_dir = run_dir / "reports"
-        with self.store.lock_for(run_id):
-            if reports_dir.exists():
-                existing = reports_dir / "complete_report.md"
-                if not existing.is_file() or existing.read_text(encoding="utf-8") != content:
-                    raise ReportPublicationError("catalyst report content conflict")
-            else:
-                temporary = run_dir / f".reports.{uuid.uuid4().hex}.tmp"
-                try:
-                    temporary.mkdir()
-                    (temporary / "complete_report.md").write_text(content, encoding="utf-8")
-                    self._fsync_tree(temporary)
-                    os.replace(temporary, reports_dir)
-                    self.store._fsync_directory(run_dir)
-                except Exception:
-                    shutil.rmtree(temporary, ignore_errors=True)
-                    raise
-        return FinalReportPublication(reports_directory=reports_dir,
-            complete_report=reports_dir / "complete_report.md",
-            artifacts=tuple(self._final_artifacts(run_dir, reports_dir)), published_at=utc_timestamp())
 
-    @staticmethod
-    def _verify_report_tree(
-        temporary: Path,
-        complete_report: Path,
-        final_state: dict[str, Any],
-    ) -> None:
-        expected = {Path("complete_report.md")}
-        report_paths = {
-            "market_report": Path("1_analysts/market.md"),
-            "sentiment_report": Path("1_analysts/sentiment.md"),
-            "news_report": Path("1_analysts/news.md"),
-            "fundamentals_report": Path("1_analysts/fundamentals.md"),
-            "trader_investment_plan": Path("3_trading/trader.md"),
-        }
-        for state_key, relative in report_paths.items():
-            if final_state.get(state_key):
-                expected.add(relative)
-        debate = final_state.get("investment_debate_state") or {}
-        for state_key, filename in {
-            "bull_history": "bull.md",
-            "bear_history": "bear.md",
-            "judge_decision": "manager.md",
-        }.items():
-            if debate.get(state_key):
-                expected.add(Path("2_research") / filename)
-        risk = final_state.get("risk_debate_state") or {}
-        for state_key, filename in {
-            "aggressive_history": "aggressive.md",
-            "conservative_history": "conservative.md",
-            "neutral_history": "neutral.md",
-        }.items():
-            if risk.get(state_key):
-                expected.add(Path("4_risk") / filename)
-        if isinstance(risk.get("risk_signals"), list):
-            expected.add(Path("4_risk/public_signals.json"))
-        if risk.get("judge_decision"):
-            expected.add(Path("5_portfolio/decision.md"))
-
-        if complete_report != temporary / "complete_report.md":
-            raise ReportPublicationError("canonical writer returned an unexpected path")
-        missing = [relative.as_posix() for relative in expected if not (temporary / relative).is_file()]
-        if missing:
-            raise ReportPublicationError(
-                "canonical report tree is incomplete: " + ", ".join(sorted(missing))
-            )
 
     @staticmethod
     def _fsync_tree(root: Path) -> None:
@@ -350,405 +122,22 @@ class ReportArtifactWriter:
             )
 
 
+
+
+
+
+def build_markdown_from_native_record(record: Any) -> str:
+    from tradingagents.research.insight_report import insight_markdown
+    return insight_markdown(record)
+
+
+
+
+
+
 def _markdown_text(value: str) -> str:
     """Render saved text as inert prose, not executable HTML/Markdown links."""
     value = html.escape(value, quote=False)
     for character in ("\\", "`", "*", "_", "[", "]", "#", "|"):
         value = value.replace(character, "\\" + character)
     return value.replace("\r", " ").replace("\n", " ")
-
-
-def _build_v4_native_markdown(record: Any) -> str:
-    """One deterministic Reader/report source; never invokes a summary model."""
-    from tradingagents.research.coverage_labels import limitation_label
-    from tradingagents.research.record_codec import parse_research_record
-
-    record = parse_research_record(record.model_dump(mode="json"))
-    assessment = record.assessment
-    if record.construction != "native" or assessment is None:
-        raise ReportPublicationError("native report requires a native assessment")
-    text = _markdown_text
-    claims = {item.claim_id: item for item in record.claims}
-    challenges = {item.challenge_id: item for item in record.challenges}
-    dimensions = {
-        "operating_quality": "经营质量", "valuation": "估值依据", "market_context": "市场与价格背景",
-        "catalyst_delivery": "催化兑现", "holding_thesis": "原持仓假设",
-    }
-    if assessment.schema_version == "research-assessment-v3":
-        dimensions["catalyst_delivery"] = "事件影响与兑现"
-    modes = {"company_research": "公司研究", "catalyst_research": "催化研究", "holding_review": "持仓复盘"}
-    lines = [f"# {text(record.ticker)} · {modes[record.mode]}", "",
-        f"研究截点：{record.analysis_date.isoformat()}。研究问题：{text(assessment.research_question)}", "",
-        f"**{text(assessment.judgement)}**", "",
-        f"证据完整性：{assessment.completeness}；研究质量：{assessment.quality}。运行完成不表示证据充分。", ""]
-    missing_sections = set()
-    if assessment.schema_version == "research-assessment-v3":
-        from tradingagents.research.synthesis_sections import unfinished_sections
-        if assessment.synthesis_sections is not None:
-            missing_sections = unfinished_sections(assessment.synthesis_sections)
-        stances = {"favorable": "偏有吸引力", "neutral": "中性", "unfavorable": "偏缺乏吸引力", "insufficient_evidence": "证据不足"}
-        dispositions = {"maintained": "维持", "revised": "修正", "withdrawn": "撤回", "unanswerable": "无法回答"}
-        report_status = assessment.report_status
-        if report_status is not None:
-            statuses = {"synthesized": "公司报告已交付，综合判断已形成", "analysis_unrated": "公司报告已交付，暂未形成总体评级",
-                        "specialist_summary": "基础报告与专项汇总已交付；综合阶段未完成", "basic_report": "基础报告已交付；综合阶段未完成"}
-            lines.extend(["报告交付状态：" + statuses[report_status] + "。", ""])
-        if missing_sections:
-            lines.extend(["**综合未完成；已保留通过校验的分段。未完成项不等同于财务证据不足。**", ""])
-            for section in assessment.synthesis_sections.sections:
-                if section.status != "unavailable":
-                    continue
-                sid = section.section_id
-                label = (dimensions[sid.split(":", 1)[1]] if sid.startswith("dimension:") else
-                         "挑战裁决" if sid.startswith("adjudication:") else "总体判断" if sid == "overall" else "改变判断的条件")
-                lines.append("- " + label + " · 未完成")
-            lines.append("")
-        if record.company_basics is not None:
-            from tradingagents.research.company_basics import basic_claim_text
-            basics = record.company_basics
-            lines.extend(["## 公司基础资料", "", text(basics.company_name or record.ticker), ""])
-            for label, fields in (("公司公开介绍", basics.introduction), ("基本面数据", basics.fundamentals), ("量化与行情", basics.quantitative)):
-                lines.extend(["### " + label, ""])
-                lines.extend("- " + text(field.label) + "：" + text(basic_claim_text(claims[field.claim_id].statement)) + "（依据：" + text(field.claim_id) + "）" for field in fields)
-                if not fields:
-                    lines.append("此项明确字段未取得；其他已保存资料继续交付。")
-                lines.append("")
-            if basics.gaps:
-                lines.extend(["### 基础资料的局部缺口", "", *("- " + text(gap) for gap in basics.gaps), ""])
-        lines.extend(["## 投资吸引力判断" if assessment.investment_stance is not None else "## 已有分析与待完成判断", "",
-                      stances[assessment.investment_stance] if assessment.investment_stance is not None else "暂未形成总体评级。", ""])
-        for label, arguments in (("支持理由", assessment.supporting_arguments), ("反对理由与反证", assessment.opposing_arguments)):
-            lines.extend(["### " + label, ""])
-            lines.extend("- " + text(a.rationale) + "（依据：" + "、".join(text(c) for c in a.claim_ids) + "；回应：" + "、".join(text(r) for r in a.response_ids) + "）" for a in arguments)
-            if not arguments:
-                lines.append("本次未形成合格的此类理由。")
-            lines.append("")
-        lines.extend(["### 哪些条件会改变判断", ""])
-        if "conditions" in missing_sections:
-            lines.extend(["综合条件分段未完成；以下保留专项原失效条件供核对。", ""])
-        lines.extend("- " + text(c.text) + "（原假设：" + text(c.hypothesis_id) + "）" for c in assessment.change_conditions)
-        lines.extend(["", "## 一轮质疑与专项回应", ""])
-        hypotheses = {h.hypothesis_id: h for h in record.hypotheses}
-        for reply in record.dialogue.responses:
-            hypothesis = hypotheses[reply.hypothesis_id]
-            challenge = challenges[reply.challenge_id]
-            adjudication = next(a for a in assessment.adjudications if a.challenge_id == reply.challenge_id)
-            lines.extend(["### 原观点：" + text(claims[hypothesis.claim_id].statement), "",
-                "质疑：" + text(challenge.statement), "",
-                "专项回应：" + dispositions[reply.disposition] + ("（回应缺席）" if reply.status == "unavailable" else "") + "；" + text(reply.rationale), "",
-                "回应依据：" + "、".join(text(c) for c in reply.supporting_fact_ids), "",
-                ("综合裁决 · 未完成：" if "adjudication:" + reply.challenge_id in missing_sections else
-                 ("代码保留的回应状态：" + dispositions[adjudication.disposition] + "；") if report_status in {"specialist_summary", "basic_report"}
-                 else "综合意见：" if report_status else "综合裁决：" + dispositions[adjudication.disposition] + "；") + text(adjudication.rationale), "",
-                "专项回应与综合意见不等于实际核查，也不自动关闭经济挑战。", ""])
-        if not record.dialogue.responses:
-            lines.extend(["没有需要专项回应的挑战，未调用回应环节。", ""])
-    if assessment.forward_window_calendar_days is not None:
-        lines.extend([f"催化观察窗口：截点后 {assessment.forward_window_calendar_days} 个自然日。", ""])
-    lines.extend(["## 主要风险与疑点", ""])
-    if assessment.primary_challenge_id is not None:
-        primary = challenges[assessment.primary_challenge_id]
-        lines.extend([f"**未解决：{text(primary.statement)}**", "", f"核查方向：{text(primary.proposed_test)}", ""])
-    else:
-        lines.extend(["未提出额外挑战；这不表示全部风险已经排除。", ""])
-    lines.extend(["## 关键依据", ""])
-    for claim_id in assessment.key_claim_ids:
-        claim = claims[claim_id]
-        label = "事实" if claim.kind == "fact" else "条件性推断"
-        lines.append(f"- [{label}] {text(claim.statement)}（{text(claim_id)}）")
-    if not assessment.key_claim_ids:
-        lines.append("尚无合格依据可支持关键判断。")
-    lines.extend(["", "## 估值定位与参考区间", ""])
-    if record.valuation is None:
-        lines.append("没有合格估值输入，无法计算参考区间。")
-    else:
-        valuation = record.valuation
-        lines.append(f"报价日期：{valuation.inputs.snapshot.as_of}；股价：{valuation.assessment.current_price} 元；总市值：{valuation.assessment.total_market_cap_yi} 亿元。")
-        lines.append("历史倍数为本次抓取的回溯数据；参考区间是盈利与倍数假设下的结果，不是内在价值或未来价格预测。")
-        for position in valuation.assessment.positions:
-            lines.append(f"- 历史窗口 {position.window_label}：分位 {position.percentile}%，有效样本 {position.sample_size}。")
-        for anchor in valuation.assessment.anchor_outputs:
-            value = f"{anchor.per_share_low} 至 {anchor.per_share_high} 元/股" if anchor.per_share_low is not None else f"不可用（{anchor.reason_code}）"
-            lines.append(f"- {text(anchor.method_label_zh)}：{value}；状态 {anchor.status}。")
-        lines.append("输入依据：" + "、".join(text(key) for key in valuation.input_evidence_ids))
-        lines.append("输入 SHA256：" + valuation.input_sha256)
-    lines.extend(["", "## 脚本计算与量化背景", "",
-        "下列数值来自保存的数据与计算版本，不是内在价值区间或未来价格预测。", ""])
-    for metric in record.metrics:
-        value = str(metric.value) + " " + text(metric.unit) if metric.availability == "available" else "不可用：" + text(metric.unavailable_reason or "原因未记录")
-        lines.extend([f"- **{text(metric.label)}**：{value}。方法：{text(metric.method)}；版本：{text(metric.calculation_version)}。",
-            f"  样本：{metric.sample_size if metric.sample_size is not None else '未知'}；窗口：{metric.window_start or '未知'} 至 {metric.window_end or '未知'}；输入：{', '.join(text(key) for key in metric.input_evidence_ids)}。",
-            f"  输入摘要：{metric.input_sha256}。"])
-        if metric.limitations:
-            lines.append("  限制：" + "；".join(text(item) for item in metric.limitations))
-    if not record.metrics:
-        lines.append("没有通过资格检查的量化结果；不补估计值。")
-    lines.extend(["", "## 下一步核查", "", text(assessment.next_check), ""])
-    lines.extend(["", "## 判断维度", ""])
-    for dimension in assessment.dimensions:
-        label = "未完成" if "dimension:" + dimension.dimension in missing_sections else dimension.status
-        lines.append(f"- **{dimensions[dimension.dimension]} · {label}**：{text(dimension.judgement)}")
-        if dimension.claim_ids:
-            lines.append("  依据：" + "、".join(text(key) for key in dimension.claim_ids))
-        if dimension.limitations:
-            lines.append("  限制：" + "；".join(text(limitation_label(item)) for item in dimension.limitations))
-    lines.extend(["", "## 未解决挑战与实际核查", ""])
-    for challenge in record.challenges:
-        lines.append(f"- **{challenge.severity} / {challenge.risk_type}**：{text(challenge.statement)}（{text(challenge.challenge_id)}）；待核查：{text(challenge.proposed_test)}")
-        from tradingagents.research.challenge_labels import challenge_check_lines
-        lines.extend(challenge_check_lines(record, challenge, text))
-    if not record.challenges:
-        lines.append("未提出挑战。")
-    for verification in record.verifications:
-        status = ("命题满足" if verification.predicate_met else "命题不满足") if verification.scope == "challenge_predicate_only" and verification.predicate_met is not None else verification.status
-        lines.append(f"- 实际核查 {text(verification.verification_id)}：{status}；{text(verification.result)}")
-        if verification.scope == "challenge_predicate_only":
-            lines.append(f"  仅检验独立命题「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
-        if verification.scope == "predicate_only":
-            lines.append(f"  仅检验条件「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
-    if not record.verifications:
-        lines.append("没有实际执行的核查记录；模型意见不属于已执行核查。")
-    lines.extend(["", "## 事实、假设与未知项", ""])
-    for claim in record.claims:
-        lines.append(f"- [{claim.kind}] {text(claim.statement)}（{text(claim.claim_id)}）")
-        if claim.evidence_ids:
-            lines.append("  来源：" + "、".join(text(key) for key in claim.evidence_ids))
-    for hypothesis in record.hypotheses:
-        lines.append(f"- 假设 {text(hypothesis.hypothesis_id)} 的失效条件：" + "；".join(text(item) for item in hypothesis.invalidation_conditions))
-        if hypothesis.limitations:
-            lines.append("  限制与替代解释：" + "；".join(text(item) for item in hypothesis.limitations))
-    lines.extend(["", "## 原文与来源回溯", ""])
-    for source in record.evidence:
-        lines.extend([f"### {text(source.source_name)} · {source.availability}", "", f"来源编号：{text(source.evidence_id)}", ""])
-        lines.extend([f"披露时间：{source.published_at or '未知'}；可用于研究的时间：{source.usable_as_of or '未知'}；来源族：{text(source.source_family_id or '未知')}。", ""])
-        if source.content is not None:
-            content_label = {"excerpt": "保存的原文摘录", "source_fields": "保存的来源字段", "saved_summary": "保存的来源摘要（非原文）"}[source.content.kind]
-            lines.extend([content_label + "：", "", "> " + text(source.content.text), "", f"内容定位：{text(source.content.locator_label)}", ""])
-            if source.content.truncated:
-                lines.extend(["显示内容已截断，不能视为完整原文。", ""])
-        if source.public_url:
-            lines.extend([f"[打开保存的来源链接]({quote(source.public_url, safe=':/?&=#%+;,@')})", ""])
-        if source.limitations:
-            lines.extend(["限制：" + "；".join(text(item) for item in source.limitations), ""])
-    limitations = tuple(dict.fromkeys((*record.limitations, *assessment.limitations)))
-    if limitations:
-        lines.extend(["## 全局覆盖与专项待查", "", *("- " + text(limitation_label(item)) for item in limitations), ""])
-    from tradingagents.research.factual_premises import public_premises
-    premises = public_premises(record)
-    if premises:
-        lines.extend(["## 观察、解释与待验证前提", "",
-                      "以下观察可核对来源与计算；解释的含义和因果尚未证实。", ""])
-        for item in premises:
-            lines.extend(["### " + text(item["text"]), ""])
-            for observation in item["observations"]:
-                lines.extend(["- 已有观察：" + text(observation["text"]),
-                    "  来源：" + "、".join(text(e) for e in observation["evidence_ids"])])
-                lines.extend("  限制：" + text(limit) for limit in observation["limitations"])
-            if not item["observations"]:
-                lines.append("待研究问题，尚未绑定可用观察。")
-            lines.extend("- 待验证前提（不作为已发生事实）：" + text(q) for q in item["pending_questions"])
-            lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def build_markdown_from_native_record(record: Any, *, workflow_version=None, focus_response=None, focus_reason=None, focus_text=None) -> str:
-    """Retain byte-stable legacy reports; V4 uses the unified Reader order."""
-    if record.schema_version == 'insight-research-v1':
-        from tradingagents.research.insight_report import insight_markdown
-        return insight_markdown(record)
-    if record.evidence_checks is not None:
-        content = _build_v5_native_markdown(record)
-    elif record.valuation is not None or "native_valuation_policy_v1" in record.limitations:
-        content = _build_v4_native_markdown(record)
-    else:
-        content = _build_legacy_native_markdown(record)
-    from tradingagents.research.native_versions import (
-        FOCUS_WORKFLOW_VERSION,
-        SEARCH_WORKFLOW_VERSION,
-        UNIFIED_WORKFLOW_VERSION,
-    )
-    if record.schema_version == 'research-record-v2':
-        from tradingagents.research.search_effective import unreviewed_roles
-        from tradingagents.research.search_labels import DISPOSITION_LABELS, ROLE_LABELS, stop_label
-        rows = [content.rstrip(), '', '## 联网补证与专项复核', '',
-                '公司身份与量化数据优先使用专用接口；新闻、行业与竞争信息使用 DeepSeek 与 Tavily 双路搜索。', '']
-        for batch in record.search_batches:
-            kinds = {r.kind for r in batch.requests}
-            round_id = max((r.round_id for r in batch.requests), default=0)
-            label = f'第 {round_id} 轮补证' if 'supplement' in kinds else '接口补缺' if 'recovery' in kinds else '初始双路搜索'
-            providers = '、'.join(sorted({r.provider for r in batch.requests}))
-            rows.append('- '+label+'（'+providers+'）：已保存检索记录及来源资格限制。')
-        for review in record.search_reviews:
-            rows.append('- 第 '+str(review.round_id)+' 轮 · '+ROLE_LABELS[review.role]+'：'+DISPOSITION_LABELS[review.disposition]+'。'+_markdown_text(review.rationale))
-        for role in unreviewed_roles(record):
-            rows.append('- '+ROLE_LABELS[role]+'有新材料尚未完成复核；不能沿用旧推断作为肯定性依据。')
-        for gap in record.search_gaps:
-            rows.append('- 待查：'+_markdown_text(gap.question))
-        rows.extend('- '+stop_label(reason) for reason in record.search_stop_reasons)
-        content = '\n'.join(rows)+'\n'
-    if workflow_version not in {FOCUS_WORKFLOW_VERSION, UNIFIED_WORKFLOW_VERSION, SEARCH_WORKFLOW_VERSION}:
-        return content
-    content = content.replace("。研究问题：", "。研究范围：", 1)
-    summary = getattr(record.assessment, "report_status", None) in {"specialist_summary", "basic_report"}
-    sections = getattr(record.assessment, "synthesis_sections", None)
-    summary = summary or bool(sections and any(s.status == "unavailable" for s in sections.sections))
-    heading = "报告交付与待完成分析" if summary else "综合判断"
-    content = content.replace(f"**{_markdown_text(record.assessment.judgement)}**", "## " + heading + "\n\n" + f"**{_markdown_text(record.assessment.judgement)}**", 1)
-    if focus_response is None and focus_reason is None:
-        return content
-    lines = [content.rstrip(), "", "## 补充关注点回应", "", "独立基础研究完成后，依据已有保存证据补充回应；不改写上文的综合判断。", ""]
-    if focus_reason:
-        if focus_text:
-            lines.extend(["关注点：" + _markdown_text(focus_text), ""])
-        lines.append("补充回应未能发布；基础研究已独立保存。")
-    else:
-        from tradingagents.agents.schemas._research_focus import validate_focus_response
-        validate_focus_response(record, focus_response)
-        lines.extend(["关注点：" + _markdown_text(focus_response.focus), ""])
-        if focus_response.status == "unavailable":
-            from tradingagents.research.focus_context import FOCUS_REASON_LABELS
-            lines.append(FOCUS_REASON_LABELS[focus_response.reason_code] + " 基础研究按独立保存记录呈现。")
-        else:
-            proposal = focus_response.proposal
-            labels = {"answered": "已有证据可回应", "partial": "只能部分回应", "unresolved": "现有证据无法判断"}
-            lines.extend([labels[proposal.answerability], "", _markdown_text(proposal.answer), ""])
-            lines.extend("- " + _markdown_text(limit) for limit in proposal.limitations)
-            if proposal.suggested_next_check:
-                lines.extend(["", "建议后续核查：" + _markdown_text(proposal.suggested_next_check)])
-            lines.extend(["", "引用记录：" + "、".join(_markdown_text(key) for key in (*proposal.claim_ids, *proposal.evidence_ids))])
-    return "\n".join(lines) + "\n"
-
-
-def _build_v5_native_markdown(record: Any) -> str:
-    from tradingagents.research.check_labels import (
-        CHECK_LABELS,
-        CHECK_STATUS,
-        OUTCOME_LABELS,
-        observation_value,
-    )
-    from tradingagents.research.coverage_labels import limitation_label
-    from tradingagents.research.record_codec import parse_research_record
-
-    record = parse_research_record(record.model_dump(mode="json"))
-    content = _build_v4_native_markdown(record)
-    text = _markdown_text
-    lines = ["## 证据核查", "", "按具体问题核对保存资料；经济原因、持续性与合理价值仍需另行判断。", ""]
-    for check in record.evidence_checks.checks:
-        lines.extend([f"### {CHECK_LABELS[check.check_id]} · {CHECK_STATUS[check.status]}", "", text(check.question), ""])
-        for observation in check.observations:
-            lines.append(f"- **{text(observation.label)}**：{observation_value(observation)}。{text(observation.method)}")
-        lines.extend(["", "依据："+"、".join(text(key) for key in check.evidence_ids), ""])
-        for limit in (*check.limitations, *check.missing):
-            lines.append("- "+text(limitation_label(limit)))
-        lines.append("")
-    lines.extend(["### 挑战回答范围", ""])
-    for item in record.assessment.challenge_assessments:
-        lines.extend([f"- **{OUTCOME_LABELS[item.outcome]} · 经济判断仍待核查**（{text(item.challenge_id)}）", "  "+text(item.rationale)])
-        if item.answered_question:
-            lines.append("  本次回答范围："+text(item.answered_question))
-        if item.observation_date:
-            lines.append("  后续观察日期："+str(item.observation_date))
-        for observation in item.observations:
-            lines.append("  "+text(observation.label)+"："+observation_value(observation))
-    content = content.replace("## 估值定位与参考区间", "\n".join(lines)+"\n## 估值定位与参考区间", 1)
-    content = content.replace("## 未解决挑战与实际核查", "## 挑战与实际核查", 1)
-    content = content.replace("没有实际执行的核查记录；模型意见不属于已执行核查。", "已执行上述本地证据核查；尚未执行新增来源的独立工具验证。经济假设仍需后续验证。", 1)
-    return content
-
-
-def _build_legacy_native_markdown(record: Any) -> str:
-    """One deterministic Reader/report source; never invokes a summary model."""
-    from tradingagents.research.coverage_labels import limitation_label
-    from tradingagents.research.record_codec import parse_research_record
-
-    record = parse_research_record(record.model_dump(mode="json"))
-    assessment = record.assessment
-    if record.construction != "native" or assessment is None:
-        raise ReportPublicationError("native report requires a native assessment")
-    text = _markdown_text
-    claims = {item.claim_id: item for item in record.claims}
-    challenges = {item.challenge_id: item for item in record.challenges}
-    dimensions = {
-        "operating_quality": "经营质量", "valuation": "估值依据", "market_context": "市场与价格背景",
-        "catalyst_delivery": "催化兑现", "holding_thesis": "原持仓假设",
-    }
-    modes = {"company_research": "公司研究", "catalyst_research": "催化研究", "holding_review": "持仓复盘"}
-    lines = [f"# {text(record.ticker)} · {modes[record.mode]}", "",
-        f"研究截点：{record.analysis_date.isoformat()}。研究问题：{text(assessment.research_question)}", "",
-        f"**{text(assessment.judgement)}**", "",
-        f"证据完整性：{assessment.completeness}；研究质量：{assessment.quality}。运行完成不表示证据充分。", ""]
-    if assessment.forward_window_calendar_days is not None:
-        lines.extend([f"催化观察窗口：截点后 {assessment.forward_window_calendar_days} 个自然日。", ""])
-    lines.extend(["## 关键依据", ""])
-    for claim_id in assessment.key_claim_ids:
-        claim = claims[claim_id]
-        label = "事实" if claim.kind == "fact" else "条件性推断"
-        lines.append(f"- [{label}] {text(claim.statement)}（{text(claim_id)}）")
-    if not assessment.key_claim_ids:
-        lines.append("尚无合格依据可支持关键判断。")
-    lines.extend(["", "## 最大疑点与下一步", ""])
-    if assessment.primary_challenge_id is not None:
-        primary = challenges[assessment.primary_challenge_id]
-        lines.extend([f"**未解决：{text(primary.statement)}**", "", f"核查方向：{text(primary.proposed_test)}", ""])
-    else:
-        lines.extend(["未提出额外挑战；这不表示全部风险已经排除。", ""])
-    lines.extend([f"下一步：{text(assessment.next_check)}", "", "## 脚本计算与量化背景", "",
-        "下列数值来自保存的数据与计算版本，不是内在价值区间或未来价格预测。", ""])
-    for metric in record.metrics:
-        value = str(metric.value) + " " + text(metric.unit) if metric.availability == "available" else "不可用：" + text(metric.unavailable_reason or "原因未记录")
-        lines.extend([f"- **{text(metric.label)}**：{value}。方法：{text(metric.method)}；版本：{text(metric.calculation_version)}。",
-            f"  样本：{metric.sample_size if metric.sample_size is not None else '未知'}；窗口：{metric.window_start or '未知'} 至 {metric.window_end or '未知'}；输入：{', '.join(text(key) for key in metric.input_evidence_ids)}。",
-            f"  输入摘要：{metric.input_sha256}。"])
-        if metric.limitations:
-            lines.append("  限制：" + "；".join(text(item) for item in metric.limitations))
-    if not record.metrics:
-        lines.append("没有通过资格检查的量化结果；不补估计值。")
-    lines.extend(["", "## 判断维度", ""])
-    for dimension in assessment.dimensions:
-        lines.append(f"- **{dimensions[dimension.dimension]} · {dimension.status}**：{text(dimension.judgement)}")
-        if dimension.claim_ids:
-            lines.append("  依据：" + "、".join(text(key) for key in dimension.claim_ids))
-        if dimension.limitations:
-            lines.append("  限制：" + "；".join(text(limitation_label(item)) for item in dimension.limitations))
-    lines.extend(["", "## 未解决挑战与实际核查", ""])
-    for challenge in record.challenges:
-        lines.append(f"- **{challenge.severity} / {challenge.risk_type}**：{text(challenge.statement)}（{text(challenge.challenge_id)}）；待核查：{text(challenge.proposed_test)}")
-        from tradingagents.research.challenge_labels import challenge_check_lines
-        lines.extend(challenge_check_lines(record, challenge, text))
-    if not record.challenges:
-        lines.append("未提出挑战。")
-    for verification in record.verifications:
-        status = ("命题满足" if verification.predicate_met else "命题不满足") if verification.scope == "challenge_predicate_only" and verification.predicate_met is not None else verification.status
-        lines.append(f"- 实际核查 {text(verification.verification_id)}：{status}；{text(verification.result)}")
-        if verification.scope == "challenge_predicate_only":
-            lines.append(f"  仅检验独立命题「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
-        if verification.scope == "predicate_only":
-            lines.append(f"  仅检验条件「{text(verification.condition_text or '')}」；不证明整条假设，也不自动关闭挑战。")
-    if not record.verifications:
-        lines.append("没有实际执行的核查记录；模型意见不属于已执行核查。")
-    lines.extend(["", "## 事实、假设与未知项", ""])
-    for claim in record.claims:
-        lines.append(f"- [{claim.kind}] {text(claim.statement)}（{text(claim.claim_id)}）")
-        if claim.evidence_ids:
-            lines.append("  来源：" + "、".join(text(key) for key in claim.evidence_ids))
-    for hypothesis in record.hypotheses:
-        lines.append(f"- 假设 {text(hypothesis.hypothesis_id)} 的失效条件：" + "；".join(text(item) for item in hypothesis.invalidation_conditions))
-        if hypothesis.limitations:
-            lines.append("  限制与替代解释：" + "；".join(text(item) for item in hypothesis.limitations))
-    lines.extend(["", "## 原文与来源回溯", ""])
-    for source in record.evidence:
-        lines.extend([f"### {text(source.source_name)} · {source.availability}", "", f"来源编号：{text(source.evidence_id)}", ""])
-        lines.extend([f"披露时间：{source.published_at or '未知'}；可用于研究的时间：{source.usable_as_of or '未知'}；来源族：{text(source.source_family_id or '未知')}。", ""])
-        if source.content is not None:
-            content_label = {"excerpt": "保存的原文摘录", "source_fields": "保存的来源字段", "saved_summary": "保存的来源摘要（非原文）"}[source.content.kind]
-            lines.extend([content_label + "：", "", "> " + text(source.content.text), "", f"内容定位：{text(source.content.locator_label)}", ""])
-            if source.content.truncated:
-                lines.extend(["显示内容已截断，不能视为完整原文。", ""])
-        if source.public_url:
-            lines.extend([f"[打开保存的来源链接]({quote(source.public_url, safe=':/?&=#%+;,@')})", ""])
-        if source.limitations:
-            lines.extend(["限制：" + "；".join(text(item) for item in source.limitations), ""])
-    limitations = tuple(dict.fromkeys((*record.limitations, *assessment.limitations)))
-    if limitations:
-        lines.extend(["## 全局覆盖与专项待查", "", *("- " + text(limitation_label(item)) for item in limitations), ""])
-    return "\n".join(lines).rstrip() + "\n"

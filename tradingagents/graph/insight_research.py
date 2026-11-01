@@ -23,12 +23,12 @@ from tradingagents.execution.insight_model import InsightUnavailable
 from tradingagents.research.insight_report import parse_insight_report, validate_saved_synthesis
 from tradingagents.research.insights import compile_insights
 from tradingagents.research.numeric_catalog import render_numeric_anchor
-from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 
 def catalog_prompt(catalog, query='', *, compact=False):
     """All facts remain visible; quote bounded original passages without full payload duplication."""
-    from tradingagents.research.evidence_packets import retrieve_evidence
+    from tradingagents.research.evidence_retrieval import retrieve_evidence
     sources = [s.model_dump(mode='json') for s in catalog.sources]
     context = {'sources': sources, 'facts': [{'evidence_ids': e.source_ids} for e in catalog.evidence]}
     passages = retrieve_evidence(context, query or ' '.join(e.text for e in catalog.evidence))
@@ -72,7 +72,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     digest = canonical_sha256(identity)
     prior = journal.state.get('insight.input_digest')
     if prior is not None and prior != digest:
-        raise CatalystCheckpointConflict('insight input changed')
+        raise ResearchCheckpointConflict('insight input changed')
     if prior is None:
         journal.put('insight.input_digest', digest)
         journal.put('insight.catalogs', identity['catalogs'])
