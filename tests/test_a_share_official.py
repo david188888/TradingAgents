@@ -11,7 +11,7 @@ from __future__ import annotations
 import calendar
 import io
 import zipfile
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 import pytest
@@ -627,3 +627,77 @@ def test_sse_e_interaction_http_failure_is_typed(monkeypatch):
 
     with pytest.raises(ChinaDataUnavailableError, match="HTTP 503"):
         a_share_official.get_a_share_sse_e_interaction(ticker="600519")
+
+
+# Questions carry an absolute time, replies within a day a relative one (a-stock-data v3.10.3).
+_SSE_NOW = datetime(2026, 10, 23, 9, 0)
+
+
+def _pin_sse_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_time = a_share_official._sse_time
+    monkeypatch.setattr(a_share_official, "_sse_time", lambda text: real_time(text, now=_SSE_NOW))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("昨天 18:22", "2026-10-22 18:22"),
+        ("今天 09:05", "2026-10-23 09:05"),
+        ("前天 23:59", "2026-10-21 23:59"),
+        ("2026年10月21日 17:47", "2026-10-21 17:47"),
+        ("2026-10-21 17:47", "2026-10-21 17:47"),
+        ("10-20 08:30", "2026-10-20 08:30"),
+        ("35分钟前", "2026-10-23 08:25"),
+        ("3小时前", "2026-10-23 06:00"),
+        ("2天前", "2026-10-21 09:00"),
+        ("刚刚", "2026-10-23 09:00"),
+        ("09:31", "2026-10-23 09:31"),
+    ],
+)
+def test_sse_time_reads_every_site_style(text, expected):
+    assert a_share_official._sse_time(text, now=_SSE_NOW) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["时间待定", "昨天 25:00", "09:99", "2026年02月30日 10:00", "999999999天前", "99999999999999999999天前"],
+)
+def test_sse_time_unrecognized_returns_none(text):
+    assert a_share_official._sse_time(text, now=_SSE_NOW) is None
+
+
+def test_sse_time_month_day_rolls_back_a_year():
+    assert a_share_official._sse_time("12-31 18:00", now=datetime(2026, 1, 5, 9, 0)) == "2025-12-31 18:00"
+    assert a_share_official._sse_time("02-29 10:00", now=datetime(2024, 1, 5, 9, 0)) is None
+
+
+def test_sse_time_relative_uses_beijing_clock(monkeypatch):
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz == a_share_official._SSE_CN_TZ
+            return datetime(2026, 10, 23, 0, 30, tzinfo=tz)
+
+    monkeypatch.setattr(a_share_official, "datetime", _Clock)
+    assert a_share_official._sse_time("昨天 18:22") == "2026-10-22 18:22"
+
+
+def test_sse_e_interaction_keeps_relative_reply_time(monkeypatch):
+    _pin_sse_clock(monkeypatch)
+    item = _feed_item("1798068", ask_time="2026年10月21日 17:47", answer_time="昨天 18:22")
+    _install_sse(monkeypatch, _SseSite(_feed(item)))
+
+    frame = _report_frame(a_share_official.get_a_share_sse_e_interaction())
+
+    assert frame["question_time"].iloc[0] == "2026-10-21 17:47"
+    assert frame["answer_time"].iloc[0] == "2026-10-22 18:22"
+
+
+@pytest.mark.parametrize("invalid", ["时间待定", "昨天 25:00", "09:99"])
+@pytest.mark.parametrize(("field", "label"), [("ask_time", "提问"), ("answer_time", "回复")])
+def test_sse_e_interaction_unrecognized_time_still_raises(monkeypatch, invalid, field, label):
+    _pin_sse_clock(monkeypatch)
+    _install_sse(monkeypatch, _SseSite(_feed(_feed_item("5", **{field: invalid}))))
+
+    with pytest.raises(ChinaDataUnavailableError, match=f"{label}时间认不出"):
+        a_share_official.get_a_share_sse_e_interaction()
