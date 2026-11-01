@@ -9,8 +9,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from tradingagents.agents.schemas._evidence import SourceContentV1, SourceEvidenceV1
 from tradingagents.agents.schemas._evidence_checks import (
-    ChallengeAssessmentV2,
     CheckObservationV1,
     DatedForecastV1,
     EvidenceChecksV1,
@@ -19,7 +19,6 @@ from tradingagents.agents.schemas._evidence_checks import (
     PeerQuoteV1,
     PeerSelectionV1,
 )
-from tradingagents.agents.schemas._research_record import SourceContentV1, SourceEvidenceV1
 from tradingagents.agents.schemas._verification_plan import FinancialOperandV1, canonical_sha256
 from tradingagents.dataflows.disclosure_documents import pdf_url
 from tradingagents.dataflows.disclosure_documents_v2 import NUMERIC_SOURCE, SCALES, title_info
@@ -146,13 +145,13 @@ def fact_statement(name, payload):
 
 
 def _frozen_sources(record):
-    ids = set(record.snapshots[-1 if record.schema_version == "research-record-v2" else 0].evidence_ids)
+    ids = set(record.snapshots[-1 if record.schema_version == "evidence-record-v1" else 0].evidence_ids)
     return [e for e in record.evidence if e.evidence_id in ids]
 
 
 def _identity_qualified(record):
     identities = [s for s in _frozen_sources(record) if s.source_name in IDENTITY_SOURCES and s.availability == "available" and s.content is not None]
-    if record.schema_version == 'research-record-v2' and not identities:
+    if record.schema_version == 'evidence-record-v1' and not identities:
         from tradingagents.research.search_recovery import recovered_identity
         return ("security_identity_unqualified" not in record.limitations and
                 recovered_identity(record.recovered_fields, ticker=record.ticker, cutoff=record.analysis_date) is not None)
@@ -170,7 +169,7 @@ def _identity_qualified(record):
 def _rows(record):
     result = []
     for source in _frozen_sources(record):
-        if record.schema_version == 'research-record-v2':
+        if record.schema_version == 'evidence-record-v1':
             from tradingagents.research.search_recovery import qualified_financial_rows
             for recovered in qualified_financial_rows(record, source):
                 result.append((source, {}, OfficialNumericRowV1.model_validate(recovered)))
@@ -390,7 +389,7 @@ def compute_checks(record):
     period = max(periods) if periods else None
     frozen = _frozen_sources(record)
     inputs = {"run_id": record.run_id, "ticker": record.ticker, "analysis_date": record.analysis_date.isoformat(),
-              "snapshot": record.snapshots[-1 if record.schema_version == "research-record-v2" else 0].snapshot_id, "sources": [s.model_dump(mode="json") for s in frozen]}
+              "snapshot": record.snapshots[-1 if record.schema_version == "evidence-record-v1" else 0].snapshot_id, "sources": [s.model_dump(mode="json") for s in frozen]}
     checks = (_operating(record, rows, period), _cash(record, rows, period), _valuation(record)) if _identity_qualified(record) else tuple(
         _check(key, status="unavailable", missing=("security_identity_unqualified",)) for key in QUESTIONS)
     if version == STRUCTURED_CALCULATION_VERSION:
@@ -398,7 +397,7 @@ def compute_checks(record):
         checks = (*checks, *compute_structured_checks(record, rows, identity_qualified=_identity_qualified(record)))
     return EvidenceChecksV1(run_id=record.run_id, ticker=record.ticker, analysis_date=record.analysis_date,
         calculation_version=version if version != "minimum-evidence-v1" else CALCULATION_VERSION,
-        input_snapshot_id=record.snapshots[-1 if record.schema_version == "research-record-v2" else 0].snapshot_id, input_evidence_ids=tuple(s.evidence_id for s in frozen), input_sha256=canonical_sha256(inputs),
+        input_snapshot_id=record.snapshots[-1 if record.schema_version == "evidence-record-v1" else 0].snapshot_id, input_evidence_ids=tuple(s.evidence_id for s in frozen), input_sha256=canonical_sha256(inputs),
         checks=checks)
 
 
@@ -418,33 +417,3 @@ def cfo_decline(record):
         return None
     growth = (Decimal(row.current)/base-1)*100
     return _obs("cfo_yoy_percent", "报告期经营现金流同比变化", growth, "%", f"{row.period}对{row.prior_period}：本期CFO÷正基期CFO−1。仅证明报告数值变化。", [source.evidence_id])
-
-
-def challenge_assessments(record):
-    checks = {check.check_id: check for check in record.evidence_checks.checks}
-    risk = cfo_decline(record)
-    output = []
-    for binding in record.challenge_bindings or ():
-        check = checks.get(binding.check_id)
-        if binding.check_id is not None and check is None:
-            raise ValueError("challenge check binding outside saved calculation version")
-        scope, question = (check.question_scope, check.question) if check else (None, None)
-        observations = check.observations if check else ()
-        evidence = check.evidence_ids if check else ()
-        limits = (*check.limitations, *check.missing) if check else ("economic_question_exceeds_closed_check_scope",)
-        outcome, rationale = "unresolved", "所需证据不足或问题超出已执行检查的范围；经济判断仍未解决。"
-        if binding.observation_date and binding.observation_date > record.analysis_date:
-            outcome, rationale = "future_observation", "该观察日期在研究截止日之后；保留后续观察，不替代当前证据核查。"
-        elif binding.observed_risk:
-            if risk is not None and Decimal(risk.value) < 0:
-                outcome, rationale = "risk_supported", "已核对的同期间合并经营现金流同比下降；其原因及持续性仍未解决。"
-                observations, evidence = (risk,), risk.evidence_ids
-            else:
-                rationale = "缺少合格正基期CFO，或数据不支持所选的经营现金流下降条件。"
-        elif check and check.status == "passed":
-            outcome, rationale = "evidence_sufficient", "此处仅回答代码定义的证据问题；不证明经济原因、持续性或整体假设。"
-        output.append(ChallengeAssessmentV2(challenge_id=binding.challenge_id, outcome=outcome,
-            question_scope=scope, answered_question=question, check_id=binding.check_id, rationale=rationale,
-            evidence_ids=evidence, observed_risk=binding.observed_risk, observation_date=binding.observation_date,
-            observations=observations, limitations=tuple(dict.fromkeys((*limits, "economic_parent_remains_unresolved")))))
-    return tuple(output)

@@ -78,10 +78,9 @@ export function useConfig() {
   const validationError = commonError ?? (!ticker.trim() ? "请输入股票代码" : null);
   function nativeRequest(value: string): RunCreateRequestDTO | null {
     if (commonError !== null || !value.trim()) return null;
-    return { ticker: value.trim(), research_profile: "evidence_v1", mode: "company_research",
+    return { ticker: value.trim(), research_profile: "evidence_v1",
       research_question: research_question.trim() || null,
-      selected_analysts: ["market", "social", "news", "fundamentals"], research_depth: 1, horizon: "medium",
-      llm_provider, quick_think_llm, deep_think_llm, output_language, checkpoint_enabled: false, asset_type: null,
+      llm_provider, quick_think_llm, deep_think_llm, output_language,
       ...(llm_provider === "chatgpt" && chatgpt.account_ref ? {chatgpt_account_ref: chatgpt.account_ref} : {}),
     };
   }

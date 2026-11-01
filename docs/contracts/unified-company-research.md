@@ -1,14 +1,5 @@
-# Company research contract
+# unified-company-research
 
-Status: Current — navigation pointer.
+Status: Retired
 
-Maintained explanation: [owning reference](research-record.md#publication-and-judgement).
-Canonical detail or related owner: [source](../../tradingagents/research/unified_assessment.py).
-
-Current V8 retains the company objective/dialogue baseline; historical V7 recovery keeps its saved identity. Canonical assessment rules remain in code.
-
-<!-- Compatibility anchors for existing section links. -->
-<a id="bounded-evidence-dialogue"></a>
-<a id="execution-and-adapters"></a>
-<a id="saved-investment-judgement"></a>
-<a id="unified-company-investment-research"></a>
+This document's former workflow was removed during the V9-only cleanup. Its executors, model-output adapters and diagnostic tools are no longer supported. See the [current Insight contract](research-record.md) and [architecture](../../ARCHITECTURE.md). Dated implementation history remains in the [archive](../archive/README.md).

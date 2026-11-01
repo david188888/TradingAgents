@@ -105,38 +105,3 @@ class DataflowsConfigIsolationTests(unittest.TestCase):
         self.assertEqual(merged["run_marker"], "scoped")
         self.assertIn("data_vendors", merged)
         self.assertEqual(get_config(), default_config.DEFAULT_CONFIG)
-
-    def test_scoped_config_reaches_langgraph_tool_calls(self):
-        from langchain_core.messages import AIMessage
-        from langchain_core.tools import tool
-        from langgraph.graph import END, START, MessagesState, StateGraph
-        from langgraph.prebuilt import ToolNode
-
-        @tool
-        def probe() -> str:
-            """Read a value bound to the current analysis run."""
-            return get_config()["run_marker"]
-
-        def call_tool(_state):
-            return {
-                "messages": [
-                    AIMessage(
-                        "",
-                        tool_calls=[{"name": "probe", "args": {}, "id": "probe-1"}],
-                    )
-                ]
-            }
-
-        graph = StateGraph(MessagesState)
-        graph.add_node("call", call_tool)
-        graph.add_node("tools", ToolNode([probe]))
-        graph.add_edge(START, "call")
-        graph.add_edge("call", "tools")
-        graph.add_edge("tools", END)
-
-        run_config = copy.deepcopy(default_config.DEFAULT_CONFIG)
-        run_config["run_marker"] = "scoped"
-        with config_scope(run_config):
-            result = graph.compile().invoke({"messages": [("user", "probe")]})
-
-        self.assertEqual(result["messages"][-1].content, "scoped")

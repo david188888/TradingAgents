@@ -1,6 +1,5 @@
-import { SearchResearch } from "./SearchResearch";
 import { useEffect, useId, useRef, type ReactNode } from "react";
-import type { AgentKey, ReaderProcessDTO, ReaderRoleDTO, ResearchRecordDTO } from "../../api/contracts";
+import type { AgentKey, ReaderProcessDTO, ReaderRoleDTO } from "../../api/contracts";
 import { rolesForProfile, type ReducerState } from "../../state/model";
 import { AGENT_LABELS, AGENT_PURPOSE, isTerminalRun, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 
@@ -8,15 +7,14 @@ type FlowRole = { key: AgentKey; status: string; meta?: ReaderRoleDTO };
 type Group = { id: string; label: string; keys: AgentKey[] };
 
 /** Dependency map only: data, dispatch and public output qualification stay in existing hooks. */
-export function ResearchFlow({ process, workflowVersion, state, runStatus, record, selectedRole,
+export function ResearchFlow({ process, workflowVersion, state, runStatus, selectedRole,
   onSelect, onClose, children }: {
   process: ReaderProcessDTO | null; workflowVersion?: string; state?: ReducerState | null;
-  runStatus: string; record?: ResearchRecordDTO | null; selectedRole: AgentKey | null;
+  runStatus: string; selectedRole: AgentKey | null;
   onSelect(role: AgentKey): void; onClose(): void; children?: ReactNode;
 }) {
-  const version = process?.workflow_version ?? workflowVersion;
-  const known = /^evidence-production-v[1-9]$/.test(version ?? "");
-  const unified = version === "evidence-production-v7" || version === "evidence-production-v8" || version === "evidence-production-v9";
+  const version = process?.workflow_version ?? workflowVersion ?? "evidence-production-v9";
+  const known = version === "evidence-production-v9";
   const terminal = isTerminalRun(runStatus);
   const activeRun = !terminal && runStatus !== "cancel_requested";
   const roles: FlowRole[] = process ? process.roles.map(r => ({ key: r.role_key,
@@ -29,8 +27,8 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, recor
     { id: "evidence", label: "共同输入", keys: ["evidence"] },
     { id: "specialists", label: "独立专项分工", keys: ["operating_quality", "event_context", "market_context"] },
     { id: "challenge", label: "汇合提议，提出质疑", keys: ["challenge"] },
-    ...(version === "evidence-production-v9" ? [] : [{ id: "checks", label: "核查可执行条件", keys: ["code_checks"] as AgentKey[] }]),
-    ...(unified ? [{ id: "responses", label: "被质疑专项回应", keys: ["response_operating_quality", "response_event_context", "response_market_context"] as AgentKey[] }] : []),
+
+    { id: "responses", label: "被质疑专项回应", keys: ["response_operating_quality", "response_event_context", "response_market_context"] },
     { id: "synthesis", label: "综合研究判断", keys: ["synthesis"] },
     { id: "publication", label: "校验并发布基础研究", keys: ["code_checks"] },
     ...(byKey.has("focus_response") ? [{ id: "focus", label: "基础研究保存后的补充", keys: ["focus_response"] as AgentKey[] }] : []),
@@ -52,7 +50,6 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, recor
   const close = () => { onClose(); trigger.current?.focus(); };
 
   return <section className="research-flow" aria-label="研究流程与环节详情">
-    {record ? <SearchResearch record={record}/> : null}
     <div className="rf-workspace" data-detail={selectedRole ? "open" : "closed"}>
       <section className="rf-map" aria-label="研究依赖流程">
         <header className="rf-panel-head"><h2>研究如何推进</h2><span>执行状态与产物状态分别记录</span></header>
@@ -77,8 +74,7 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, recor
                   <div className="rf-node-meta"><span className="rf-index">{String(index + 1).padStart(2,"0")}{group.keys.length > 1 && known ? String.fromCharCode(65 + position) : ""}</span>
                     <span className="rf-status">{code ? "代码职责" : STATUS_LABELS[status] ?? "未记录"}</span></div>
                   <h3>{label}</h3><p className="rf-purpose">{code ? group.id === "publication" ? "验证并保存可公开阅读的基础研究。" : "核查给定条件，保留经济解释与未知项。" : meta?.purpose ?? AGENT_PURPOSE[key]}</p>
-                  {key === "evidence" && record ? <p className="rf-count">{record.evidence.length} 项来源 · {record.claims.filter(c => c.kind === "fact").length} 条事实</p> : null}
-                  <p className="rf-output">{outputStatus}{meta?.output_count != null && group.id !== "publication" && !(key === "evidence" && record) ? ` · ${meta.output_count} ${key === "evidence" ? "条事实" : "项"}` : ""}</p>
+                  <p className="rf-output">{outputStatus}{meta?.output_count != null && group.id !== "publication" ? ` · ${meta.output_count} 项` : ""}</p>
                   <button type="button" aria-label={`查看${label}环节与保存产物`} aria-expanded={selectedRole === key}
                     aria-controls={selectedRole ? detailId : undefined} onClick={e => select(key,e.currentTarget)}>查看本环节与保存产物 <span aria-hidden="true">↗</span></button>
                 </article>;

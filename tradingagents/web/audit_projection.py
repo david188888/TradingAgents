@@ -12,7 +12,7 @@ from urllib.parse import quote
 from tradingagents.observability.events import PersistedEvent
 from tradingagents.observability.redaction import redact_recursive
 from tradingagents.observability.roles import roles_for_profile
-from tradingagents.runtime.catalyst_checkpoint import load_checkpoint
+from tradingagents.runtime.research_checkpoint import load_checkpoint
 from tradingagents.runtime.run_models import RunSnapshot
 from tradingagents.runtime.store import RunStore
 
@@ -32,7 +32,6 @@ from .audit_models import (
     AuditSummaryDTO,
     AuditToolSummary,
 )
-from .projections import build_workflow
 from .reader_process_projection import native_counts
 
 
@@ -50,17 +49,11 @@ REPORT_KINDS = SAFE_INLINE_KINDS | DOWNLOAD_ONLY_KINDS
 TEXT_MEDIA_TYPES = frozenset({"application/json", "text/markdown", "text/plain"})
 CONFIG_ALLOWLIST = frozenset(
     {
-        "checkpoint_enabled",
         "deep_think_llm",
-        "horizon",
         "llm_provider",
-        "max_debate_rounds",
-        "max_risk_discuss_rounds",
         "mode",
         "output_language",
         "quick_think_llm",
-        "research_depth",
-        "selected_analysts",
     }
 )
 STAGE_LABELS = {
@@ -143,7 +136,7 @@ def _input_index(
     return captured
 
 
-def _role_summaries(events: list[PersistedEvent], *, profile="classic", checkpoint=None) -> tuple[AuditRoleSummary, ...]:
+def _role_summaries(events: list[PersistedEvent], *, profile="evidence_v1", checkpoint=None) -> tuple[AuditRoleSummary, ...]:
     identity = checkpoint.get("identity", {}) if checkpoint else {}
     registry = roles_for_profile(profile, workflow_version=identity.get("workflow_version"),
                                  focus_requested=bool(identity.get("research_question")))
@@ -178,8 +171,8 @@ def _role_summaries(events: list[PersistedEvent], *, profile="classic", checkpoi
             actor_id=role.actor_id,
             label=role.display_name,
             status=statuses[role.actor_id],
-            turn_count=len(turn_ids[role.actor_id]) if profile == "classic" else None,
-            model_call_count=native_counts(checkpoint, role=role.node_id).sdk_total.value if profile == "evidence_v1" else len(model_ids[role.actor_id]) if profile == "classic" else None,
+            turn_count=None,
+            model_call_count=native_counts(checkpoint, role=role.node_id).sdk_total.value,
             model_observation=native_counts(checkpoint, role=role.node_id).sdk_total if profile == "evidence_v1" else None,
             duration_ms=durations[role.actor_id] if role.actor_id in has_duration else None,
         )
@@ -327,51 +320,12 @@ def _prompt_config_summaries(
     )
 
 
-def _stage_navigation(
-    events: list[PersistedEvent],
-    roles: tuple[AuditRoleSummary, ...],
-    *,
-    legacy: bool,
-    profile: str = "classic",
-) -> tuple[AuditStageSummary, ...]:
-    role_index = {item.item_id: item for item in roles}
-    if profile != "classic":
-        return tuple(AuditStageSummary(stage_id=r.actor_id, label=r.label,
-            status=r.status if r.status in {"running", "completed", "failed", "cancelled", "interrupted", "skipped"} else "not_started",
-            availability="not_recorded" if r.status == "not_reached" else "ready",
-            related_selections=(AuditSelection(kind="role", id=r.actor_id),)) for r in roles)
-    if legacy:
-        return tuple(
-            AuditStageSummary(
-                stage_id=stage_id,
-                label=label,
-                status="unknown",
-                availability="not_recorded",
-                reason_code="legacy_event_gap",
-            )
-            for stage_id, label in STAGE_LABELS.items()
-        )
-    workflow = build_workflow(events)
-    stages: list[AuditStageSummary] = []
-    for stage in workflow["stages"]:
-        stage_id = str(stage["stage_id"])
-        status = "not_started" if stage["status"] == "waiting" else str(stage["status"])
-        related = tuple(
-            AuditSelection(kind="role", id=str(actor["actor_id"]))
-            for actor in stage["actors"]
-            if str(actor["actor_id"]) in role_index
-            and role_index[str(actor["actor_id"])].status != "not_reached"
-        )
-        stages.append(
-            AuditStageSummary(
-                stage_id=stage_id,
-                label=STAGE_LABELS.get(stage_id, stage_id),
-                status=status,
-                availability="ready",
-                related_selections=related,
-            )
-        )
-    return tuple(stages)
+def _stage_navigation(events, roles, *, legacy=False, profile="evidence_v1"):
+    return tuple(AuditStageSummary(stage_id=r.actor_id, label=r.label,
+        status=r.status if r.status in {"running", "completed", "failed", "cancelled", "interrupted", "skipped"} else "not_started",
+        availability="not_recorded" if r.status == "not_reached" else "ready",
+        related_selections=(AuditSelection(kind="role", id=r.actor_id),)) for r in roles)
+
 
 
 def _duration_ms(snapshot: RunSnapshot) -> int | None:
@@ -400,31 +354,16 @@ def _build_summary(
     artifacts = _artifact_index(events)
     prompt_index = _input_index(events, artifacts, "input.prompt_snapshot")
     config_index = _input_index(events, artifacts, "input.config_snapshot")
-    profile = (snapshot.metadata or {}).get("research_profile", "classic")
+    profile = (snapshot.metadata or {}).get("research_profile", "evidence_v1")
     roles = _role_summaries(events, profile=profile, checkpoint=checkpoint)
     capabilities = _capability_summaries(snapshot, events)
     tools = _tool_summaries(events)
     artifact_summaries = _artifact_summaries(artifacts)
     prompts = _prompt_config_summaries(prompt_index, artifacts, label="Prompt snapshot")
     configs = _prompt_config_summaries(config_index, artifacts, label="Effective config")
-    legacy = snapshot.mode is None or snapshot.horizon is None
+    legacy = False
     stages = _stage_navigation(events, roles, legacy=legacy, profile=profile)
     report_count = sum(item.is_report for item in artifact_summaries)
-    turn_count = len(
-        {
-            str(event.payload["turn_id"])
-            for event in events
-            if event.type.startswith("turn.") and isinstance(event.payload.get("turn_id"), str)
-        }
-    )
-    model_count = len(
-        {
-            str(event.payload["model_call_id"])
-            for event in events
-            if event.type.startswith("model.")
-            and isinstance(event.payload.get("model_call_id"), str)
-        }
-    )
     section_values = (
         ("overview", 1),
         ("roles", len(roles)),
@@ -454,7 +393,6 @@ def _build_summary(
             status=snapshot.status,
             ticker=snapshot.ticker,
             mode=snapshot.mode,
-            horizon=snapshot.horizon,
             created_at=snapshot.created_at,
             completed_at=snapshot.completed_at,
             duration_ms=_duration_ms(snapshot),
@@ -466,8 +404,8 @@ def _build_summary(
         counts=AuditCounts(
             stages=len(stages),
             roles=len(roles),
-            turns=turn_count if profile == "classic" else None,
-            model_calls=native_counts(checkpoint).sdk_total.value if profile == "evidence_v1" else model_count if profile == "classic" else None,
+            turns=None,
+            model_calls=native_counts(checkpoint).sdk_total.value,
             native_counts=native_counts(checkpoint) if profile == "evidence_v1" else None,
             tool_calls=len(tools),
             artifacts=len(artifact_summaries),
@@ -528,7 +466,6 @@ def _unavailable_summary(snapshot: RunSnapshot) -> AuditSummaryDTO:
             status=snapshot.status,
             ticker=snapshot.ticker,
             mode=snapshot.mode,
-            horizon=snapshot.horizon,
             created_at=snapshot.created_at,
             completed_at=snapshot.completed_at,
             duration_ms=_duration_ms(snapshot),
@@ -855,7 +792,6 @@ def project_audit_detail(
                 状态=snapshot.status,
                 标的=snapshot.ticker,
                 模式=snapshot.mode,
-                周期=snapshot.horizon,
                 模型提供方=snapshot.llm_provider,
                 密钥状态=json.dumps(snapshot.configured_keys, ensure_ascii=False, sort_keys=True),
             ),

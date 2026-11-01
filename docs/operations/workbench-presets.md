@@ -1,11 +1,5 @@
-# Classic analyst presets
+# workbench-presets
 
-Status: Current — navigation pointer.
+Status: Retired
 
-Maintained explanation: [owning reference](catalyst-research.md#analyst-presets).
-Canonical detail or related owner: [source](../../tradingagents/presets.py).
-
-Presets affect classic analyst selection/order only. Native roles and methodology mapping stay code-owned.
-
-<!-- Compatibility anchors for existing section links. -->
-<a id="legacy-analyst-presets"></a>
+Older classic/catalyst execution, reading and recovery are removed. No compatibility executor or migration runs behind this page. Existing user records remain untouched on disk. Use [V9 Web research](evidence-research.md) or [V9 CLI research](cli-research.md); current evidence and publication guarantees are in the [Insight contract](../contracts/research-record.md).

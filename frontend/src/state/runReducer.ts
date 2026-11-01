@@ -23,14 +23,7 @@ import type {
   TurnStatus,
   VendorCall,
 } from "./model";
-import type {
-  AssetTypeLiteral,
-  ObservationCommitV1DTO,
-  PersistedEventDTO,
-  ResearchDepth,
-  ResearchProfile,
-  RunSnapshotDTO,
-} from "../api/contracts";
+import type { AssetTypeLiteral, ObservationCommitV1DTO, PersistedEventDTO, ResearchProfile, RunSnapshotDTO } from "../api/contracts";
 
 export type ReducerAction =
   | { type: "event"; event: PersistedEventDTO }
@@ -48,9 +41,7 @@ function num(v: unknown, d = 0): number {
 function optNum(v: unknown): number | undefined {
   return typeof v === "number" && !Number.isNaN(v) ? v : undefined;
 }
-function bool(v: unknown, d = false): boolean {
-  return typeof v === "boolean" ? v : d;
-}
+
 function strArr(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
@@ -79,16 +70,11 @@ function emptyState(): ReducerState {
     ticker: "",
     asset_type: "stock",
     analysis_date: "",
-    selected_analysts: [],
-    research_depth: 1,
-    max_debate_rounds: 1,
-    max_risk_discuss_rounds: 1,
     output_language: "English",
     llm_provider: "",
     quick_think_llm: "",
     deep_think_llm: "",
     configured_keys: {},
-    checkpoint_enabled: false,
     created_at: "",
     updated_at: "",
     latest_sequence: 0,
@@ -116,22 +102,17 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   const meta: RunMeta = {
     native_workflow_version: typeof s.metadata?.native_workflow_version === "string" ? s.metadata.native_workflow_version : undefined,
     focus_requested: Boolean(s.metadata?.research_question),
-    research_profile: s.metadata?.research_profile === "evidence_v1" ? "evidence_v1" : s.metadata?.research_profile === "catalyst_v1" ? "catalyst_v1" : "classic",
+    research_profile: "evidence_v1",
     run_id: s.run_id,
     status: s.status,
     ticker: s.ticker,
     asset_type: s.asset_type,
     analysis_date: s.analysis_date,
-    selected_analysts: [...s.selected_analysts],
-    research_depth: 1,
-    max_debate_rounds: s.max_debate_rounds,
-    max_risk_discuss_rounds: s.max_risk_discuss_rounds,
     output_language: s.output_language,
     llm_provider: s.llm_provider,
     quick_think_llm: s.quick_think_llm,
     deep_think_llm: s.deep_think_llm,
     configured_keys: { ...s.configured_keys },
-    checkpoint_enabled: false,
     created_at: s.created_at,
     updated_at: s.updated_at,
     latest_sequence: 0,  // replay all events from 0 to rebuild state
@@ -144,15 +125,15 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
     error_message: s.error_message,
     retry_of: s.retry_of,
     resumed_from_sequence: s.resumed_from_sequence,
-    resume_fingerprint: s.resume_fingerprint,
-    runtime_semantics_hash: s.runtime_semantics_hash,
-    agent_state_schema_sha256: s.agent_state_schema_sha256,
+
+
+
     redaction_manifest: [...s.redaction_manifest],
     event_schema_version: s.event_schema_version,
   };
   return {
     meta,
-    roles: seedRoles(s.run_id, s.selected_analysts, meta.research_profile, meta.native_workflow_version, meta.focus_requested),
+    roles: seedRoles(s.run_id, [], meta.research_profile, meta.native_workflow_version, meta.focus_requested),
     turns: {},
     model_calls: {},
     tool_calls: {},
@@ -318,35 +299,23 @@ function applyRunStarted(
   p: Record<string, unknown>,
 ): ReducerState {
   const run_id = event.run_id;
-  const payloadAnalysts = strArr(p.selected_analysts);
-  // Fall back to state.meta when the run.started payload omits a field.
-  // Older persisted runs (pre-2026-07-21) emitted run.started with only
-  // run_status+retry_of; the snapshot seed already carries these values,
-  // and replaying such an event must not blank them out.
-  const selected_analysts =
-    payloadAnalysts.length > 0 ? payloadAnalysts : state.meta.selected_analysts;
   const meta: RunMeta = {
     ...state.meta,
     native_workflow_version: typeof p.native_workflow_version === "string" ? p.native_workflow_version : state.meta.native_workflow_version,
     focus_requested: typeof p.focus_requested === "boolean" ? p.focus_requested : state.meta.focus_requested,
     run_id,
     status: "running",
-    research_profile: p.research_profile === "evidence_v1" ? "evidence_v1" : p.research_profile === "catalyst_v1" ? "catalyst_v1" : state.meta.research_profile,
+    research_profile: "evidence_v1",
     ticker: str(p.ticker, state.meta.ticker),
     asset_type: (str(p.asset_type, state.meta.asset_type) || "stock") as AssetTypeLiteral,
     analysis_date: str(p.analysis_date, state.meta.analysis_date),
-    selected_analysts,
-    research_depth: (num(p.research_depth, state.meta.research_depth) || 1) as ResearchDepth,
-    max_debate_rounds: num(p.max_debate_rounds, state.meta.max_debate_rounds),
-    max_risk_discuss_rounds: num(p.max_risk_discuss_rounds, state.meta.max_risk_discuss_rounds),
     output_language: str(p.output_language, state.meta.output_language),
     llm_provider: str(p.llm_provider, state.meta.llm_provider),
     quick_think_llm: str(p.quick_think_llm, state.meta.quick_think_llm),
     deep_think_llm: str(p.deep_think_llm, state.meta.deep_think_llm),
-    checkpoint_enabled: bool(p.checkpoint_enabled, state.meta.checkpoint_enabled),
     created_at: event.timestamp,
   };
-  return { ...state, meta, roles: seedRoles(run_id, selected_analysts, meta.research_profile, meta.native_workflow_version, meta.focus_requested) };
+  return { ...state, meta, roles: seedRoles(run_id, [], meta.research_profile, meta.native_workflow_version, meta.focus_requested) };
 }
 
 function applyRunTerminal(
@@ -797,12 +766,7 @@ function applyArtifactWritten(
     written_sequence: event.sequence,
     input_capture_kinds: existing?.input_capture_kinds ?? [],
   };
-  const stages = p.catalyst_stages;
-  return { ...state,
-    meta: p.kind === "catalyst-checkpoint" && typeof stages === "object" && stages !== null
-      ? { ...state.meta, catalyst_stages: Object.fromEntries(Object.entries(stages).filter((entry): entry is [string, string] => typeof entry[1] === "string")) }
-      : state.meta,
-    artifacts: { ...state.artifacts, [artifact_id]: ar } };
+  return { ...state, artifacts: { ...state.artifacts, [artifact_id]: ar } };
 }
 
 // --- report.* ---

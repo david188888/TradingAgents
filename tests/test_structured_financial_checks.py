@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from tests.test_native_record import financials, fixture
 from tradingagents.agents.schemas._evidence_checks import EvidenceChecksV1
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
+from tradingagents.agents.schemas._evidence_record import EvidenceRecord
 from tradingagents.research.minimum_evidence import compute_checks
 from tradingagents.research.native_record import build_native_record
 from tradingagents.research.numeric_catalog import build_numeric_catalog, validate_numeric_catalog
@@ -34,47 +34,6 @@ def check(result, key="cashflow_comparison"):
     return next(c for c in result.evidence_checks.checks if c.check_id == key)
 
 
-def test_no_pdf_passes_only_structured_questions_with_replayable_accounting_anchors():
-    result = record()
-    assert result.evidence_checks.calculation_version == "minimum-evidence-v3"
-    assert len(result.evidence_checks.checks) == 5
-    assert check(result, "operating_disclosures").status == check(result, "cash_conversion").status == "unavailable"
-    assert check(result, "financial_baseline").status == check(result).status == "passed"
-    values = {o.key: Decimal(o.value) for o in check(result).observations}
-    assert values["n_income_current"] == 10  # not parent income 9
-    assert values["n_cashflow_act_yoy_percent"] == -50
-    assert values["cfo_minus_net_income_current"] == 20
-    assert "structured_without_official_table_crosscheck" in check(result).limitations
-    assert compute_checks(result) == result.evidence_checks
-    assert ResearchRecordV1.model_validate_json(result.model_dump_json()) == result
-    catalog = build_numeric_catalog(result)
-    anchors = [a for a in catalog["anchors"] if a["lineage"].get("source_selector", {}).get("check_id") == "cashflow_comparison"]
-    assert anchors and all(a["basis"] == "accounting_check" for a in anchors)
-    assert all(a["metadata"]["report_period"] == "2026-06-30" for a in anchors)
-    gap = next(a for a in anchors if a["definition_key"] == "check.cashflow_comparison.cfo_minus_net_income_current")
-    assert len(gap["required_fact_ids"]) == 2
-    claims = {c.claim_id: c for c in result.claims}
-    assert {lim for fid in gap["required_fact_ids"] for lim in claims[fid].limitations if lim.startswith("source_field:")} == {
-        "source_field:income[end_date=2026-06-30].n_income", "source_field:cashflow[end_date=2026-06-30].n_cashflow_act"}
-    validate_numeric_catalog(result, catalog)
-    # A derived comparison must be usable with its two real operands, rather
-    # than forcing a model to cite every period/field in the supplier payload.
-    from tradingagents.agents.schemas._research_assessment import SynthesisDimensionV1
-    from tradingagents.research.native_policy import dimension_claim_ids
-    from tradingagents.research.numeric_narrative import (
-        compile_numeric_stage,
-        prepare_numeric_context,
-    )
-    context = prepare_numeric_context("synthesis", {"record": result.model_dump(mode="json"),
-        "dimension_claim_ids": dimension_claim_ids(result)}, result)
-    alias = next(key for key, aid in context["numeric_aliases"].items() if aid == gap["anchor_id"])
-    value = {"proposal": {"dimensions": [{"dimension": "operating_quality", "status": "conditional",
-        "judgement": "端点差额为{{num:" + alias + "}}；尚未形成完整调节桥。", "claim_ids": gap["required_fact_ids"]}]}}
-    rendered, _ = compile_numeric_stage("synthesis", value, context, SynthesisDimensionV1)
-    assert "20" in rendered["dimensions"][0]["judgement"]
-    value["proposal"]["dimensions"][0]["claim_ids"] = gap["required_fact_ids"][:1]
-    with pytest.raises(ValueError):
-        compile_numeric_stage("synthesis", value, context, SynthesisDimensionV1)
 
 
 @pytest.mark.parametrize("damage", ["missing_current", "duplicate", "missing_prior", "missing_table", "no_parent_income"])
@@ -140,7 +99,7 @@ def test_check_provenance_and_question_tampering_is_rejected(mutation):
     else:
         raw["evidence_checks"]["checks"][-1] = raw["evidence_checks"]["checks"][-2]
     with pytest.raises(ValueError):
-        ResearchRecordV1.model_validate(raw)
+        EvidenceRecord.model_validate(raw)
 
 
 def test_v2_replay_retains_exact_saved_three_checks_and_forbids_new_ids():
@@ -155,14 +114,6 @@ def test_v2_replay_retains_exact_saved_three_checks_and_forbids_new_ids():
         EvidenceChecksV1.model_validate(raw)
 
 
-def test_legacy_prompt_schema_retains_the_three_original_check_choices():
-    from tradingagents.agents.schemas._native_stage import ChallengesProposalV2
-    from tradingagents.execution.native_prompt_context import legacy_check_schema
-    schema = ChallengesProposalV2.model_json_schema()
-    field = schema["$defs"]["ChallengeProposalV2"]["properties"]["check_id"]["anyOf"][0]
-    assert field["enum"][-2:] == ["financial_baseline", "cashflow_comparison"]
-    legacy_check_schema(schema)
-    assert field["enum"] == ["operating_disclosures", "cash_conversion", "valuation_context"]
 
 
 def test_repeating_growth_retains_full_host_precision_without_loosening_supplier_values():

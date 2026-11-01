@@ -1,6 +1,6 @@
 """Bounded supplementary evidence collection for plain Insight questions."""
 
-from tradingagents.agents.schemas._research_record_v2 import ResearchRecordV2
+from tradingagents.agents.schemas._evidence_record import EvidenceRecord
 from tradingagents.agents.schemas._search import EvidenceGapV1
 from tradingagents.execution.budget import BudgetBucket, BudgetExhausted, BudgetLimitHit
 from tradingagents.execution.search_admission import admit_saved_search
@@ -13,7 +13,7 @@ from tradingagents.research.evidence_revisions import (
 )
 from tradingagents.research.insights import build_insight_catalog
 from tradingagents.research.native_policy import fact_views
-from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 
 def collect_insight_supplement(record, questions, *, coordinator, ledger, round_id):
@@ -24,15 +24,15 @@ def collect_insight_supplement(record, questions, *, coordinator, ledger, round_
     saved = ledger.cached_result(key)
     if saved is not None:
         if saved['input'] != identity:
-            raise CatalystCheckpointConflict('insight search input changed')
-        current = ResearchRecordV2.model_validate(saved['record'])
+            raise ResearchCheckpointConflict('insight search input changed')
+        current = EvidenceRecord.model_validate(saved['record'])
         gaps = saved['gaps']
     else:
         coordinator.budget.ensure_active()
         current, gaps = record, []
         prior = ledger.cached_result(key + '.input')
         if prior is not None and prior['sha256'] != identity:
-            raise CatalystCheckpointConflict('insight search frontier changed')
+            raise ResearchCheckpointConflict('insight search frontier changed')
         if prior is None:
             token = ledger.reserve(BudgetBucket.SEARCH_ROUNDS, stage='search.round', logical_call_id=key)
             if isinstance(token, BudgetLimitHit):

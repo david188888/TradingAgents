@@ -71,7 +71,7 @@ flowchart TD
 
 图中关注点回应的计算由内核之后的执行层完成，其产物在基础记录发布后独立发布；通俗解释是完成后的补充任务。两者都不应改写基础判断。
 主流程由 [native_runner.py](../../tradingagents/execution/native_runner.py) 和
-[native_research.py](../../tradingagents/graph/native_research.py) 实现；不是旧 `TradingAgentsGraph` 的主执行路线。
+`native_research.py`（历史路径 `../../tradingagents/graph/native_research.py`，V9 清理已移除） 实现；不是旧 `TradingAgentsGraph` 的主执行路线。
 
 ## 按优先级排序的发现
 
@@ -105,9 +105,9 @@ flowchart TD
 
 ### F02 · P1 · 报告缺陷：合法引用没有覆盖整句事实前提
 
-**位置：** [schema 引用检查](../../tradingagents/agents/schemas/_native_stage.py)，`validate_hypothesis_references`，第 135–141 行；
-[数值叙述](../../tradingagents/research/numeric_narrative.py)，模块边界说明及数值编译；
-[最终支撑检查](../../tradingagents/research/unified_assessment.py)，`validate_unified_assessment`。
+**位置：** `schema 引用检查`（历史路径 `../../tradingagents/agents/schemas/_native_stage.py`，V9 清理已移除），`validate_hypothesis_references`，第 135–141 行；
+`数值叙述`（历史路径 `../../tradingagents/research/numeric_narrative.py`，V9 清理已移除），模块边界说明及数值编译；
+`最终支撑检查`（历史路径 `../../tradingagents/research/unified_assessment.py`，V9 清理已移除），`validate_unified_assessment`。
 
 江淮汽车保存运行 `run_20261018T161117240227Z_021254c5` 的假设
 `h.34f8213d6e10774fd8c6bb7ed5f0e82ca2b2a062550369548eb7c548b536c880` 写道：
@@ -137,9 +137,9 @@ flowchart TD
 
 ### F03 · P2 · 验收缺口：假设导向核查未在真实样本形成闭环
 
-**位置：** [条件 schema](../../tradingagents/agents/schemas/_native_stage.py)，第 29–32 行；
-[核查任务装配](../../tradingagents/graph/native_research.py)，第 342–382 行；
-[验证执行器](../../tradingagents/execution/verification_executor.py)，`execute_verification`。
+**位置：** `条件 schema`（历史路径 `../../tradingagents/agents/schemas/_native_stage.py`，V9 清理已移除），第 29–32 行；
+`核查任务装配`（历史路径 `../../tradingagents/graph/native_research.py`，V9 清理已移除），第 342–382 行；
+`验证执行器`（历史路径 `../../tradingagents/execution/verification_executor.py`，V9 清理已移除），`execute_verification`。
 
 任务只有在挑战选择了条件、且该条件已经带有 `check` 时才进入执行器。可执行条件只有冻结财务字段比较和保存指标阈值，没有新增来源检索能力。
 
@@ -155,9 +155,9 @@ flowchart TD
 
 ### F04 · P2 · 架构风险：上下文和修复投入偏大，综合缺少预算保障
 
-**位置：** [专项及挑战上下文](../../tradingagents/graph/native_research.py)，第 240–280、335–351 行；
-[回应上下文](../../tradingagents/research/unified_dialogue.py)，第 45–66 行；
-[综合压缩](../../tradingagents/execution/native_prompt_context.py)，第 20–32 行；
+**位置：** `专项及挑战上下文`（历史路径 `../../tradingagents/graph/native_research.py`，V9 清理已移除），第 240–280、335–351 行；
+`回应上下文`（历史路径 `../../tradingagents/research/unified_dialogue.py`，V9 清理已移除），第 45–66 行；
+`综合压缩`（历史路径 `../../tradingagents/execution/native_prompt_context.py`，V9 清理已移除），第 20–32 行；
 [调用预算](../../tradingagents/execution/budget.py)，第 83–106 行。
 
 综合阶段移除了原始证据正文和重复记录，但专项、挑战、回应仍可能同时携带来源正文、事实、数值目录及局部检查。
@@ -183,7 +183,7 @@ flowchart TD
 
 ### F05 · P2 · 架构风险：全量检查点造成较大的持久化放大
 
-**位置：** [catalyst_checkpoint.py](../../tradingagents/runtime/catalyst_checkpoint.py)，`persist/put`，第 101–125 行。
+**位置：** `catalyst_checkpoint.py`（历史路径 `../../tradingagents/runtime/catalyst_checkpoint.py`，V9 清理已移除），`persist/put`，第 101–125 行。
 
 `put()` 每次调用 `persist()`，后者保存整个累积 `state`。状态包含 source/cache、seed、verification input/output、完整最终记录及发布候选等。
 内容寻址可以复用完全相同的文件，却不能对仅改变一个状态字段的整个 JSON 做块级去重。
@@ -220,7 +220,7 @@ flowchart TD
 
 ### F07 · P2 · 验收缺口：交付改善尚无足够证据证明判断质量改善
 
-**位置：** [benchmark](../../scripts/eval_benchmark.py)，`measure_run/evaluate`；
+**位置：** `benchmark`（历史路径 `../../scripts/eval_benchmark.py`，V9 清理已移除），`measure_run/evaluate`；
 [核查计量合同](../contracts/evidence-benchmark.md)。
 
 当前指标能回答是否交付、分段是否完整、是否形成立场、派发及已计量用量是多少。人工假设质量、类型化挑战覆盖、派生指标覆盖仍为空。

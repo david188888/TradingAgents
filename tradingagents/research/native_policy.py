@@ -1,11 +1,5 @@
-"""Code-owned questions, source partitions and dimension ceilings."""
-
-from tradingagents.agents.schemas._research_assessment import (
-    DimensionAssessmentV1,
-)
-from tradingagents.agents.schemas._research_dialogue import excluded_support
+"""Current specialist source partitions over qualified saved evidence."""
 from tradingagents.research.native_valuation import VALUATION_SOURCES
-from tradingagents.research.native_versions import UNIFIED_DIMENSIONS, assessment_dimensions
 from tradingagents.research.source_families import (
     BODY_SOURCES,
     FINANCIAL_DETAIL_SOURCES,
@@ -14,18 +8,7 @@ from tradingagents.research.source_families import (
     PRICE_SOURCES,
 )
 
-
-def record_dimensions(record):
-    return UNIFIED_DIMENSIONS if record.dialogue is not None else assessment_dimensions(record.mode)
-
-
 ROLE_ORDER = ("operating_quality", "event_context", "market_context")
-QUESTIONS = {
-    "company_research": "公司经营质量如何，哪些证据支持判断，哪些关键问题尚未确定？",
-    "catalyst_research": "未来84天哪些催化可能改变判断，其兑现条件和失效条件是什么？",
-    "holding_review": "原持仓假设受到哪些新证据支持或挑战，哪些条件需要重新核查？",
-}
-
 
 def _valuation_sources(record):
     if record.evidence_checks is not None:
@@ -55,7 +38,7 @@ def fact_views(record, *, valuation=False):
                or sources[key].usable_as_of is None for key in fact.evidence_ids):
             continue
         names = [sources[key].source_name for key in fact.evidence_ids]
-        if record.schema_version == 'research-record-v2' and any(name.startswith(('web.', 'derived.web_fields.')) for name in names):
+        if record.schema_version == 'evidence-record-v1' and any(name.startswith(('web.', 'derived.web_fields.')) for name in names):
             roles = [r for r in ROLE_ORDER if 'native_dimension:'+r in fact.limitations]
             if len(roles) == 1:
                 views[roles[0]].append(fact)
@@ -67,9 +50,6 @@ def fact_views(record, *, valuation=False):
             views[role].append(fact)
         elif any(name == "cninfo.announcements" for name in names):
             views["event_context"].append(fact)
-        elif any(name == "user.original_thesis" for name in names):
-            if record.mode == "holding_review":
-                views["operating_quality"].append(fact)
         elif (set(fact.evidence_ids) & metric_sources or
               any(name in PRICE_SOURCES for name in names)):
             views["market_context"].append(fact)
@@ -88,150 +68,3 @@ def global_coverage(record):
             _, capability, reason = item.split(":", 2)
             coverage.setdefault(capability, {"status": "unknown", "gaps": []})["gaps"].append(reason)
     return coverage
-
-
-def dimension_policy(record, *, scoped=False, valuation=False):
-    views = fact_views(record, valuation=valuation)
-    thesis = any(source.source_name == "user.original_thesis" and source.availability == "available"
-                 for source in record.evidence)
-    financial = any(any(source.source_name in _operating_sources(record)
-                        for source in record.evidence if source.evidence_id in fact.evidence_ids)
-                    for fact in views["operating_quality"])
-    if record.schema_version == 'research-record-v2':
-        scope = {e for f in views['operating_quality'] for e in f.evidence_ids}
-        financial = financial or any(f.unit == 'CNY' and f.field in {'revenue', 'n_income_attr_p', 'n_income', 'n_cashflow_act'} and f.evidence_id in scope for f in record.recovered_fields)
-    policies = {
-        "operating_quality": ("conditional" if financial else "unresolved", "qualified_financial_fields_missing"),
-        "valuation": ("conditional" if valuation and record.valuation is not None else "unresolved", "qualified_valuation_inputs_missing"),
-        "market_context": ("conditional" if views["market_context"] else "unresolved", "qualified_market_metrics_missing"),
-        "catalyst_delivery": ("conditional" if views["event_context"] else "unresolved", "qualified_event_evidence_missing"),
-        "holding_thesis": ("conditional" if thesis and financial else "unresolved", "original_thesis_or_new_operating_evidence_missing"),
-    }
-    if scoped:
-        for name, (status, _reason) in policies.items():
-            if status != "unresolved":
-                policies[name] = (status, "dimension_judgement_requires_further_validation")
-    return {name: policies[name] for name in record_dimensions(record)}
-
-
-def dimension_claim_ids(record):
-    """V4 model guidance uses the same dimension binding as the publication gate."""
-    views = fact_views(record, valuation=True)
-    sources = {s.evidence_id: s.source_name for s in record.evidence}
-    roles = {"operating_quality": "operating_quality", "holding_thesis": "operating_quality",
-             "valuation": "operating_quality", "catalyst_delivery": "event_context", "market_context": "market_context"}
-    output = {}
-    facts = {f.claim_id: f for f in record.claims if f.kind == "fact"}
-    for dimension in record_dimensions(record):
-        allowed = {f.claim_id for f in views[roles[dimension]]}
-        if dimension == "valuation":
-            allowed = {f.claim_id for f in views["operating_quality"] if all(sources[key] in _valuation_sources(record) for key in f.evidence_ids)}
-        ids = []
-        for claim in record.claims:
-            deps = set(claim.supporting_fact_ids or (claim.claim_id,))
-            if claim.kind == "unknown" or not deps <= allowed:
-                continue
-            names = {sources[key] for dep in deps for key in facts[dep].evidence_ids}
-            if dimension in {"operating_quality", "holding_thesis"}:
-                recovered = (record.schema_version == 'research-record-v2' and any(
-                    f.field in {'revenue', 'n_income_attr_p', 'n_income', 'n_cashflow_act'} and
-                    f.evidence_id in {e for dep in deps for e in facts[dep].evidence_ids}
-                    for f in record.recovered_fields))
-                if not _operating_sources(record) & names and not recovered:
-                    continue
-                if dimension == "holding_thesis" and "user.original_thesis" not in names:
-                    continue
-            ids.append(claim.claim_id)
-        output[dimension] = ids
-    excluded = excluded_support(record)
-    return {name: [key for key in ids if key not in excluded] for name, ids in output.items()}
-
-
-def gate_dimensions(record, proposed, *, scoped=False, valuation=False, sections=None):
-    """Propagate challenged dependencies, never permit narrative to raise a ceiling."""
-    order = record_dimensions(record)
-    excluded = excluded_support(record)
-    if any(excluded & set(item.claim_ids) for item in proposed):
-        raise ValueError("withdrawn or revised hypothesis cannot support a dimension")
-    supplied = {item.dimension: item for item in proposed}
-    if len(supplied) != len(proposed) or set(supplied) != set(order):
-        raise ValueError("synthesis must contain each mode dimension exactly once")
-    claims = {item.claim_id: item for item in record.claims}
-    views = fact_views(record, valuation=valuation)
-    role_for = {"operating_quality": "operating_quality", "holding_thesis": "operating_quality",
-                "catalyst_delivery": "event_context", "market_context": "market_context", "valuation": "operating_quality"}
-    output = []
-    for name in order:
-        item = supplied[name]
-        if sections is not None and any(s.section_id == "dimension:" + name and s.status == "unavailable"
-                                        for s in sections.sections):
-            from tradingagents.research.synthesis_sections import UNFINISHED_DIMENSION
-            if (item.status != "unresolved" or item.claim_ids or item.challenge_ids
-                    or item.judgement != UNFINISHED_DIMENSION or item.limitations != ("synthesis_section_unavailable",)):
-                raise ValueError("unfinished dimension must be host-owned")
-            output.append(item)
-            continue
-        if len(set(item.claim_ids)) != len(item.claim_ids) or not set(item.claim_ids) <= claims.keys():
-            raise ValueError("synthesis contains an invalid claim reference")
-        ceiling, missing = dimension_policy(record, scoped=scoped, valuation=valuation)[item.dimension]
-        # An unavailable dimension cannot acquire support from another role.
-        # Preserve the raw proposal in the journal, but publish only the
-        # code-owned missing-data judgement and explicitly record discarded refs.
-        if ceiling == "unresolved":
-            limits = (missing, *item.limitations)
-            if item.claim_ids:
-                limits += ("unqualified_dimension_claims_discarded",)
-            output.append(DimensionAssessmentV1(
-                dimension=item.dimension, status="unresolved",
-                judgement="合格资料或对应支撑依据不足，暂不能形成此项判断。",
-                limitations=tuple(dict.fromkeys(limits))))
-            continue
-        allowed_facts = {fact.claim_id for fact in views.get(role_for.get(item.dimension), ())}
-        if valuation and item.dimension == "valuation":
-            allowed_facts = {fact.claim_id for fact in views["operating_quality"]
-                if set(fact.evidence_ids) <= {s.evidence_id for s in record.evidence if s.source_name in _valuation_sources(record)}}
-        dependencies = set(item.claim_ids)
-        for claim_id in item.claim_ids:
-            claim = claims[claim_id]
-            if claim.kind == "unknown" or not set(claim.supporting_fact_ids or (claim_id,)) <= allowed_facts:
-                raise ValueError("synthesis uses facts from the wrong dimension")
-            dependencies.update(claim.supporting_fact_ids)
-        cited_facts = [claims[key] for key in dependencies if claims[key].kind == "fact"]
-        names = {source.source_name for fact in cited_facts for source in record.evidence
-                 if source.evidence_id in fact.evidence_ids}
-        if item.dimension in {"operating_quality", "holding_thesis"} and item.claim_ids:
-            recovered = (record.schema_version == 'research-record-v2' and any(
-                f.field in {'revenue', 'n_income_attr_p', 'n_income', 'n_cashflow_act'}
-                and f.evidence_id in {e for fact in cited_facts for e in fact.evidence_ids}
-                for f in record.recovered_fields))
-            if not _operating_sources(record) & names and not recovered:
-                raise ValueError("operating judgement requires cited financial evidence")
-            if item.dimension == "holding_thesis" and "user.original_thesis" not in names:
-                raise ValueError("holding judgement requires cited original thesis")
-        # Challenges affect all dimensions using the targeted hypothesis/facts.
-        relevant = []
-        for challenge in record.challenges:
-            targets = set(challenge.target_claim_ids)
-            for target in challenge.target_claim_ids:
-                targets.update(claims[target].supporting_fact_ids)
-            if targets & dependencies:
-                relevant.append(challenge.challenge_id)
-        limits = list(item.limitations)
-        status = item.status
-        if ceiling == "unresolved" or not item.claim_ids:
-            status = "unresolved"
-            limits.append(missing if ceiling == "unresolved" else "supporting_claims_missing")
-        elif status == "supported":
-            status = "conditional"
-            limits.append("hypothesis_requires_further_evidence")
-        if relevant:
-            limits.append("unresolved_challenge_dependency")
-        if item.dimension == "catalyst_delivery" and ceiling != "unresolved":
-            limits.append("company_disclosure_not_independent_delivery_verification" if BODY_SOURCES & names else "announcement_titles_do_not_prove_delivery")
-        if status == "unresolved" and not limits:
-            limits.append("dimension_unresolved")
-        output.append(DimensionAssessmentV1(dimension=item.dimension, status=status,
-            judgement="合格资料或对应支撑依据不足，暂不能形成此项判断。" if ceiling == "unresolved" or not item.claim_ids else item.judgement,
-            claim_ids=item.claim_ids if ceiling != "unresolved" else (),
-            challenge_ids=tuple(relevant), limitations=tuple(dict.fromkeys(limits))))
-    return tuple(output)

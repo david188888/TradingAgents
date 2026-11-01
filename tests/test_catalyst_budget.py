@@ -325,53 +325,10 @@ def test_resume_rejects_a_record_from_another_run() -> None:
 # -- usage accounting -------------------------------------------------------
 
 
-def test_missing_token_usage_is_recorded_unknown_never_zero() -> None:
-    """A provider that reports nothing must not look free (design SS5.5)."""
-    ledger = _ledger()
-    reservation = ledger.reserve_or_raise(
-        BudgetBucket.MAIN_ANALYSIS, stage="specialist"
-    )
-    ledger.mark_dispatched(reservation)
-    ledger.settle(
-        reservation,
-        ok=True,
-        input_tokens=None,
-        output_tokens=None,
-        usage_available=False,
-    )
-    usage = ledger.usage_snapshot()
-    assert usage.model_usage_available is False
-    assert usage.input_tokens is None
-    assert usage.output_tokens is None
 
 
-def test_aggregate_usage_is_unavailable_when_any_attempt_is_unknown() -> None:
-    """A partial token sum presented as a total hides cost regressions."""
-    ledger = _ledger()
-    first = ledger.reserve_or_raise(
-        BudgetBucket.MAIN_ANALYSIS, stage="a", logical_call_id="a"
-    )
-    ledger.mark_dispatched(first)
-    ledger.settle(first, ok=True, input_tokens=10, output_tokens=5)
-    second = ledger.reserve_or_raise(
-        BudgetBucket.MAIN_ANALYSIS, stage="b", logical_call_id="b"
-    )
-    ledger.mark_dispatched(second)
-    ledger.settle(second, ok=True, usage_available=False)
-
-    usage = ledger.usage_snapshot()
-    assert usage.model_usage_available is False
-    assert usage.input_tokens is None
 
 
-def test_usage_snapshot_reports_ledger_counters() -> None:
-    ledger = _ledger()
-    _spend(ledger, "specialist", 2, input_tokens=10, output_tokens=4, duration_ms=25)
-    usage = ledger.usage_snapshot(termination_reason="completed")
-    assert usage.model_attempts == 2
-    assert usage.semantic_preprocess_calls == 0
-    assert usage.stage_durations_ms == (("specialist", 50),)
-    assert usage.termination_reason == "completed"
 
 
 def test_model_attempts_total_counts_every_model_bucket() -> None:

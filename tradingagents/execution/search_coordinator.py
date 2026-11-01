@@ -20,7 +20,7 @@ from tradingagents.dataflows.search_pages import download_public_document, fetch
 from tradingagents.execution.budget import BudgetConflictError, BudgetExhausted
 from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.observability.canonical import canonical_sha256
-from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 
 def bounded_query(*, provider, ticker, company_name, terms, cutoff):
@@ -158,7 +158,7 @@ class SearchCoordinator:
             target = hit.model_copy(update={'url': final_url})
             document = parse_search_document(data, hit=target, ticker=request.ticker, cutoff=request.cutoff,
                 ensure_active=self.budget.ensure_search_active)
-        except (CatalystCheckpointConflict, BudgetConflictError, AnalysisCancelled):
+        except (ResearchCheckpointConflict, BudgetConflictError, AnalysisCancelled):
             raise
         except BudgetExhausted:
             self.budget.ensure_active()

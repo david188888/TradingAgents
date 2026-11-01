@@ -71,7 +71,7 @@ class _CatalogLimit(Exception):
 class _Builder:
     def __init__(self, record):
         self.record = record
-        self.snapshot = record.snapshots[-1 if record.schema_version == 'research-record-v2' else 0].snapshot_id
+        self.snapshot = record.snapshots[-1 if record.schema_version == 'evidence-record-v1' else 0].snapshot_id
         self.anchors = {}
         self.metadata = {}
         self.source_facts = defaultdict(list)
@@ -476,7 +476,7 @@ def build_numeric_catalog(record, *, source_only=False, snapshot_id=None):
                 _forecast(builder, source, payload)
             elif source.source_name in PRICE_SOURCES:
                 _prices(builder, source, payload)
-        if record.schema_version == 'research-record-v2':
+        if record.schema_version == 'evidence-record-v1':
             _recovered(builder)
         _metrics(builder)
         if not source_only:

@@ -22,7 +22,7 @@ class CycleQuery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     ticker: str
-    asset_type: Literal["stock", "crypto"]
+    asset_type: Literal["stock"]
     analysis_date: str
 
     @field_validator("ticker", "analysis_date")
@@ -38,14 +38,10 @@ class CycleSpecSnapshot(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    selected_analysts: tuple[str, ...]
-    max_debate_rounds: int = Field(ge=1)
-    max_risk_discuss_rounds: int = Field(ge=1)
     output_language: str
     llm_provider: str
     quick_think_llm: str
     deep_think_llm: str
-    runtime_semantics_hash: str | None = None
     effective_config_artifact_id: str | None = None
 
 
@@ -97,14 +93,10 @@ class CycleRecord(BaseModel):
                 analysis_date=snapshot.analysis_date,
             ),
             spec_snapshot=CycleSpecSnapshot(
-                selected_analysts=snapshot.selected_analysts,
-                max_debate_rounds=snapshot.max_debate_rounds,
-                max_risk_discuss_rounds=snapshot.max_risk_discuss_rounds,
                 output_language=snapshot.output_language,
                 llm_provider=snapshot.llm_provider,
                 quick_think_llm=snapshot.quick_think_llm,
                 deep_think_llm=snapshot.deep_think_llm,
-                runtime_semantics_hash=snapshot.runtime_semantics_hash,
                 effective_config_artifact_id=(
                     str(config_artifact) if config_artifact is not None else None
                 ),

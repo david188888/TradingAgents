@@ -57,7 +57,7 @@ vi.mock("../../api/client", () => ({
 
 function makeConfig(): ConfigResponseDTO {
   return {
-    research_profiles: { classic: { supported: false, reason: "历史" }, catalyst_v1: { supported: false, reason: "历史" }, evidence_v1: { supported: true, reason: null } },
+    research_profiles: { evidence_v1: { supported: true, reason: null } },
     providers: [
       {
         id: "deepseek",
@@ -115,8 +115,8 @@ function makeConfig(): ConfigResponseDTO {
       quick_think_llm: "deepseek-chat",
       deep_think_llm: "deepseek-reasoner",
       output_language: "Chinese",
-      research_depth: 3,
-      checkpoint_enabled: false,
+
+
     },
   };
 }
@@ -128,9 +128,9 @@ function makeSnapshot(): RunSnapshotDTO {
     ticker: "600803",
     asset_type: "stock",
     analysis_date: "2026-07-19",
-    selected_analysts: ["market", "social", "news", "fundamentals"],
-    max_debate_rounds: 3,
-    max_risk_discuss_rounds: 3,
+
+
+
     output_language: "Chinese",
     llm_provider: "deepseek",
     quick_think_llm: "deepseek-chat",
@@ -240,8 +240,8 @@ describe("Controls", () => {
     fireEvent.change(screen.getByLabelText("补充关注点（可选）"), { target: { value: "核查现金流" } });
     fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
     await waitFor(() => expect(mockClient.createRun).toHaveBeenCalledTimes(1));
-    expect(mockClient.createRun.mock.calls[0][0]).toMatchObject({ research_profile: "evidence_v1", research_question: "核查现金流", research_depth: 1 });
-    expect(mockClient.createRun.mock.calls[0][0].selected_analysts).toEqual(["market", "social", "news", "fundamentals"]);
+    expect(mockClient.createRun.mock.calls[0][0]).toMatchObject({ research_profile: "evidence_v1", research_question: "核查现金流", });
+    expect(mockClient.createRun.mock.calls[0][0]).not.toHaveProperty("selected_analysts");
   });
 
   it("disables start when the selected provider is not configured", async () => {
@@ -308,18 +308,13 @@ describe("Controls", () => {
       quick_think_llm: "deepseek-chat",
       deep_think_llm: "deepseek-reasoner",
       research_profile: "evidence_v1",
-      mode: "company_research",
-      research_depth: 1,
+
+
       output_language: "Chinese",
-      checkpoint_enabled: false,
-      asset_type: null,
+
+
     });
-    expect(body.selected_analysts).toEqual([
-      "market",
-      "social",
-      "news",
-      "fundamentals",
-    ]);
+    expect(body).not.toHaveProperty("selected_analysts");
 
     await waitFor(() => {
       expect(mockStore.selectRun).toHaveBeenCalledWith("run_x");

@@ -179,31 +179,3 @@ class EvidenceChecksV1(_Frozen):
         if [check.check_id for check in self.checks] != expected:
             raise ValueError("evidence check version requires exact ordered checks")
         return self
-
-
-class ChallengeCheckBindingV1(_Frozen):
-    challenge_id: str = Field(min_length=1, max_length=512)
-    check_id: CheckId | None = None
-    observed_risk: ObservedRisk | None = None
-    observation_date: date | None = None
-
-    @model_validator(mode="after")
-    def risk_scope(self):
-        if self.observed_risk and self.check_id not in {None, "cash_conversion"}:
-            raise ValueError("CFO risk cannot answer another check's question")
-        return self
-
-
-class ChallengeAssessmentV2(_Frozen):
-    challenge_id: str = Field(min_length=1, max_length=512)
-    outcome: Literal["evidence_sufficient", "risk_supported", "future_observation", "unresolved"]
-    economic_outcome: Literal["unresolved"] = "unresolved"
-    question_scope: QuestionScope | None = None
-    answered_question: str | None = None
-    check_id: CheckId | None = None
-    rationale: str = Field(min_length=1, max_length=400)
-    evidence_ids: tuple[str, ...] = ()
-    observed_risk: ObservedRisk | None = None
-    observation_date: date | None = None
-    observations: tuple[CheckObservationV1, ...] = ()
-    limitations: tuple[str, ...] = ()

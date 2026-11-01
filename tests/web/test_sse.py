@@ -12,9 +12,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tradingagents.observability.events import PersistedEvent, RunEventDraft
+from tradingagents.runtime.run_models import RunSnapshot
+from tradingagents.runtime.store import RunStore
 from tradingagents.web.broker import Keepalive, SubscriptionClosed
-from tradingagents.web.run_models import RunSnapshot
-from tradingagents.web.store import RunStore
 
 pytestmark = pytest.mark.unit
 
@@ -29,7 +29,6 @@ def _run(store: RunStore, *, status: str = "running") -> RunSnapshot:
     snapshot = RunSnapshot.create(
         ticker="AAPL",
         analysis_date="2026-07-18",
-        selected_analysts=("market",),
         llm_provider="openai",
         quick_think_llm="gpt-5.4-mini",
         deep_think_llm="gpt-5.5",

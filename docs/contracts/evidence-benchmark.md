@@ -1,14 +1,7 @@
-# Saved evidence benchmark
+# evidence-benchmark
 
-Status: Current — navigation pointer.
+Status: Retired
 
-Maintained explanation: [owning reference](../operations/observability-replay.md#saved-run-measurement-tools).
-Canonical detail or related owner: [source](../../scripts/eval_benchmark.py).
+This document's former workflow was removed during the V9-only cleanup. Its executors, model-output adapters and diagnostic tools are no longer supported. See the [current Insight contract](research-record.md) and [architecture](../../ARCHITECTURE.md). Dated implementation history remains in the [archive](../archive/README.md).
 
-The benchmark reads committed V1/V2 records through the versioned codec, including V8 delivery.
-Use workflow filters when comparing cohorts. Manual quality rubric is retained in observability.
-
-<!-- Compatibility anchors for existing section links. -->
 <a id="manual-hypothesis-rubric-hypothesis-quality-v1"></a>
-<a id="measurement-boundaries"></a>
-<a id="offline-synthesis-reconstruction"></a>

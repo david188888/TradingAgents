@@ -54,7 +54,7 @@ describe("in-progress role review navigation", () => {
 
   it("does not claim a final report exists for a stopped unpublished run", () => {
     const output: ReaderAgentDTO={schema_version:1,run_id:"run-a",source_sequence:5,role_key:"operating_quality",availability:"pending_publication",
-      reason_code:"publication_pending",origin:"model",input_description:"合格财务事实",proposal:null,relations:[],claim_ids:[],input_fact_ids:[],challenge_ids:[],code_sections:[]};
+      reason_code:"publication_pending",origin:"model",input_description:"合格财务事实",insight_record:null};
     vi.mocked(useReaderAgent).mockReturnValue({response:output,error:false,retry:retryAgent});
     render(<NativeResearchPage runId="run-a" ticker="600418.SS" status="failed" state={null} loading={false} error={false}
       response={{state:"unavailable",schema_version:1,run_id:"run-a",reason_code:"not_published"}}

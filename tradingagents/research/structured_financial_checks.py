@@ -52,7 +52,7 @@ def observation_operands(key, period):
 def qualified_statements(record):
     result = []
     for source in record.evidence:
-        if record.schema_version == 'research-record-v2':
+        if record.schema_version == 'evidence-record-v1':
             from tradingagents.research.search_recovery import recovered_statement
             recovered = recovered_statement(record, source)
             if recovered:

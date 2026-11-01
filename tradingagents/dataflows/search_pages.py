@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from urllib.parse import parse_qsl, urljoin, urlsplit
 
 from tradingagents.agents.schemas._search import SearchHitV1, SearchOutcomeV1
-from tradingagents.dataflows.catalyst_transport import _DATA_SLOTS
+from tradingagents.dataflows.budgeted_transport import _DATA_SLOTS
 from tradingagents.dataflows.disclosure_documents import MAX_PDF_BYTES
 from tradingagents.dataflows.search_transport import request_json
 from tradingagents.dataflows.tavily_search import configured_keys

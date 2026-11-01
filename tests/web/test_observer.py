@@ -12,8 +12,8 @@ from tradingagents.observability.context import (
 )
 from tradingagents.observability.errors import ObservationPersistenceError
 from tradingagents.observability.observer import DurableRunObserver
-from tradingagents.web.run_models import RunSnapshot
-from tradingagents.web.store import RunStore
+from tradingagents.runtime.run_models import RunSnapshot
+from tradingagents.runtime.store import RunStore
 
 
 class Clock:
@@ -42,7 +42,7 @@ def _observer(tmp_path, *, development_assertions=True):
 def test_observation_scope_restores_previous_context(tmp_path):
     _store, _snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="analyst.market",
+        actor_id="native.market_context",
         graph_task_id="task-1",
         graph_step=1,
         turn_index=1,
@@ -62,7 +62,7 @@ def test_observation_scope_restores_previous_context(tmp_path):
 def test_model_prompt_attempt_and_usage_join_to_the_same_turn(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="analyst.fundamentals",
+        actor_id="native.operating_quality",
         graph_task_id="task-fundamentals",
         graph_step=2,
         turn_index=1,
@@ -104,7 +104,7 @@ def test_model_prompt_attempt_and_usage_join_to_the_same_turn(tmp_path):
 def test_retries_get_new_attempt_ids_without_new_turn(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="researcher.bull",
+        actor_id="native.operating_quality",
         graph_task_id="task-bull",
         graph_step=3,
         turn_index=2,
@@ -153,7 +153,7 @@ def test_unattributed_callback_asserts_in_development_and_diagnoses_in_productio
 def test_logical_tool_and_execution_rebuild_by_ids_not_callback_order(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="analyst.market",
+        actor_id="native.market_context",
         graph_task_id="task-market",
         graph_step=1,
         turn_index=1,
@@ -213,7 +213,7 @@ def test_tool_callbacks_use_tool_call_id_and_execution_uuid_not_order(tmp_path):
     assert observer.raise_error is True
     assert observer.run_inline is True
     ref = observer.start_turn(
-        actor_id="analyst.market",
+        actor_id="native.market_context",
         graph_task_id="task-market",
         graph_step=1,
         turn_index=1,
@@ -275,7 +275,7 @@ def test_tool_callbacks_use_tool_call_id_and_execution_uuid_not_order(tmp_path):
 def test_direct_call_scope_uses_the_existing_role_turn(tmp_path):
     _store, _snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="evidence.steward",
+        actor_id="native.evidence",
         graph_task_id="task-evidence",
         graph_step=4,
         turn_index=1,
@@ -292,14 +292,14 @@ def test_direct_call_scope_uses_the_existing_role_turn(tmp_path):
         assert context.turn_id == ref.turn_id
         assert context.graph_task_id == "task-evidence"
         assert context.invocation_path == "direct:fundamentals.get_balance_sheet"
-        assert current_observation_context(required=True).actor_id == "evidence.steward"
+        assert current_observation_context(required=True).actor_id == "native.evidence"
     assert current_observation_context() is None
 
 
 def test_same_logical_turn_tracks_each_graph_reentry_task(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="analyst.market",
+        actor_id="native.market_context",
         graph_task_id="task-role-1",
         graph_step=1,
         turn_index=1,
@@ -355,7 +355,7 @@ def test_same_logical_turn_tracks_each_graph_reentry_task(tmp_path):
 def test_llm_usage_reads_ai_message_usage_metadata(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="researcher.bear",
+        actor_id="native.challenge",
         graph_task_id="task-bear",
         graph_step=4,
         turn_index=1,
@@ -399,7 +399,7 @@ def test_llm_usage_reads_ai_message_usage_metadata(tmp_path):
 def test_restart_only_restores_applied_or_pending_tool_requests(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="analyst.news",
+        actor_id="native.event_context",
         graph_task_id="task-candidate",
         graph_step=5,
         turn_index=1,
@@ -484,7 +484,7 @@ def test_model_attempt_is_not_forgotten_before_terminal_event_is_durable(tmp_pat
         clock=Clock(),
     )
     ref = observer.start_turn(
-        actor_id="manager.portfolio",
+        actor_id="native.synthesis",
         graph_task_id="task-portfolio",
         graph_step=9,
         turn_index=1,
@@ -510,7 +510,7 @@ def test_model_attempt_is_not_forgotten_before_terminal_event_is_durable(tmp_pat
 def test_turn_output_only_completes_after_explicit_commit_boundary(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="manager.research",
+        actor_id="native.synthesis",
         graph_task_id="task-manager",
         graph_step=7,
         turn_index=1,
@@ -530,7 +530,7 @@ def test_turn_output_only_completes_after_explicit_commit_boundary(tmp_path):
 def test_interrupted_turn_resume_reuses_id_and_reopens_aggregate_role(tmp_path):
     store, snapshot, observer = _observer(tmp_path)
     ref = observer.start_turn(
-        actor_id="risk.neutral",
+        actor_id="native.challenge",
         graph_task_id="task-risk",
         graph_step=8,
         turn_index=1,

@@ -6,28 +6,28 @@ from decimal import Decimal, localcontext
 
 from pydantic import TypeAdapter
 
-from tradingagents.agents.schemas._research_record import (
+from tradingagents.agents.schemas._evidence import (
     RecordClaimV1,
     SourceContentV1,
     SourceEvidenceV1,
 )
-from tradingagents.agents.schemas._research_record_v2 import (
-    ResearchRecordV2,
+from tradingagents.agents.schemas._evidence_record import (
+    EvidenceRecord,
     RevisionCalculationV1,
-    make_evidence_snapshot_v2,
+    make_evidence_snapshot,
     qualification_key,
 )
 from tradingagents.observability.canonical import canonical_sha256
 
 
 def _updated(record, **changes):
-    changes = {key: TypeAdapter(ResearchRecordV2.model_fields[key].rebuild_annotation()).validate_python(value)
+    changes = {key: TypeAdapter(EvidenceRecord.model_fields[key].rebuild_annotation()).validate_python(value)
                for key, value in changes.items()}
     if 'snapshots' in changes and record.evidence_checks is not None:
         from tradingagents.research.minimum_evidence import compute_checks
         changes['check_revisions'] = (*record.check_revisions, record.evidence_checks)
         changes['evidence_checks'] = compute_checks(record.model_copy(update=changes))
-    return ResearchRecordV2.model_validate({**record.model_dump(mode='python'), **changes})
+    return EvidenceRecord.model_validate({**record.model_dump(mode='python'), **changes})
 
 
 def append_admission(record, admitted, *, round_id):
@@ -44,7 +44,7 @@ def append_admission(record, admitted, *, round_id):
     fields = tuple(dict.fromkeys((*record.recovered_fields, *admitted.fields)))
     if tuple(sources.values()) == record.evidence and tuple(claims.values()) == record.claims and fields == record.recovered_fields:
         return record
-    snapshot = make_evidence_snapshot_v2(tuple(sources.values()), version=len(record.snapshots),
+    snapshot = make_evidence_snapshot(tuple(sources.values()), version=len(record.snapshots),
         parent_snapshot_id=record.snapshots[-1].snapshot_id)
     introductions = dict(record.qualification_snapshots)
     for field in fields:
@@ -145,7 +145,7 @@ def recompute_revision(record, *, journal):
     if journal is not None:
         cached = journal.ledger.cached_result(cache_key)
         if cached is not None:
-            return ResearchRecordV2.model_validate(cached['record'])
+            return EvidenceRecord.model_validate(cached['record'])
     current = record.snapshots[-1]
     groups = _groups(record, set(current.evidence_ids))
     existing_inputs = {(c.field, c.period, c.operation, c.inputs_sha256) for c in record.revision_calculations}
@@ -169,7 +169,7 @@ def recompute_revision(record, *, journal):
         claims.append(RecordClaimV1(claim_id='fact.'+calculation.calculation_id, kind='fact',
             statement=f'{calculation.period} {calculation.field}：{calculation.value or "来源冲突"} {calculation.unit}',
             evidence_ids=(source.evidence_id,), limitations=('native_dimension:operating_quality', 'calculation_not_economic_causality')))
-    snapshot = make_evidence_snapshot_v2(tuple(sources), version=len(record.snapshots), parent_snapshot_id=current.snapshot_id)
+    snapshot = make_evidence_snapshot(tuple(sources), version=len(record.snapshots), parent_snapshot_id=current.snapshot_id)
     result = _updated(record, evidence=tuple(sources), claims=tuple(claims), snapshots=(*record.snapshots, snapshot),
         revision_calculations=(*record.revision_calculations, *calculations))
     if journal is not None:

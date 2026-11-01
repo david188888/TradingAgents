@@ -118,55 +118,6 @@ VerificationConditionV1 = Annotated[
 ]
 
 
-class VerificationTaskV1(_PlanModel):
-    task_id: str = Field(min_length=1, max_length=120)
-    challenge_id: str = Field(min_length=1, max_length=512)
-    hypothesis_id: str = Field(min_length=1, max_length=512)
-    condition_role: Literal["necessary", "invalidation"]
-    condition_text: str = Field(min_length=1, max_length=1200)
-    check: VerificationConditionV1
-
-
-class VerificationPlanV1(_PlanModel):
-    schema_version: Literal["verification-plan-v1"] = "verification-plan-v1"
-    run_id: str = Field(min_length=1, max_length=128)
-    ticker: str = Field(min_length=1, max_length=32)
-    mode: Literal["company_research", "catalyst_research", "holding_review"]
-    analysis_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    input_snapshot_id: str = Field(min_length=1, max_length=160)
-    tasks: tuple[VerificationTaskV1, ...] = Field(default=(), max_length=3)
-
-    @model_validator(mode="after")
-    def unique_tasks_and_date(self):
-        date.fromisoformat(self.analysis_date)
-        if len({task.task_id for task in self.tasks}) != len(self.tasks):
-            raise ValueError("duplicate verification task")
-        # Multiple predicates must never masquerade as independent resolutions
-        # of the same challenge in this bounded round.
-        if len({task.challenge_id for task in self.tasks}) != len(self.tasks):
-            raise ValueError("one verification task per challenge")
-        return self
-
-
-class ChallengeVerificationTaskV1(_PlanModel):
-    task_id: str = Field(min_length=1, max_length=120)
-    challenge_id: str = Field(min_length=1, max_length=512)
-    hypothesis_id: str = Field(min_length=1, max_length=512)
-    proposition: str = Field(min_length=1, max_length=300)
-    challenge_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    check: VerificationConditionV1
-
-
-class VerificationPlanV2(VerificationPlanV1):
-    schema_version: Literal["verification-plan-v2"] = "verification-plan-v2"
-    tasks: tuple[ChallengeVerificationTaskV1, ...] = Field(default=(), max_length=3)
-
-
-def parse_verification_plan(value):
-    schema = VerificationPlanV2 if value.get("schema_version") == "verification-plan-v2" else VerificationPlanV1
-    return schema.model_validate_json(json.dumps(value, allow_nan=False))
-
-
 def canonical_sha256(value: BaseModel | dict) -> str:
     payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
     return hashlib.sha256(

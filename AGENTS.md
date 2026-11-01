@@ -9,8 +9,7 @@ references.
 
 Start here, then read the scoped `AGENTS.md` for the files being changed.
 Use the architecture and documentation index to find the owning contract and
-inspect its canonical code before changing behavior. New Web research uses
-`evidence_v1`; classic/catalyst paths in older documents are compatibility paths.
+inspect its canonical code before changing behavior. CLI and Web research use only `evidence_v1` / `evidence-production-v9`; older workflow implementations are retired.
 
 - `README.md` is the concise Chinese product overview; `README.en.md` is its
   English counterpart and the package long description. Keep their structure,
@@ -30,9 +29,9 @@ inspect its canonical code before changing behavior. New Web research uses
 
 - `cli/`: Typer commands and interactive terminal adapter.
 - `tradingagents/`: Python package. See [tradingagents/AGENTS.md](tradingagents/AGENTS.md).
-- `tradingagents/skills/`: fork-local research-methodology library (Markdown skills with a
-  code-owned role mapping). Not upstream content; role selection is code-owned and must not
-  be changed by Markdown edits or presets. See `tradingagents/skills/registry.py`.
+- `tradingagents/skills/`: fork-local reference research-methodology library (Markdown
+  skills). Not upstream content; V9 research does not load it, and Markdown edits or presets
+  must not change role selection.
 - `frontend/`: React workbench source. See [frontend/AGENTS.md](frontend/AGENTS.md).
 - `tradingagents/web/static/`: generated SPA assets served by the Python package.
 - `tests/`, frontend test files, and `frontend/e2e/`: tracked contributor tests
@@ -77,8 +76,8 @@ The fixture server needs the contributor Python environment; set
 `TRADINGAGENTS_E2E_PYTHON` when `python` resolves elsewhere. See
 [scoped validation](CONTRIBUTING.md#scoped-validation).
 
-The maintained user entry is `tradingagents web --port 8765 --open`. CLI analysis
-is retained legacy code and is outside continued product maintenance. The Web
+The maintained entries are `tradingagents web --port 8765 --open` and
+`tradingagents analyze --ticker 002130`. Both use the V9 Insight runner. The Web
 workbench is loopback-only; it binds to `127.0.0.1`.
 
 ## Change Routing
@@ -88,7 +87,7 @@ workbench is loopback-only; it binds to `127.0.0.1`.
 | Public Python request, result, artifact, or runtime contract | `tradingagents/execution/models.py`, `tradingagents/agents/schemas/`, `tradingagents/runtime/`, consumers and projections |
 | Graph roles, routing, or evidence sequence | `tradingagents/graph/`, `tradingagents/agents/`, `ARCHITECTURE.md` |
 | Vendor capability or A-share source behavior | `tradingagents/dataflows/`, `docs/operations/a-share-data-capabilities.md` |
-| Research methodology skills or role mapping | `tradingagents/skills/registry.py` (code-owned) and `tradingagents/skills/library/`; keep threshold heuristics labeled advisory |
+| Reference research methodology skills | `tradingagents/skills/library/` (not loaded by V9); keep threshold heuristics labeled advisory |
 | Web API, SSE, persistence, or Reader/Audit projection | `tradingagents/web/`, `frontend/src/api/contracts.ts`, relevant frontend consumers |
 | React/TypeScript source | `frontend/AGENTS.md`; rebuild generated assets |
 | Runtime, configuration, CLI, or workflow behavior | Indexed operations/contracts docs and `ARCHITECTURE.md`; update both READMEs when the product overview changes |
@@ -96,6 +95,13 @@ workbench is loopback-only; it binds to `127.0.0.1`.
 Code schemas and validation are authoritative for machine contracts. Markdown
 documents intent, ownership, compatibility, and navigation; do not duplicate
 large schema definitions in prose.
+
+## Code Simplicity Rules
+
+1. 防过度防御：几乎不会发生的边界或并发问题，讲清概率并经用户确认后再加；严禁为“理论上更稳”私自膨胀代码。
+2. 入口单次校验：外部数据只在边界校验一次，内部靠类型系统流转，禁止层层重复判断。
+3. 拒绝提前抽象：单次使用的逻辑就近内联，不随意提前拆分无意义的 helper。
+4. 控制复杂度：非必要不用 try/catch，能单函数清晰搞定的别硬拆。
 
 ## Local Boundaries
 

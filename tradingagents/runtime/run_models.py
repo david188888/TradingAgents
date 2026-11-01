@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -39,16 +39,17 @@ def validate_run_id(run_id: str) -> None:
         raise ValueError("invalid run_id")
 
 
+class UnsupportedResearchVersion(ValueError):
+    """A persisted run belongs to a retired execution or storage contract."""
+
+
 @dataclass(frozen=True)
 class RunSnapshot:
     run_id: str
     status: str
     ticker: str
-    asset_type: Literal["stock", "crypto"]
+    asset_type: Literal["stock"]
     analysis_date: str
-    selected_analysts: tuple[str, ...]
-    max_debate_rounds: int
-    max_risk_discuss_rounds: int
     output_language: str
     llm_provider: str
     quick_think_llm: str
@@ -56,10 +57,7 @@ class RunSnapshot:
     configured_keys: dict[str, bool]
     created_at: str
     updated_at: str
-    # Explicit on new snapshots; None is reserved for legacy deserialization.
-    mode: Literal["company_research", "holding_review", "catalyst_research"] | None = None
-    horizon: Literal["short", "medium", "long"] | None = None
-    holding_context: dict[str, Any] | None = None
+    mode: Literal["company_research"] = "company_research"
     latest_sequence: int = 0
     final_signal: str | None = None
     # Explicit canonical report locator for new completed runs.  Older runs
@@ -77,9 +75,6 @@ class RunSnapshot:
     error_traceback: str | None = None
     retry_of: str | None = None
     resumed_from_sequence: int | None = None
-    resume_fingerprint: dict[str, Any] | None = None
-    runtime_semantics_hash: str | None = None
-    agent_state_schema_sha256: str | None = None
     artifacts: tuple[str, ...] = ()
     redaction_manifest: tuple[str, ...] = ()
     event_schema_version: int = EVENT_SCHEMA_VERSION
@@ -93,19 +88,8 @@ class RunSnapshot:
             raise ValueError("ticker is required")
         if self.latest_sequence < 0:
             raise ValueError("latest_sequence must be non-negative")
-        if self.max_debate_rounds < 1 or self.max_risk_discuss_rounds < 1:
-            raise ValueError("debate and risk rounds must be positive")
-        if self.mode is not None and self.mode not in {"company_research", "holding_review", "catalyst_research"}:
-            raise ValueError("unsupported research mode")
-        if self.horizon is not None and self.horizon not in {"short", "medium", "long"}:
-            raise ValueError("unsupported investment horizon")
-        if self.mode == "company_research" and self.holding_context is not None:
-            raise ValueError("company_research cannot include holding_context")
-        if self.mode == "holding_review" and self.holding_context is None:
-            raise ValueError("holding_review requires holding_context")
-        if self.mode == "catalyst_research" and (self.holding_context is not None
-                or self.metadata.get("research_profile") != "evidence_v1"):
-            raise ValueError("catalyst_research requires evidence_v1 without holding context")
+        if self.mode != "company_research" or self.asset_type != "stock":
+            raise ValueError("only A-share company research is supported")
         if self.event_schema_version != EVENT_SCHEMA_VERSION:
             raise ValueError("unsupported event schema version")
 
@@ -115,31 +99,23 @@ class RunSnapshot:
         *,
         ticker: str,
         analysis_date: str,
-        asset_type: Literal["stock", "crypto"] = "stock",
-        selected_analysts: tuple[str, ...] = ("market", "social", "news", "fundamentals"),
-        max_debate_rounds: int = 1,
-        max_risk_discuss_rounds: int = 1,
+        asset_type: Literal["stock"] = "stock",
         output_language: str = "English",
         llm_provider: str = "",
         quick_think_llm: str = "",
         deep_think_llm: str = "",
         configured_keys: dict[str, bool] | None = None,
-        mode: Literal["company_research", "holding_review", "catalyst_research"] = "company_research",
-        horizon: Literal["short", "medium", "long"] = "medium",
-        holding_context: dict[str, Any] | None = None,
         run_id: str | None = None,
         **kwargs: Any,
     ) -> RunSnapshot:
         captured = utc_timestamp()
+        kwargs["metadata"] = {"research_profile": "evidence_v1", "native_workflow_version": "evidence-production-v9", **kwargs.get("metadata", {})}
         return cls(
             run_id=run_id or generate_run_id(),
             status="created",
             ticker=ticker,
             asset_type=asset_type,
             analysis_date=analysis_date,
-            selected_analysts=selected_analysts,
-            max_debate_rounds=max_debate_rounds,
-            max_risk_discuss_rounds=max_risk_discuss_rounds,
             output_language=output_language,
             llm_provider=llm_provider,
             quick_think_llm=quick_think_llm,
@@ -147,9 +123,6 @@ class RunSnapshot:
             configured_keys=configured_keys or {},
             created_at=captured,
             updated_at=captured,
-            mode=mode,
-            horizon=horizon,
-            holding_context=holding_context,
             **kwargs,
         )
 
@@ -161,9 +134,11 @@ class RunSnapshot:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> RunSnapshot:
-        copied = dict(value)
+        metadata = value.get("metadata", {})
+        if metadata.get("research_profile") != "evidence_v1" or metadata.get("native_workflow_version") != "evidence-production-v9":
+            raise UnsupportedResearchVersion("unsupported research version")
+        copied = {key: item for key, item in value.items() if key in {f.name for f in fields(cls)}}
         for field_name in (
-            "selected_analysts",
             "artifacts",
             "redaction_manifest",
             "degraded_data_sources",

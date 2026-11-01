@@ -12,8 +12,6 @@ import tradingagents.default_config as default_config_module
 _PATH_ENV_VARS = (
     "TRADINGAGENTS_RESULTS_DIR",
     "TRADINGAGENTS_CACHE_DIR",
-    "TRADINGAGENTS_MEMORY_LOG_PATH",
-    "TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR",
 )
 
 
@@ -32,8 +30,8 @@ def test_no_env_uses_built_in_defaults(monkeypatch):
     assert dc.DEFAULT_CONFIG["deep_think_llm"] == "deepseek-flash"
     assert dc.DEFAULT_CONFIG["quick_think_llm"] == "deepseek-flash"
     assert dc.DEFAULT_CONFIG["backend_url"] is None
-    assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 1
-    assert dc.DEFAULT_CONFIG["checkpoint_enabled"] is False
+    assert dc.DEFAULT_CONFIG["wind_max_concurrency"] == 1
+    assert dc.DEFAULT_CONFIG["halt_on_missing_data"] is True
 
 
 def test_string_overrides(monkeypatch):
@@ -53,15 +51,9 @@ def test_string_overrides(monkeypatch):
 
 
 def test_int_coercion(monkeypatch):
-    dc = _reload_with_env(
-        monkeypatch,
-        TRADINGAGENTS_MAX_DEBATE_ROUNDS="3",
-        TRADINGAGENTS_MAX_RISK_ROUNDS="2",
-    )
-    assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 3
-    assert isinstance(dc.DEFAULT_CONFIG["max_debate_rounds"], int)
-    assert dc.DEFAULT_CONFIG["max_risk_discuss_rounds"] == 2
-    assert isinstance(dc.DEFAULT_CONFIG["max_risk_discuss_rounds"], int)
+    dc = _reload_with_env(monkeypatch, TRADINGAGENTS_WIND_MAX_CONCURRENCY="3")
+    assert dc.DEFAULT_CONFIG["wind_max_concurrency"] == 3
+    assert isinstance(dc.DEFAULT_CONFIG["wind_max_concurrency"], int)
 
 
 @pytest.mark.parametrize(
@@ -72,8 +64,8 @@ def test_int_coercion(monkeypatch):
     ],
 )
 def test_bool_coercion(monkeypatch, raw, expected):
-    dc = _reload_with_env(monkeypatch, TRADINGAGENTS_CHECKPOINT_ENABLED=raw)
-    assert dc.DEFAULT_CONFIG["checkpoint_enabled"] is expected
+    dc = _reload_with_env(monkeypatch, TRADINGAGENTS_HALT_ON_MISSING_DATA=raw)
+    assert dc.DEFAULT_CONFIG["halt_on_missing_data"] is expected
 
 
 def test_reasoning_thinking_overrides(monkeypatch):
@@ -102,10 +94,10 @@ def test_empty_env_value_is_passthrough(monkeypatch):
     dc = _reload_with_env(
         monkeypatch,
         TRADINGAGENTS_LLM_PROVIDER="",
-        TRADINGAGENTS_MAX_DEBATE_ROUNDS="",
+        TRADINGAGENTS_WIND_MAX_CONCURRENCY="",
     )
     assert dc.DEFAULT_CONFIG["llm_provider"] == "deepseek"
-    assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 1
+    assert dc.DEFAULT_CONFIG["wind_max_concurrency"] == 1
 
 
 def test_blank_path_variables_use_built_in_defaults(monkeypatch):
@@ -113,18 +105,10 @@ def test_blank_path_variables_use_built_in_defaults(monkeypatch):
         monkeypatch,
         TRADINGAGENTS_RESULTS_DIR="",
         TRADINGAGENTS_CACHE_DIR="",
-        TRADINGAGENTS_MEMORY_LOG_PATH="",
-        TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR="",
     )
     home = dc._TRADINGAGENTS_HOME
     assert dc.DEFAULT_CONFIG["results_dir"] == os.path.join(home, "logs")
     assert dc.DEFAULT_CONFIG["data_cache_dir"] == os.path.join(home, "cache")
-    assert dc.DEFAULT_CONFIG["memory_log_path"] == os.path.join(
-        home, "memory", "trading_memory.md"
-    )
-    assert dc.DEFAULT_CONFIG["news_layer2_cache_dir"] == os.path.join(
-        home, "cache", "news-layer2"
-    )
 
 
 def test_nonempty_path_variable_is_preserved(monkeypatch):
@@ -137,21 +121,21 @@ def test_nonempty_path_variable_is_preserved(monkeypatch):
 
 def test_invalid_int_raises(monkeypatch):
     """Garbage int values should surface a ValueError at import, not silently misconfigure."""
-    monkeypatch.setenv("TRADINGAGENTS_MAX_DEBATE_ROUNDS", "not-a-number")
-    with pytest.raises(ValueError, match="TRADINGAGENTS_MAX_DEBATE_ROUNDS"):
+    monkeypatch.setenv("TRADINGAGENTS_WIND_MAX_CONCURRENCY", "not-a-number")
+    with pytest.raises(ValueError, match="TRADINGAGENTS_WIND_MAX_CONCURRENCY"):
         importlib.reload(default_config_module)
     # Restore module state for subsequent tests in this process
-    monkeypatch.delenv("TRADINGAGENTS_MAX_DEBATE_ROUNDS", raising=False)
+    monkeypatch.delenv("TRADINGAGENTS_WIND_MAX_CONCURRENCY", raising=False)
     importlib.reload(default_config_module)
 
 
 @pytest.mark.parametrize("bad", ["treu", "flase", "maybe", "2", "enabled"])
 def test_invalid_bool_raises(monkeypatch, bad):
     """A misspelled boolean must fail loudly (like ints) instead of silently False."""
-    monkeypatch.setenv("TRADINGAGENTS_CHECKPOINT_ENABLED", bad)
-    with pytest.raises(ValueError, match="TRADINGAGENTS_CHECKPOINT_ENABLED"):
+    monkeypatch.setenv("TRADINGAGENTS_HALT_ON_MISSING_DATA", bad)
+    with pytest.raises(ValueError, match="TRADINGAGENTS_HALT_ON_MISSING_DATA"):
         importlib.reload(default_config_module)
-    monkeypatch.delenv("TRADINGAGENTS_CHECKPOINT_ENABLED", raising=False)
+    monkeypatch.delenv("TRADINGAGENTS_HALT_ON_MISSING_DATA", raising=False)
     importlib.reload(default_config_module)
 
 

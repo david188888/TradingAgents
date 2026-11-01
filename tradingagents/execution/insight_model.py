@@ -12,13 +12,12 @@ from tradingagents.agents.schemas._insight import (
 )
 from tradingagents.execution.budget import BudgetBucket, BudgetLimitHit
 from tradingagents.execution.model_request import invoke_model_request
+from tradingagents.execution.model_support import global_model_slots, unique_object
 from tradingagents.execution.models import AnalysisCancelled
-from tradingagents.execution.native_model import _unique_object
-from tradingagents.graph.catalyst_workflow import global_model_slots
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.capabilities import native_structured_method
 from tradingagents.llm_clients.structured_output import strict_schema
-from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 
 class InsightUnavailable(ValueError):
@@ -73,7 +72,7 @@ class InsightModelCaller:
         journal = self.ledger.journal
         previous = journal.state.get(logical + '.prompt')
         if previous is not None and previous != digest:
-            raise CatalystCheckpointConflict('insight prompt changed')
+            raise ResearchCheckpointConflict('insight prompt changed')
         if previous is None:
             journal.put(logical + '.prompt', digest)
         if any(r.logical_call_id == logical and r.dispatched_at is not None for r in self.ledger.records()):
@@ -91,7 +90,7 @@ class InsightModelCaller:
             journal.put('insight.model_usage', {**journal.state.get('insight.model_usage', {}), stage + '.' + phase: value})
 
         def on_error(category, exc):
-            if isinstance(exc, (AnalysisCancelled, TimeoutError, CatalystCheckpointConflict)):
+            if isinstance(exc, (AnalysisCancelled, TimeoutError, ResearchCheckpointConflict)):
                 raise exc
             raise InsightUnavailable(category) from None
 
@@ -110,7 +109,7 @@ class InsightModelCaller:
                 chatgpt_auth=self.auth, chatgpt_request_policy=journal.state['identity'].get('chatgpt_request_policy'),
                 response_format=response_format)
             try:
-                payload = json.loads(response.content, object_pairs_hook=_unique_object)
+                payload = json.loads(response.content, object_pairs_hook=unique_object)
             except (ValueError, TypeError, AttributeError):
                 raise InsightUnavailable('response_json_invalid') from None
             if not isinstance(payload, dict):

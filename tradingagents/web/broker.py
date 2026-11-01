@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from tradingagents.observability.events import PersistedEvent, RunEventDraft
-
-from .store import RunStore
+from tradingagents.runtime.store import RunStore
 
 DEFAULT_SUBSCRIBER_CAPACITY: Final = 512
 DEFAULT_KEEPALIVE_SECONDS: Final = 15.0

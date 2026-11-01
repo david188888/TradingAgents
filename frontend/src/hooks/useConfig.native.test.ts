@@ -37,8 +37,7 @@ function configResponse(): ConfigResponseDTO {
       quick_think_llm: "gpt-4o-mini",
       deep_think_llm: "gpt-4o",
       output_language: "zh",
-      research_depth: 3,
-      checkpoint_enabled: false,
+
     },
   };
 }
@@ -54,7 +53,7 @@ async function mount(config = configResponse()) {
 }
 it("creates native company research with normalized scheduling regardless of legacy config defaults", async () => {
   const { result } = await mount();
-  expect(result.current.buildRequest()).toMatchObject({ ticker: "600803", mode: "company_research", research_profile: "evidence_v1", research_depth: 1, horizon: "medium", selected_analysts: ["market", "social", "news", "fundamentals"], checkpoint_enabled: false });
+  expect(result.current.buildRequest()).toMatchObject({ ticker: "600803", research_profile: "evidence_v1",  });
 });
 it("lets the server resolve the current date for single and batch creation", async () => {
   const {result} = await mount();
@@ -65,7 +64,7 @@ it("keeps an optional focus in the single company workflow and uses the same sco
   const {result} = await mount();
   act(() => result.current.setResearchQuestion("  兑现条件？  "));
   for (const request of [result.current.buildRequest(), result.current.buildRequestForTicker("002130")]) {
-    expect(request).toMatchObject({mode:"company_research",research_question:"兑现条件？"});
+    expect(request).toMatchObject({research_question:"兑现条件？"});
     expect(request).not.toHaveProperty("holding");
   }
   expect(result.current).not.toHaveProperty("setMode");

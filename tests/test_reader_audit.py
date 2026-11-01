@@ -17,7 +17,7 @@ from tradingagents.web.audit_models import AuditDetailDTO
 
 RUN_ID = "run_20260811T010000000000Z_aaaaaaaa"
 OTHER_RUN_ID = "run_20260811T020000000000Z_bbbbbbbb"
-ACTOR_ID = "analyst.fundamentals"
+ACTOR_ID = "native.operating_quality"
 CAPABILITY_ID = "market.price"
 TOOL_CALL_ID = "tool_call_audit_1"
 
@@ -52,14 +52,12 @@ def _seed_audit_run(
     *,
     run_id: str = RUN_ID,
     status: str = "completed",
-    legacy: bool = False,
 ) -> dict[str, str]:
     snapshot = RunSnapshot.create(
         run_id=run_id,
         ticker="000338.SZ",
         analysis_date="2026-08-11",
         mode="company_research",
-        horizon="medium",
         llm_provider="openai",
         quick_think_llm="gpt-4.1-mini",
         deep_think_llm="gpt-4.1",
@@ -131,7 +129,7 @@ def _seed_audit_run(
                 "reason": "completed",
             },
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
             status="completed",
         )
     )
@@ -148,7 +146,7 @@ def _seed_audit_run(
             "turn.started",
             {**common_turn, "turn_status": "started"},
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
             status="started",
         )
     )
@@ -167,7 +165,7 @@ def _seed_audit_run(
             "model.started",
             model_common,
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
             status="started",
         )
     )
@@ -186,7 +184,7 @@ def _seed_audit_run(
                 "model_call_id": model_call_id,
             },
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
         )
     )
     store.append_event(
@@ -202,7 +200,7 @@ def _seed_audit_run(
                 "redaction_manifest": ["values.OPENAI_API_KEY"],
             },
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
         )
     )
     tool_common = {
@@ -225,7 +223,7 @@ def _seed_audit_run(
                 },
             },
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
             status="requested",
         )
     )
@@ -235,7 +233,7 @@ def _seed_audit_run(
             "tool.committed",
             {**tool_common, "checkpoint_event_id": "checkpoint:tool:1"},
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
             status="committed",
         )
     )
@@ -245,7 +243,7 @@ def _seed_audit_run(
             "model.completed",
             {**model_common, "duration_ms": 1200, "usage": {"total_tokens": 512}},
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
             status="completed",
         )
     )
@@ -260,7 +258,7 @@ def _seed_audit_run(
                 "duration_ms": 1500,
             },
             actor_id=ACTOR_ID,
-            node_id="fundamentals",
+            node_id="operating_quality",
             status="completed",
         )
     )
@@ -269,8 +267,6 @@ def _seed_audit_run(
     store.write_snapshot_atomic(
         current.evolve(
             status=status,
-            mode=None if legacy else current.mode,
-            horizon=None if legacy else current.horizon,
             completed_at="2026-08-11T01:00:00.000Z" if status == "completed" else None,
             final_report_artifact_id=report.artifact_id,
         )
@@ -448,22 +444,6 @@ def test_summary_projection_failure_returns_a_safe_unavailable_envelope(
     assert payload["availability"] == "unavailable"
     assert payload["reason_code"] == "projection_failed"
     assert "private storage failure" not in response.text
-
-
-def test_legacy_summary_keeps_explicit_not_recorded_stage_navigation(tmp_path) -> None:
-    store = RunStore(tmp_path)
-    _seed_audit_run(store, legacy=True)
-
-    payload = TestClient(create_app(store=store)).get(f"/api/runs/{RUN_ID}/audit").json()
-
-    assert payload["availability"] == "legacy"
-    assert payload["stage_navigation"]
-    assert any(
-        stage["availability"] == "not_recorded"
-        and stage["status"] == "unknown"
-        and stage["reason_code"] in {"legacy_event_gap", "not_recorded"}
-        for stage in payload["stage_navigation"]
-    )
 
 
 @pytest.mark.parametrize(

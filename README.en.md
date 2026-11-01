@@ -71,7 +71,7 @@ Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at run
 
 - **Limited coverage**: public sources may be missing, rate-limited or unable to establish historical availability. Some historical valuation capabilities require Tushare credentials and entitlements. The trading calendar prioritizes the official SZSE month grid with index-date/TDX witnesses; Tushare is the last fallback.
 - **Research quality needs evaluation**: completed runs may remain `partial / LOW_CONFIDENCE`. Passing evidence checks does not establish economic causes or fair value, and improved predictive accuracy has not been demonstrated.
-- **Defined product scope**: maintained research runs through the local A-share Web workbench. CLI analysis is no longer maintained; older workflows retain saved reading and compatible recovery.
+- **Current scope**: CLI and Web share V9 Insight A-share company research. Classic, catalyst and V1–V8 execution, reading and recovery are retired. Existing user data stays on disk without automatic conversion.
 
 ## Explore further
 
@@ -88,3 +88,12 @@ Coding Agents should start with [AGENTS.md](AGENTS.md). Code, contracts and curr
 ## Acknowledgments and license
 
 Thanks to [TauricResearch](https://github.com/TauricResearch/TradingAgents) for the multi-agent foundation, [Simon Lin](https://github.com/simonlin1212/a-stock-data) for the A-share data reference, and the data-service and open-source maintainers. This fork develops the evidence research and local workbench design described above on that foundation. See [LICENSE](LICENSE).
+
+## Terminal research
+
+```bash
+tradingagents analyze --ticker 002130 --show
+tradingagents analyze --resume RUN_ID
+```
+
+The terminal uses the same V9 runner as Web, with a separately owned store at `~/.tradingagents/cli/runs/`. Use `--config` for local JSON, `--focus` for a follow-up question, and `--output report.md` for Markdown export. V9 always saves durable progress; debate-round and transaction-stage choices are removed. See [CLI operations](docs/operations/cli-research.md).

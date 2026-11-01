@@ -5,9 +5,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from pydantic import ValidationError
 
-from tradingagents.agents.schemas._research_record import ResearchRecordV1
 from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
 from tradingagents.dataflows.native_valuation import qualify_history, qualify_snapshot
 from tradingagents.research.evidence_freeze import (
@@ -15,7 +13,6 @@ from tradingagents.research.evidence_freeze import (
     FrozenCapability,
     FrozenEvidenceDraft,
 )
-from tradingagents.research.native_policy import dimension_policy, fact_views
 from tradingagents.research.native_record import build_native_record
 
 
@@ -42,35 +39,15 @@ def valuation_fixture(*, annual=True, history=True, cutoff="2026-09-30"):
         context[key] = payload
     caps = tuple(FrozenCapability(capability=cap, status=CapabilityStatus.QUALIFIED, reason="offline qualification")
         for cap in {x[0] for x in payloads})
-    return FrozenEvidenceDraft(run_id="valuation-600803", ticker="600803", cutoff=cutoff, policy_version="catalyst-evidence-policy-v1",
+    return FrozenEvidenceDraft(run_id="valuation-600803", ticker="600803", cutoff=cutoff, policy_version="source-collection-policy-v1",
         draft_id="valuation-fixture", frozen_at=datetime(2026, 9, 30, 8, 30, tzinfo=timezone.utc), evidence=tuple(evidence), capabilities=caps), context
 
 
-def test_native_valuation_binds_dates_sources_hash_and_deterministic_math():
-    record = build_native_record(*valuation_fixture(), mode="company_research", include_valuation=True)
-    value = record.valuation
-    assert value is not None
-    assert value.inputs.net_income_annual.value_yi == 8
-    anchor = next(a for a in value.assessment.anchor_outputs if a.per_share_low is not None)
-    assert anchor.per_share_low == pytest.approx(anchor.multiple_low*8/5, abs=.01)
-    assert anchor.per_share_high == pytest.approx(anchor.multiple_high*8/5, abs=.01)
-    assert len(value.input_evidence_ids) == 3
-    assert dimension_policy(record, scoped=True, valuation=True)["valuation"][0] == "conditional"
-    assert any("valuation" in c.claim_id or "回溯" in c.statement for c in fact_views(record, valuation=True)["operating_quality"])
-    assert "valuation" not in build_native_record(*valuation_fixture(), mode="company_research").model_dump()
-    mutated = record.model_dump(mode="json")
-    mutated["valuation"]["inputs"]["snapshot"]["price"] = 40
-    with pytest.raises(ValidationError, match="hash mismatch"):
-        ResearchRecordV1.model_validate(mutated)
-    mutated = record.model_dump(mode="json")
-    mutated["valuation"]["assessment"]["current_price"] = 99
-    with pytest.raises(ValidationError):
-        ResearchRecordV1.model_validate(mutated)
 
 
 @pytest.mark.parametrize("annual,history", [(False, True), (True, False), (False, False)])
 def test_missing_inputs_never_invent_reference_interval(annual, history):
-    record = build_native_record(*valuation_fixture(annual=annual, history=history), mode="holding_review", include_valuation=True)
+    record = build_native_record(*valuation_fixture(annual=annual, history=history), mode="company_research", include_valuation=True)
     assert record.valuation is not None
     assert all(anchor.per_share_low is None for anchor in record.valuation.assessment.anchor_outputs)
     assert record.valuation.assessment.synthesis.status == "unavailable"

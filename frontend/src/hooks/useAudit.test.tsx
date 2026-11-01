@@ -26,7 +26,7 @@ function summary(sequence: number): AuditSummaryDTO {
       status: "completed",
       ticker: "000338.SZ",
       mode: "company_research",
-      horizon: "medium",
+
       created_at: "2026-08-11T00:00:00Z",
       completed_at: "2026-08-11T00:01:00Z",
       duration_ms: 60000,

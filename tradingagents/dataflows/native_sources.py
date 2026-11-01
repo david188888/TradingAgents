@@ -10,7 +10,6 @@ import requests
 
 from tradingagents.agents.schemas._verification_plan import VERIFIABLE_FIELDS
 from tradingagents.dataflows.catalyst_events import CatalystEventV1, classify_earnings_title
-from tradingagents.dataflows.catalyst_sources import CatalystSources
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.china_specialty import get_a_share_cninfo_announcements
 from tradingagents.dataflows.native_qualification import (
@@ -29,6 +28,7 @@ from tradingagents.dataflows.native_qualification import (
     sina_statement,
     szse_month,
 )
+from tradingagents.dataflows.source_transport import SourceTransport
 from tradingagents.dataflows.tencent_kline import get_a_share_kline_df
 from tradingagents.dataflows.ticker_utils import to_tushare_symbol
 from tradingagents.dataflows.tushare_price_history import (
@@ -50,7 +50,7 @@ from tradingagents.research.evidence_freeze import (
 )
 from tradingagents.research.native_versions import FINANCIAL_DETAIL_POLICY
 from tradingagents.research.price_statistics import build_price_statistics
-from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 SOURCE_ROUTING_VERSION = "native-public-sources-v1"
 DEFAULT_CHAINS = {
@@ -98,7 +98,7 @@ def source_chains(config):
     return output
 
 
-class NativeSources(CatalystSources):
+class NativeSources(SourceTransport):
     def __init__(self, request, run_id, session, fetch):
         super().__init__(request, run_id, session, fetch)
         self.chains = source_chains(request.effective_config)
@@ -136,7 +136,7 @@ class NativeSources(CatalystSources):
             return None
         try:
             result = self.fetch(SOURCE_ROUTING_VERSION+"."+key, operation)
-        except CatalystCheckpointConflict:
+        except ResearchCheckpointConflict:
             raise
         except (NativeSourceUnavailable, PriceHistoryQualificationError) as exc:
             code = exc.code
@@ -436,7 +436,7 @@ class NativeSources(CatalystSources):
         self._cap(inputs, CAP_PRICE)
 
     def collect(self):
-        inputs = FreezeInputs(self.run_id, self.request.ticker, self.request.analysis_date, self.request.catalyst_policy)
+        inputs = FreezeInputs(self.run_id, self.request.ticker, self.request.analysis_date, self.request.collection_policy)
         ts_code = to_tushare_symbol(self.request.ticker)
         identity = self._identity(inputs, ts_code)
         self._events(inputs)

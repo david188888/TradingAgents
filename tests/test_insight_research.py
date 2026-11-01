@@ -3,7 +3,7 @@
 from datetime import date
 
 from tests.test_insight_protocol import catalog, proposal
-from tests.test_native_publication import setup
+from tests.v9_fixtures import journal_setup as setup
 from tradingagents.graph.insight_research import run_insight_research
 
 

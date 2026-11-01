@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from tradingagents.agents.schemas._search import SearchHitV1, SearchOutcomeV1
-from tradingagents.dataflows.catalyst_transport import _DATA_SLOTS, BudgetedSession
+from tradingagents.dataflows.budgeted_transport import _DATA_SLOTS, BudgetedSession
 
 
 def request_json(url, payload, *, key, provider, task_id, session, budget, page=False):

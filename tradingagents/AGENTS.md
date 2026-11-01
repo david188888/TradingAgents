@@ -6,14 +6,11 @@ for repository-wide setup and finish rules.
 ## Boundaries
 
 - `execution/` is the consumer-neutral execution boundary. `AnalysisRequest`,
-  `AnalysisResult` and cancellation are shared contracts. `NativeRunner` owns
-  maintained Web research; `AnalysisRunner` retains classic execution for
-  compatibility callers. Neither should import consumer-specific UI concerns.
-- `graph/insight_research.py` owns new V9 Insight research, with isolated
-  specialists, bounded supplementary search, one review/reply round and synthesis.
-  `graph/native_research.py` retains the kernels for older frozen research tasks.
-  `setup.py` assembles the retained classic LangGraph nodes/edges;
-  `trading_graph.py` owns its compatibility-facing facade.
+  `AnalysisResult` and cancellation are shared contracts. `NativeRunner` owns V9
+  research for both CLI and Web. Older executors and graph facades are retired.
+- `graph/insight_research.py` owns isolated specialists, bounded supplementary
+  search, one review/reply round and synthesis. Graph code receives saved facts
+  and a durable ledger; provider I/O stays in execution/dataflows.
 - `dataflows/` owns provider interfaces, vendor selection, normalization, and
   capability results. Provider failures must remain typed and source-labelled.
 - `agents/schemas/` and `research/` own public research artifacts, evidence
@@ -42,8 +39,7 @@ and Web/API models where they are exposed. A contract change requires:
 1. Update the canonical model and its validation first.
 2. Update every producer, adapter, persistence path, projection, and client
    facade that consumes it.
-3. Preserve explicit compatibility/degradation behavior for older persisted
-   runs where the reader or audit endpoint supports it.
+3. Reject unsupported workflow identities explicitly; do not restore older run adapters.
 4. Add or adjust focused tests when the relevant tracked test scaffolding
    is available.
 

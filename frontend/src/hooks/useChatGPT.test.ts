@@ -20,7 +20,7 @@ beforeEach(() => {
   return response({accounts:[account(a),account(b)],active_account_ref:active,usage_url:"https://chatgpt.com/settings/usage"});
  }));
  vi.mocked(getConfig).mockResolvedValue({providers:[{id:"chatgpt",configured:false,requires_api_key:false,authentication:"oauth",custom_model_allowed:false,models:{quick:[],deep:[]}}],
- analysts:[],presets:[],depths:[1],output_languages:["Chinese"],checkpoint_available:false,wind:{enabled:false,configured:false,capabilities:[]}, configured_keys:{}, defaults:{llm_provider:"chatgpt",quick_think_llm:"",deep_think_llm:"",output_language:"Chinese",research_depth:1,checkpoint_enabled:false}, research_profiles:{evidence_v1:{supported:true,reason:null}}} satisfies ConfigResponseDTO);
+ analysts:[],presets:[],depths:[1],output_languages:["Chinese"],checkpoint_available:false,wind:{enabled:false,configured:false,capabilities:[]}, configured_keys:{}, defaults:{llm_provider:"chatgpt",quick_think_llm:"",deep_think_llm:"",output_language:"Chinese",}, research_profiles:{evidence_v1:{supported:true,reason:null}}} satisfies ConfigResponseDTO);
 });
 afterEach(() => vi.unstubAllGlobals());
 it("loads future model names in official order and freezes account into single and batch inputs", async () => {

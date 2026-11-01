@@ -59,9 +59,9 @@ P3 可作为独立的小改动实施，但单独验收，避免与 F05 持久化
 
 ## 3. F03：假设导向核查闭环（P2）
 
-**原审查证据：** [旧核查装配](../../tradingagents/graph/native_research.py)只有在挑战选中
+**原审查证据：** `旧核查装配`（历史路径 `../../tradingagents/graph/native_research.py`，V9 清理已移除）只有在挑战选中
 条件且条件的 `check` 非空时才生成任务。新策略改为独立挑战命题，历史路径保留；
-[执行器](../../tradingagents/execution/verification_executor.py)仍只使用保存证据。
+`执行器`（历史路径 `../../tradingagents/execution/verification_executor.py`，V9 清理已移除）仍只使用保存证据。
 固定财务检查与假设导向核查分别统计。
 
 **进度（2026-10-21）：** 第一步已完成——新增 `financial-detail-fields-v1`，每张报表单独保存一条
@@ -101,8 +101,8 @@ P3 可作为独立的小改动实施，但单独验收，避免与 F05 持久化
 
 ## 4. F04：上下文与修复预算（P2）
 
-**当前证据：** [综合压缩](../../tradingagents/execution/native_prompt_context.py)已移除重复正文；
-[回应上下文](../../tradingagents/research/unified_dialogue.py)仍携带允许事实和对应来源。
+**当前证据：** `综合压缩`（历史路径 `../../tradingagents/execution/native_prompt_context.py`，V9 清理已移除）已移除重复正文；
+`回应上下文`（历史路径 `../../tradingagents/research/unified_dialogue.py`，V9 清理已移除）仍携带允许事实和对应来源。
 F02 新增观察目录与绑定，因此必须重新测量，不能直接拿旧运行 tokens 代表新契约成本。
 
 **10-22 已确认切片：** 用户批准先完成“只读输入计量＋必需证据清单”。现有
@@ -140,7 +140,7 @@ tokens、修复比例、交付及 F07 质量分开报告；具体成本下降目
 
 ## 5. F05：检查点与大对象存储（P2）
 
-**当前证据：** [检查点](../../tradingagents/runtime/catalyst_checkpoint.py)的 `put()` 和 `stage()`
+**当前证据：** `检查点`（历史路径 `../../tradingagents/runtime/catalyst_checkpoint.py`，V9 清理已移除）的 `put()` 和 `stage()`
 调用 `persist()` 保存全量累积状态。完整对象内容寻址无法复用仅一小部分不同的 JSON。
 
 待办：
@@ -164,7 +164,7 @@ tokens、修复比例、交付及 F07 质量分开报告；具体成本下降目
 
 ## 6. F07：固定证据下的判断质量验收（P2）
 
-**当前证据：** [计量脚本](../../scripts/eval_benchmark.py)已有交付、用量与核查数量，
+**当前证据：** `计量脚本`（历史路径 `../../scripts/eval_benchmark.py`，V9 清理已移除）已有交付、用量与核查数量，
 人工分数和挑战覆盖仍为 `None`。[现有契约](../contracts/evidence-benchmark.md)定义
 `hypothesis-quality-v1`；其假设均分不能直接等同于重要性加权的核心结论质量。
 
@@ -192,7 +192,7 @@ F05 另报恢复与存储可靠性，不把存储优化算作推理质量提升�
 ## 7. P3：批次耐久模型迁移
 
 **当前证据：** [runtime store](../../tradingagents/runtime/store.py)从
-[`web.batch_models`](../../tradingagents/web/batch_models.py)导入 `BatchSnapshot` 和
+``web.batch_models``（历史路径 `../../tradingagents/web/batch_models.py`，V9 清理已移除）导入 `BatchSnapshot` 和
 `validate_batch_id`。耐久模型的归属与 runtime → web 的依赖方向不一致。
 
 待办：

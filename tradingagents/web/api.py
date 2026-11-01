@@ -7,8 +7,6 @@ import os
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import date
-from math import isfinite
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,32 +15,23 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from tradingagents.analysts import ANALYST_CONFIG, ANALYST_WIRE_KEYS
 from tradingagents.dataflows.company_resolution import resolve_input_candidates
 from tradingagents.dataflows.symbol_utils import normalize_symbol
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.execution.models import AnalysisRequest, HoldingContext
+from tradingagents.execution.models import AnalysisRequest
 from tradingagents.execution.native_runner import NEW_STUDY_TIMEOUT_SECONDS
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
-from tradingagents.presets import load_preset_catalog
-from tradingagents.research.catalyst_evidence_policy import (
-    CATALYST_HORIZON_NOT_SUPPORTED,
-    CATALYST_LEGACY_SCHEDULING_PARAMS,
-    CATALYST_MARKET_UNSUPPORTED,
-    CATALYST_MODE_UNSUPPORTED,
-    CATALYST_PROFILE_UNAVAILABLE,
-    CATALYST_V1_PROFILE,
-    CLASSIC_PROFILE,
-    catalyst_evidence_policy_v1,
-    normalize_research_profile,
-)
-from tradingagents.research.native_evidence_policy import (
-    NativeEvidencePolicyV1,
-    is_native_stock_ticker,
-)
+from tradingagents.research.native_evidence_policy import is_native_stock_ticker
+from tradingagents.runtime.batch_models import BatchItem
 from tradingagents.runtime.run_models import generate_run_id
+from tradingagents.runtime.store import (
+    InvalidStorePath,
+    RunNotFound,
+    RunStore,
+    RunStoreCorruption,
+)
 from tradingagents.web.focus_projection import project_reader_focus
 from tradingagents.web.reader_process_models import AgentKey
 from tradingagents.web.reader_process_projection import project_reader_agent, project_reader_process
@@ -56,41 +45,20 @@ from .audit_projection import (
     project_audit_detail,
     project_audit_summary,
 )
-from .batch_models import BatchItem
 from .broker import EventBroker, Keepalive, SubscriptionClosed
-from .catalyst_projection import project_catalyst
-from .connectivity import YahooUnavailableError
 from .manager import (
-    LegacyResumeNormalizationFailed,
     ResumeRunConflict,
     RunNotActive,
     RunNotResumable,
     RunNotRetryable,
     SingleRunManager,
 )
-from .projections import InvalidCursor, RunProjectionPublisher, recent_runs_page
-from .reader_models import CompanionSelection
-from .reader_projection import (
-    CompanionNotFound,
-    ResearchPackageNotFound,
-    project_companion,
-    project_reader,
-    project_research_package,
-)
+from .projections import InvalidCursor, recent_runs_page
 from .schemas import (
-    RESEARCH_DEPTHS,
     SUPPORTED_OUTPUT_LANGUAGES,
     BatchCreateRequest,
     BatchValidateRequest,
-    HoldingInputRequest,
-    PortfolioRequest,
     RunCreateRequest,
-)
-from .store import (
-    InvalidStorePath,
-    RunNotFound,
-    RunStore,
-    RunStoreCorruption,
 )
 
 TERMINAL_STREAM_EVENTS = frozenset(
@@ -260,10 +228,6 @@ def create_app(
         selected_broker = broker or EventBroker(selected_store)
         selected_manager = SingleRunManager(selected_store, selected_broker, chatgpt_auth=selected_auth)
     selected_environment = os.environ if environment is None else environment
-    if connectivity_check is None:
-        from .connectivity import check_yfinance_reachable
-
-        connectivity_check = check_yfinance_reachable
     assets_root = Path(static_dir or Path(__file__).with_name("static")).resolve()
 
     @asynccontextmanager
@@ -361,6 +325,12 @@ def create_app(
             fields=fields,
         )
 
+    from tradingagents.runtime.run_models import UnsupportedResearchVersion
+
+    @app.exception_handler(UnsupportedResearchVersion)
+    async def handle_unsupported_version(_request: Request, _exc):
+        return _error_response(409, "unsupported_research_version", "This run uses an unsupported research version.")
+
     @app.exception_handler(RunNotFound)
     @app.exception_handler(InvalidStorePath)
     async def handle_missing_run(_request: Request, _exc: Exception):
@@ -386,27 +356,7 @@ def create_app(
     async def handle_not_resumable(_request: Request, _exc: RunNotResumable):
         return _error_response(409, "run_not_resumable", "The run cannot be resumed.")
 
-    @app.exception_handler(LegacyResumeNormalizationFailed)
-    async def handle_legacy_resume_normalization(
-        _request: Request,
-        _exc: LegacyResumeNormalizationFailed,
-    ):
-        return _error_response(
-            409,
-            "legacy_resume_normalization_failed",
-            "The stored legacy run cannot be safely resumed; create a new analysis.",
-        )
 
-    @app.exception_handler(YahooUnavailableError)
-    async def handle_yahoo_unavailable(_request: Request, exc: YahooUnavailableError):
-        # Global tickers need yfinance (VPN); the preflight failed. Surface a
-        # distinct code so the frontend can prompt the user to enable a VPN.
-        return _error_response(
-            503,
-            "yfinance_unreachable",
-            "无法连接行情数据源（Yahoo Finance）。请开启 VPN 后重试。",
-            fields=("ticker",),
-        )
 
     @app.exception_handler(ResumeRunConflict)
     async def handle_resume_conflict(_request: Request, exc: ResumeRunConflict):
@@ -440,72 +390,24 @@ def create_app(
 
     @app.post("/api/batches", status_code=201)
     def create_batch(body: BatchCreateRequest) -> dict[str, Any]:
-        for entry in body.entries:
-            _require_native_creation(entry.config.research_profile)
-            _require_unified_mode(getattr(entry.config, "mode", None))
-        if not evidence_profile_enabled():
-            raise ApiBoundaryError(403, "evidence_profile_unavailable", "此服务已停用新建证据研究。", fields=("research_profile",))
         configured_keys = _configured_keys(selected_environment)
-        prepared: list[tuple[AnalysisRequest, Any]] = []
-        seen_tickers: set[str] = set()
+        prepared = []
+        seen = set()
         for index, entry in enumerate(body.entries):
             resolved = _resolve_batch_input(entry.input, index)
-            canonical = str(resolved["ticker"])
-            if canonical in seen_tickers:
-                raise ApiBoundaryError(
-                    422,
-                    "duplicate_ticker",
-                    "The batch contains duplicate companies after normalization.",
-                    fields=(f"entries.{index}.input",),
-                )
-            seen_tickers.add(canonical)
-            config = entry.config
-            request_body = RunCreateRequest(
-                ticker=canonical,
-                analysis_date=config.analysis_date,
-                selected_analysts=config.selected_analysts,
-                research_depth=config.research_depth,
-                mode="company_research",
-                horizon=config.horizon,
-                llm_provider=config.llm_provider,
-                chatgpt_account_ref=config.chatgpt_account_ref,
-                quick_think_llm=config.quick_think_llm,
-                deep_think_llm=config.deep_think_llm,
-                output_language=config.output_language,
-                checkpoint_enabled=config.checkpoint_enabled,
-                asset_type=config.asset_type,
-                research_profile=config.research_profile,
-                research_question=config.research_question,
-                evidence_policy=config.evidence_policy,
-            )
-            request_model, item_keys = _analysis_request(
-                request_body,
-                selected_environment,
-                checkpoint_available=checkpoint_available,
-                chatgpt_auth=selected_auth,
-            )
-            configured_keys.update(item_keys)
-            connectivity_check(canonical)
-            prepared.append(
-                (
-                    request_model,
-                    BatchItem(
-                        input_value=entry.input,
-                        company_name=str(resolved["company_name"]),
-                        ticker=canonical,
-                        market=str(resolved["market"]),
-                        run_id=generate_run_id(),
-                        ordinal=index,
-                        config=request_body.model_dump(mode="json"),
-                    ),
-                )
-            )
-        batch = selected_manager.start_batch(
-            tuple(prepared),
-            configured_keys=configured_keys,
-            concurrency=body.concurrency,
-        )
-        return batch.as_dict()
+            ticker = resolved["ticker"]
+            if ticker in seen:
+                raise ApiBoundaryError(422, "duplicate_ticker", "Duplicate company.", fields=(f"entries.{index}.input",))
+            seen.add(ticker)
+            request_body = RunCreateRequest(ticker=ticker, **entry.config.model_dump())
+            request_model, keys = _analysis_request(request_body, selected_environment, chatgpt_auth=selected_auth)
+            configured_keys.update(keys)
+            prepared.append((request_model, BatchItem(input_value=entry.input,
+                company_name=resolved["company_name"], ticker=ticker, market="A-share",
+                run_id=generate_run_id(), ordinal=index, config=request_body.model_dump(mode="json"))))
+        return selected_manager.start_batch(tuple(prepared), configured_keys=configured_keys,
+            concurrency=body.concurrency).as_dict()
+
 
     @app.post("/api/batches/{batch_id}/cancel", status_code=202)
     def cancel_batch(batch_id: str) -> dict[str, Any]:
@@ -536,7 +438,7 @@ def create_app(
         limit: int = Query(default=20),
         cursor: str | None = Query(default=None),
     ) -> Any:
-        summaries = selected_store.list_runs()
+        summaries = [item for item in selected_store.list_runs() if _is_current_run(selected_store, item.run_id)]
         if view is None:
             # Preserve the original array contract for existing clients.
             return [asdict(summary) for summary in summaries]
@@ -562,7 +464,6 @@ def create_app(
             checkpoint_available=checkpoint_available,
             chatgpt_auth=selected_auth,
         )
-        connectivity_check(request_model.ticker)
         return selected_manager.start(
             request_model,
             configured_keys=configured_keys,
@@ -570,38 +471,11 @@ def create_app(
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
-        return selected_store.read_snapshot(run_id).as_dict()
+        return _current_snapshot(selected_store, run_id).as_dict()
 
-    @app.get("/api/runs/{run_id}/view")
-    def get_run_view(run_id: str) -> dict[str, Any]:
-        # A projection problem is represented inside the envelope. The raw run
-        # and audit artifacts remain reachable through their existing routes.
-        return RunProjectionPublisher(selected_store).read_or_rebuild_view(run_id)
 
-    @app.get("/api/runs/{run_id}/catalyst")
-    def get_catalyst(run_id: str) -> dict[str, Any]:
-        # Read-only, committed-facts-only. The projection makes no model and no
-        # provider call, so opening or refreshing this page cannot change what
-        # the run concludes. A missing run still surfaces as 404; a run that
-        # exists without a catalyst artifact is an HTTP 200 discriminated body.
-        return project_catalyst(selected_store, run_id)
 
-    @app.get("/api/runs/{run_id}/reader")
-    def get_reader(run_id: str) -> dict[str, Any]:
-        # Read-only learning reader; missing runs surface as 404 via the global
-        # RunNotFound handler. Projection problems become an "unavailable" body.
-        return project_reader(selected_store, run_id)
 
-    @app.get("/api/runs/{run_id}/reader/package")
-    def get_reader_package(run_id: str) -> dict[str, Any]:
-        try:
-            return project_research_package(selected_store, run_id)
-        except ResearchPackageNotFound as exc:
-            raise ApiBoundaryError(
-                404,
-                "research_package_unavailable",
-                "The public research package is not available for this run.",
-            ) from exc
 
     @app.get("/api/runs/{run_id}/reader/process")
     def get_reader_process(run_id: str) -> dict[str, Any]:
@@ -640,21 +514,6 @@ def create_app(
         except ValueError:
             raise ApiBoundaryError(409, "reader_sequence_unavailable", "Requested Reader boundary is unavailable") from None
 
-    @app.get("/api/runs/{run_id}/reader/companion")
-    def get_reader_companion(
-        run_id: str,
-        kind: Literal["role", "claim", "evidence", "risk"] = Query(),
-        selection_id: str = Query(alias="id", min_length=1, max_length=512),
-    ) -> dict[str, Any]:
-        selection = CompanionSelection(kind=kind, id=selection_id)
-        try:
-            return project_companion(selected_store, run_id, selection)
-        except CompanionNotFound as exc:
-            raise ApiBoundaryError(
-                404,
-                "companion_not_found",
-                "The requested companion selection is not available for this run.",
-            ) from exc
 
     @app.get("/api/runs/{run_id}/audit")
     def get_audit_summary(run_id: str) -> dict[str, Any]:
@@ -709,34 +568,6 @@ def create_app(
                 "The requested Audit item is not available for this run.",
             ) from exc
 
-    @app.get("/api/runs/{run_id}/evidence-refs/{ref_id}")
-    def get_evidence_ref(run_id: str, ref_id: str) -> dict[str, Any]:
-        """Resolve a validated ReaderBrief reference without accepting a locator."""
-        envelope = RunProjectionPublisher(selected_store).read_or_rebuild_view(run_id)
-        brief = envelope["view"]["brief"].get("value")
-        if not isinstance(brief, Mapping):
-            raise ApiBoundaryError(404, "ref_not_found", "The requested evidence reference was not found.")
-        reference = next(
-            (item for item in brief.get("evidence_refs", []) if isinstance(item, Mapping) and item.get("ref_id") == ref_id),
-            None,
-        )
-        if reference is None:
-            raise ApiBoundaryError(404, "ref_not_found", "The requested evidence reference was not found.")
-        target = reference.get("target")
-        if not isinstance(target, Mapping) or target.get("kind") != "artifact" or not isinstance(target.get("artifact_id"), str):
-            raise ApiBoundaryError(410, "ref_target_missing", "The evidence target is no longer available.")
-        artifact_id = target["artifact_id"]
-        metadata = {item["artifact_id"]: item for item in _artifact_metadata(selected_store, run_id)}
-        if artifact_id not in metadata:
-            raise ApiBoundaryError(410, "ref_target_missing", "The evidence target is no longer available.")
-        return {
-            "ref_id": ref_id,
-            "label": reference.get("label"),
-            "resolution_status": "available",
-            "target": dict(target),
-            "artifact": metadata[artifact_id],
-            "read_url": f"/api/runs/{run_id}/artifacts/{artifact_id}",
-        }
 
     @app.post("/api/runs/{run_id}/cancel", status_code=202)
     def cancel_run(run_id: str) -> dict[str, Any]:
@@ -744,13 +575,11 @@ def create_app(
 
     @app.post("/api/runs/{run_id}/retry", status_code=201)
     def retry_run(run_id: str) -> dict[str, Any]:
-        source = selected_store.read_snapshot(run_id)
-        _require_native_creation(source.metadata.get("research_profile", "classic"))
+        _current_snapshot(selected_store, run_id)
         if not evidence_profile_enabled():
             raise ApiBoundaryError(403, "evidence_profile_unavailable", "此服务已关闭新建研究。")
-        _require_unified_mode(source.mode)
-        connectivity_check(source.ticker)
         return selected_manager.retry(run_id).as_dict()
+
 
     @app.post("/api/runs/{run_id}/resume", status_code=202)
     def resume_run(run_id: str) -> dict[str, Any]:
@@ -909,27 +738,18 @@ def _resolve_batch_input(raw: str, index: int) -> dict[str, str]:
     canonical = normalize_symbol(normalize_ticker_symbol(raw_ticker))
     if not canonical:
         raise ApiBoundaryError(422, "company_not_found", "The company input has no valid ticker.", fields=(f"entries.{index}.input",))
-    market = "A-share" if canonical.endswith((".SS", ".SH", ".SZ", ".BJ")) else "global"
-    return {"input": raw.strip(), "company_name": company_name, "ticker": canonical, "market": market}
+    if not is_native_stock_ticker(canonical):
+        raise ApiBoundaryError(422, "evidence_market_unsupported", "Research requires an A-share common stock.", fields=(f"entries.{index}.input",))
+    return {"input": raw.strip(), "company_name": company_name, "ticker": canonical, "market": "A-share"}
 
 
-def _analysis_request(
-    body: RunCreateRequest,
-    environment: Mapping[str, str],
-    *,
-    checkpoint_available: bool,
-    chatgpt_auth=None,
-) -> tuple[AnalysisRequest, dict[str, bool]]:
+def _analysis_request(body, environment, *, checkpoint_available=True, chatgpt_auth=None):
     _require_native_creation(body.research_profile)
-    _require_unified_mode(body.mode)
+    if not evidence_profile_enabled():
+        raise ApiBoundaryError(403, "evidence_profile_unavailable", "此服务已关闭新建研究。")
     provider = body.llm_provider.lower()
     if provider not in PROVIDER_API_KEY_ENV and provider != "chatgpt":
-        raise ApiBoundaryError(
-            422,
-            "unsupported_provider",
-            "The selected LLM provider is not supported.",
-            fields=("llm_provider",),
-        )
+        raise ApiBoundaryError(422, "unsupported_provider", "Unsupported LLM provider.", fields=("llm_provider",))
     if provider == "chatgpt":
         from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
         if chatgpt_auth is None:
@@ -941,202 +761,25 @@ def _analysis_request(
     else:
         _validate_model(provider, body.quick_think_llm, "quick_think_llm", "quick")
         _validate_model(provider, body.deep_think_llm, "deep_think_llm", "deep")
-
-    if provider != "chatgpt" and not _provider_configured(provider, environment):
-        raise ApiBoundaryError(
-            422,
-            "missing_configuration",
-            "The selected LLM provider is not configured on this local server.",
-            fields=("llm_provider",),
-        )
-    if body.checkpoint_enabled and not checkpoint_available and body.research_profile not in {"catalyst_v1", "evidence_v1"}:
-        raise ApiBoundaryError(
-            422,
-            "checkpoint_unavailable",
-            "Checkpoint resume is unavailable in the current runtime.",
-            fields=("checkpoint_enabled",),
-        )
-
-    canonical_ticker = normalize_symbol(normalize_ticker_symbol(body.ticker))
-    asset_type = _asset_type(canonical_ticker)
-    if body.asset_type is not None and body.asset_type != asset_type:
-        raise ApiBoundaryError(
-            422,
-            "asset_type_mismatch",
-            "The asset type does not match the normalized ticker.",
-            fields=("ticker", "asset_type"),
-        )
-    if asset_type == "crypto" and "fundamentals" in body.selected_analysts:
-        raise ApiBoundaryError(
-            422,
-            "unsupported_analyst",
-            "The fundamentals analyst is unavailable for crypto.",
-            fields=("selected_analysts",),
-        )
-
-    effective_config = {
-        "llm_provider": provider,
-        "quick_think_llm": body.quick_think_llm,
-        "deep_think_llm": body.deep_think_llm,
-        "output_language": body.output_language,
-        "checkpoint_enabled": body.checkpoint_enabled,
-        "max_debate_rounds": body.research_depth,
-        "max_risk_discuss_rounds": body.research_depth,
-        "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS,
-    }
+        if not _provider_configured(provider, environment):
+            raise ApiBoundaryError(422, "missing_configuration", "The selected provider is not configured.", fields=("llm_provider",))
+    config = {"llm_provider": provider, "quick_think_llm": body.quick_think_llm,
+        "deep_think_llm": body.deep_think_llm, "output_language": body.output_language,
+        "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS}
     if provider == "chatgpt":
-        effective_config["chatgpt_account_ref"] = body.chatgpt_account_ref
-        effective_config["backend_url"] = None
-    configured_keys = _configured_keys(environment)
+        config.update(chatgpt_account_ref=body.chatgpt_account_ref, backend_url=None)
+    configured = _configured_keys(environment)
     if provider == "chatgpt":
-        configured_keys["chatgpt"] = True
-    if body.research_profile == "evidence_v1" and body.holding is not None:
-        thesis = body.holding.original_thesis
-        if thesis is not None and (not isinstance(thesis, str) or len(thesis) > 4000):
-            raise ApiBoundaryError(422, "holding_original_thesis_invalid",
-                "The original holding thesis must be a string of at most 4000 characters.",
-                fields=("holding.original_thesis",))
-    mode, holding_context = _normalize_research_context(body, canonical_ticker)
-    research_profile, catalyst_policy = _normalize_research_profile(
-        body,
-        mode=mode,
-        asset_type=asset_type,
-        canonical_ticker=canonical_ticker,
-    )
-    return (
-        AnalysisRequest(
-            ticker=canonical_ticker,
-            analysis_date=body.analysis_date,
-            asset_type=asset_type,
-            selected_analysts=body.selected_analysts,
-            max_debate_rounds=body.research_depth,
-            max_risk_discuss_rounds=body.research_depth,
-            horizon=body.horizon,
-            mode=mode,
-            holding_context=holding_context,
-            effective_config=effective_config,
-            research_profile=research_profile,
-            catalyst_policy=catalyst_policy,
-            research_question=body.research_question,
-            evidence_policy=(body.evidence_policy or NativeEvidencePolicyV1()) if research_profile == "evidence_v1" else None,
-        ),
-        configured_keys,
-    )
+        configured["chatgpt"] = True
+    return AnalysisRequest(ticker=body.ticker, analysis_date=body.analysis_date,
+        effective_config=config, research_question=body.research_question), configured
 
 
-def _normalize_research_profile(
-    body: RunCreateRequest,
-    *,
-    mode: str,
-    asset_type: str,
-    canonical_ticker: str,
-) -> tuple[str, object]:
-    """Validate the requested execution profile before anything is enqueued.
-
-    The new profile is a strict subset of what exists today.  Every combination
-    it cannot honor is rejected with a readable, field-addressed error naming
-    the alternative entry point -- never silently downgraded to ``classic``,
-    because a silent downgrade would show the user a bull/bear report while they
-    believed they had asked a bounded catalyst question.
-    """
-    try:
-        profile = normalize_research_profile(body.research_profile)
-    except ValueError as exc:
-        raise ApiBoundaryError(
-            422,
-            CATALYST_PROFILE_UNAVAILABLE,
-            "The requested research profile is not supported. Use classic, catalyst_v1 or evidence_v1.",
-            fields=("research_profile",),
-        ) from exc
-
-    if profile == CLASSIC_PROFILE:
-        return CLASSIC_PROFILE, None
-
-    if profile == "evidence_v1":
-        if not evidence_profile_enabled():
-            raise ApiBoundaryError(403, "evidence_profile_unavailable",
-                "此服务已关闭新建证据研究；历史记录仍可读取。",
-                fields=("research_profile",))
-        if asset_type != "stock" or not is_native_stock_ticker(canonical_ticker):
-            raise ApiBoundaryError(422, "evidence_market_unsupported",
-                "当前 Web 研究支持 A 股普通股票，请输入 A 股代码。",
-                fields=("research_profile", "ticker", "asset_type"))
-        if body.horizon != "medium":
-            raise ApiBoundaryError(422, "evidence_horizon_not_supported",
-                "research_profile=evidence_v1 does not use the classic horizon setting. Send horizon=medium or omit it.",
-                fields=("horizon",))
-        if not _catalyst_legacy_scheduling_is_default(body):
-            raise ApiBoundaryError(422, "evidence_legacy_scheduling_params_not_applicable",
-                "research_profile=evidence_v1 fixes its own roles and one challenge stage. Omit selected_analysts and research_depth, or send their default values.",
-                fields=("selected_analysts", "research_depth"))
-        return "evidence_v1", None
-
-    if not catalyst_profile_enabled():
-        raise ApiBoundaryError(
-            403,
-            CATALYST_PROFILE_UNAVAILABLE,
-            "The catalyst_v1 research profile is not enabled on this server. "
-            "Use research_profile=classic.",
-            fields=("research_profile",),
-        )
-
-    if mode != "company_research":
-        raise ApiBoundaryError(
-            422,
-            CATALYST_MODE_UNSUPPORTED,
-            "research_profile=catalyst_v1 supports company_research only. "
-            "Use research_profile=classic for holding review.",
-            fields=("research_profile", "mode"),
-        )
-    if asset_type != "stock" or not _is_a_share_ticker(canonical_ticker):
-        raise ApiBoundaryError(
-            422,
-            CATALYST_MARKET_UNSUPPORTED,
-            "research_profile=catalyst_v1 supports A-share common stocks only. "
-            "Use research_profile=classic for other markets or asset types.",
-            fields=("research_profile", "ticker", "asset_type"),
-        )
-    # The new flow has its own role set.  The classic medium plan's required
-    # roles must not be copied onto it, and an explicit non-default selection
-    # must not be accepted and then ignored.
-    if body.horizon != "medium":
-        raise ApiBoundaryError(
-            422,
-            CATALYST_HORIZON_NOT_SUPPORTED,
-            "research_profile=catalyst_v1 does not use the classic horizon setting; "
-            "its evidence policy fixes the window. Send horizon=medium or omit it.",
-            fields=("horizon",),
-        )
-    if not _catalyst_legacy_scheduling_is_default(body):
-        raise ApiBoundaryError(
-            422,
-            CATALYST_LEGACY_SCHEDULING_PARAMS,
-            "research_profile=catalyst_v1 does not use selected_analysts or "
-            "research_depth; the profile fixes its own roles. Omit them or use "
-            "research_profile=classic.",
-            fields=("selected_analysts", "research_depth"),
-        )
-    return CATALYST_V1_PROFILE, catalyst_evidence_policy_v1()
 
 
-def catalyst_profile_enabled() -> bool:
-    """Feature flag: may a new catalyst_v1 run be created at all?
-
-    The code configuration owns the default (off).  An explicit
-    ``TRADINGAGENTS_CATALYST_PROFILE_ENABLED`` override wins over it, which is
-    the supported way to exercise the enabled path without mutating the shared
-    DEFAULT_CONFIG for the rest of the suite.
-    """
-    override = os.environ.get("TRADINGAGENTS_CATALYST_PROFILE_ENABLED")
-    if override is not None and override.strip():
-        return override.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(DEFAULT_CONFIG.get("catalyst_profile_enabled", False))
 
 
-def _require_unified_mode(mode):
-    if mode not in {None, "company_research"}:
-        raise ApiBoundaryError(422, "unified_research_mode_required",
-            "新建研究统一分析公司投资吸引力；旧模式仅用于历史读取和恢复。", fields=("mode",))
+
 
 
 def _require_native_creation(profile: str) -> None:
@@ -1154,264 +797,23 @@ def evidence_profile_enabled() -> bool:
     return bool(DEFAULT_CONFIG.get("evidence_profile_enabled", True))
 
 
-def _catalyst_legacy_scheduling_is_default(body: RunCreateRequest) -> bool:
-    """True when the classic scheduling fields carry no explicit selection."""
-    return (
-        tuple(body.selected_analysts) == tuple(ANALYST_WIRE_KEYS)
-        and body.research_depth == 1
-    )
 
 
 _A_SHARE_SUFFIXES = (".SS", ".SZ", ".BJ", ".SH")
 
 
-def _is_a_share_ticker(canonical_ticker: str) -> bool:
-    return canonical_ticker.upper().endswith(_A_SHARE_SUFFIXES)
 
 
-def _normalize_research_context(
-    body: RunCreateRequest,
-    canonical_ticker: str,
-) -> tuple[Literal["company_research", "catalyst_research", "holding_review"], HoldingContext | None]:
-    """Resolve new and legacy holding input without inventing account facts."""
-    holding = body.holding
-    portfolio = body.portfolio
-    if holding is not None and portfolio is not None:
-        raise ApiBoundaryError(
-            422,
-            "holding_legacy_conflict",
-            "Provide either holding or legacy portfolio, not both.",
-            fields=("portfolio",),
-        )
-
-    mode = body.mode
-    if mode is None:
-        mode = "company_research"
-
-    if mode == "catalyst_research" and body.research_profile != "evidence_v1":
-        raise ApiBoundaryError(422, "evidence_mode_unsupported",
-            "mode=catalyst_research requires research_profile=evidence_v1. The existing catalyst_v1 entry point uses company_research.",
-            fields=("research_profile", "mode"))
-
-    if mode in {"company_research", "catalyst_research"}:
-        if holding is not None:
-            raise ApiBoundaryError(
-                422,
-                "holding_not_allowed",
-                "Company research cannot include holding facts." if mode == "company_research" else "Catalyst research cannot include holding facts.",
-                fields=("holding",),
-            )
-        if portfolio is not None:
-            raise ApiBoundaryError(
-                422,
-                "legacy_portfolio_not_allowed",
-                "Company research cannot include a legacy portfolio." if mode == "company_research" else "Catalyst research cannot include a legacy portfolio.",
-                fields=("portfolio",),
-            )
-        return mode, None
-
-    if holding is not None:
-        return mode, _normalize_holding_input(holding, canonical_ticker, body.analysis_date)
-    if portfolio is not None:
-        return mode, _normalize_legacy_portfolio(portfolio, canonical_ticker, body.analysis_date)
-    raise ApiBoundaryError(
-        422,
-        "holding_required",
-        "Holding review requires target holding facts.",
-        fields=("holding",),
-    )
 
 
-def _normalize_holding_input(
-    holding: HoldingInputRequest,
-    canonical_ticker: str,
-    analysis_date: str,
-) -> HoldingContext:
-    try:
-        holding_ticker = normalize_symbol(normalize_ticker_symbol(holding.ticker))
-    except (TypeError, ValueError):
-        holding_ticker = ""
-    if holding_ticker != canonical_ticker:
-        raise ApiBoundaryError(
-            422,
-            "holding_ticker_mismatch",
-            "The holding ticker must match the analysis ticker.",
-            fields=("holding.ticker",),
-        )
-    return _build_holding_context(
-        ticker=canonical_ticker,
-        quantity=holding.quantity,
-        average_cost=holding.average_cost,
-        cash=holding.cash,
-        total_account_value=holding.total_account_value,
-        currency=holding.currency,
-        facts_as_of=holding.facts_as_of,
-        original_thesis=holding.original_thesis,
-        analysis_date=analysis_date,
-        source="user_provided",
-    )
 
 
-def _normalize_legacy_portfolio(
-    portfolio: PortfolioRequest,
-    canonical_ticker: str,
-    analysis_date: str,
-) -> HoldingContext:
-    matches = tuple(
-        position
-        for position in portfolio.positions
-        if normalize_symbol(normalize_ticker_symbol(position.ticker)) == canonical_ticker
-    )
-    if not matches:
-        raise ApiBoundaryError(
-            422,
-            "legacy_target_position_missing",
-            "The legacy portfolio has no position for the analysis ticker.",
-            fields=("portfolio.positions",),
-        )
-    if len(matches) > 1:
-        raise ApiBoundaryError(
-            422,
-            "legacy_target_position_ambiguous",
-            "The legacy portfolio has multiple target positions after normalization.",
-            fields=("portfolio.positions",),
-        )
-    target = matches[0]
-    if not _positive_finite(target.quantity) or not _positive_finite(target.average_cost):
-        raise ApiBoundaryError(
-            422,
-            "legacy_target_position_invalid",
-            "The legacy target position needs positive quantity and average cost.",
-            fields=("portfolio.positions",),
-        )
-    return _build_holding_context(
-        ticker=canonical_ticker,
-        quantity=target.quantity,
-        average_cost=target.average_cost,
-        cash=portfolio.cash,
-        total_account_value=None,
-        currency=portfolio.currency,
-        facts_as_of=None,
-        original_thesis=None,
-        analysis_date=analysis_date,
-        source="legacy_portfolio",
-    )
 
 
-def _build_holding_context(
-    *,
-    ticker: str,
-    quantity: object | None,
-    average_cost: object | None,
-    cash: object | None,
-    total_account_value: object | None,
-    currency: object | None,
-    facts_as_of: object | None,
-    original_thesis: object | None,
-    analysis_date: str,
-    source: Literal["user_provided", "legacy_portfolio"],
-) -> HoldingContext:
-    if not _positive_finite(quantity):
-        raise ApiBoundaryError(
-            422,
-            "holding_quantity_invalid",
-            "Holding quantity must be a finite positive number.",
-            fields=("holding.quantity",),
-        )
-    if not _positive_finite(average_cost):
-        raise ApiBoundaryError(
-            422,
-            "holding_average_cost_invalid",
-            "Holding average cost must be a finite positive number.",
-            fields=("holding.average_cost",),
-        )
-    if cash is not None and not _nonnegative_finite(cash):
-        raise ApiBoundaryError(
-            422,
-            "holding_cash_invalid",
-            "Holding cash must be a finite non-negative number.",
-            fields=("holding.cash",),
-        )
-    if total_account_value is not None and not _positive_finite(total_account_value):
-        raise ApiBoundaryError(
-            422,
-            "holding_nav_invalid",
-            "Total account value must be a finite positive number.",
-            fields=("holding.total_account_value",),
-        )
-    normalized_currency: str | None = None
-    if currency is not None:
-        normalized_currency = currency.upper() if isinstance(currency, str) else ""
-        if len(normalized_currency) != 3 or not normalized_currency.isalpha():
-            raise ApiBoundaryError(
-                422,
-                "holding_currency_invalid",
-                "Holding currency must be a three-letter ISO-4217 code.",
-                fields=("holding.currency",),
-            )
-    normalized_as_of = analysis_date if facts_as_of is None else facts_as_of
-    if not isinstance(normalized_as_of, str):
-        raise ApiBoundaryError(
-            422,
-            "holding_as_of_invalid",
-            "Holding facts date must use YYYY-MM-DD.",
-            fields=("holding.facts_as_of",),
-        )
-    try:
-        date.fromisoformat(normalized_as_of)
-    except ValueError as exc:
-        raise ApiBoundaryError(
-            422,
-            "holding_as_of_invalid",
-            "Holding facts date must use YYYY-MM-DD.",
-            fields=("holding.facts_as_of",),
-        ) from exc
-    if normalized_as_of != analysis_date:
-        raise ApiBoundaryError(
-            422,
-            "holding_as_of_mismatch",
-            "Holding facts date must match the analysis date.",
-            fields=("holding.facts_as_of",),
-        )
-    try:
-        return HoldingContext(
-            ticker=ticker,
-            quantity=float(quantity),
-            average_cost=float(average_cost),
-            cash=float(cash) if cash is not None else None,
-            total_account_value=(
-                float(total_account_value) if total_account_value is not None else None
-            ),
-            currency=normalized_currency,
-            facts_as_of=normalized_as_of,
-            original_thesis=original_thesis if isinstance(original_thesis, str) and original_thesis else None,
-            source=source,
-        )
-    except ValueError as exc:  # Defensive: public validation above owns known failures.
-        raise ApiBoundaryError(
-            422,
-            "validation_error",
-            "The request contains invalid holding facts.",
-            fields=("holding",),
-        ) from exc
 
 
-def _positive_finite(value: object | None) -> bool:
-    if value is None or isinstance(value, bool):
-        return False
-    try:
-        return isfinite(float(value)) and float(value) > 0
-    except (TypeError, ValueError):
-        return False
 
 
-def _nonnegative_finite(value: object) -> bool:
-    if isinstance(value, bool):
-        return False
-    try:
-        return isfinite(float(value)) and float(value) >= 0
-    except (TypeError, ValueError):
-        return False
 
 
 def _validate_model(provider: str, model: str, field: str, mode: str) -> None:
@@ -1430,9 +832,6 @@ def _validate_model(provider: str, model: str, field: str, mode: str) -> None:
         )
 
 
-def _asset_type(ticker: str) -> str:
-    crypto_suffixes = ("-USD", "-USDT", "-USDC", "-BTC", "-ETH")
-    return "crypto" if ticker.upper().endswith(crypto_suffixes) else "stock"
 
 
 def _configured_keys(environment: Mapping[str, str]) -> dict[str, bool]:
@@ -1465,7 +864,6 @@ def _configuration_payload(
     chatgpt_auth=None,
 ) -> dict[str, Any]:
     configured = _configured_keys(environment)
-    presets = load_preset_catalog()
     providers = []
     for provider, env_name in PROVIDER_API_KEY_ENV.items():
         modes = MODEL_OPTIONS.get(provider)
@@ -1498,14 +896,9 @@ def _configuration_payload(
     return {
         "providers": providers,
         "configured_keys": configured,
-        "analysts": [analyst.as_api_option() for analyst in ANALYST_CONFIG],
-        "presets": [preset.as_config_option() for preset in presets.presets],
-        "depths": list(RESEARCH_DEPTHS),
         "output_languages": list(SUPPORTED_OUTPUT_LANGUAGES),
         "checkpoint_available": checkpoint_available,
         "research_profiles": {
-            "classic": {"supported": False, "reason": "仅保留历史读取和已有运行恢复"},
-            "catalyst_v1": {"supported": False, "reason": "仅保留历史读取和已有运行恢复"},
             "evidence_v1": {"supported": evidence_profile_enabled(),
                 "reason": None if evidence_profile_enabled() else "此服务已停用新建证据研究",
                 "checkpoint_available": True},
@@ -1521,8 +914,6 @@ def _configuration_payload(
             "quick_think_llm": DEFAULT_CONFIG.get("quick_think_llm"),
             "deep_think_llm": DEFAULT_CONFIG.get("deep_think_llm"),
             "output_language": DEFAULT_CONFIG.get("output_language", "English"),
-            "research_depth": DEFAULT_CONFIG.get("max_debate_rounds", 1),
-            "checkpoint_enabled": bool(DEFAULT_CONFIG.get("checkpoint_enabled")),
         },
     }
 
@@ -1604,3 +995,16 @@ def _error_response(
     if diagnostic is not None:
         detail["diagnostic"] = diagnostic
     return JSONResponse({"detail": detail}, status_code=status_code)
+
+
+def _is_current_run(store, run_id):
+    from tradingagents.execution.native_runner import WORKFLOW_VERSION
+    snapshot = store.read_snapshot(run_id)
+    return (snapshot.metadata.get("research_profile") == "evidence_v1"
+        and snapshot.metadata.get("native_workflow_version") == WORKFLOW_VERSION)
+
+
+def _current_snapshot(store, run_id):
+    if not _is_current_run(store, run_id):
+        raise ApiBoundaryError(409, "unsupported_research_version", "This run uses an unsupported research version.")
+    return store.read_snapshot(run_id)

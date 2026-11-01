@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { ModelFailureNotice } from "./ModelFailureNotice";
 import { useReaderAgent, useReaderProcess } from "../../hooks/useReaderProcess";
 import type { RunStreamStatus } from "../../hooks/useRunStream";
-import { NativeReader } from "./NativeReader";
 import { useReportExplanation } from "../../hooks/useReportExplanation";
 import type { InsightReportDTO } from "../../api/contracts";
 import { InsightReader } from "./InsightReader";
@@ -13,7 +12,7 @@ import type { ReducerState } from "../../state/model";
 import "../../styles/nativeReader.css";
 
 /** The saved native record is the sole research source for an evidence_v1 run. */
-export function NativeResearchPage({ runId, ticker, status, state, response, mode = "company_research", loading, error, retry,
+export function NativeResearchPage({ runId, ticker, status, state, response, loading, error, retry,
   onOpenAudit, onCancel, onRetry, onResume, onNewResearch, streamStatus = "error" }: {
   streamStatus?: RunStreamStatus;
   runId: string; ticker: string; status: string; state: ReducerState | null; mode?: string | null;
@@ -29,10 +28,7 @@ export function NativeResearchPage({ runId, ticker, status, state, response, mod
   const completed = status === "completed";
   const failed = status === "failed";
   const stopped = status === "cancelled" || status === "interrupted";
-  const record = response?.state === "ready" && response.run_id === runId && response.record.run_id === runId
-    && response.record.construction === "native" && response.record.assessment ? response.record : null;
   const insightRecord = response?.state === "insight_ready" && response.run_id === runId && response.record.run_id === runId ? response.record : null;
-  const incompatibleRecord = response?.state === "ready" && !record;
   const unpublished = response?.state === "unavailable" && response.run_id === runId && response.reason_code === "not_published";
   const title = failed ? "本次研究未完成" : stopped ? status === "interrupted" ? "研究已中断" : "研究已取消"
     : status === "cancel_requested" ? "正在取消研究" : "正在形成可核查的研究判断";
@@ -43,9 +39,9 @@ export function NativeResearchPage({ runId, ticker, status, state, response, mod
       {completed || failed || stopped ? <button type="button" onClick={onOpenAudit}>研究检查与审计 ↗</button> : null}
     </header>
     <ModelFailureNotice failures={process.response?.model_failures ?? []} />
-    {completed || record || insightRecord ? <section data-main-summary="native_research">
-      {insightRecord ? <PublishedInsights record={insightRecord}/> : record ? <NativeReader key={runId} runId={runId} record={record} process={process.response} processError={process.error} retryProcess={process.retry}/> :
-        <p role="status">{incompatibleRecord ? "保存记录未包含原生研究判断，无法展示本次研究简报。" : loading ? "正在读取保存的研究记录…" : error ? "研究记录暂时无法读取。" : unpublished ? "本次未生成可读最终报告。" : "本次没有合格的已发布研究记录。"}
+    {completed || insightRecord ? <section data-main-summary="native_research">
+      {insightRecord ? <PublishedInsights record={insightRecord}/> :
+        <p role="status">{loading ? "正在读取保存的研究记录…" : error ? "研究记录暂时无法读取。" : unpublished ? "本次未生成可读最终报告。" : "本次没有合格的已发布研究记录。"}
           {error && retry ? <button onClick={retry}>重试读取记录</button> : null}</p>}
     </section> : <section className="native-progress">
       <header className="native-run-overview" data-stopped={failed || stopped}>
@@ -58,16 +54,16 @@ export function NativeResearchPage({ runId, ticker, status, state, response, mod
       <ResearchFlow key={runId} process={process.response} workflowVersion={currentState?.meta.native_workflow_version}
         state={currentState} runStatus={status} selectedRole={role} onSelect={setRole} onClose={()=>setRole(null)}>
         {role ? <ReaderAgentOutput role={role} process={process.response} output={agent.response} error={agent.error || process.error}
-          record={null} runStatus={status} entity={null} onRole={setRole} onInspect={()=>{}} onLocate={()=>{}}
+          runStatus={status} onRole={setRole}
           onRetry={()=>{agent.retry();if(process.error)process.retry();}}/> : null}
       </ResearchFlow>
       <footer className="native-run-actions"><span>已保存记录保留 · 阅读不重新调用模型</span><div>
-        {failed && mode === "company_research" ? <button type="button" onClick={onRetry}>重试研究</button> : null}
+        {failed ? <button type="button" onClick={onRetry}>重试研究</button> : null}
         {status === "interrupted" ? <button type="button" onClick={onResume}>恢复研究</button> : null}
         {!failed && !stopped ? <button type="button" onClick={onCancel} disabled={status === "cancel_requested"}>{status === "cancel_requested" ? "正在取消" : "取消研究"}</button> : null}
       </div></footer>
     </section>}
-    {completed || failed || stopped ? <button className="native-new-research" type="button" onClick={onNewResearch}>{mode && mode !== "company_research" ? "新建公司研究" : "新建研究"}</button> : null}
+    {completed || failed || stopped ? <button className="native-new-research" type="button" onClick={onNewResearch}>新建研究</button> : null}
   </section>;
 }
 

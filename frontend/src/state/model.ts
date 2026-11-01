@@ -6,15 +6,7 @@
  * must not rename keys when projecting events into this state.
  */
 
-import type {
-  ArtifactMetadataDTO,
-  AssetTypeLiteral,
-  DegradedSourceSummaryDTO,
-  ObservationCommitV1DTO,
-  ObservationTaskKind,
-  ResearchDepth,
-  ResearchProfile,
-} from "../api/contracts";
+import type { ArtifactMetadataDTO, AssetTypeLiteral, DegradedSourceSummaryDTO, ObservationCommitV1DTO, ObservationTaskKind, ResearchProfile } from "../api/contracts";
 
 // ---------------------------------------------------------------------------
 // Role status
@@ -192,22 +184,17 @@ export interface RunMeta {
   native_workflow_version?: string;
   focus_requested?: boolean;
   research_profile?: ResearchProfile;
-  catalyst_stages?: Record<string, string>;
+
   run_id: string;
   status: ApplicationStatus;
   ticker: string;
   asset_type: AssetTypeLiteral;
   analysis_date: string;
-  selected_analysts: string[];
-  research_depth: ResearchDepth;
-  max_debate_rounds: number;
-  max_risk_discuss_rounds: number;
   output_language: string;
   llm_provider: string;
   quick_think_llm: string;
   deep_think_llm: string;
   configured_keys: Record<string, boolean>;
-  checkpoint_enabled: boolean;
   created_at: string;
   updated_at: string;
   latest_sequence: number;
@@ -221,9 +208,9 @@ export interface RunMeta {
   error_message?: string | null;
   retry_of?: string | null;
   resumed_from_sequence?: number | null;
-  resume_fingerprint?: Record<string, unknown> | null;
-  runtime_semantics_hash?: string | null;
-  agent_state_schema_sha256?: string | null;
+
+
+
   redaction_manifest: string[];
   event_schema_version: number;
 }
@@ -318,115 +305,7 @@ export const UNIFIED_ROLE_REGISTRY: readonly RoleDefinition[] = [
   ...["operating_quality", "event_context", "market_context"].map(role => ({actor_id:`native.response_${role}`,node_id:`response_${role}`,team_id:"native",display_name:`${role} response`,icon_id:"verified-magnifier",analyst_key:null})),
   NATIVE_ROLE_REGISTRY[NATIVE_ROLE_REGISTRY.length-1],
 ];
-export function rolesForProfile(profile?: ResearchProfile, version?: string, focusRequested=false): readonly RoleDefinition[] {
-  if (profile !== "evidence_v1") return ROLE_REGISTRY;
-  const roles = ["evidence-production-v7", "evidence-production-v8", "evidence-production-v9"].includes(version ?? "") ? UNIFIED_ROLE_REGISTRY : NATIVE_ROLE_REGISTRY;
-  return (["evidence-production-v6", "evidence-production-v7", "evidence-production-v8", "evidence-production-v9"].includes(version ?? "")) && focusRequested ? [...roles, FOCUS_ROLE] : roles;
+export function rolesForProfile(_profile?: ResearchProfile, _version?: string, focusRequested=false): readonly RoleDefinition[] {
+  return focusRequested ? [...UNIFIED_ROLE_REGISTRY, FOCUS_ROLE] : UNIFIED_ROLE_REGISTRY;
 }
-
-export const ROLE_REGISTRY: readonly RoleDefinition[] = [
-  {
-    actor_id: "analyst.market",
-    node_id: "Market Analyst",
-    team_id: "analysts",
-    display_name: "Market Analyst",
-    icon_id: "chart-bars",
-    analyst_key: "market",
-  },
-  {
-    actor_id: "analyst.sentiment",
-    node_id: "Sentiment Analyst",
-    team_id: "analysts",
-    display_name: "Sentiment Analyst",
-    icon_id: "speech-pulse",
-    analyst_key: "social",
-  },
-  {
-    actor_id: "analyst.news",
-    node_id: "News Analyst",
-    team_id: "analysts",
-    display_name: "News Analyst",
-    icon_id: "newspaper",
-    analyst_key: "news",
-  },
-  {
-    actor_id: "analyst.fundamentals",
-    node_id: "Fundamentals Analyst",
-    team_id: "analysts",
-    display_name: "Fundamentals Analyst",
-    icon_id: "institution-columns",
-    analyst_key: "fundamentals",
-  },
-  {
-    actor_id: "evidence.steward",
-    node_id: "Evidence Steward",
-    team_id: "evidence",
-    display_name: "Evidence Steward",
-    icon_id: "verified-magnifier",
-    analyst_key: null,
-  },
-  {
-    actor_id: "researcher.bull",
-    node_id: "Bull Researcher",
-    team_id: "research",
-    display_name: "Bull Researcher",
-    icon_id: "rising-horn",
-    analyst_key: null,
-  },
-  {
-    actor_id: "researcher.bear",
-    node_id: "Bear Researcher",
-    team_id: "research",
-    display_name: "Bear Researcher",
-    icon_id: "falling-paw",
-    analyst_key: null,
-  },
-  {
-    actor_id: "manager.research",
-    node_id: "Research Manager",
-    team_id: "research",
-    display_name: "Research Manager",
-    icon_id: "scales",
-    analyst_key: null,
-  },
-  {
-    actor_id: "trader",
-    node_id: "Trader",
-    team_id: "trading",
-    display_name: "Trader",
-    icon_id: "opposing-arrows",
-    analyst_key: null,
-  },
-  {
-    actor_id: "risk.aggressive",
-    node_id: "Aggressive Analyst",
-    team_id: "risk",
-    display_name: "Aggressive Risk Analyst",
-    icon_id: "lightning",
-    analyst_key: null,
-  },
-  {
-    actor_id: "risk.neutral",
-    node_id: "Neutral Analyst",
-    team_id: "risk",
-    display_name: "Neutral Risk Analyst",
-    icon_id: "centered-crosshair",
-    analyst_key: null,
-  },
-  {
-    actor_id: "risk.conservative",
-    node_id: "Conservative Analyst",
-    team_id: "risk",
-    display_name: "Conservative Risk Analyst",
-    icon_id: "shield",
-    analyst_key: null,
-  },
-  {
-    actor_id: "manager.portfolio",
-    node_id: "Portfolio Manager",
-    team_id: "portfolio",
-    display_name: "Portfolio Manager",
-    icon_id: "portfolio-compass",
-    analyst_key: null,
-  },
-] as const;
+export const ROLE_REGISTRY = UNIFIED_ROLE_REGISTRY;

@@ -13,31 +13,16 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_QUICK_THINK_LLM":      "quick_think_llm",
     "TRADINGAGENTS_LLM_BACKEND_URL":      "backend_url",
     "TRADINGAGENTS_OUTPUT_LANGUAGE":      "output_language",
-    "TRADINGAGENTS_MAX_DEBATE_ROUNDS":    "max_debate_rounds",
-    "TRADINGAGENTS_MAX_RISK_ROUNDS":      "max_risk_discuss_rounds",
-    "TRADINGAGENTS_CHECKPOINT_ENABLED":   "checkpoint_enabled",
-    "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
-    "TRADINGAGENTS_MAX_TOOL_CALLS_PER_TURN": "max_tool_calls_per_turn",
-    "TRADINGAGENTS_MAX_TOOL_MESSAGES_IN_CONTEXT": "max_tool_messages_in_context",
     "TRADINGAGENTS_GOOGLE_THINKING_LEVEL":   "google_thinking_level",
     "TRADINGAGENTS_OPENAI_REASONING_EFFORT": "openai_reasoning_effort",
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
     "TRADINGAGENTS_DEEPSEEK_THINKING":       "deepseek_thinking",
     "TRADINGAGENTS_DEEPSEEK_REASONING_EFFORT": "deepseek_reasoning_effort",
     "TRADINGAGENTS_LLM_MAX_TOKENS":          "llm_max_tokens",
-    "TRADINGAGENTS_EVIDENCE_GATE_ENABLED":   "evidence_gate_enabled",
-    "TRADINGAGENTS_CATALYST_PROFILE_ENABLED": "catalyst_profile_enabled",
-    "TRADINGAGENTS_CATALYST_DEFAULT_WEB":    "catalyst_default_web",
-    "TRADINGAGENTS_EVIDENCE_STOP_ON_FAIL":   "evidence_stop_on_fail",
     "TRADINGAGENTS_EVIDENCE_SEARCH_ENABLED": "evidence_search_enabled",
-    "TRADINGAGENTS_NEWS_MIN_COMPANY_ITEMS":  "news_min_company_items",
-    "TRADINGAGENTS_NEWS_MIN_MIXED_ITEMS":    "news_min_mixed_items",
     "TRADINGAGENTS_HALT_ON_MISSING_DATA":    "halt_on_missing_data",
-    "TRADINGAGENTS_NEWS_LAYER1_ENABLED":     "news_layer1_enabled",
-    "TRADINGAGENTS_NEWS_LAYER2_ENABLED":     "news_layer2_enabled",
-    "TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR":   "news_layer2_cache_dir",
     "TRADINGAGENTS_WIND_ENABLED":            "wind_enabled",
     "TRADINGAGENTS_WIND_MAX_CONCURRENCY":    "wind_max_concurrency",
     "TRADINGAGENTS_WIND_REQUEST_TIMEOUT_SECONDS": "wind_request_timeout_seconds",
@@ -96,15 +81,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "data_cache_dir": _path_from_env(
         "TRADINGAGENTS_CACHE_DIR", os.path.join(_TRADINGAGENTS_HOME, "cache")
     ),
-    "memory_log_path": _path_from_env(
-        "TRADINGAGENTS_MEMORY_LOG_PATH",
-        os.path.join(_TRADINGAGENTS_HOME, "memory", "trading_memory.md"),
-    ),
-    # Optional cap on the number of resolved memory log entries. When set,
-    # the oldest resolved entries are pruned once this limit is exceeded.
-    # Pending entries are never pruned. None disables rotation entirely.
-    "memory_log_max_entries": None,
-    # V8 independent Search/Fetch is separate from the configured research LLM.
+    # Independent Search/Fetch is separate from the configured research LLM.
     "evidence_search_enabled": True,
     # LLM settings
     # This fork is A-share-first and defaults to DeepSeek (no OpenAI key needed).
@@ -147,25 +124,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # unbounded reasoning/output and hangs or trips a gateway idle timeout
     # (e.g. some deepseek-v4-flash deployments, #1204).
     "max_tokens": None,
-    # Checkpoint/resume: when True, LangGraph saves state after each node
-    # so a crashed run can resume from the last successful step.
-    "checkpoint_enabled": False,
-    # Output language for analyst reports and final decision
-    # Internal agent debate stays in English for reasoning quality
     "output_language": "Chinese",
-    # Debate and discussion settings
-    "max_debate_rounds": 1,
-    "max_risk_discuss_rounds": 1,
-    "max_recur_limit": 100,
-    # Hard upper bound for one model response.  It prevents a malformed or
-    # over-eager model from expanding one analyst turn into an unbounded tool
-    # batch; callers retain the first calls in their declared order.
-    "max_tool_calls_per_turn": 8,
-    # Retain only the newest tool-result messages after each tool task.  The
-    # current result batch always survives; older results can be re-fetched
-    # from durable tool observations instead of inflating the next prompt.
-    "max_tool_messages_in_context": 8,
-    "analyst_concurrency_limit": 1,
     # News / data fetching parameters
     # Increase for longer lookback strategies or to broaden macro coverage;
     # decrease to reduce token usage in agent prompts.
@@ -386,58 +345,16 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # A-share sentiment analyst: include the dragon-tiger list (短线资金活跃度)
     # as an optional sentiment block. Disable for a longer-horizon read where
     # short-term hot-money signals are noise.
-    "sentiment_a_share_dragon_tiger_enabled": True,
     # Benchmark for alpha calculation in the reflection layer.
-    # ``benchmark_ticker`` (when set) overrides the suffix map for all
-    # tickers; leave it None to use ``benchmark_map`` for auto-detection
-    # based on the ticker's exchange suffix. SPY remains the US default
-    # so the reflection label keeps reading "Alpha vs SPY" for US tickers
-    # while non-US tickers get their regional index automatically.
-    "benchmark_ticker": None,
-    "benchmark_map": {
-        ".NS":  "^NSEI",       # NSE India (Nifty 50)
-        ".BO":  "^BSESN",      # BSE India (Sensex)
-        ".T":   "^N225",       # Tokyo (Nikkei 225)
-        ".HK":  "^HSI",        # Hong Kong (Hang Seng)
-        ".L":   "^FTSE",       # London (FTSE 100)
-        ".TO":  "^GSPTSE",     # Toronto (TSX Composite)
-        ".AX":  "^AXJO",       # Australia (ASX 200)
-        ".SS":  "000001.SS",   # Shanghai (SSE Composite)
-        ".SZ":  "399001.SZ",   # Shenzhen (SZSE Component)
-        "":     "SPY",         # default for US-listed tickers (no suffix)
-    },
-    # Evidence gate configuration
-    "evidence_gate_enabled": True,
-    "evidence_max_enrichment_rounds": 3,
-    "evidence_max_enrichment_seconds": 90,
-    "news_min_company_items": 3,
-    "news_min_mixed_items": 5,
-    "evidence_stop_on_fail": False,
-    # Catalyst research profile (design §11.2).  Both flags default OFF: the
-    # new entry point stays unavailable until every hard gate passes, and the
-    # web default only flips after an explicit product confirmation.  Neither
-    # flag affects reading already-committed catalyst artifacts.
-    "catalyst_profile_enabled": False,
-    "catalyst_default_web": False,
-    # Credibility scoring for news sources
     "credibility_enabled": True,
     "credibility_domain_overrides": {},
     # Cross-source consistency detection
     "consistency_enabled": True,
     # Identity verification: additional known confusing company names
-    "wrong_identity_hints": [],
     # News advisor (LLM-based coverage gap analysis + targeted search)
-    "news_advisor_enabled": True,
     # Cost-aware news-analysis runtime.  The Layer 0/1/2 contracts are always
     # available, but model calls are explicit opt-ins: deployments without an
     # LLM or batch provider keep the ordinary advisor/rule-based behavior.
-    "news_layer1_enabled": False,
-    "news_layer1_max_items": 50,
-    "news_layer2_enabled": False,
-    "news_layer2_cache_dir": _path_from_env(
-        "TRADINGAGENTS_NEWS_LAYER2_CACHE_DIR",
-        os.path.join(_TRADINGAGENTS_HOME, "cache", "news-layer2"),
-    ),
     # Wind AIFin Market (https://aifinmarket.wind.com.cn) premium data.
     # Enabled by default for this local research workspace. Set
     # wind_enabled=False to disable Wind capabilities without affecting core
@@ -446,33 +363,13 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "wind_max_concurrency": 1,
     "wind_request_timeout_seconds": 120,
     "wind_strict_edb_allowlist": False,
-    "wind_pinned_skill_version": "2.0.4",
-    # Methodology scorecards deliberately keep subjective cutoffs in config,
-    # rather than burying them in a skill prompt. They are interpretation aids,
-    # not trading rules: missing inputs must remain unavailable.
-    "methodology_thresholds": {
-        "fundamentals": {
-            "altman_z_distress": 1.8,
-            "altman_z_safe": 3.0,
-            "beneish_m_manipulation": -1.78,
-        },
-        "market": {
-            "health_score_weak": 40.0,
-            "health_score_strong": 70.0,
-        },
-        "sentiment": {
-            "retail_bullish_overextension": 0.90,
-            "retail_bullish_balance": 0.70,
-            "reality_gap_material": 25.0,
-        },
-    },
 })
 
 
 def validate_config(config: dict) -> list[str]:
     """Return a list of configuration problems; [] means the config is usable.
 
-    Structural checks only: provider/model presence, positive round counts,
+    Structural checks only: provider/model presence,
     boolean switches and numeric knobs. Vendor names are validated separately
     by ``dataflows.registry.validate_data_vendors``; model existence is left to
     the LLM client layer.
@@ -490,18 +387,7 @@ def validate_config(config: dict) -> list[str]:
     for key in ("deep_think_llm", "quick_think_llm"):
         if not str(config.get(key, "")).strip():
             problems.append(f"{key} is required")
-    for key in ("max_debate_rounds", "max_risk_discuss_rounds", "max_recur_limit"):
-        try:
-            if int(config.get(key, 0)) < 1:
-                problems.append(f"{key} must be a positive integer")
-        except (TypeError, ValueError):
-            problems.append(f"{key} must be an integer, got {config.get(key)!r}")
-    for key in (
-        "checkpoint_enabled",
-        "halt_on_missing_data",
-        "evidence_gate_enabled",
-        "evidence_stop_on_fail",
-    ):
+    for key in ("halt_on_missing_data", "evidence_search_enabled"):
         if not isinstance(config.get(key), bool):
             problems.append(f"{key} must be a boolean, got {config.get(key)!r}")
     temperature = config.get("temperature")
@@ -511,8 +397,6 @@ def validate_config(config: dict) -> list[str]:
         except (TypeError, ValueError):
             problems.append(f"temperature must be numeric, got {temperature!r}")
     for key in (
-        "max_tool_calls_per_turn",
-        "max_tool_messages_in_context",
         "llm_max_retries",
         "llm_max_tokens",
     ):

@@ -48,9 +48,9 @@ Current behavior belongs to [ARCHITECTURE.md](../../../ARCHITECTURE.md) and
 
 本轮确认的当前边界：
 
-- [native_research.py](../../../tradingagents/graph/native_research.py)：按证据视图运行专项，
+- `native_research.py`（历史路径 `../../../tradingagents/graph/native_research.py`，V9 清理已移除）：按证据视图运行专项，
   固定顺序汇合，一次挑战，有界工具核查，一次综合；无合格事实的专项不派发。
-- [native_model.py](../../../tradingagents/execution/native_model.py)：模型给结构化提议，
+- `native_model.py`（历史路径 `../../../tradingagents/execution/native_model.py`，V9 清理已移除）：模型给结构化提议，
   有剩余时间 timeout、禁用 SDK 重试、durable dispatch 与恢复约束。
 - [native sources](../../../tradingagents/dataflows/native_sources.py) 与
   [native qualification](../../../tradingagents/dataflows/native_qualification.py)：
@@ -192,7 +192,7 @@ OpenAI 兼容接口的官方地址为 `https://api.deepseek.com`；Chat Completi
 
 本地 [provider_kwargs.py](../../../tradingagents/llm_clients/provider_kwargs.py) 已传递
 全局 `deepseek_reasoning_effort`；仓库默认值为 `high`，不代表用户运行时一定没有覆盖。
-[NativeModelCaller](../../../tradingagents/execution/native_model.py) 目前各阶段读取同一
+`NativeModelCaller`（历史路径 `../../../tradingagents/execution/native_model.py`，V9 清理已移除） 目前各阶段读取同一
 配置，只有 synthesis 与其他阶段的模型选择有区别，尚无按角色设置 effort 的机制。
 其提议通过 JSON 解析、schema 及引用校验，而非上述工具式结构化输出封装；不能把
 工具参数兼容问题直接推定为 native 全流程失败。

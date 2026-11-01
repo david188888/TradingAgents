@@ -1,101 +1,113 @@
+"""Local terminal configuration for the current company-research workflow."""
+
+from __future__ import annotations
+
 import json
 import os
+import re
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from zoneinfo import ZoneInfo
 
-from cli.models import AnalystType
-from cli.utils import detect_asset_type, normalize_ticker_symbol
+from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
+from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.execution.models import AnalysisRequest
+from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 
-CLI_CONFIG = {
-    # Announcements
-    "announcements_url": "https://api.tauric.ai/v1/announcements",
-    "announcements_timeout": 1.0,
-    "announcements_fallback": "[cyan]For more information, please visit[/cyan] [link=https://github.com/TauricResearch]https://github.com/TauricResearch[/link]",
+DEFAULT_LOCAL_CONFIG_PATH = Path(__file__).resolve().parents[1] / "tradingagents.local.json"
+
+_LLM_KEYS = {"provider", "quick_think_llm", "deep_think_llm", "backend_url", "chatgpt_account_ref"}
+_RUN_KEYS = {
+    "ticker", "analysis_date", "research_question", "output_language", "evidence_search_enabled",
+    "evidence_timeout_seconds", "evidence_source_vendors", "evidence_source_exclusions",
+    "google_thinking_level", "openai_reasoning_effort", "anthropic_effort", "deepseek_thinking",
+    "deepseek_reasoning_effort", "deepseek_task_efforts", "temperature", "llm_max_tokens",
+    "llm_max_retries", "save_report", "display_report",
 }
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LOCAL_CONFIG_PATH = PROJECT_ROOT / "tradingagents.local.json"
 
-
-def load_cli_config(path: str | Path | None = None) -> dict[str, Any]:
-    """Load optional local JSON config and inject non-empty API keys into env."""
+def load_cli_config(path: str | Path | None = None) -> dict:
+    """Load an optional local file; credential values remain in the process environment."""
     config_path = Path(path) if path else DEFAULT_LOCAL_CONFIG_PATH
     if not config_path.exists():
-        if config_path == DEFAULT_LOCAL_CONFIG_PATH or config_path.name == DEFAULT_LOCAL_CONFIG_PATH.name:
+        if config_path == DEFAULT_LOCAL_CONFIG_PATH:
             return {}
-        raise FileNotFoundError(f"配置文件不存在：{config_path}")
-
-    with config_path.open("r", encoding="utf-8") as f:
-        config = json.load(f)
-    if not isinstance(config, dict):
+        raise ValueError(f"配置文件不存在：{config_path}")
+    value = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
         raise ValueError("配置文件顶层必须是 JSON object。")
+    keys = value.get("api_keys", {})
+    if not isinstance(keys, dict) or any(not isinstance(v, str) for v in keys.values()):
+        raise ValueError("api_keys 必须是环境变量名称到字符串的映射。")
+    for name, secret in keys.items():
+        if secret:
+            os.environ[name] = secret
+    return value
 
-    for env_name, value in (config.get("api_keys") or {}).items():
-        if value:
-            os.environ[str(env_name)] = str(value)
-    return config
 
-
-def build_configured_selections(
-    config: dict[str, Any],
+def build_request(
+    local: dict,
     *,
-    ticker: str,
-    analysis_date: str,
-) -> dict[str, Any]:
-    """Build CLI selections from config plus runtime ticker/date inputs."""
-    llm = config.get("llm") or {}
-    run = config.get("run") or {}
-    provider = str(llm.get("provider") or "mimo").lower()
-    analysts = run.get("analysts") or ["market", "social", "news", "fundamentals"]
-    canonical_ticker = normalize_ticker_symbol(ticker)
+    ticker: str | None = None,
+    analysis_date: str | None = None,
+    provider: str | None = None,
+    quick_model: str | None = None,
+    deep_model: str | None = None,
+    language: str | None = None,
+    focus: str | None = None,
+) -> AnalysisRequest:
+    """Resolve flags over JSON over environment-backed defaults at the CLI boundary."""
+    unknown = local.keys() - {"api_keys", "llm", "run"}
+    if unknown:
+        raise ValueError(f"V9 不支持配置项：{', '.join(sorted(unknown))}")
+    llm, run = local.get("llm", {}), local.get("run", {})
+    if not isinstance(llm, dict) or not isinstance(run, dict):
+        raise ValueError("llm 和 run 必须是 JSON object。")
+    unknown = (llm.keys() - _LLM_KEYS) | (run.keys() - _RUN_KEYS)
+    if unknown:
+        raise ValueError(f"V9 不支持配置项：{', '.join(sorted(unknown))}")
+    symbol = normalize_ticker_symbol(str(ticker or run.get("ticker") or "").strip())
+    from tradingagents.research.native_evidence_policy import is_native_stock_ticker
 
-    selections = {
-        "ticker": canonical_ticker,
-        "asset_type": detect_asset_type(canonical_ticker).value,
-        "analysis_date": analysis_date,
-        "analysts": [_analyst_from_value(value) for value in analysts],
-        "research_depth": int(run.get("research_depth", 1)),
-        "llm_provider": provider,
-        "backend_url": llm.get("backend_url") or _default_backend_url(provider),
-        "shallow_thinker": llm.get("quick_think_llm") or _default_quick_model(provider),
-        "deep_thinker": llm.get("deep_think_llm") or _default_deep_model(provider),
-        "google_thinking_level": run.get("google_thinking_level"),
-        "openai_reasoning_effort": run.get("openai_reasoning_effort"),
-        "anthropic_effort": run.get("anthropic_effort"),
-        "deepseek_thinking": run.get("deepseek_thinking"),
-        "deepseek_reasoning_effort": run.get("deepseek_reasoning_effort"),
-        "output_language": run.get("output_language", "Chinese"),
-        "checkpoint_enabled": bool(run.get("checkpoint_enabled", False)),
-        "save_report": bool(run.get("save_report", True)),
-        "display_report": bool(run.get("display_report", False)),
-        "data_vendors": config.get("data_vendors") or {},
-    }
-    if "deepseek_task_efforts" in run:
-        selections["deepseek_task_efforts"] = run["deepseek_task_efforts"]
-    return selections
+    if not is_native_stock_ticker(symbol):
+        raise ValueError("V9 公司研究仅支持 A 股普通股票，请输入如 002130、600519.SS 的代码。")
+    config = deepcopy(DEFAULT_CONFIG)
+    for key in _RUN_KEYS - {"ticker", "analysis_date", "research_question", "save_report", "display_report"}:
+        if key in run:
+            config[key] = deepcopy(run[key])
+    for key in _LLM_KEYS - {"provider"}:
+        if key in llm:
+            config[key] = llm[key]
+    config["llm_provider"] = str(provider or llm.get("provider") or config["llm_provider"]).lower()
+    if config["llm_provider"] not in {*PROVIDER_API_KEY_ENV, "chatgpt"}:
+        raise ValueError(f"不支持的模型服务：{config['llm_provider']}")
+    if config["llm_provider"] != DEFAULT_CONFIG["llm_provider"]:
+        from tradingagents.llm_clients.model_catalog import get_model_options
 
-
-def _analyst_from_value(value: str) -> AnalystType:
-    try:
-        return AnalystType(str(value).lower())
-    except ValueError as exc:
-        allowed = ", ".join(item.value for item in AnalystType)
-        raise ValueError(f"未知分析师：{value}。可选值：{allowed}") from exc
-
-
-def _default_backend_url(provider: str) -> str | None:
-    if provider == "mimo":
-        return "https://token-plan-sgp.xiaomimimo.com/anthropic"
-    return None
-
-
-def _default_quick_model(provider: str) -> str:
-    if provider == "mimo":
-        return "mimo-v2.5"
-    return "gpt-5.4-mini"
-
-
-def _default_deep_model(provider: str) -> str:
-    if provider == "mimo":
-        return "mimo-v2.5-pro"
-    return "gpt-5.4"
+        for key, flag, mode in (("quick_think_llm", quick_model, "quick"), ("deep_think_llm", deep_model, "deep")):
+            if flag is None and key not in llm:
+                choices = [model for _, model in get_model_options(config["llm_provider"], mode) if model != "custom"]
+                if not choices:
+                    raise ValueError(f"请为 {config['llm_provider']} 显式配置 {key}。")
+                config[key] = choices[0]
+    if quick_model is not None:
+        config["quick_think_llm"] = quick_model
+    if deep_model is not None:
+        config["deep_think_llm"] = deep_model
+    if language is not None:
+        config["output_language"] = language
+    for key in ("quick_think_llm", "deep_think_llm"):
+        if not isinstance(config.get(key), str) or not config[key].strip():
+            raise ValueError(f"{key} 必须填写实际模型 ID。")
+    if config["llm_provider"] == "chatgpt" and not re.fullmatch(r"cg_[0-9a-f]{32}", str(config.get("chatgpt_account_ref", ""))):
+        raise ValueError("请在 llm.chatgpt_account_ref 设置已登录的 ChatGPT 账户引用。")
+    if config["output_language"] not in {"Chinese", "English"}:
+        raise ValueError("output_language 必须是 Chinese 或 English。")
+    config.setdefault("evidence_timeout_seconds", 900)
+    return AnalysisRequest(
+        ticker=symbol,
+        analysis_date=analysis_date or run.get("analysis_date") or datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat(),
+        effective_config=config,
+        research_question=focus if focus is not None else run.get("research_question"),
+    )

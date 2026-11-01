@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_native_publication import setup
+from tests.v9_fixtures import journal_setup as setup
 from tradingagents.execution.insight_model import InsightModelCaller, InsightUnavailable
 from tradingagents.execution.models import AnalysisCancelled
 
@@ -70,6 +70,6 @@ def test_prompt_identity_cannot_change_after_dispatch(tmp_path, monkeypatch):
     monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
     delegate = caller(journal)
     delegate('operating_quality', {'evidence': ['E1']})
-    from tradingagents.runtime.catalyst_checkpoint import CatalystCheckpointConflict
-    with pytest.raises(CatalystCheckpointConflict, match='prompt'):
+    from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
+    with pytest.raises(ResearchCheckpointConflict, match='prompt'):
         delegate('operating_quality', {'evidence': ['E2']})

@@ -61,9 +61,9 @@ function snap(
     ticker: "600519.SS",
     asset_type: "stock",
     analysis_date: "2026-07-21",
-    selected_analysts: ["market"],
-    max_debate_rounds: 1,
-    max_risk_discuss_rounds: 1,
+
+
+
     output_language: "Chinese",
     llm_provider: "deepseek",
     quick_think_llm: "deepseek-chat",
@@ -102,15 +102,14 @@ function runStarted(run_id: string, seq = 1): PersistedEventDTO {
     ticker: "600519.SS",
     asset_type: "stock",
     analysis_date: "2026-07-21",
-    selected_analysts: ["market"],
-    research_depth: 1,
-    max_debate_rounds: 1,
-    max_risk_discuss_rounds: 1,
+
+
+
     output_language: "Chinese",
     llm_provider: "deepseek",
     quick_think_llm: "deepseek-chat",
     deep_think_llm: "deepseek-reasoner",
-    checkpoint_enabled: false,
+
   });
 }
 
