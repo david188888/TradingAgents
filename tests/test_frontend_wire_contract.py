@@ -7,6 +7,7 @@ backend truth, so a backend error-category / terminal-event change
 cannot drift silently on the next iteration.
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -33,6 +34,22 @@ def test_terminal_stream_events_match_backend():
         "] as const;",
     )
     assert frontend == set(TERMINAL_STREAM_EVENTS)
+
+
+def test_api_error_codes_match_backend():
+    tree = ast.parse((REPO / "tradingagents/web/api.py").read_text(encoding="utf-8"))
+    expected = {"http_error"}
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in {"_error_response", "ApiBoundaryError"}
+            and len(node.args) > 1
+            and isinstance(node.args[1], ast.Constant)
+        ):
+            expected.add(node.args[1].value)
+    frontend = _extract_strings(_read("api/contracts.ts"), "export type ApiErrorCode =", ";")
+    assert frontend == expected
 
 
 def test_error_category_labels_match_manager_vocabulary():

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import type { AgentKey, ReaderProcessDTO, ReaderRoleDTO } from "../../api/contracts";
-import { rolesForProfile, type ReducerState } from "../../state/model";
+import { rolesForRun, type ReducerState } from "../../state/model";
 import { AGENT_LABELS, AGENT_PURPOSE, isTerminalRun, outputLabel, STATUS_LABELS } from "../../domain/readerExplanation";
 
 type FlowRole = { key: AgentKey; status: string; meta?: ReaderRoleDTO };
@@ -19,7 +19,7 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, selec
   const activeRun = !terminal && runStatus !== "cancel_requested";
   const roles: FlowRole[] = process ? process.roles.map(r => ({ key: r.role_key,
     status: state?.roles[r.actor_id]?.status ?? r.status, meta: r })) :
-    rolesForProfile("evidence_v1", version, state?.meta.focus_requested).map(r => ({ key: r.node_id as AgentKey,
+    rolesForRun(state?.meta.focus_requested).map(r => ({ key: r.node_id as AgentKey,
       status: state?.roles[r.actor_id]?.status ?? "not_recorded" }));
   if (known && !roles.some(r => r.key === "code_checks")) roles.push({ key: "code_checks", status: "not_recorded" });
   const byKey = new Map(roles.map(r => [r.key, r]));
@@ -66,8 +66,8 @@ export function ResearchFlow({ process, workflowVersion, state, runStatus, selec
                 const { meta, status } = role;
                 const code = key === "code_checks";
                 const label = code ? group.id === "publication" ? "基础研究发布" : "代码条件核查" : AGENT_LABELS[key];
-                const savedStatus = meta ? outputLabel(meta.output_availability, meta.reason_code, runStatus) : "正在读取保存状态";
-                const outputStatus = group.id === "publication" && meta?.output_availability === "stage_available" ? terminal ? "本次未发布最终研究" : "最终研究尚未发布"
+                const savedStatus = meta ? outputLabel(meta.output_availability) : "正在读取保存状态";
+                const outputStatus = group.id === "publication" && meta?.output_availability === "insight_stage_available" ? terminal ? "本次未发布最终研究" : "最终研究尚未发布"
                   : status === "not_reached" ? "后续未执行" : status === "pending" && terminal ? "本环节未执行" : savedStatus;
                 return <article className="rf-node" key={`${group.id}.${key}`} data-role={key}
                   data-status={status} data-active={activeRun && status === "running"} data-selected={selectedRole === key}>

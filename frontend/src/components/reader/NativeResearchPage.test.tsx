@@ -53,7 +53,7 @@ describe("in-progress role review navigation", () => {
   });
 
   it("does not claim a final report exists for a stopped unpublished run", () => {
-    const output: ReaderAgentDTO={schema_version:1,run_id:"run-a",source_sequence:5,role_key:"operating_quality",availability:"pending_publication",
+    const output: ReaderAgentDTO={schema_version:1,run_id:"run-a",source_sequence:5,role_key:"operating_quality",availability:"insight_stage_available",
       reason_code:"publication_pending",origin:"model",input_description:"合格财务事实",insight_record:null};
     vi.mocked(useReaderAgent).mockReturnValue({response:output,error:false,retry:retryAgent});
     render(<NativeResearchPage runId="run-a" ticker="600418.SS" status="failed" state={null} loading={false} error={false}
@@ -62,7 +62,7 @@ describe("in-progress role review navigation", () => {
     expect(screen.getByText("本次未生成可读最终报告。")).toBeVisible();
     fireEvent.click(screen.getByRole("button",{name:"查看经营研究环节与保存产物"}));
     const detail=screen.getByRole("region",{name:"所选环节详情"});
-    expect(detail).toHaveTextContent("提议已保存 · 本次未发布");
+    expect(detail).toHaveTextContent("阶段观点已保存，尚未发布总体判断");
     expect(detail).not.toHaveTextContent("最终报告仍可");
     expect(detail).not.toHaveTextContent("等待发布");
   });

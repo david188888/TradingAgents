@@ -5,7 +5,7 @@ Status: Current — navigation pointer.
 Maintained explanation: [owning reference](research-record.md#search-and-execution-limits).
 Canonical detail or related owner: [source](../../tradingagents/execution/search_budget.py).
 
-The shared research contract owns current V8 search/qualification/review limits. Web credential and search-disable availability are explained in Web operations.
+The shared research contract owns current V9 search/qualification/review limits. Web credential and search-disable availability are explained in Web operations.
 
 <!-- Compatibility anchors for existing section links. -->
 <a id="保存阅读与配置"></a>

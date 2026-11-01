@@ -84,25 +84,6 @@ function makeConfig(): ConfigResponseDTO {
       },
     ],
     configured_keys: { deepseek: true, openai: false },
-    analysts: [
-      { id: "market" },
-      { id: "social" },
-      { id: "news" },
-      { id: "fundamentals" },
-    ],
-    presets: [
-      {
-        id: "full-research",
-        label: "全维度研究",
-        analysts: ["market", "social", "news", "fundamentals"],
-      },
-      {
-        id: "news-first",
-        label: "新闻优先",
-        analysts: ["news", "market"],
-      },
-    ],
-    depths: [1, 3, 5],
     output_languages: ["English", "Chinese"],
     checkpoint_available: true,
     wind: {
@@ -345,36 +326,4 @@ describe("Controls", () => {
     })));
   });
 
-  it("shows a VPN modal when a global ticker is blocked by the yfinance preflight", async () => {
-    const { ApiError } = await import("../../api/client");
-    mockClient.getConfig.mockResolvedValue(makeConfig());
-    mockClient.createRun.mockRejectedValue(
-      new ApiError({
-        code: "yfinance_unreachable",
-        message: "无法连接行情数据源（Yahoo Finance）。请开启 VPN 后重试。",
-        status: 503,
-      }),
-    );
-    render(<Controls />);
-
-    await waitForConfig();
-    fireEvent.change(screen.getByLabelText("股票代码"), {
-      target: { value: "AAPL" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
-
-    // The VPN modal appears (not a plain inline error).
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog).toBeInTheDocument();
-    expect(screen.getByText(/需要开启 VPN/)).toBeInTheDocument();
-    // Backend message and the explanatory hint both mention the VPN.
-    expect(dialog.textContent).toContain("请开启 VPN 后重试");
-    expect(screen.getByText(/A 股无需 VPN/)).toBeInTheDocument();
-
-    // Dismissing via the button closes the modal.
-    fireEvent.click(screen.getByRole("button", { name: "知道了" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
-    );
-  });
 });

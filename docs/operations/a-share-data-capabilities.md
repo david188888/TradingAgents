@@ -2,7 +2,7 @@
 
 Status: Current
 
-This reference distinguishes the maintained native evidence chain from retained classic tools.
+This reference distinguishes the maintained V9 evidence chain from optional source adapters.
 Providers supply material; code determines identity, dates, units, scope, coverage and usability.
 A source failure never proves no event occurred. Source routes are not investment conclusions.
 
@@ -10,7 +10,7 @@ A source failure never proves no event occurred. Source routes are not investmen
 
 [native_sources.py](../../tradingagents/dataflows/native_sources.py),
 [native_valuation.py](../../tradingagents/dataflows/native_valuation.py),
-[minimum_sources.py](../../tradingagents/dataflows/minimum_sources.py) and the V8
+[minimum_sources.py](../../tradingagents/dataflows/minimum_sources.py) and the V9
 [search extension](../../tradingagents/dataflows/search_sources.py) own collection and admission.
 
 | Capability | Dedicated default candidates and boundary |
@@ -68,7 +68,7 @@ from a complete reported cash bridge. Empty disclosed cells stay missing rather 
 
 [coverage.py](../../tradingagents/dataflows/coverage.py) owns source coverage semantics.
 Screening-capable adapters can report a complete zero-result search only with proven pagination and
-scope; unavailable/partial/unknown cannot become “nothing happened”. Classic screening tools use
+scope; unavailable/partial/unknown cannot become “nothing happened”. Supplemental screening tools use
 `CoveredText`/`ScreeningCoverageV1`; other capability types retain their own constraints.
 
 ## Installation and TDX boundary
@@ -83,7 +83,7 @@ The default china extra includes PDF/spreadsheet parsers, AKShare, baostock and 
 mootdx. mootdx 0.11.x's httpx/tenacity constraints conflict with the maintained Web/model stack;
 do not force it in with `--no-deps`. If `pip check` identifies that conflict in an old installation,
 remove the conflicting mootdx SDK and reinstall the supported combination. Keep user data intact.
-Adapter/legacy routing remains; SDK absence/import failure yields typed unavailability, not no data.
+Optional adapter routing remains; SDK absence/import failure yields typed unavailability, not no data.
 TDX package HEAD witnesses in the native calendar do not require the mootdx SDK.
 
 For clean resolution diagnostics use `pip install --dry-run --ignore-installed -e ".[china,web]"`.
@@ -109,8 +109,8 @@ Adding a provider adapter does not automatically admit it into current research.
   bypass it by rotating keys. Logs use fingerprints rather than raw keys.
 
 A-stock-data is a reference used for selected hand-written ports, not a runtime import dependency.
-Historical upstream reviews remain in the [archive](../archive/README.md). Wind is a retained classic
-integration, excluded from native collection; see [compatibility](../integrations/wind.md).
+Historical upstream reviews remain in the [archive](../archive/README.md). Wind is an optional
+integration, excluded from V9 collection; see [integration scope](../integrations/wind.md).
 
 <!-- Compatibility anchors for existing section links. -->
 <a id="a-股补充数据能力"></a>

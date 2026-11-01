@@ -9,19 +9,22 @@ class RoleDefinition:
     team_id: str
     display_name: str
     icon_id: str
-    analyst_key: str | None = None
 
-NATIVE_ROLE_REGISTRY = tuple(
+UNIFIED_ROLE_REGISTRY = tuple(
     RoleDefinition(f"native.{key}", key, "native", label, "verified-magnifier")
-    for key, label in (("evidence", "Evidence freeze"), ("operating_quality", "Operating quality"),
-        ("event_context", "Event context"), ("market_context", "Market context"),
-        ("challenge", "Evidence challenge"), ("synthesis", "Research synthesis"))
+    for key, label in (
+        ("evidence", "Evidence freeze"),
+        ("operating_quality", "Operating quality"),
+        ("event_context", "Event context"),
+        ("market_context", "Market context"),
+        ("challenge", "Evidence challenge"),
+        ("response_operating_quality", "Operating reply"),
+        ("response_event_context", "Event reply"),
+        ("response_market_context", "Market reply"),
+        ("synthesis", "Research synthesis"),
+    )
 )
-UNIFIED_RESPONSE_REGISTRY = tuple(RoleDefinition(f"native.response_{key}", f"response_{key}", "native", label, "verified-magnifier")
-    for key, label in (("operating_quality", "Operating reply"), ("event_context", "Event reply"), ("market_context", "Market reply")))
-UNIFIED_ROLE_REGISTRY = (*NATIVE_ROLE_REGISTRY[:-1], *UNIFIED_RESPONSE_REGISTRY, NATIVE_ROLE_REGISTRY[-1])
 FOCUS_ROLE = RoleDefinition("native.focus_response", "focus_response", "native", "Focus response", "verified-magnifier")
-
 
 
 def roles_for_profile(profile="evidence_v1", *, workflow_version=None, focus_requested=False):

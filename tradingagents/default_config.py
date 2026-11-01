@@ -342,19 +342,10 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "news_fuzzy_dedup_title_threshold": 0.5,
     "news_fuzzy_dedup_time_window_days": 2,
     "news_fuzzy_dedup_min_overlap_bigrams": 5,
-    # A-share sentiment analyst: include the dragon-tiger list (短线资金活跃度)
-    # as an optional sentiment block. Disable for a longer-horizon read where
-    # short-term hot-money signals are noise.
-    # Benchmark for alpha calculation in the reflection layer.
     "credibility_enabled": True,
     "credibility_domain_overrides": {},
     # Cross-source consistency detection
     "consistency_enabled": True,
-    # Identity verification: additional known confusing company names
-    # News advisor (LLM-based coverage gap analysis + targeted search)
-    # Cost-aware news-analysis runtime.  The Layer 0/1/2 contracts are always
-    # available, but model calls are explicit opt-ins: deployments without an
-    # LLM or batch provider keep the ordinary advisor/rule-based behavior.
     # Wind AIFin Market (https://aifinmarket.wind.com.cn) premium data.
     # Enabled by default for this local research workspace. Set
     # wind_enabled=False to disable Wind capabilities without affecting core

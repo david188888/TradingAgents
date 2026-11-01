@@ -56,14 +56,6 @@ CONFIG_ALLOWLIST = frozenset(
         "quick_think_llm",
     }
 )
-STAGE_LABELS = {
-    "analysts": "分析师",
-    "evidence": "证据治理",
-    "research": "研究辩论",
-    "trading": "研究结论",
-    "risk": "风险辩论",
-    "portfolio": "组合审议",
-}
 
 
 class AuditItemNotFound(LookupError):
@@ -320,7 +312,7 @@ def _prompt_config_summaries(
     )
 
 
-def _stage_navigation(events, roles, *, legacy=False, profile="evidence_v1"):
+def _stage_navigation(roles):
     return tuple(AuditStageSummary(stage_id=r.actor_id, label=r.label,
         status=r.status if r.status in {"running", "completed", "failed", "cancelled", "interrupted", "skipped"} else "not_started",
         availability="not_recorded" if r.status == "not_reached" else "ready",
@@ -343,7 +335,7 @@ def _data_quality(snapshot: RunSnapshot) -> str:
     statuses = {str(item.get("status")) for item in snapshot.degraded_data_sources}
     if "unavailable" in statuses or "degraded" in statuses:
         return "limited"
-    return "unknown" if snapshot.mode is None else "healthy"
+    return "healthy"
 
 
 def _build_summary(
@@ -361,8 +353,7 @@ def _build_summary(
     artifact_summaries = _artifact_summaries(artifacts)
     prompts = _prompt_config_summaries(prompt_index, artifacts, label="Prompt snapshot")
     configs = _prompt_config_summaries(config_index, artifacts, label="Effective config")
-    legacy = False
-    stages = _stage_navigation(events, roles, legacy=legacy, profile=profile)
+    stages = _stage_navigation(roles)
     report_count = sum(item.is_report for item in artifact_summaries)
     section_values = (
         ("overview", 1),
@@ -382,8 +373,8 @@ def _build_summary(
         for section_id, count in section_values
     )
     partial = any(section.availability != "ready" for section in sections)
-    availability = "legacy" if legacy else "partial" if partial else "ready"
-    reason_code = "legacy_event_gap" if legacy else "terminal_data_incomplete" if partial else None
+    availability = "partial" if partial else "ready"
+    reason_code = "terminal_data_incomplete" if partial else None
     return AuditSummaryDTO(
         run_id=snapshot.run_id,
         source_sequence=snapshot.latest_sequence,

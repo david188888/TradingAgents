@@ -74,13 +74,7 @@ class RunNotRetryable(RunManagerError):
     pass
 
 
-class ResumeRunConflict(RunManagerError):
-    def __init__(self, message: str, *, fields: tuple[str, ...] = ()):
-        self.fields = fields
-        super().__init__(message)
-
-
-class RunNotResumable(ResumeRunConflict):
+class RunNotResumable(RunManagerError):
     pass
 
 
@@ -338,7 +332,6 @@ class SingleRunManager:
     def recover_startup(self) -> tuple[RunSnapshot, ...]:
         recovered: list[RunSnapshot] = []
         with self._guard:
-            self._assert_idle()
             for summary in self.store.list_runs():
                 if summary.status not in ORPHANED_RUN_STATUSES:
                     continue
@@ -419,10 +412,6 @@ class SingleRunManager:
             active.thread.join(timeout)
         return self.store.read_snapshot(run_id)
 
-    def _assert_idle(self) -> None:
-        """Compatibility no-op: the scheduler accepts multiple queued runs."""
-        return
-
     def _create_run(self, request, *, configured_keys, retry_of=None, batch_id=None,
             batch_ordinal=None, batch_item=None, run_id=None, queued=True):
         from tradingagents.execution.native_runner import WORKFLOW_VERSION
@@ -472,14 +461,6 @@ class SingleRunManager:
             "quick_think_llm": snapshot.quick_think_llm, "deep_think_llm": snapshot.deep_think_llm,
             "research_profile": "evidence_v1", "native_workflow_version": snapshot.metadata["native_workflow_version"],
             "focus_requested": bool(request.research_question)}, status="running"))
-
-    def _drain_locked(self) -> None:
-        """Frozen-test alias for :meth:`RunScheduler.drain`."""
-        self.scheduler.drain()
-
-    def _sync_batch_for_run(self, run_id: str) -> None:
-        """Frozen-test alias for :meth:`RunScheduler.sync_batch_for_run`."""
-        self.scheduler.sync_batch_for_run(run_id)
 
     def _worker(
         self,
@@ -1101,7 +1082,7 @@ def _error_category(error: BaseException | None) -> str:
 def _format_traceback(error: BaseException, *, limit: int = 8000) -> str:
     """Render a truncated traceback string for durable persistence.
 
-    The full traceback can be large (deep LangGraph chains); ``limit`` keeps
+    The full traceback can be large (nested research calls); ``limit`` keeps
     the persisted run.json bounded while preserving the failing frame and the
     immediate caller stack.
     """

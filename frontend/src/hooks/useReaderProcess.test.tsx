@@ -5,8 +5,8 @@ import { getReaderAgent, getReaderProcess } from "../api/client";
 import { useReaderAgent, useReaderProcess } from "./useReaderProcess";
 vi.mock("../api/client", () => ({getReaderAgent:vi.fn(),getReaderProcess:vi.fn(),getReaderFocus:vi.fn()}));
 const unknown = {value:null,completeness:"not_recorded",basis:"not_recorded"} as const;
-function process(run="run-a", seq=10, availability="pending_publication" as "pending_publication" | "available"): ReaderProcessDTO {
- return {schema_version:1,run_id:run,source_sequence:seq,profile:"evidence_v1",workflow_version:"evidence-production-v9",availability:"partial",reason_code:null,question_origin:"user",primary_selection:"not_recorded",counts:{main_budget:unknown,repair_budget:unknown,sdk_main:unknown,sdk_repair:unknown,sdk_total:unknown,data_capability:unknown,data_http:unknown},claim_origins:[],source_failures:[],roles:[{role_key:"operating_quality",actor_id:"native.operating_quality",label:"经营研究",purpose:"核对经营",origin:"model",status:"completed",output_availability:availability,reason_code:null,output_count:null,output_sequence:availability==="available" ? 9:null,main_budget:unknown,sdk_main:unknown,sdk_repair:unknown}]};
+function process(run="run-a", seq=10, availability="not_recorded" as "not_recorded" | "available"): ReaderProcessDTO {
+ return {schema_version:1,run_id:run,source_sequence:seq,profile:"evidence_v1",workflow_version:"evidence-production-v9",availability:"partial",reason_code:null,question_origin:"user",primary_selection:"not_recorded",counts:{main_budget:unknown,repair_budget:unknown,sdk_main:unknown,sdk_repair:unknown,sdk_total:unknown,data_capability:unknown,data_http:unknown},source_failures:[],roles:[{role_key:"operating_quality",actor_id:"native.operating_quality",label:"经营研究",purpose:"核对经营",origin:"model",status:"completed",output_availability:availability,reason_code:null,output_count:null,output_sequence:availability==="available" ? 9:null,main_budget:unknown,sdk_main:unknown,sdk_repair:unknown}]};
 }
 function output(run:string, role:AgentKey, seq:number):ReaderAgentDTO {return {schema_version:1,run_id:run,source_sequence:seq,role_key:role,availability:"available",reason_code:null,origin:"model",input_description:"冻结事实",insight_record:null};}
 function deferred<T>() {let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>{resolve=r;});return {promise,resolve};}
@@ -43,7 +43,7 @@ describe("bounded saved Reader reads",()=>{
   vi.mocked(getReaderAgent).mockImplementation(async(run,role,seq)=>output(run,role,seq));
   const {result,rerender}=renderHook(({p})=>useReaderAgent("run-a","operating_quality",p),{initialProps:{p:process("run-a",1)}});
   await waitFor(()=>expect(getReaderAgent).toHaveBeenCalledTimes(1));
-  const stage=process("run-a",4);stage.roles[0].output_availability="stage_available";stage.roles[0].output_sequence=3;
+  const stage=process("run-a",4);stage.roles[0].output_availability="insight_stage_available";stage.roles[0].output_sequence=3;
   rerender({p:stage});await waitFor(()=>expect(result.current.response?.source_sequence).toBe(4));
   rerender({p:{...stage,source_sequence:8}});expect(getReaderAgent).toHaveBeenCalledTimes(2);
   rerender({p:process("run-a",10,"available")});await waitFor(()=>expect(result.current.response?.source_sequence).toBe(10));

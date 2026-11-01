@@ -23,7 +23,7 @@ _RUN_KEYS = {
     "evidence_timeout_seconds", "evidence_source_vendors", "evidence_source_exclusions",
     "google_thinking_level", "openai_reasoning_effort", "anthropic_effort", "deepseek_thinking",
     "deepseek_reasoning_effort", "deepseek_task_efforts", "temperature", "llm_max_tokens",
-    "llm_max_retries", "save_report", "display_report",
+    "display_report",
 }
 
 
@@ -73,7 +73,7 @@ def build_request(
     if not is_native_stock_ticker(symbol):
         raise ValueError("V9 公司研究仅支持 A 股普通股票，请输入如 002130、600519.SS 的代码。")
     config = deepcopy(DEFAULT_CONFIG)
-    for key in _RUN_KEYS - {"ticker", "analysis_date", "research_question", "save_report", "display_report"}:
+    for key in _RUN_KEYS - {"ticker", "analysis_date", "research_question", "display_report"}:
         if key in run:
             config[key] = deepcopy(run[key])
     for key in _LLM_KEYS - {"provider"}:

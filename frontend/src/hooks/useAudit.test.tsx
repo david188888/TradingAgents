@@ -186,9 +186,9 @@ describe("Audit hooks", () => {
 
 const observed = {value:0, completeness:"complete", basis:"test"} as const;
 const publicProcess = (run: string, sequence = 24): ReaderProcessDTO => ({
-  schema_version:1, run_id:run, source_sequence:sequence, profile:"evidence_v1", workflow_version:"evidence-production-v7",
+  schema_version:1, run_id:run, source_sequence:sequence, profile:"evidence_v1", workflow_version:"evidence-production-v9",
   availability:"partial", reason_code:"publication_pending", question_origin:"default", primary_selection:"not_recorded",
-  counts:{main_budget:observed, repair_budget:observed, sdk_main:observed, sdk_repair:observed, sdk_total:observed, data_capability:observed, data_http:observed}, roles:[], claim_origins:[], source_failures:[],
+  counts:{main_budget:observed, repair_budget:observed, sdk_main:observed, sdk_repair:observed, sdk_total:observed, data_capability:observed, data_http:observed}, roles:[],  source_failures:[],
 });
 
 describe("research audit reads", () => {

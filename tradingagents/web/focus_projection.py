@@ -20,7 +20,7 @@ class ReaderFocusDTO(BaseModel):
     response: None = None
     insight_response: tuple[SavedInsight, ...] | None = None
     reason_code: Literal[
-        "focus_not_requested", "legacy_question_semantics", "unsupported_profile",
+        "focus_not_requested", "unsupported_profile",
         "workflow_unsupported", "publication_pending", "not_published", "publication_failed",
         "corrupt", "base_unavailable",
     ] | None = None

@@ -47,7 +47,6 @@ from .audit_projection import (
 )
 from .broker import EventBroker, Keepalive, SubscriptionClosed
 from .manager import (
-    ResumeRunConflict,
     RunNotActive,
     RunNotResumable,
     RunNotRetryable,
@@ -80,77 +79,6 @@ WIND_CAPABILITIES = (
     "宏观 EDB",
 )
 AZURE_REQUIRED_ENV = ("AZURE_OPENAI_ENDPOINT", "OPENAI_API_VERSION")
-SAFE_RESUME_MISMATCH_FIELDS = frozenset(
-    {
-        "abandoned_task_is_durable",
-        "abandoned_task_missing",
-        "abandoned_tool_already_committed",
-        "analysis_date",
-        "asset_type",
-        "checkpoint_enabled",
-        "checkpoint_event_content_mismatch",
-        "checkpoint_event_frontier_mismatch",
-        "checkpoint_event_frontier_too_far_behind",
-        "checkpoint_event_shape",
-        "checkpoint_frontier_drift",
-        "checkpoint_missing",
-        "checkpoint_not_committed",
-        "checkpoint_shape",
-        "commit_event_without_durable_task",
-        "commit_map_shape",
-        "commit_task_id_mismatch",
-        "commit_token_changed",
-        "commit_token_removed",
-        "commit_token_schema",
-        "commit_token_shape",
-        "deep_think_llm",
-        "duplicate_checkpoint_event",
-        "duplicate_pending_commit",
-        "duplicate_task_candidate",
-        "duplicate_task_started",
-        "durable_task_without_commit_event",
-        "effective_config",
-        "event_frontier_drift",
-        "event_schema_version",
-        "fingerprint_integrity",
-        "fingerprint_missing",
-        "fingerprint_version",
-        "initial_context_hash",
-        "llm_provider",
-        "max_debate_rounds",
-        "max_risk_discuss_rounds",
-        "missing_task_candidate",
-        "observation_frontier",
-        "observation_schema",
-        "output_language",
-        "pending_business_write_without_commit",
-        "pending_commit_shape",
-        "pending_commit_task_id_mismatch",
-        "pending_task_already_committed",
-        "pending_write_shape",
-        "quick_think_llm",
-        "request",
-        "resume_eligibility",
-        "role_tool_route_mismatch",
-        "runtime_environment",
-        "runtime_semantics_hash",
-        "selected_analysts",
-        "task_abandoned_conflict",
-        "task_abandoned_shape",
-        "task_candidate_artifact",
-        "task_candidate_content",
-        "task_candidate_token_mismatch",
-        "task_committed_twice",
-        "task_started_candidate_mismatch",
-        "task_started_shape",
-        "ticker",
-        "tokenless_application_channel_update",
-        "tokenless_business_state_change",
-        "tokenless_pending_business_write",
-        "tool_role_route_mismatch",
-        "unproven_initial_tokenless_checkpoint",
-    }
-)
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors "
@@ -357,15 +285,6 @@ def create_app(
         return _error_response(409, "run_not_resumable", "The run cannot be resumed.")
 
 
-
-    @app.exception_handler(ResumeRunConflict)
-    async def handle_resume_conflict(_request: Request, exc: ResumeRunConflict):
-        return _error_response(
-            409,
-            "resume_conflict",
-            "The stored run is incompatible with the current runtime.",
-            fields=_safe_mismatch_fields(exc.fields),
-        )
 
     @app.get("/api/config")
     def get_config() -> dict[str, Any]:
@@ -968,12 +887,6 @@ def _event_cursor(after: int | None, last_event_id: str | None) -> int:
             fields=("after", "Last-Event-ID"),
         )
     return after if after is not None else header_cursor
-
-
-def _safe_mismatch_fields(fields: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(field for field in fields if field in SAFE_RESUME_MISMATCH_FIELDS)
-    )
 
 
 def _error_response(

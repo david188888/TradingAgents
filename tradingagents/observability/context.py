@@ -22,7 +22,7 @@ class RoleTurnRef:
 
 @dataclass(frozen=True)
 class ObservationContext:
-    """Correlation for one concrete LangGraph task invocation."""
+    """Correlation for one concrete research task invocation."""
 
     run_id: str
     actor_id: str
