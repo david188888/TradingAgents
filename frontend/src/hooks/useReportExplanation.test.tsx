@@ -7,7 +7,7 @@ import { useReportExplanation } from "./useReportExplanation";
 vi.mock("../api/client",()=>({getReportExplanation:vi.fn(),retryReportExplanation:vi.fn()}));
 const view=(run_id:string,state:ReportExplanationDTO["state"]="available"):ReportExplanationDTO=>({
   schema_version:1,run_id,state,base_record_sha256:null,reason_code:null,eligible:true,
-  indicators:{},entries:{},unavailable_targets:{},model:"configured",generated_at:null,
+  entries:{},unavailable_targets:{},model:"configured",generated_at:null,
 });
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();vi.clearAllMocks();});
 

@@ -225,16 +225,16 @@ describe("AuditCenter", () => {
 
   it("explains unpublished failed roles without presenting technical counts or waiting for publication", () => {
     const count = {value:0,completeness:"complete",basis:"test"} as const;
-    const process: ReaderProcessDTO = {schema_version:1,run_id:summary.run_id,source_sequence:24,profile:"evidence_v1",workflow_version:"evidence-production-v7",availability:"partial",reason_code:"publication_pending",question_origin:"default",primary_selection:"not_recorded",counts:{main_budget:count,repair_budget:count,sdk_main:count,sdk_repair:count,sdk_total:count,data_capability:count,data_http:count},claim_origins:[],source_failures:[],roles:[
+    const process: ReaderProcessDTO = {schema_version:1,run_id:summary.run_id,source_sequence:24,profile:"evidence_v1",workflow_version:"evidence-production-v9",availability:"partial",reason_code:"publication_pending",question_origin:"default",primary_selection:"not_recorded",counts:{main_budget:count,repair_budget:count,sdk_main:count,sdk_repair:count,sdk_total:count,data_capability:count,data_http:count},source_failures:[],roles:[
       {role_key:"operating_quality",actor_id:"native.operating_quality",label:"经营研究",origin:"model",purpose:"经营研究",status:"failed",output_availability:"not_recorded",reason_code:"publication_pending",output_count:null,output_sequence:null,main_budget:count,sdk_main:count,sdk_repair:count},
-      {role_key:"event_context",actor_id:"native.event_context",label:"事件研究",origin:"model",purpose:"事件研究",status:"completed",output_availability:"pending_publication",reason_code:"publication_pending",output_count:null,output_sequence:null,main_budget:count,sdk_main:count,sdk_repair:count},
+      {role_key:"event_context",actor_id:"native.event_context",label:"事件研究",origin:"model",purpose:"事件研究",status:"completed",output_availability:"insight_stage_available",reason_code:"publication_pending",output_count:null,output_sequence:null,main_budget:count,sdk_main:count,sdk_repair:count},
     ],model_failures:[{stage:"operating_quality",category:"schema_validation",upstream_status:null,upstream_code:null,request_id:null,safe_message:"研究输出未通过格式与字段校验。",action:"retry_later"}]};
     mockedSummary.mockReturnValue({summary:{...summary,run:{...summary.run,status:"failed"},counts:{...summary.counts,reports:0,artifacts:205}},loading:false,refreshing:false,error:null,refresh});
     mockedResearch.mockReturnValue({process,record:{state:"unavailable",schema_version:1,run_id:summary.run_id,reason_code:"not_published"},loading:false,error:false,retry});
     render(<AuditCenter runId={summary.run_id} open context={{section:"overview"}} returnFocus={null} onClose={vi.fn()} />);
     expect(screen.getByText("本次未发布研究报告")).toBeInTheDocument();
     expect(screen.getByText("研究输出未通过格式与字段校验。")).toBeInTheDocument();
-    expect(screen.getByText("提议已保存 · 本次未发布")).toBeInTheDocument();
+    expect(screen.getByText("阶段观点已保存，尚未发布总体判断")).toBeInTheDocument();
     expect(screen.queryByText(/SDK|预算授权|等待发布|205/)).toBeNull();
   });
 

@@ -209,11 +209,10 @@ def test_focus_runs_after_synthesis_without_changing_baseline(tmp_path):
 def test_optional_explanation_targets_use_only_saved_insights(tmp_path):
     from tradingagents.research.report_explanation import (
         explanation_targets,
-        indicator_presentations,
     )
     _, journal, _ = setup(tmp_path)
     report = execute(journal, response)
-    targets, excluded = explanation_targets(report, indicator_presentations(report), batched=True)
+    targets, excluded = explanation_targets(report, batched=True)
     key = 'insight:' + report.insights[0].insight_id
     assert report.insights[0].rendered.reasoning in targets[key]['text']
     assert set(targets[key]['references']) == set(report.insights[0].source_ids)

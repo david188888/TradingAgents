@@ -81,7 +81,6 @@ function statusLabel(value: string): string {
     unknown: "未记录",
     ready: "可用",
     partial: "部分可用",
-    legacy: "历史运行",
     unavailable: "不可用",
     not_recorded: "未记录",
     degraded: "已降级",
@@ -360,7 +359,7 @@ function AuditSection({
         >
           <span className="audit-card-index">RUN / {summary.run.status.toUpperCase()}</span>
           <strong>{summary.run.ticker}</strong>
-          <span>{summary.run.mode ?? "legacy"} · 公司研究</span>
+          <span>{summary.run.mode} · 公司研究</span>
         </button>
         <div className="audit-count-grid">
           <Count label="角色" value={summary.counts.roles} />

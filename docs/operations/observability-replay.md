@@ -8,7 +8,7 @@ The journal freezes the V9 request/configuration and tracks reservations, dispat
 
 Persisted diagnostics distinguish source gaps, provider/model failures, cancellation, timeout and publication failure. Provider error text and credential-bearing URLs must not become public diagnostics. Use the Web research audit and saved per-agent results to inspect qualified facts, source passages, numeric lineage and model usage. Counts describe observed events and authorized attempts, not guaranteed provider billing or semantic research quality.
 
-A valid public report requires a frozen candidate, committed authorization barrier and matching report identity. Stage output may be readable before final publication and must remain visibly provisional. Reader/audit GETs never trigger provider calls. Explanation generation and retry are explicit jobs separate from baseline execution.
+A valid public report requires a frozen candidate, committed authorization barrier and matching report identity. Stage output may be readable before final publication and must remain visibly provisional. Reader/audit GETs never trigger provider calls. Web schedules an independent explanation job after completion; explicit retry remains separate from baseline execution.
 
 Use [the current contract](../contracts/research-record.md) for evidence and publication guarantees, [CLI operations](cli-research.md) for terminal resume, and [Web operations](evidence-research.md) for interactive recovery. Historical benchmark, hypothesis and envelope tools belonged to retired workflows and are no longer maintained entrypoints.
 

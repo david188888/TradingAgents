@@ -10,7 +10,6 @@ from tradingagents.agents.schemas._report_explanation import (
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
 from tradingagents.research.report_explanation import (
     explanation_targets,
-    indicator_presentations,
     validate_explanation_entry,
 )
 from tradingagents.runtime.report_explanation import read_explanation_job
@@ -22,7 +21,7 @@ def load_explanation_record(store, run_id):
     projected = project_research_record(store, run_id)
     if projected["state"] != "insight_ready":
         raise ValueError("base_unavailable")
-    return parse_insight_report(projected["record"]), None
+    return parse_insight_report(projected["record"])
 
 
 
@@ -32,12 +31,12 @@ def project_report_explanation(store, run_id, *, service=None):
                 and snapshot.metadata.get("report_explanation_policy") == EXPLANATION_POLICY)
     view = {"run_id": run_id, "state": "not_generated", "eligible": eligible}
     try:
-        record, focus = load_explanation_record(store, run_id)
+        record = load_explanation_record(store, run_id)
     except ValueError:
         return ReportExplanationView(**{**view, "state": "unsupported", "eligible": False,
                                        "reason_code": "base_unavailable"}).model_dump(mode="json")
     digest = canonical_sha256(record)
-    view.update(base_record_sha256=digest, indicators=indicator_presentations(record))
+    view.update(base_record_sha256=digest)
     if record.construction != "native":
         view.update(state="unsupported", eligible=False, reason_code="historical_workflow")
     try:
@@ -46,8 +45,8 @@ def project_report_explanation(store, run_id, *, service=None):
             return ReportExplanationView(**view).model_dump(mode="json")
         if not eligible or record.construction != "native":
             raise ValueError("explanation_policy_mismatch")
-        targets, excluded = explanation_targets(record, view["indicators"], focus, batched=job.batch_policy is not None)
-        if (job.base_record_sha256 != digest or job.focus_sha256 != (canonical_sha256(focus) if focus else None)
+        targets, excluded = explanation_targets(record, batched=job.batch_policy is not None)
+        if (job.base_record_sha256 != digest or job.focus_sha256 is not None
                 or job.targets_sha256 != canonical_sha256(targets)
                 or job.target_hashes != {k: t["text_sha256"] for k, t in targets.items()}
                 or job.config_sha256 != canonical_sha256(snapshot.metadata.get("effective_config"))

@@ -7,9 +7,9 @@ import { ResearchFlow } from "./ResearchFlow";
 import { createInitialState } from "../../state/runReducer";
 
 const count = {value:0,completeness:"complete",basis:"sdk_dispatch_authorization"} as const;
-function role(key: AgentKey, status="completed", availability: ReaderRoleDTO["output_availability"]="pending_publication"): ReaderRoleDTO {
+function role(key: AgentKey, status="completed", availability: ReaderRoleDTO["output_availability"]="insight_stage_available"): ReaderRoleDTO {
   return {role_key:key,actor_id:`native.${key}`,label:AGENT_LABELS[key],origin:key === "code_checks" || key === "evidence" ? "code":"model",
-    purpose:"给定事实范围",status,output_availability:availability,reason_code:availability === "pending_publication" ? "publication_pending":null,
+    purpose:"给定事实范围",status,output_availability:availability,reason_code:null,
     output_count:null,output_sequence:null,main_budget:count,sdk_main:count,sdk_repair:count};
 }
 function process(version="evidence-production-v9"): ReaderProcessDTO {
@@ -19,7 +19,7 @@ function process(version="evidence-production-v9"): ReaderProcessDTO {
     roles:[role("evidence"),role("operating_quality"),role("event_context"),role("market_context"),role("challenge","not_reached","not_recorded"),
       role("code_checks","not_applicable","not_recorded"),role("response_operating_quality","skipped","not_applicable"),
       role("response_event_context","skipped","not_applicable"),role("response_market_context","skipped","not_applicable"),role("synthesis","not_reached","not_recorded")],
-    claim_origins:[],source_failures:[]};
+    source_failures:[]};
 }
 function Harness({value=process(),status="failed"}:{value?:ReaderProcessDTO;status?:string}) {
   const [selected,setSelected] = useState<AgentKey|null>(null);
@@ -33,7 +33,7 @@ describe("truthful dependency flow",()=>{
   it("shows qualified stage counts without presenting code checks as final publication",()=>{
     const value=process();
     for (const item of value.roles) if (item.role_key === "evidence" || item.role_key === "code_checks") {
-      item.output_availability="stage_available";item.reason_code="stage_qualified";
+      item.output_availability="insight_stage_available";item.reason_code=null;
     }
     value.roles[0].output_count=132;
     render(<Harness value={value} status="running"/>);
@@ -46,7 +46,7 @@ describe("truthful dependency flow",()=>{
     const {container}=render(<Harness/>);
     const operating=within(screen.getByRole("group",{name:"独立专项分工"})).getByRole("heading",{name:"经营研究"}).closest("article")!;
     expect(operating).toHaveTextContent("已完成");
-    expect(operating).toHaveTextContent("提议已保存 · 本次未发布");
+    expect(operating).toHaveTextContent("阶段观点已保存，尚未发布总体判断");
     expect(operating).not.toHaveTextContent("3 条假设");
     expect(screen.getAllByText("后续未执行")).toHaveLength(2);
     expect(container.querySelector('[data-status="failed"]')).toBeNull();

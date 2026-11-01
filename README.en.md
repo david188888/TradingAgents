@@ -4,7 +4,7 @@
 
 A local multi-agent research workbench for China A-shares, derived from [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents). It turns company profiles, disclosures, financials and prices into reviewable research records, helping researchers identify **key evidence, the main doubts and what to verify next**.
 
-New studies use one company investment research workflow, combining operations, current valuation, events and market risk into a stance, reasons, counterevidence and change conditions. Batch company research is supported; historical catalyst and holding records remain readable and resumable. The Web workbench is the maintained entry. It does not generate orders or target positions, or provide investment advice.
+New studies use one company investment research workflow, combining operations, current valuation, events and market risk into a stance, reasons, counterevidence and change conditions. Web supports batch company research; CLI and Web share the V9 Insight runner. The system does not generate orders or target positions, or provide investment advice.
 
 [![Watch the 24-second TradingAgents demo](https://david188888.github.io/images/tradingagents-demo-poster-20261008.jpg)](https://david188888.github.io/videos/tradingagents-demo-20261008.mp4)
 
@@ -19,7 +19,7 @@ New studies use one company investment research workflow, combining operations, 
 - **Traceable research reading**: inspect qualified saved stage outputs, facts and sources while research is running, with stage proposals clearly separated from final conclusions. Reader and Markdown share the same saved record; reading does not fetch data or invoke models.
 - **Company report delivery**: preserve basic facts and valid Insights independently. Repair invalid items once without discarding valid siblings. Invalid synthesis support suppresses the overall rating; missing a prescribed valuation anchor no longer overrides the synthesis Agent, and gaps remain explicit.
 - **Verifiable numeric fragments**: code calculates and renders values with subject, units, period and provenance. Unbound quantities cannot pass admission; valid references and arithmetic do not prove economic reasoning. See the [research contract](docs/contracts/research-record.md#insight-first-v9).
-- **Plain-language reading**: new reports can generate separately saved explanations; missing explanations retain original text. Explanation coverage is not a research acceptance gate. Historical reports retain their existing indicator reading aids. See the [reading boundaries](docs/contracts/report-explanation.md).
+- **Plain-language reading**: Web generates and saves independent explanations after report completion; missing explanations retain original text. Explanation coverage is not a research acceptance gate, and reading itself does not trigger generation. See the [reading boundaries](docs/contracts/report-explanation.md).
 
 ## Overall architecture and Agent design
 
@@ -67,10 +67,19 @@ Fresh ChatGPT studies support explicit reasoning-effort configuration while hist
 
 Web binds only to `127.0.0.1`, includes its frontend and needs no Node.js at runtime. Run records live under `~/.tradingagents/`. Keep credentials in ignored local configuration. Data entitlements and configuration are described in [.env.example](.env.example) and [Web operations](docs/operations/evidence-research.md).
 
+## Terminal research
+
+```bash
+tradingagents analyze --ticker 002130 --show
+tradingagents analyze --resume RUN_ID
+```
+
+The terminal uses the same V9 runner as Web, with a separately owned store at `~/.tradingagents/cli/runs/`. Use `--config` for local JSON, `--focus` for a follow-up question, and `--output report.md` for Markdown export. V9 always saves durable progress; debate-round and transaction-stage choices are removed. See [CLI operations](docs/operations/cli-research.md).
+
 ## Current limitations
 
 - **Limited coverage**: public sources may be missing, rate-limited or unable to establish historical availability. Some historical valuation capabilities require Tushare credentials and entitlements. The trading calendar prioritizes the official SZSE month grid with index-date/TDX witnesses; Tushare is the last fallback.
-- **Research quality needs evaluation**: completed runs may remain `partial / LOW_CONFIDENCE`. Passing evidence checks does not establish economic causes or fair value, and improved predictive accuracy has not been demonstrated.
+- **Research quality needs evaluation**: completed runs may remain partial or unrated. Passing evidence checks does not establish economic causes or fair value, and improved predictive accuracy has not been demonstrated.
 - **Current scope**: CLI and Web share V9 Insight A-share company research. Classic, catalyst and V1–V8 execution, reading and recovery are retired. Existing user data stays on disk without automatic conversion.
 
 ## Explore further
@@ -88,12 +97,3 @@ Coding Agents should start with [AGENTS.md](AGENTS.md). Code, contracts and curr
 ## Acknowledgments and license
 
 Thanks to [TauricResearch](https://github.com/TauricResearch/TradingAgents) for the multi-agent foundation, [Simon Lin](https://github.com/simonlin1212/a-stock-data) for the A-share data reference, and the data-service and open-source maintainers. This fork develops the evidence research and local workbench design described above on that foundation. See [LICENSE](LICENSE).
-
-## Terminal research
-
-```bash
-tradingagents analyze --ticker 002130 --show
-tradingagents analyze --resume RUN_ID
-```
-
-The terminal uses the same V9 runner as Web, with a separately owned store at `~/.tradingagents/cli/runs/`. Use `--config` for local JSON, `--focus` for a follow-up question, and `--output report.md` for Markdown export. V9 always saves durable progress; debate-round and transaction-stage choices are removed. See [CLI operations](docs/operations/cli-research.md).

@@ -6,7 +6,7 @@ import hashlib
 import json
 import time
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -345,59 +345,6 @@ def direct_data_scope(invocation_path: str) -> Iterator[None]:
         return
     with observer.direct_call_scope(invocation_path):
         yield
-
-
-def capture_direct_call(
-    *,
-    invocation_path: str,
-    method: str,
-    vendor: str,
-    function: Callable[..., Any],
-    args: tuple[Any, ...] = (),
-    kwargs: Mapping[str, Any] | None = None,
-    normalize: Callable[[Any], Any] | None = None,
-) -> Any:
-    result, _origin = capture_direct_call_with_origin(
-        invocation_path=invocation_path,
-        method=method,
-        vendor=vendor,
-        function=function,
-        args=args,
-        kwargs=kwargs,
-        normalize=normalize,
-    )
-    return result
-
-
-def capture_direct_call_with_origin(
-    *,
-    invocation_path: str,
-    method: str,
-    vendor: str,
-    function: Callable[..., Any],
-    args: tuple[Any, ...] = (),
-    kwargs: Mapping[str, Any] | None = None,
-    normalize: Callable[[Any], Any] | None = None,
-) -> tuple[Any, CacheOrigin | None]:
-    """Run a direct provider call and return its durable artifact lineage.
-
-    ``capture_direct_call`` remains the compatibility wrapper for existing
-    callers.  Consumers that turn a provider response into durable domain
-    records (such as the Evidence Steward) can retain the source artifacts.
-    """
-    call_kwargs = dict(kwargs or {})
-    with direct_data_scope(invocation_path):
-        request = begin_data_request(method, args, call_kwargs)
-        attempt = request.start_attempt(vendor, fallback_chain=(vendor,))
-        try:
-            with request.attempt_scope(attempt):
-                result = function(*args, **call_kwargs)
-        except Exception as exc:
-            request.fail(attempt, exc)
-            raise
-        request.succeed(attempt, result)
-        origin = request.complete(normalize(result) if normalize is not None else result)
-        return result, origin
 
 
 def current_provenance_observer() -> Any | None:

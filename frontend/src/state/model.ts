@@ -1,6 +1,6 @@
 /**
  * F2 — normalized reducer State types for a single TradingAgents run, plus the
- * 13-role registry. DESIGN ONLY: types + the registry array, no reducer logic.
+ * V9 role registry. DESIGN ONLY: types + the registry array, no reducer logic.
  *
  * Field names are snake_case-matched to the backend wire format; the reducer
  * must not rename keys when projecting events into this state.
@@ -201,7 +201,7 @@ export interface RunMeta {
   final_signal?: string | null;
   final_report_artifact_id?: string | null;
   completed_at?: string | null;
-  /** Present on new snapshots; optional only to keep legacy test/history data readable. */
+  /** Canonical report locator when a V9 report has been published. */
   degraded_data_sources?: DegradedSourceSummaryDTO[];
   summary?: string | null;
   error_category?: string | null;
@@ -275,7 +275,7 @@ export interface ReducerState {
 }
 
 // ---------------------------------------------------------------------------
-// 13-role registry — mirrors tradingagents/observability/roles.py exactly.
+// V9 role registry — mirrors tradingagents/observability/roles.py exactly.
 // icon_id values are opaque string ids; G1 wires them to SVG path bundles.
 // ---------------------------------------------------------------------------
 
@@ -285,27 +285,22 @@ export interface RoleDefinition {
   team_id: string;
   display_name: string;
   icon_id: string;
-  analyst_key: string | null;
 }
 
-/** Mirrors the independent native registry in observability/roles.py. */
-export const NATIVE_ROLE_REGISTRY: readonly RoleDefinition[] = [
+/** Mirrors the V9 execution order in observability/roles.py. */
+const ROLE_REGISTRY: readonly RoleDefinition[] = [
   ["evidence", "Evidence freeze"],
   ["operating_quality", "Operating quality"],
   ["event_context", "Event context"],
   ["market_context", "Market context"],
-  ["challenge", "Independent challenge"],
-  ["synthesis", "Synthesis"],
-].map(([key, label]) => ({ actor_id: `native.${key}`, node_id: key, team_id: "native", display_name: label, icon_id: "verified-magnifier", analyst_key: null }));
+  ["challenge", "Evidence challenge"],
+  ["response_operating_quality", "Operating reply"],
+  ["response_event_context", "Event reply"],
+  ["response_market_context", "Market reply"],
+  ["synthesis", "Research synthesis"],
+].map(([key, label]) => ({ actor_id: `native.${key}`, node_id: key, team_id: "native", display_name: label, icon_id: "verified-magnifier" }));
+const FOCUS_ROLE: RoleDefinition = {actor_id:"native.focus_response",node_id:"focus_response",team_id:"native",display_name:"Focus response",icon_id:"verified-magnifier"};
 
-export const FOCUS_ROLE: RoleDefinition = {actor_id:"native.focus_response",node_id:"focus_response",team_id:"native",display_name:"Focus response",icon_id:"verified-magnifier",analyst_key:null};
-
-export const UNIFIED_ROLE_REGISTRY: readonly RoleDefinition[] = [
-  ...NATIVE_ROLE_REGISTRY.slice(0,-1),
-  ...["operating_quality", "event_context", "market_context"].map(role => ({actor_id:`native.response_${role}`,node_id:`response_${role}`,team_id:"native",display_name:`${role} response`,icon_id:"verified-magnifier",analyst_key:null})),
-  NATIVE_ROLE_REGISTRY[NATIVE_ROLE_REGISTRY.length-1],
-];
-export function rolesForProfile(_profile?: ResearchProfile, _version?: string, focusRequested=false): readonly RoleDefinition[] {
-  return focusRequested ? [...UNIFIED_ROLE_REGISTRY, FOCUS_ROLE] : UNIFIED_ROLE_REGISTRY;
+export function rolesForRun(focusRequested=false): readonly RoleDefinition[] {
+  return focusRequested ? [...ROLE_REGISTRY, FOCUS_ROLE] : ROLE_REGISTRY;
 }
-export const ROLE_REGISTRY = UNIFIED_ROLE_REGISTRY;

@@ -17,18 +17,6 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
 
 
-class IndicatorExplanation(_Model):
-    label: str
-    value: str | None = None
-    definition: str
-    interpretation: str = ""
-    caution: str = ""
-    professional: str
-    scope: str = ""
-    raw_value: str | None = None
-    raw_unit: str | None = None
-
-
 class ExplanationEntry(_Model):
     target: str = Field(min_length=1, max_length=600)
     explanation: str = Field(min_length=1, max_length=240)
@@ -117,7 +105,6 @@ class ReportExplanationView(_Model):
                    "interrupted", "unsupported", "corrupt"]
     reason_code: str | None = None
     eligible: bool = False
-    indicators: dict[str, IndicatorExplanation] = Field(default_factory=dict)
     entries: dict[str, ExplanationEntry] = Field(default_factory=dict)
     unavailable_targets: dict[str, str] = Field(default_factory=dict)
     model: str | None = None

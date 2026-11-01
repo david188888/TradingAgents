@@ -292,8 +292,7 @@ class BudgetLedger:
         # a KeyError.
         self._limits = dict(DEFAULT_LIMITS)
         self._limits.update(limits or {})
-        # New aggregate pools must preserve explicitly configured legacy
-        # ceilings. V8 supplies its own separate base-model and HTTP totals.
+        # Derive aggregate ceilings from caller overrides when they are omitted.
         if limits and BudgetBucket.BASIC_MODEL_ATTEMPTS not in limits:
             self._limits[BudgetBucket.BASIC_MODEL_ATTEMPTS] = self._limits[BudgetBucket.MODEL_ATTEMPTS]
         if limits and BudgetBucket.ALL_HTTP_ATTEMPTS not in limits:

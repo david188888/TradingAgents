@@ -13,10 +13,10 @@ Read only what your task needs:
 
 ## Optional references
 
-- [Research contract](contracts/research-record.md): evidence/numeric boundaries, V8 search budgets, publication and Reader; [canonical source map](contracts/README.md).
+- [Research contract](contracts/research-record.md): evidence/numeric boundaries, V9 search budgets, publication and Reader; [canonical source map](contracts/README.md).
 - [Data capabilities](operations/a-share-data-capabilities.md): native source routing, qualification and supplemental-source limits.
 - [ChatGPT accounts](operations/chatgpt-subscription.md): sign-in, catalog, failure handling and credential ownership.
-- [Observability and replay](operations/observability-replay.md): safe diagnostics, event recovery and offline measurement tools.
+- [Observability and replay](operations/observability-replay.md): safe diagnostics, event recovery and saved-run replay.
 - [CLI research](operations/cli-research.md): terminal configuration, saved progress, report export and V9 resume.
 
 Coding Agents use [AGENTS.md](../AGENTS.md) and its scoped guides. Machine contracts live in code;

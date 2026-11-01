@@ -64,14 +64,6 @@ function makeConfig(): ConfigResponseDTO {
       },
     ],
     configured_keys: { deepseek: true, openai: false },
-    analysts: [
-      { id: "market" },
-      { id: "social" },
-      { id: "news" },
-      { id: "fundamentals" },
-    ],
-    presets: [],
-    depths: [1, 3, 5],
     output_languages: ["English", "Chinese"],
     checkpoint_available: false,
     defaults: {

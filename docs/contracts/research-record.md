@@ -32,7 +32,7 @@ A frozen candidate, lifecycle authorization and committed journal barrier must p
 
 ## Reader, focus and explanations
 
-The baseline excludes the optional user focus. A focus response follows saved synthesis, cannot rewrite it, and uses existing evidence/budget. Optional plain-language explanations run as explicit bounded post-publication jobs, preserve accepted entries between batches, and cannot change baseline ratings, numbers or references. GET reads saved artifacts; generation/retry is a separate POST.
+The baseline excludes the optional user focus. A focus response follows saved synthesis, cannot rewrite it, and uses existing evidence/budget. Web schedules a bounded plain-language explanation job after completion, independently of research acceptance. Explanations cover saved baseline and focus Insights and cannot change baseline ratings, numbers or references. GET reads saved artifacts; POST explicitly starts or retries an eligible job. Default jobs and saved V9 batched jobs have different limits; see [Web reading operations](../operations/evidence-research.md#read-a-result). Batched retry preserves accepted entries and the original request/deadline limits. [Explanation execution](../../tradingagents/execution/report_explanation.py) and [its schemas](../../tradingagents/agents/schemas/_report_explanation.py) own these policies; unsupported older workflows do not gain explanation support.
 
 Completed, readable, evidence-complete and research-quality are separate claims. Empty output or a successful parser is not evidence of completed analysis. Real-model and human-reader acceptance remain separate from offline regression.
 

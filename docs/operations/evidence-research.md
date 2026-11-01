@@ -64,8 +64,9 @@ research acceptance. See the [output contract](../contracts/research-record.md) 
 
 New studies assess company investment attractiveness through operations, valuation, events and market
 risk. They use `evidence_v1` / V9 and publish an independent Insight record. There are no native analyst,
-debate-depth, preset or horizon selectors. Earlier catalyst/holding scopes are read/resume only;
-new old-mode requests return 422, and retired profiles return 410.
+debate-depth, preset or horizon selectors. Requests containing retired profiles, modes or scheduling
+fields return 422. Reading, retrying or resuming an unsupported saved workflow returns 409
+`unsupported_research_version`; its files remain untouched.
 
 API clients use `POST /api/runs`; [RunCreateRequest](../../tradingagents/web/schemas.py) is the request
 source. Omit `analysis_date` for current research. Explicit dates remain accepted for compatible API
@@ -107,10 +108,9 @@ Missing bars are not automatically holidays. See [source rules](a-share-data-cap
 | --- | --- |
 | Running stage output | A qualified saved proposal; it may be revised and is not a final report. |
 | `completed` | Execution/publication finished; it does not prove complete evidence or correct judgement. |
-| Reader `insight_ready` / historical `ready` | The versioned saved report is readable. |
+| Reader `insight_ready` | The saved V9 Insight report is readable. |
 | Insight `pending` / `excluded` | Unsupported, withdrawn or superseded work remains visible but cannot support the overall judgement. |
 | No overall rating | Overall synthesis was unavailable or its references/quantities failed checks; valid independent Insights remain. |
-| Historical `specialist_summary` / `basic_report` | Synthesis was unusable; saved specialist findings or basics remain, explicitly without a fabricated overall decision. |
 
 Start with stance and its limits, then supporting/opposing reasons and change conditions. Use the
 bound evidence panel to check source text, dates and units. Process/Agent views explain contributions;
@@ -118,12 +118,17 @@ the full record retains detail omitted from the first screen. A passed arithmeti
 specific question, not the entire hypothesis or an economic cause.
 
 Native Reader, evidence expansion and Markdown use saved content, without new research calls.
-The optional focus is separate. Insight plain-language explanations run independently after completion and are not an acceptance gate;
-a failed explanation leaves professional text available and requires explicit retry. Historical `evidence-packets-v1` jobs retain
-all eligible targets, process up to 16 per batch, and retry only missing items once per batch. Their legacy Reader
-shows explained, pending and original-text-only counts. A job stops at 24 requests or five minutes;
-retry retains its original deadline and request history. Historical reading
-does not generate a new explanation. Technical diagnostics are for execution failures, not a quality score.
+The optional focus is separate. Web automatically schedules an independent plain-language explanation
+job after report completion; explanation coverage is not an acceptance gate. A failed explanation leaves
+professional text available. GET reads saved explanations; POST to the explanation endpoint explicitly
+starts or retries an eligible job without changing the baseline report.
+
+Default V9 explanation jobs select at most 32 Insight targets within a 32,000-character target budget
+and run for up to 120 seconds, with one repair opportunity. Existing V9 runs marked
+`evidence-packets-v1` use the batched policy: up to 16 targets per batch, 24 requests and five minutes
+overall, with one missing-item repair per batch. Batched retry retains its original deadline, request
+history and accepted entries; it does not reset exhausted limits. Earlier workflow records are unsupported.
+Technical diagnostics are for execution failures, not a quality score.
 
 ## Budget, cancellation and recovery
 
@@ -135,7 +140,7 @@ Missing usage remains unknown; authorization counts are not confirmed charges.
 
 - Interrupted runs may resume the same ID using their saved request, versions, inputs and budgets.
 - Failed/cancelled runs need a new study or an allowed retry; retry creates a new run rather than
-  rewriting the old report. Old modes cannot be retried as newly created old-mode studies.
+  rewriting the old report. Only supported V9 runs are eligible for retry or resume.
 - A dispatched request without a saved outcome remains spent and is not automatically repeated.
 - Cancellation before publication authorization prevents publication; after authorization, a late
   cancellation is rejected so the committed candidate can finish publication.

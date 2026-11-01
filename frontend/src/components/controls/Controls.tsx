@@ -1,22 +1,11 @@
 import { ModelConfiguration } from "./ModelConfiguration";
-/**
- * F3 - Left sidebar controls for the TradingAgents workbench.
- *
- * Pure renderer of useConfig() selection state + useWorkbenchStore() run state.
- * Owns no selection state itself; every input dispatches back into the hook.
- * Visual classes reference the V2 workbench stylesheet (.eyebrow, .section-title,
- * .input-group, .grid-2, .analysts, .check, .key-status, .ok, .primary,
- * .primary.running) where they exist.
- */
+/** V9 research controls; selection and run state live in their existing hooks. */
 import { useState } from "react";
 import { BatchControls } from "./BatchControls";
 import { requestCompletionNotificationPermission } from "../../hooks/useCompletionNotifications";
 import { useConfig } from "../../hooks/useConfig";
 import { useWorkbenchSelection, useWorkbenchStream } from "../../state/WorkbenchStore";
-import { ApiError, createRun, cancelRun } from "../../api/client";
-
-/** Backend preflight code when a global ticker cannot reach Yahoo Finance. */
-const VPN_BLOCKED_CODE = "yfinance_unreachable";
+import { createRun, cancelRun } from "../../api/client";
 
 export interface ControlsProps {
   /** Called after a new run is successfully created so the history list refreshes. */
@@ -28,7 +17,6 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
   const stream = useWorkbenchStream();
   const { run_id, selectRun } = useWorkbenchSelection();
   const [apiError, setApiError] = useState<string | null>(null);
-  const [vpnMessage, setVpnMessage] = useState<string | null>(null);
   const [starting, setStarting] = useState<boolean>(false);
   const [analysisMode, setAnalysisMode] = useState<"single" | "batch">("single");
 
@@ -41,7 +29,6 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
     const req = cfg.buildRequest();
     if (req === null) return;
     setApiError(null);
-    setVpnMessage(null);
     setStarting(true);
     void requestCompletionNotificationPermission();
     createRun(req)
@@ -50,13 +37,7 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         refreshHistory?.();
       })
       .catch((e: unknown) => {
-        if (e instanceof ApiError && e.code === VPN_BLOCKED_CODE) {
-          // The backend blocked a global (yfinance) ticker because Yahoo is
-          // unreachable — prompt the user to enable the VPN (modal, not inline).
-          setVpnMessage(e.message);
-        } else {
-          setApiError(e instanceof Error ? e.message : String(e));
-        }
+        setApiError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
         setStarting(false);
@@ -153,37 +134,6 @@ export function Controls({ refreshHistory }: ControlsProps = {}): JSX.Element {
         )}
       </div>
 
-      {vpnMessage !== null && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={() => setVpnMessage(null)}
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="vpn-modal-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 id="vpn-modal-title">需要开启 VPN</h3>
-            <p>{vpnMessage}</p>
-            <p className="modal-hint">
-              美股 / 港股等海外标的通过 Yahoo Finance 获取数据。请开启 VPN
-              后重试；A 股无需 VPN。
-            </p>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="primary"
-                onClick={() => setVpnMessage(null)}
-              >
-                知道了
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       </div>
     </>
   );

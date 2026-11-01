@@ -43,7 +43,7 @@ export function AuditResearchOverview({ summary, process, response, loading, err
     </section>
     <section className="audit-research-stages">
       <h4>各环节留下了什么</h4>
-      {process?.roles.length ? process.roles.map(role => <article key={role.role_key}><strong>{AGENT_LABELS[role.role_key]}</strong><span>{STATUS_LABELS[role.status] ?? "状态未记录"}</span><p>{role.status === "not_reached" ? "后续未执行" : outputLabel(role.output_availability, role.reason_code, summary.run.status)}</p></article>) : <p>此运行没有可核验的研究环节记录。</p>}
+      {process?.roles.length ? process.roles.map(role => <article key={role.role_key}><strong>{AGENT_LABELS[role.role_key]}</strong><span>{STATUS_LABELS[role.status] ?? "状态未记录"}</span><p>{role.status === "not_reached" ? "后续未执行" : outputLabel(role.output_availability)}</p></article>) : <p>此运行没有可核验的研究环节记录。</p>}
       <p>回顾可用的研究正文和依据，请回到主面板中的“研究如何推进”。</p>
     </section>
   </div>;

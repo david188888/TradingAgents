@@ -22,7 +22,7 @@ must stay out of commits. Node is for frontend development/builds, not installed
 | --- | --- |
 | Request/result, cancellation, execution identity | `tradingagents/execution/models.py`, `native_runner.py`, `runtime/` |
 | Research artifacts, qualification, calculations | `tradingagents/agents/schemas/`, `research/`, `dataflows/` |
-| Role sequence or scope | `tradingagents/graph/native_research.py`, `research/native_policy.py` |
+| Role sequence or scope | `tradingagents/graph/insight_research.py`, `research/native_evidence_policy.py` |
 | Web/Reader/SSE | `tradingagents/web/` and `frontend/src/api/contracts.ts`, then consumers |
 | Browser interaction/state | `frontend/AGENTS.md`, API transport, stores/hooks, components |
 

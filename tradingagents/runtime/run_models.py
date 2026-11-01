@@ -60,9 +60,8 @@ class RunSnapshot:
     mode: Literal["company_research"] = "company_research"
     latest_sequence: int = 0
     final_signal: str | None = None
-    # Explicit canonical report locator for new completed runs.  Older runs
-    # deserialize with None and are handled by the frontend's unique-locator
-    # compatibility fallback.
+    # Explicit canonical report locator for new completed runs.  V9 runs without this field
+    # use the frontend's unique report-artifact lookup.
     final_report_artifact_id: str | None = None
     # Timestamp of the terminal run.completed event, not the report file mtime.
     completed_at: str | None = None

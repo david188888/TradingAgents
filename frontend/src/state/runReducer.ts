@@ -6,7 +6,7 @@
  * on top via 'event' actions. Field names match the backend wire format
  * (snake_case) and are never renamed.
  */
-import { rolesForProfile } from "./model";
+import { rolesForRun } from "./model";
 import type {
   ArtifactRecord,
   GraphTaskRecord,
@@ -23,7 +23,7 @@ import type {
   TurnStatus,
   VendorCall,
 } from "./model";
-import type { AssetTypeLiteral, ObservationCommitV1DTO, PersistedEventDTO, ResearchProfile, RunSnapshotDTO } from "../api/contracts";
+import type { AssetTypeLiteral, ObservationCommitV1DTO, PersistedEventDTO, RunSnapshotDTO } from "../api/contracts";
 
 export type ReducerAction =
   | { type: "event"; event: PersistedEventDTO }
@@ -97,8 +97,6 @@ function emptyState(): ReducerState {
 }
 
 function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
-  // Gaps: RunSnapshotDTO has no checkpoint_enabled (default false) and no
-  // research_depth (default 1).
   const meta: RunMeta = {
     native_workflow_version: typeof s.metadata?.native_workflow_version === "string" ? s.metadata.native_workflow_version : undefined,
     focus_requested: Boolean(s.metadata?.research_question),
@@ -133,7 +131,7 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   };
   return {
     meta,
-    roles: seedRoles(s.run_id, [], meta.research_profile, meta.native_workflow_version, meta.focus_requested),
+    roles: seedRoles(s.run_id, meta.focus_requested),
     turns: {},
     model_calls: {},
     tool_calls: {},
@@ -145,33 +143,14 @@ function seedFromSnapshot(s: RunSnapshotDTO): ReducerState {
   };
 }
 
-function seedRoles(run_id: string, selected_analysts: string[], profile?: ResearchProfile, version?: string, focusRequested=false): Record<string, RoleCard> {
-  const selected = new Set(selected_analysts);
-  const roles: Record<string, RoleCard> = {};
-  for (const def of rolesForProfile(profile, version, focusRequested)) {
-    const key = def.analyst_key;
-    let status: RoleStatus;
-    let reason: string | undefined;
-    if (key !== null) {
-      if (selected.has(key)) {
-        status = "pending";
-      } else {
-        status = "skipped";
-        reason = "not_selected";
-      }
-    } else {
-      status = "pending";
-    }
-    roles[def.actor_id] = {
-      actor_id: def.actor_id,
-      node_id: def.node_id,
-      team_id: def.team_id,
-      status,
-      role_instance_id: run_id ? `${run_id}:${def.actor_id}` : undefined,
-      reason,
-    };
-  }
-  return roles;
+function seedRoles(run_id: string, focusRequested=false): Record<string, RoleCard> {
+  return Object.fromEntries(rolesForRun(focusRequested).map(def => [def.actor_id, {
+    actor_id: def.actor_id,
+    node_id: def.node_id,
+    team_id: def.team_id,
+    status: "pending",
+    role_instance_id: run_id ? `${run_id}:${def.actor_id}` : undefined,
+  }]));
 }
 
 // --- reducer ---
@@ -315,7 +294,7 @@ function applyRunStarted(
     deep_think_llm: str(p.deep_think_llm, state.meta.deep_think_llm),
     created_at: event.timestamp,
   };
-  return { ...state, meta, roles: seedRoles(run_id, [], meta.research_profile, meta.native_workflow_version, meta.focus_requested) };
+  return { ...state, meta, roles: seedRoles(run_id, meta.focus_requested) };
 }
 
 function applyRunTerminal(
@@ -391,7 +370,7 @@ function convertStatus(
 function applyRoleStatusChanged(state: ReducerState, p: Record<string, unknown>): ReducerState {
   const role_instance_id = str(p.role_instance_id);
   const actor_id = actorIdFromRoleInstance(role_instance_id);
-  const def = rolesForProfile(state.meta.research_profile, state.meta.native_workflow_version, state.meta.focus_requested).find((r) => r.actor_id === actor_id);
+  const def = rolesForRun(state.meta.focus_requested).find((r) => r.actor_id === actor_id);
   if (!def) return state;
   const existing = state.roles[actor_id];
   const new_status =

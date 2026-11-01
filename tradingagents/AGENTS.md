@@ -13,9 +13,9 @@ for repository-wide setup and finish rules.
   and a durable ledger; provider I/O stays in execution/dataflows.
 - `dataflows/` owns provider interfaces, vendor selection, normalization, and
   capability results. Provider failures must remain typed and source-labelled.
-- `agents/schemas/` and `research/` own public research artifacts, evidence
-  binding, case assembly, and thesis comparison. Start public artifact changes
-  from these canonical models rather than rendered Markdown or a web DTO.
+- `agents/schemas/` and `research/` own public Insight artifacts, evidence and
+  numeric binding, effective versions, and saved-report validation. Start public
+  artifact changes from these canonical models rather than rendered Markdown or a web DTO.
 - `runtime/` and `observability/` own durable run contracts, persistence,
   checkpoint reconciliation, event semantics, and report publication.
 - `web/` is a local FastAPI/SSE adapter and projection layer, not the source of
@@ -42,10 +42,6 @@ and Web/API models where they are exposed. A contract change requires:
 3. Reject unsupported workflow identities explicitly; do not restore older run adapters.
 4. Add or adjust focused tests when the relevant tracked test scaffolding
    is available.
-
-`runtime/contracts.py` selects `horizon-policy-v2` for production. The v3
-selection is an internal test gate and must not be enabled or documented as
-production behavior without an explicit runtime-policy change.
 
 ## Validation
 

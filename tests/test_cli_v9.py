@@ -46,9 +46,10 @@ def test_terminal_rejects_markets_unsupported_by_current_research(ticker):
         cli_config.build_request({}, ticker=ticker)
 
 
-def test_old_scheduling_config_is_not_silently_accepted():
-    with pytest.raises(ValueError, match="research_depth"):
-        cli_config.build_request({"run": {"ticker": "002130", "research_depth": 5}})
+@pytest.mark.parametrize("key,value", [("research_depth", 5), ("save_report", False), ("llm_max_retries", 6)])
+def test_obsolete_config_is_not_silently_accepted(key, value):
+    with pytest.raises(ValueError, match=key):
+        cli_config.build_request({"run": {"ticker": "002130", key: value}})
 
 
 def test_chatgpt_requires_an_account_before_research():

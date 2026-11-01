@@ -18,12 +18,11 @@ AuditKind = Literal[
     "config",
     "report",
 ]
-AuditSummaryAvailability = Literal["ready", "partial", "legacy", "unavailable"]
+AuditSummaryAvailability = Literal["ready", "partial", "unavailable"]
 AuditSectionAvailability = Literal["ready", "partial", "unavailable", "not_recorded"]
 AuditSummaryReason = Literal[
     "projection_failed",
     "terminal_data_incomplete",
-    "legacy_event_gap",
     "not_recorded",
 ]
 AuditDetailReason = Literal[
@@ -76,7 +75,7 @@ class AuditRunSummary(_AuditModel):
     item_id: Literal["run"] = "run"
     status: Literal["completed", "failed", "cancelled", "interrupted"]
     ticker: str
-    mode: Literal["company_research"] | None = None
+    mode: Literal["company_research"] = "company_research"
     created_at: str
     completed_at: str | None = None
     duration_ms: int | None = Field(default=None, ge=0)
@@ -154,7 +153,7 @@ class AuditStageSummary(_AuditModel):
         "unknown",
     ]
     availability: Literal["ready", "not_recorded"]
-    reason_code: Literal["legacy_event_gap", "not_recorded"] | None = None
+    reason_code: Literal["not_recorded"] | None = None
     related_selections: tuple[AuditSelection, ...] = ()
 
 

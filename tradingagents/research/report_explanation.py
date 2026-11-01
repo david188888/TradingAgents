@@ -3,14 +3,11 @@ import hashlib
 import json
 
 
-def indicator_presentations(record):
-    return {}
-
 def text_hash(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def explanation_targets(record, indicators, focus=None, *, batched=False):
+def explanation_targets(record, *, batched=False):
     targets, excluded, size = {}, {}, 0
     for item in (*record.insights, *record.focus_insights):
         key = 'insight:' + item.insight_id

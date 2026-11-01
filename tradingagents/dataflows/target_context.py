@@ -1,16 +1,9 @@
-"""Process-local target ticker context for tool-layer identity guards.
+"""Optional caller-provided ticker context for data-provider identity guards.
 
-The analysis target ticker is resolved once at graph run start and stored
-here so stateless ``@tool`` functions can read it without being passed the
-LangGraph state. Tools compare the requested ticker against this target to
-inject a comparison-ticker notice when an agent queries a different symbol
-(e.g. for contrast analysis), preventing accidental data mixing across
-tickers in multi-round debate.
-
-The context is a ``ContextVar`` so it propagates within the executing thread
-for the duration of one run. ``TradingAgentsGraph.resolve_instrument_context``
-sets it at run start and ``AnalysisRunner.run`` clears it in its finally
-block. When unset (bare programmatic states, tests), the guard is a no-op.
+Adapters compare their requested ticker with an explicitly set target to label
+comparison-company results. ContextVar isolates this context within the calling
+thread. V9 sources carry their own request identity; callers of these standalone
+adapters may set and clear the context around a sequence of related calls.
 """
 
 from __future__ import annotations

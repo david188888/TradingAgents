@@ -43,7 +43,7 @@ Web stores run data under `~/.tradingagents/web/runs/`; CLI uses `~/.tradingagen
 
 Request identity and budgets freeze before dispatch. Resume checks current V9 identity and replays saved valid results; unknown provider outcomes remain spent. A frozen report candidate and durable lifecycle authorization must precede committed publication. Cancellation and publication are serialized by the owning lifecycle lock. A publication failure cannot become completion.
 
-Reader, stage views and Markdown expose saved qualified content. Reading never fetches new research or dispatches a model. Optional explanations run as explicit bounded jobs with their own artifacts, preserving baseline evidence and judgement. Completed, readable, evidence-complete and research-quality remain separate states; passing structural checks does not establish economic correctness.
+Reader, stage views and Markdown expose saved qualified content. Reading never fetches new research or dispatches a model. Web schedules independent bounded explanation jobs after report completion; explicit retry uses a separate command. Their artifacts preserve baseline evidence and judgement. Completed, readable, evidence-complete and research-quality remain separate states; passing structural checks does not establish economic correctness.
 
 Use [Web operations](docs/operations/evidence-research.md), [CLI operations](docs/operations/cli-research.md), [research contracts](docs/contracts/research-record.md) and [contributor guidance](CONTRIBUTING.md) for the owning details. Dated archived plans describe their writing-time state, not current support.
 

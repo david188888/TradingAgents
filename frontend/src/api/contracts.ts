@@ -65,10 +65,6 @@ export interface CompanyBasicsV1DTO {
 export interface CompanyBasicFieldV1DTO { label: string; claim_id: string; report_period: string | null }
 
 /** Canonical: agents/schemas/_report_explanation.py; additive, read-only supplement. */
-export interface IndicatorExplanationDTO {
-  label: string; value: string | null; definition: string; interpretation: string;
-  caution: string; professional: string; scope: string; raw_value: string | null; raw_unit: string | null;
-}
 export interface ExplanationEntryDTO {
   target: string; explanation: string; uncertainty: string; references: string[];
 }
@@ -77,7 +73,7 @@ export interface ReportExplanationDTO {
   schema_version: 1; run_id: string; base_record_sha256: string | null;
   state: "not_generated" | "generating" | "available" | "partial" | "failed" | "interrupted" | "unsupported" | "corrupt";
   reason_code: string | null; eligible: boolean;
-  indicators: Record<string, IndicatorExplanationDTO>; entries: Record<string, ExplanationEntryDTO>;
+  entries: Record<string, ExplanationEntryDTO>;
   unavailable_targets: Record<string, string>; model: string | null; generated_at: string | null;
 }
 
@@ -156,17 +152,6 @@ export interface ProviderDTO {
   authentication?: "oauth";
 }
 
-export interface AnalystOptionDTO {
-  id: string;
-}
-
-/** A safe YAML v1 preset: it only enables and orders existing analyst roles. */
-export interface AnalystPresetDTO {
-  id: string;
-  label: string;
-  analysts: string[];
-}
-
 export interface ConfigDefaultsDTO {
   research_profile?: "evidence_v1";
   llm_provider: string | null;
@@ -184,42 +169,15 @@ export interface WindStatusDTO {
 export interface ConfigResponseDTO {
   providers: ProviderDTO[];
   configured_keys: Record<string, boolean>;
-  analysts: AnalystOptionDTO[];
-  presets: AnalystPresetDTO[];
-  depths: number[];
   output_languages: string[];
   checkpoint_available: boolean;
   wind: WindStatusDTO;
   defaults: ConfigDefaultsDTO;
   research_profiles?: Partial<Record<ResearchProfile, { supported: boolean; reason: string | null; checkpoint_available?: boolean }>>;
 }
-export type AssetTypeLiteral = "stock" | "crypto";
+export type AssetTypeLiteral = "stock";
 /** Current company research mode. */
 export type ResearchMode = "company_research";
-
-export interface PortfolioPositionDTO {
-  ticker: string;
-  quantity: number;
-  average_cost: number;
-  sellable_quantity: number | null;
-}
-
-export interface PortfolioLimitsDTO {
-  max_position_weight: number;
-  lot_size: number;
-  fee_rate: number;
-  minimum_fee: number;
-  allow_short: boolean;
-}
-
-/** Optional non-secret inputs for deterministic PM execution constraints. */
-export interface PortfolioDTO {
-  cash: number;
-  positions: PortfolioPositionDTO[];
-  mark_prices: Record<string, number>;
-  currency: string;
-  limits: PortfolioLimitsDTO;
-}
 
 export interface RunCreateRequestDTO {
   ticker: string;
@@ -229,17 +187,11 @@ export interface RunCreateRequestDTO {
   quick_think_llm: string;
   deep_think_llm: string;
   output_language: string;
-  /** Null means "let the server derive from normalized ticker". */
-  /**
-   * Web omission uses evidence_v1. Legacy profile values remain in saved
-   * records; new Web creation rejects them with research_profile_retired.
-   */
+  /** Current evidence research profile. */
   research_profile?: ResearchProfile;
   research_question?: string | null;
   /** Frozen server policy; clients may omit it to use the profile default. */
   evidence_policy?: NativeEvidencePolicyV1DTO;
-  /** Legacy-only input. New clients must use holding instead. */
-  portfolio?: PortfolioDTO | null;
 }
 
 export interface BatchResolvedItemDTO {
@@ -257,7 +209,7 @@ export interface BatchValidationDTO {
 
 export interface BatchEntryDTO {
   input: string;
-  config: Omit<RunCreateRequestDTO, "ticker" | "mode" | "holding" | "portfolio">;
+  config: Omit<RunCreateRequestDTO, "ticker">;
 }
 
 export interface BatchCreateRequestDTO {
@@ -297,8 +249,6 @@ export interface SchedulerDTO {
   maximum: 3;
 }
 
-
-
 export type RunStatusLiteral =
   | "created"
   | "queued"
@@ -316,8 +266,6 @@ export interface RunSnapshotDTO {
   asset_type: AssetTypeLiteral;
   analysis_date: string;
 
-
-
   output_language: string;
   llm_provider: string;
   quick_think_llm: string;
@@ -325,13 +273,12 @@ export interface RunSnapshotDTO {
   configured_keys: Record<string, boolean>;
   created_at: string;
   updated_at: string;
-  /** Explicit for new snapshots; absent only on legacy snapshots. */
+  /** Current snapshots always describe company research. */
   mode?: ResearchMode | null;
-
 
   latest_sequence: number;
   final_signal?: string | null;
-  /** Explicit for new completed runs; absent only on legacy snapshots. */
+  /** Canonical report locator, when a report has been published. */
   final_report_artifact_id?: string | null;
   /** Terminal run.completed event time for new completed runs. */
   completed_at?: string | null;
@@ -342,9 +289,6 @@ export interface RunSnapshotDTO {
   error_message?: string | null;
   retry_of?: string | null;
   resumed_from_sequence?: number | null;
-  /** Opaque resume-fingerprint blob the frontend never interprets. */
-
-
 
   artifacts: string[];
   redaction_manifest: string[];
@@ -417,73 +361,45 @@ export interface DeleteAllRunsResultDTO {
 // ---------------------------------------------------------------------------
 
 /**
- * Every `detail.code` the backend error envelope can carry, extracted from
+ * Explicit `detail.code` values from the backend API boundary, extracted from
  * api.py's `_error_response` / `ApiBoundaryError` call sites, plus the
  * client-side "http_error" fallback used when a failure body is not JSON
  * (e.g. a proxy 502). Pinned by
  * tests/test_frontend_wire_contract.py::test_api_error_codes_match_backend.
+ * Provider diagnostics additionally carry their own category in diagnostic.
  */
 export type ApiErrorCode =
-  | "local_origin_required"
-  | "reader_sequence_unavailable"
-  | "asset_type_mismatch"
   | "audit_item_not_found"
   | "audit_summary_stale"
   | "audit_terminal_required"
   | "batch_active"
-  | "checkpoint_unavailable"
-  | "companion_not_found"
   | "company_not_found"
   | "duplicate_ticker"
-  | "evidence_horizon_not_supported"
-  | "evidence_legacy_scheduling_params_not_applicable"
+  | "event_cursor_mismatch"
   | "evidence_market_unsupported"
-  | "evidence_mode_unsupported"
   | "evidence_profile_unavailable"
   | "explanation_unavailable"
-  | "event_cursor_mismatch"
   | "frontend_unavailable"
   | "history_corrupted"
-  | "holding_as_of_invalid"
-  | "holding_as_of_mismatch"
-  | "holding_average_cost_invalid"
-  | "holding_cash_invalid"
-  | "holding_currency_invalid"
-  | "holding_legacy_conflict"
-  | "holding_nav_invalid"
-  | "holding_not_allowed"
-  | "holding_original_thesis_invalid"
-  | "holding_quantity_invalid"
-  | "holding_required"
-  | "holding_ticker_mismatch"
   | "http_error"
   | "invalid_concurrency"
   | "invalid_cursor"
   | "invalid_event_cursor"
   | "invalid_limit"
   | "invalid_view"
-  | "legacy_portfolio_not_allowed"
-  | "legacy_resume_normalization_failed"
-  | "legacy_target_position_ambiguous"
-  | "legacy_target_position_invalid"
-  | "legacy_target_position_missing"
+  | "local_origin_required"
   | "missing_configuration"
   | "not_found"
-  | "ref_not_found"
-  | "ref_target_missing"
-  | "research_package_unavailable"
-  | "unified_research_mode_required"
+  | "reader_sequence_unavailable"
   | "research_profile_retired"
-  | "resume_conflict"
   | "run_active"
   | "run_not_active"
   | "run_not_resumable"
   | "run_not_retryable"
-  | "unsupported_analyst"
   | "unsupported_model"
   | "unsupported_provider"
-  | "validation_error"
-  | "yfinance_unreachable";
+  | "unsupported_research_version"
+  | "validation_error";
 
 export interface ApiErrorDetail {
   code: string;
@@ -559,7 +475,6 @@ export interface AuditSelectionDTO {
 export type AuditSummaryReasonDTO =
   | "projection_failed"
   | "terminal_data_incomplete"
-  | "legacy_event_gap"
   | "not_recorded";
 
 export type AuditDetailReasonDTO =
@@ -580,7 +495,7 @@ export interface AuditRunSummaryDTO {
   item_id: "run";
   status: "completed" | "failed" | "cancelled" | "interrupted";
   ticker: string;
-  mode: ResearchMode | null;
+  mode: ResearchMode;
 
   created_at: string;
   completed_at: string | null;
@@ -609,7 +524,7 @@ export interface AuditStageSummaryDTO {
   label: string;
   status: "not_started" | "running" | "completed" | "failed" | "cancelled" | "interrupted" | "skipped" | "unknown";
   availability: "ready" | "not_recorded";
-  reason_code: "legacy_event_gap" | "not_recorded" | null;
+  reason_code: "not_recorded" | null;
   related_selections: AuditSelectionDTO[];
 }
 
@@ -671,7 +586,7 @@ export interface AuditSummaryDTO {
   schema_version: 1;
   run_id: string;
   source_sequence: number;
-  availability: "ready" | "partial" | "legacy" | "unavailable";
+  availability: "ready" | "partial" | "unavailable";
   reason_code: AuditSummaryReasonDTO | null;
   run: AuditRunSummaryDTO;
   counts: AuditCountsDTO;
@@ -726,9 +641,9 @@ export interface NativeEvidencePolicyV1DTO {
   fundamentals_quarters: 8;
 }
 
-// Canonical: web/reader_process_models.py; proposals: agents/schemas/_native_stage.py.
+// Canonical: web/reader_process_models.py and agents/schemas/_insight.py.
 export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks" | "focus_response" | "response_operating_quality" | "response_event_context" | "response_market_context";
-export type OutputAvailability = "available" | "stage_available" | "insight_stage_available" | "pending_publication" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
+export type OutputAvailability = "available" | "insight_stage_available" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
 export interface ObservedCountDTO { value: number | null; completeness: "complete" | "known_lower_bound" | "not_recorded" | "unavailable"; basis: string }
 export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO; focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null }
 export interface ReaderRoleDTO {
@@ -746,7 +661,7 @@ export interface ReaderProcessDTO {
   schema_version: 1; run_id: string; source_sequence: number; profile: string; workflow_version: string | null;
   availability: "ready" | "partial" | "unavailable" | "not_applicable"; reason_code: string | null;
   question_origin: "user" | "default" | "not_recorded"; primary_selection: "synthesis" | "code" | "not_recorded";
-  counts: NativeCountsDTO; roles: ReaderRoleDTO[]; claim_origins: Array<{claim_id: string; role_key: AgentKey}>; source_failures: string[];
+  counts: NativeCountsDTO; roles: ReaderRoleDTO[]; source_failures: string[];
   /** Safe provider failures and closed output-validation explanations for failed roles. */
   model_failures?: ModelFailureDiagnosticDTO[];
 }
