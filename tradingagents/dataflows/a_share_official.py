@@ -28,7 +28,7 @@ import html as _html
 import math
 import re
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from typing import Any
 
@@ -650,11 +650,73 @@ def _sse_parse_feed(text: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _sse_time(text: str) -> str | None:
-    match = re.search(r"(\d{4})年(\d{2})月(\d{2})日\s*(\d{2}:\d{2})", text)
-    if not match:
-        return None
-    return f"{match.group(1)}-{match.group(2)}-{match.group(3)} {match.group(4)}"
+# Both time styles coexist on the site (a-stock-data v3.10.3, observed 2026-10-23):
+# questions carry an absolute time 「2026年10月21日 17:47」, replies within a day a
+# relative one 「昨天 18:22」.  Relative times are read in Beijing time (UTC+8).
+_SSE_CN_TZ = timezone(timedelta(hours=8))
+_SSE_ABS_TIME = re.compile(r"(\d{4})\s*[年\-/]\s*(\d{1,2})\s*[月\-/]\s*(\d{1,2})\s*日?\s*(\d{1,2}):(\d{2})")
+_SSE_DAY_WORD_TIME = re.compile(r"^(今天|昨天|前天)\s*(\d{1,2}):(\d{2})$")
+_SSE_MONTH_DAY_TIME = re.compile(r"^(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})$")
+_SSE_AGO_TIME = re.compile(r"^(\d+)\s*(秒|分钟|小时|天)前$")
+_SSE_CLOCK_TIME = re.compile(r"^(\d{1,2}):(\d{2})$")
+_SSE_DAY_WORD = {"今天": 0, "昨天": 1, "前天": 2}
+_SSE_AGO_UNIT = {"秒": "seconds", "分钟": "minutes", "小时": "hours", "天": "days"}
+
+
+def _sse_time(text: str, now: datetime | None = None) -> str | None:
+    """Normalize a site time to ``YYYY-MM-DD HH:MM``; ``None`` when unrecognized.
+
+    ``now`` pins the clock for offline tests; callers decide whether ``None`` raises.
+    """
+    text = (text or "").strip()
+    now = (now or datetime.now(_SSE_CN_TZ)).replace(tzinfo=None)
+    match = _SSE_ABS_TIME.search(text)
+    if match:
+        year, month, day, hour, minute = (int(group) for group in match.groups())
+        try:
+            return datetime(year, month, day, hour, minute).strftime("%Y-%m-%d %H:%M")
+        except ValueError:  # an impossible date such as 2月30日 counts as unrecognized
+            return None
+    match = _SSE_DAY_WORD_TIME.match(text)
+    if match:
+        when = now - timedelta(days=_SSE_DAY_WORD[match.group(1)])
+        try:
+            return when.replace(
+                hour=int(match.group(2)), minute=int(match.group(3)), second=0, microsecond=0
+            ).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+    match = _SSE_MONTH_DAY_TIME.match(text)
+    if match:
+        month, day, hour, minute = (int(group) for group in match.groups())
+        try:
+            when = datetime(now.year, month, day, hour, minute)
+        except ValueError:
+            return None
+        if when - now > timedelta(days=1):  # 「12-31」 seen in January is last year's
+            try:
+                when = when.replace(year=now.year - 1)
+            except ValueError:  # last year may have no 2月29日
+                return None
+        return when.strftime("%Y-%m-%d %H:%M")
+    match = _SSE_AGO_TIME.match(text)
+    if match:
+        try:
+            delta = timedelta(**{_SSE_AGO_UNIT[match.group(2)]: int(match.group(1))})
+            return (now - delta).strftime("%Y-%m-%d %H:%M")
+        except (OverflowError, ValueError):  # an oversized N counts as unrecognized
+            return None
+    if text in ("刚刚", "刚才"):
+        return now.strftime("%Y-%m-%d %H:%M")
+    match = _SSE_CLOCK_TIME.match(text)  # a bare clock time means today
+    if match:
+        try:
+            return now.replace(
+                hour=int(match.group(1)), minute=int(match.group(2)), second=0, microsecond=0
+            ).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            return None
+    return None
 
 
 def _sse_required_time(item_id: str, text: str) -> str:
