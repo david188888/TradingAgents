@@ -194,7 +194,15 @@ def get_a_share_adjust_factors(ticker: str, kind: str = "qfq") -> str:
         raise ChinaDataUnavailableError(
             f"Sina adjust factor JSON parse failed for {symbol}/{kind}: {exc}"
         ) from exc
-    rows = [{"date": it["d"], "factor": float(it["f"])} for it in data.get("data", [])]
+    items = data.get("data", [])
+    # Fund (ETF/LOF) rows carry s/u (split ratio / cumulative dividend) with f
+    # pinned at 1 (a-stock-data v3.10.4 #64); reading f alone would return raw
+    # prices under an adjusted label, so funds are refused rather than ported.
+    if any("s" in it or "u" in it for it in items):
+        raise ChinaDataUnavailableError(
+            f"{symbol} 是基金（ETF/LOF）复权口径（s/u），本端点只支持个股 f 比例因子。"
+        )
+    rows = [{"date": it["d"], "factor": float(it["f"])} for it in items]
     if not rows:
         raise ChinaDataUnavailableError(f"Sina returned no adjust-factor rows for {code} ({kind}).")
     df = pd.DataFrame(rows)
