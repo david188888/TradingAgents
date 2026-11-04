@@ -75,6 +75,15 @@ def test_adjust_factors_parses(monkeypatch):
     assert "2026-08-18,1.0" in report
 
 
+def test_adjust_factors_refuses_fund_split_dividend_rows(monkeypatch):
+    """Fund f stays 1; the real adjustment lives in s/u (a-stock-data #64)."""
+    body = 'var sh510300qfq={"data":[{"d":"2026-11-03","f":"1","s":"1","u":"0"},' \
+        '{"d":"2026-01-16","f":"1","s":"1","u":"0.125"}]};'
+    monkeypatch.setattr(a_stock_v37.requests, "get", lambda *a, **kw: _TextResp(text=body))
+    with pytest.raises(ChinaDataUnavailableError, match="基金"):
+        a_stock_v37.get_a_share_adjust_factors("510300", "qfq")
+
+
 def test_adjust_factors_hfq_kind_validation():
     with pytest.raises(ValueError, match="kind 只能是"):
         a_stock_v37.get_a_share_adjust_factors("600519", "bad")
