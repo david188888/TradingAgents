@@ -21,7 +21,8 @@ from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 _MAX_REQUESTS = 2
-_MAX_ROWS = {"disclosure_search": 8, "shareholder_count": 8, "ir_qa": 8}
+_MAX_ROWS = {"disclosure_search": 8, "shareholder_count": 8, "ir_qa": 8, "longhubang": 8,
+             "holder_change": 8, "consensus_eps": 5}
 
 
 @dataclass(frozen=True)
@@ -109,8 +110,9 @@ def execute_capability_requests(requests, *, role, ticker, cutoff, ledger, ensur
             ledger.settle(token, ok=False, usage_available=False, detail="cancelled")
             raise
         except Exception as exc:
-            gaps.append(f"capability_unavailable:{request.capability_id}:{type(exc).__name__}")
-            ledger.settle(token, ok=False, usage_available=False, detail=type(exc).__name__)
+            reason = str(exc).strip()[:80] if isinstance(exc, ValueError) else type(exc).__name__
+            gaps.append(f"capability_unavailable:{request.capability_id}:{reason}")
+            ledger.settle(token, ok=False, usage_available=False, detail=reason)
 
     admitted = AdmissionBatchV1(batch_id="capability." + identity[:16], observations=tuple(observations),
                                 rejections=tuple(dict.fromkeys(gaps)))
@@ -138,6 +140,15 @@ def _fetch(request, *, ticker, cutoff, session, ensure_active):
     if request.capability_id == "ir_qa":
         ensure_active()
         return _ir_rows(ticker, cutoff)
+    if request.capability_id == "longhubang":
+        ensure_active()
+        return _dragon_tiger_rows(ticker, cutoff)
+    if request.capability_id == "holder_change":
+        ensure_active()
+        return _holder_change_rows(ticker, cutoff)
+    if request.capability_id == "consensus_eps":
+        ensure_active()
+        return _consensus_rows(ticker, cutoff)
     raise ValueError(f"capability_not_implemented:{request.capability_id}")
 
 
@@ -177,6 +188,72 @@ def _shareholder_rows(ticker, cutoff):
                      "change_num": row.get("Change Num"), "change_pct": row.get("Change %"),
                      "avg_hold": row.get("Avg Hold Num"), "source_name": "eastmoney.shareholder_counts"})
         if len(rows) >= _MAX_ROWS["shareholder_count"]:
+            break
+    return rows
+
+
+def _dragon_tiger_rows(ticker, cutoff):
+    from tradingagents.dataflows.china_specialty_em import get_a_share_dragon_tiger_em
+
+    # Appearance records only; the adapter's TOP5 seat section starts at "## ".
+    text = str(get_a_share_dragon_tiger_em(ticker, cutoff.isoformat())).split("\n\n## ", 1)[0]
+    rows = []
+    for row in _csv_rows(text):
+        day = str(row.get("Date") or "")[:10]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) or day > cutoff.isoformat():
+            continue
+        rows.append({"published": day, "reason": str(row.get("Reason") or "")[:120],
+                     "net_buy_wan": row.get("Net Buy (wan)"), "turnover_pct": row.get("Turnover %"),
+                     "source_name": "eastmoney.dragon_tiger"})
+        if len(rows) >= _MAX_ROWS["longhubang"]:
+            break
+    return rows
+
+
+def _holder_change_rows(ticker, cutoff):
+    from tradingagents.dataflows.china_capabilities import AshareCapabilityUnavailableError
+    from tradingagents.dataflows.china_capital_flow import get_a_share_insider_trades
+
+    try:
+        text = str(get_a_share_insider_trades(
+            ticker, (cutoff - timedelta(days=365)).isoformat(), cutoff.isoformat()))
+    except AshareCapabilityUnavailableError as exc:
+        if exc.capability == "date_window":
+            return []
+        raise
+    rows = []
+    for row in _csv_rows(text):
+        notice = str(row.get("NOTICE_DATE") or "")[:10]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", notice) or notice > cutoff.isoformat():
+            continue
+        rows.append({"published": notice, "holder": str(row.get("HOLDER_NAME") or "")[:80],
+                     "direction": str(row.get("DIRECTION") or ""), "change_num": row.get("CHANGE_NUM"),
+                     "change_symbol": row.get("CHANGE_NUM_SYMBOL"),
+                     "after_change_rate": row.get("AFTER_CHANGE_RATE"), "avg_price": row.get("TRADE_AVERAGE_PRICE"),
+                     "end_date": str(row.get("END_DATE") or "")[:10], "source_name": "eastmoney.insider_trades"})
+        if len(rows) >= _MAX_ROWS["holder_change"]:
+            break
+    return rows
+
+
+def _consensus_rows(ticker, cutoff):
+    from tradingagents.dataflows.china_specialty_em import get_a_share_eps_forecast
+
+    # The adapter reads a live snapshot with no archived vintage, so a historical
+    # cutoff would silently present today's forecast as of that date.
+    if cutoff != datetime.now(SHANGHAI).date():
+        raise ValueError("capability_not_point_in_time")
+    text = str(get_a_share_eps_forecast(ticker, as_of=cutoff.isoformat()))
+    rows = []
+    for row in _csv_rows(text):
+        year = str(row.get("年度") or "").strip()
+        if not re.fullmatch(r"\d{4}", year):
+            continue
+        rows.append({"published": cutoff.isoformat(), "year": year,
+                     "institutions": row.get("预测机构数"), "eps_low": row.get("最小值"),
+                     "eps_mean": row.get("均值"), "eps_high": row.get("最大值"),
+                     "industry_mean": row.get("行业平均数"), "source_name": "ths.eps_forecast"})
+        if len(rows) >= _MAX_ROWS["consensus_eps"]:
             break
     return rows
 
@@ -255,7 +332,7 @@ def _csv_rows(text):
 
 def _observation(request, *, role, ticker, row, index):
     source_name = row["source_name"]
-    source_kind = "vendor" if source_name.startswith("eastmoney.") else "official"
+    source_kind = "vendor" if source_name.startswith(("eastmoney.", "ths.")) else "official"
     if request.capability_id == "disclosure_search":
         text = f"{row['published']} 《{row['title']}》" + (f" 类型:{row['kind']}" if row.get("kind") else "")
         statement = f"巨潮公告目录载明：{text}"
@@ -266,11 +343,30 @@ def _observation(request, *, role, ticker, row, index):
                 f"环比%={row.get('change_pct')} 户均={row.get('avg_hold')}")
         statement = f"东财股东户数披露：{text}"
         url, locator = None, "股东户数序列"
+    elif request.capability_id == "longhubang":
+        text = (f"{row['published']} 龙虎榜 原因={row.get('reason')} 净买入={row.get('net_buy_wan')}万元 "
+                f"换手率={row.get('turnover_pct')}%")
+        statement = f"东财龙虎榜记录：{text}"
+        url, locator = None, "个股龙虎榜上榜记录"
+    elif request.capability_id == "holder_change":
+        text = (f"公告日={row['published']} 变动截止={row.get('end_date')} 方向={row.get('direction')} "
+                f"变动数量={row.get('change_symbol') or row.get('change_num')} 均价={row.get('avg_price')} "
+                f"变动后持股比例={row.get('after_change_rate')} 主体={row.get('holder')}")
+        statement = f"东财增减持披露：{text[:1000]}"
+        url, locator = None, "股东增减持公告摘录"
+    elif request.capability_id == "consensus_eps":
+        text = (f"{row['year']}年 预测机构数={row.get('institutions')} EPS均值={row.get('eps_mean')} "
+                f"区间={row.get('eps_low')}~{row.get('eps_high')} 行业平均={row.get('industry_mean')}")
+        statement = f"同花顺一致预期样本：{text}"
+        url, locator = None, "机构一致预期表"
     else:
         text = f"问：{row.get('question', '')}\n答：{row.get('answer') or '（尚未回复）'}"
         statement = f"投资者互动问答：{text[:1000]}"
         url, locator = None, "互动问答摘录"
     text = text[:4000]
+    extra_limitations = {"consensus_eps": ("forecast_snapshot_not_reported_eps",),
+                         "longhubang": ("market_record_not_motive",),
+                         "holder_change": ("disclosure_record_not_motive",)}.get(request.capability_id, ())
     digest = hashlib.sha256(text.encode()).hexdigest()
     identity = hashlib.sha256(
         f"{request.capability_id}|{ticker}|{role}|{row['published']}|{text}|{index}".encode()).hexdigest()
@@ -283,7 +379,8 @@ def _observation(request, *, role, ticker, row, index):
         captured_at=datetime.now(timezone.utc),
         content=SourceContentV1(kind="excerpt", text=text, locator_label=locator, content_sha256=digest),
         limitations=("capability_supplement", "native_dimension:" + role,
-                     "source_reported_not_independently_verified", "selected_capability_excerpt"))
+                     "source_reported_not_independently_verified", "selected_capability_excerpt",
+                     *extra_limitations))
     fact = RecordClaimV1(
         claim_id="fact." + identity, kind="fact", statement=statement[:1200],
         evidence_ids=(source.evidence_id,),

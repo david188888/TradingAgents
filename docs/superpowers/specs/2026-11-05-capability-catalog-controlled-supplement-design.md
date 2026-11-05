@@ -242,7 +242,7 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 
 已落地：能力目录、`CapabilityRequest` 三字段契约、Gateway（disclosure/shareholder/ir_qa）、insight 补证环接线、identity 冻结、相关离线测试与当前态文档同步。
 
-仍未做：Task 6 真实模型 run；其余能力卡的 Gateway 实现；股东户数/互动问答接入 `BudgetedSession`；Wind 卡启用。
+仍未做：Task 6 真实模型 run；其余能力卡（`financials_detail` / `valuation_history` / `northbound_flow` / `industry_peers` / `wind_enrich`）的 Gateway 实现；股东户数/互动问答/一致预期/龙虎榜/增减持适配器接入 `BudgetedSession`；Wind 卡启用。
 
 ### 13.1 实现决议（离线补缺后）
 
@@ -250,3 +250,11 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 2. 卡片 `max_calls_per_run` 按 **run** 生效：Gateway 用 durable `SUPPLEMENT_CAPABILITIES` attempt（stage=`capability.<role>.<card_id>`）计数，resume 不会重花该卡额度；已释放的预约不计。
 3. 审计读法写进 [Web 研究操作](../../operations/evidence-research.md#evidence-and-workflow)；Audit Center 的 capability/tool 区尚未渲染 gateway 调用，属已知 v1 限制，需读 journal 与报告 gaps。
 4. 离线覆盖补齐：capability 回灌按 `native_dimension:` 分流到请求专项（其他专项不可见）、round 重放不重复取数、目录 digest 变化触发 resume 冲突。
+
+### 13.2 追加能力卡（2026-11-05）
+
+1. 新接入 `consensus_eps`（THS 一致预期 EPS 样本）、`longhubang`（东财个股龙虎榜近 30 日上榜记录）与 `holder_change`（东财近一年增减持披露，不含回购）。三者都复用仓库已有适配器，Gateway 只做宿主注入、资格化、行数上限与入证。
+2. `consensus_eps` 只有实时快照、无归档 vintage：宿主 cutoff 不是当日时返回 typed `capability_unavailable:consensus_eps:capability_not_point_in_time`，不把今天的预测标成历史日期的证据。
+3. `longhubang` 只入证上榜记录（日期/原因/净买入/换手），席位明细本次不入证；卡面文案与 `not_for` 同步收窄，避免模型据此推断特定投资者意图。
+4. `holder_change` 以公告日 `NOTICE_DATE` 为 `published` 并按 cutoff 截断；窗口内无记录属 `capability_empty`，不伪装成来源失败。
+5. 三个适配器都不接受 `BudgetedSession`，故仍只计 `SUPPLEMENT_CAPABILITIES`、不计 `DATA_HTTP_ATTEMPTS`（已知 v1 限制，已写入 research contract）。
