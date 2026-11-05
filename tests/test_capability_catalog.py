@@ -21,27 +21,27 @@ def test_card_ids_are_unique_and_roles_match_specialists():
 def test_prefetch_only_and_unimplemented_cards_are_not_requestable():
     visible = ids(load_capability_catalog())
     assert visible == {"news_search", "disclosure_search", "shareholder_count", "ir_qa",
-        "longhubang", "holder_change", "consensus_eps"}
+        "longhubang", "holder_change", "consensus_eps", "valuation_history", "northbound_flow"}
     assert "core_financials" not in visible
-    assert "northbound_flow" not in visible
+    assert {"financials_detail", "industry_peers", "wind_enrich"} & visible == set()
 
 
 def test_role_filter_limits_visible_cards():
     assert ids(load_capability_catalog(role="market_context")) == {
-        "news_search", "disclosure_search", "shareholder_count", "longhubang"}
+        "news_search", "disclosure_search", "shareholder_count", "longhubang",
+        "valuation_history", "northbound_flow"}
     assert ids(load_capability_catalog(role="event_context")) == {
         "news_search", "disclosure_search", "ir_qa", "longhubang", "holder_change"}
     assert ids(load_capability_catalog(role="operating_quality")) == {
-        "news_search", "disclosure_search", "shareholder_count", "ir_qa", "holder_change", "consensus_eps"}
+        "news_search", "disclosure_search", "shareholder_count", "ir_qa", "holder_change",
+        "consensus_eps", "valuation_history"}
 
 
-def test_unmet_requirement_hides_card(monkeypatch):
-    import tradingagents.dataflows.capability_catalog as module
-    wind = next(card for card in CAPABILITY_CARDS if card.id == "wind_enrich")
-    monkeypatch.setattr(module, "CAPABILITY_CARDS", (*CAPABILITY_CARDS[:-1],
-        module.CapabilityCard(**{**wind.__dict__, "implemented": True})))
-    assert "wind_enrich" not in ids(module.load_capability_catalog())
-    assert "wind_enrich" in ids(module.load_capability_catalog(available_requirements={"wind_cli"}))
+def test_unmet_requirement_hides_card():
+    assert "wind_enrich" not in ids(load_capability_catalog())
+    assert "wind_enrich" in ids(load_capability_catalog(available_requirements={"wind_cli"}))
+    assert "wind_enrich" in ids(load_capability_catalog(role="market_context",
+        available_requirements={"wind_cli"}))
 
 
 def test_compact_view_hides_backends_and_routing():

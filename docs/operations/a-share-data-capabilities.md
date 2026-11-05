@@ -28,8 +28,11 @@ DeepSeek/Tavily search discovers dated news, industry, policy and competition, a
 missing dedicated fields. Snippets are discovery aids. Specialists may also request structured
 supplements through the model-facing [capability catalog](../../tradingagents/dataflows/capability_catalog.py):
 announcement titles, shareholder counts, IR Q&A, consensus EPS samples, dragon-tiger appearance
-records and disclosed insider changes reuse a-stock-data-aligned adapters; the host owns ticker
-injection, routing and qualification. Announcement supplements search CNINFO titles server-side
+records, disclosed insider changes, bounded valuation-history rows (baostock, Tushare PE/PB fallback),
+today's THS northbound aggregate and Wind risk metrics (only when the local Wind CLI is configured)
+reuse a-stock-data-aligned adapters; the host owns ticker injection, routing and qualification.
+Financial-detail and peer-context remain documented as prefetch-only: the minimum evidence chain
+already collects them, so no duplicate gateway card is exposed. Announcement supplements search CNINFO titles server-side
 (space-separated terms are ANDed within one title; body-only words return no rows), strip dates and
 `全文/原文` filler before searching, and admit titles, dates and links only. Search qualification, field recovery, immutable revisions
 and shared budgets follow the [research contract](../contracts/research-record.md). Unsupported layouts

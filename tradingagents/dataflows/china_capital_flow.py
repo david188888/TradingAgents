@@ -183,9 +183,11 @@ class ChinaCapitalFlowProvider:
 def get_a_share_northbound_flow(
     start_date: str | None = None,
     end_date: str | None = None,
+    *,
+    session: requests.Session | None = None,
 ) -> str:
     """Render aggregate northbound-flow history as an optional research input."""
-    return ChinaCapitalFlowProvider().northbound_flow(start_date, end_date).render()
+    return ChinaCapitalFlowProvider(session=session).northbound_flow(start_date, end_date).render()
 
 
 def get_a_share_northbound_holdings(ticker: str, indicator: str = "今日排行") -> str:
@@ -197,9 +199,11 @@ def get_a_share_insider_trades(
     ticker: str,
     start_date: str | None = None,
     end_date: str | None = None,
+    *,
+    session: requests.Session | None = None,
 ) -> str:
     """Render disclosed manager/shareholder share-change rows for one A-share."""
-    return ChinaCapitalFlowProvider().insider_trades(ticker, start_date, end_date).render()
+    return ChinaCapitalFlowProvider(session=session).insider_trades(ticker, start_date, end_date).render()
 
 
 def _require_a_share_code(ticker: str, capability: str) -> str:

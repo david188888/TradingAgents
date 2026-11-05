@@ -198,6 +198,8 @@ def get_a_share_sse_e_interaction(
     kind: str = "answered",
     page: int = 1,
     page_size: int = 10,
+    *,
+    session: requests.Session | None = None,
 ) -> str:
     """上证e互动 — investor questions and Shanghai-listed company replies.
 
@@ -233,6 +235,7 @@ def get_a_share_sse_e_interaction(
                 "page": page_no,
             },
             referer=SSE_E_BASE + "/",
+            session=session,
         )
     else:
         digits = strict_ticker_code(ticker, stock_only=True)
@@ -252,6 +255,7 @@ def get_a_share_sse_e_interaction(
                 "page": page_no,
             },
             referer=SSE_E_BASE + "/",
+            session=session,
         )
     text = response.content.decode("utf-8", "replace")
     rows = _sse_parse_feed(text)
@@ -299,10 +303,11 @@ def _http_request(
     data: Mapping[str, Any] | None = None,
     referer: str | None = None,
     user_agent: str | None = None,
+    session: requests.Session | None = None,
 ) -> requests.Response:
     """One explicit-timeout exchange request; every transport fault is typed."""
     headers = {"User-Agent": user_agent or _BROWSER_UA, "Referer": referer or url}
-    send = requests.get if method == "GET" else requests.post
+    send = (session or requests).get if method == "GET" else (session or requests).post
     extra = {"params": params} if method == "GET" else {"data": data}
     try:
         response = send(url, headers=headers, timeout=_HTTP_TIMEOUT, **extra)

@@ -173,7 +173,7 @@ def _role_summaries(events: list[PersistedEvent], *, profile="evidence_v1", chec
 
 
 def _capability_summaries(
-    snapshot: RunSnapshot, events: list[PersistedEvent]
+    snapshot: RunSnapshot, events: list[PersistedEvent], checkpoint=None
 ) -> tuple[AuditCapabilitySummary, ...]:
     rendered: dict[str, AuditCapabilitySummary] = {}
     for item in snapshot.degraded_data_sources:
@@ -233,7 +233,43 @@ def _capability_summaries(
                 if isinstance(fallback_from, list)
                 else (),
             )
+    for item in _journal_capability_summaries(checkpoint):
+        rendered[item.item_id] = item
     return tuple(rendered[key] for key in sorted(rendered))
+
+
+def _journal_capability_summaries(checkpoint) -> tuple[AuditCapabilitySummary, ...]:
+    """Host-routed capability batches recorded in the durable research journal."""
+    results = (checkpoint or {}).get("results") or {}
+    items = []
+    for key, value in sorted(results.items()):
+        if not key.startswith("capability.batch.") or not isinstance(value, Mapping):
+            continue
+        admitted = value.get("admitted") if isinstance(value.get("admitted"), Mapping) else {}
+        observations = [obs for obs in admitted.get("observations") or () if isinstance(obs, Mapping)]
+        gaps = [str(gap) for gap in value.get("gaps") or ()]
+        executed = [str(card) for card in value.get("executed") or ()]
+        rejected = [str(reason) for reason in value.get("rejected") or ()]
+        providers = tuple(sorted({str((obs.get("source") or {}).get("source_name") or "").split(".")[0]
+                                  for obs in observations} - {""}))
+        if observations:
+            status, availability = "completed", "available"
+        elif any(gap.startswith("capability_unavailable") for gap in gaps):
+            status, availability = "failed", "unavailable"
+        elif "capability_budget_exhausted" in gaps:
+            status, availability = "not_reached", "unknown"
+        else:
+            status, availability = "degraded", "empty"
+        items.append(AuditCapabilitySummary(
+            item_id="capability." + key.removeprefix("capability.batch.")[:16],
+            label="、".join(dict.fromkeys(executed)) or "capability",
+            status=status,
+            reason_codes=tuple(dict.fromkeys([*gaps, *rejected])),
+            capability_result_id=key,
+            availability=availability,
+            providers=providers,
+        ))
+    return tuple(items)
 
 
 def _tool_summaries(events: list[PersistedEvent]) -> tuple[AuditToolSummary, ...]:
@@ -348,7 +384,7 @@ def _build_summary(
     config_index = _input_index(events, artifacts, "input.config_snapshot")
     profile = (snapshot.metadata or {}).get("research_profile", "evidence_v1")
     roles = _role_summaries(events, profile=profile, checkpoint=checkpoint)
-    capabilities = _capability_summaries(snapshot, events)
+    capabilities = _capability_summaries(snapshot, events, checkpoint)
     tools = _tool_summaries(events)
     artifact_summaries = _artifact_summaries(artifacts)
     prompts = _prompt_config_summaries(prompt_index, artifacts, label="Prompt snapshot")
@@ -814,6 +850,9 @@ def project_audit_detail(
                 状态=item.status,
                 原因="、".join(item.reason_codes) or None,
                 影响分区="、".join(item.affected_sections) or None,
+                可用性=item.availability,
+                提供方="、".join(item.providers) or None,
+                结果标识=item.capability_result_id,
             ),
         )
     elif selection.kind == "tool":
