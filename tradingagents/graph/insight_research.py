@@ -336,8 +336,13 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
         if (missing and raw is not None
                 and journal.state.get('insight.failure.challenge.main') != 'response_unknown'):
             repaired = True
-            repair_raw = ask('challenge', {**review_context, 'repair_targets': missing,
-                'issues': [item for item in diagnostics if item.get('target') in set(missing)]}, 'repair')
+            issues = [item for item in diagnostics if item.get('target') in set(missing)]
+            repair_context = {**review_context, 'repair_targets': missing, 'issues': issues}
+            if any(item.get('code') in {'numeric_literal_unbound', 'numeric_scope'} for item in issues):
+                repair_context['instruction'] = (
+                    'Rewrite only the listed targets and remove every Arabic digit from concern/reasoning '
+                    '(write dates and amounts in Chinese words, or cite the saved [N] token); cite only saved E references.')
+            repair_raw = ask('challenge', repair_context, 'repair')
             repaired_accepted, _, repair_diagnostics = parse_reviews(repair_raw, allowed=set(missing))
             accepted.update(repaired_accepted)
             diagnostics.extend(repair_diagnostics)
