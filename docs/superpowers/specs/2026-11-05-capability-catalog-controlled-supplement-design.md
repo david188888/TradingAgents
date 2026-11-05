@@ -265,4 +265,4 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 1. Task 6 已执行一次真实 V9 run（002130，deepseek-flash，762 s 完成）：补证基础设施按设计工作，但 4 次 `disclosure_search` 全部空结果，暴露出整串标题匹配缺陷。详见 [验收备忘](../../reviews/2026-11-05-capability-supplement-live-acceptance.md)。
 2. 已按备忘修复：CNINFO `searchkey` 服务端标题检索 + 查询归一化 + 最长词降级 + 关闭高亮；卡片 `query` 收窄为 1–3 个标题关键词。
 3. 修复后用同一批真实 query 回归：进展公告、董事会决议、翌日披露报表、股东会决议、乐庭智联均能入证；`股价异常波动公告` 因标题无对应词仍为 typed 空结果。
-4. 第二次 live 模型验收待用户明确授权。
+4. 第二次 live 验收已完成（2026-11-05，用户授权）：能力请求改用标题关键词，3 次调用入证 17 条 capability 事实（经营视图 16 条、事件视图 1 条），并支撑一条 accepted Insight；报告仅剩 `capability_use_search_path`/`capability_budget_exhausted`/`capability_role_limit` 缺口。详见验收备忘。
