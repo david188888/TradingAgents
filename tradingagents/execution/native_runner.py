@@ -13,6 +13,10 @@ from types import SimpleNamespace
 import requests
 
 from tradingagents.dataflows.budgeted_transport import BudgetedSession
+from tradingagents.dataflows.capability_catalog import (
+    compact_capability_cards,
+    load_capability_catalog,
+)
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
 from tradingagents.dataflows.search_sources import SearchEvidenceSources
@@ -41,6 +45,7 @@ from tradingagents.observability.roles import (
     role_instance_id,
     roles_for_profile,
 )
+from tradingagents.research.native_policy import ROLE_ORDER
 from tradingagents.research.native_versions import (
     COMPANY_RESEARCH_POLICY,
     INSIGHT_POLICY,
@@ -88,7 +93,22 @@ def native_identity(request):
         "insight_policy": INSIGHT_POLICY,
         "insight_budget_policy": {"structured_repair": 8, "basic_model_attempts": 20, "model_attempts": 29},
         "insight_context_policy": "compact-saved-evidence-v1",
+        "capability_supplement_policy": capability_supplement_policy(),
     }
+
+
+def capability_supplement_policy():
+    """Frozen model-visible card sets; v1 never probes credential-gated cards."""
+    from tradingagents.dataflows.capability_catalog import (
+        CATALOG_SCHEMA_VERSION,
+        catalog_identity_digest,
+        load_capability_catalog,
+    )
+    from tradingagents.graph.insight_research import CAPABILITY_CALLS_PER_ROLE
+    from tradingagents.research.native_policy import ROLE_ORDER
+    return {"version": CATALOG_SCHEMA_VERSION, "calls_per_role": CAPABILITY_CALLS_PER_ROLE,
+            "requirements": [], "roles": {role: catalog_identity_digest(load_capability_catalog(role=role))
+                                          for role in ROLE_ORDER}}
 
 
 @dataclass(frozen=True)
@@ -328,6 +348,17 @@ class NativeRunner:
                 coordinator=coordinator, ledger=journal.ledger, round_id=round_id)
             return result
 
+        def capability_insights(requests, round_id):
+            nonlocal search_record
+            from tradingagents.execution.insight_capability import collect_capability_supplement
+            with BudgetedSession(journal.ledger, active, lambda: deadline - time.monotonic()) as session:
+                search_record, result = collect_capability_supplement(search_record, requests,
+                    ledger=journal.ledger, ensure_active=active, round_id=round_id, session=session)
+            return result
+
+        capability_policy = journal.state['identity'].get('capability_supplement_policy')
+        capability_cards = {role: compact_capability_cards(load_capability_catalog(role=role)) for role in ROLE_ORDER}
+
         record = run_insight_research(run_id=run_id, ticker=request.ticker, analysis_date=seed.analysis_date,
             catalogs=catalogs, caller=delegate, journal=journal, ensure_active=active, focus_question=request.research_question,
             company_basics=seed.company_basics, foundation_catalog=build_insight_catalog(seed, facts=tuple(
@@ -335,6 +366,8 @@ class NativeRunner:
                     *seed.company_basics.introduction, *seed.company_basics.fundamentals, *seed.company_basics.quantitative)})),
             on_stage=lambda role, status: self._stage(journal, role, status),
             supplement=supplement_insights if coordinator is not None and journal.state['identity'].get('search_research_policy', {}).get('enabled') is not False else None,
+            capability=capability_insights if capability_policy is not None else None,
+            capability_catalog=capability_cards if capability_policy is not None else None,
             source_gaps=tuple(item for item in seed.limitations if item.startswith('global_gap:') or item.startswith('global_coverage:') and not item.endswith(':available'))
                 + tuple('search_gap:' + g.gap_id for g in seed.search_gaps))
         active()

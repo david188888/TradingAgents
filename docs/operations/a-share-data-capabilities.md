@@ -25,9 +25,12 @@ A source failure never proves no event occurred. Source routes are not investmen
 | Forecast/industry context | Dated THS institution EPS, EastMoney fallback; EastMoney industry candidates plus same-session Tencent quotes. Limited samples are not full consensus or assured business comparables. |
 
 DeepSeek/Tavily search discovers dated news, industry, policy and competition, and attempts only
-missing dedicated fields. Snippets are discovery aids. Search qualification, field recovery,
-immutable revisions and shared budgets follow the [research contract](../contracts/research-record.md).
-Unsupported layouts or incomplete price/valuation inputs stay unavailable, even when a page was found.
+missing dedicated fields. Snippets are discovery aids. Specialists may also request structured
+supplements through the model-facing [capability catalog](../../tradingagents/dataflows/capability_catalog.py):
+announcement titles, shareholder counts and IR Q&A reuse a-stock-data-aligned adapters; the host owns
+ticker injection, routing and qualification. Search qualification, field recovery, immutable revisions
+and shared budgets follow the [research contract](../contracts/research-record.md). Unsupported layouts
+or incomplete price/valuation inputs stay unavailable, even when a page was found.
 
 Programmatic `effective_config.evidence_source_vendors` orders native candidate subsets by capability;
 empty disables that capability. `evidence_source_exclusions` removes vendors afterward. These keys

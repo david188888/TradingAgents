@@ -30,7 +30,10 @@ def test_fixed_schema_dispatch_and_usage_are_durable(tmp_path, monkeypatch):
     monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
     assert caller(journal)('operating_quality', {'evidence': []}) == {'insights': []}
     shape = seen[0]['response_format']['json_schema']['schema']
-    assert set(shape['properties']) == {'insights', 'search_requests'}
+    assert set(shape['properties']) == {'insights', 'search_requests', 'capability_requests'}
+    request = shape['$defs']['CapabilityRequest']
+    assert request['required'] == ['capability_id', 'query', 'gap_reason']
+    assert request['additionalProperties'] is False
     assert 'field_path' not in str(shape)
     assert journal.state['insight.model_usage']['operating_quality.main']['input_tokens'] == 10
     assert len(journal.ledger.records()) == 1

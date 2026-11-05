@@ -62,6 +62,8 @@ class InsightModelCaller:
             'Never invent reference IDs, field paths, numeric receipts or checks. Empty evidence_refs is allowed '
             'for an explicitly unsupported research idea, which will remain pending. '
             'Use search_requests only when search_requests_allowed is true, for concrete missing information; otherwise return an empty list. '
+            'capability_requests follow the same rule: choose only ids listed in capability_catalog, fill query when the card needs one '
+            '(otherwise an empty string), and state the concrete evidence gap in gap_reason. Never request material to support a view you already hold. '
             'A repair returns only the requested failed items in their supplied order; do not regenerate accepted items.'
             '\nSchema:\n' + json.dumps(schema, ensure_ascii=False) + '\nSaved context:\n'
             + json.dumps(context, ensure_ascii=False, sort_keys=True, allow_nan=False))
