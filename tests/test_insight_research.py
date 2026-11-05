@@ -407,6 +407,8 @@ def test_challenge_reviews_are_repaired_once_for_failed_targets(tmp_path):
             ]}
         if stage == 'challenge':
             assert context['repair_targets'] == ['I2']
+            assert 'instruction' in context and 'Arabic digit' in context['instruction']
+            assert any(item.get('code') == 'numeric_literal_unbound' for item in context['issues'])
             return {'reviews': [
                 {'target': 'I2', 'concern': '客户集中度需要复核。', 'reasoning': '需要复核客户依赖是否改善 [E1]。', 'evidence_refs': ['E1']},
             ]}

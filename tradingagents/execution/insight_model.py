@@ -51,8 +51,9 @@ class InsightModelCaller:
                 'Do not introduce new factual quantities; reference the saved Insight instead.' if stage == 'synthesis' else
                 'Review the supplied Insights once. Explain specific doubts or alternative explanations. '
                 'Set concern to null only after reviewing and finding no effective counterevidence; explain the review scope. '
-                'Return exactly one review per supplied I reference and keep it qualitative: do not introduce new numeric '
-                'quantities (cite [N] tokens or omit the number), and cite only supplied E references.' if stage == 'challenge' else
+                'Return exactly one review per supplied I reference and keep it qualitative. Never write Arabic digits in '
+                'concern or reasoning (write dates and amounts in Chinese words, or cite the saved [N] token), and cite '
+                'only supplied E references.' if stage == 'challenge' else
                 'Respond once to the assigned concerns. Maintain, revise, withdraw or admit uncertainty. '
                 'Provide replacement only when revising, using the same four-field Insight protocol.' if stage.startswith('response_') else
                 'Respond to the user question using saved research. Do not modify the baseline judgement.' if stage == 'focus_response' else
