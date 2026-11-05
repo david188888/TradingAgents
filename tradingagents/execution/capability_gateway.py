@@ -22,7 +22,8 @@ from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 _MAX_REQUESTS = 2
 _MAX_ROWS = {"disclosure_search": 8, "shareholder_count": 8, "ir_qa": 8, "longhubang": 8,
-             "holder_change": 8, "consensus_eps": 5}
+             "holder_change": 8, "consensus_eps": 5, "valuation_history": 60,
+             "northbound_flow": 1, "wind_enrich": 1}
 
 
 @dataclass(frozen=True)
@@ -110,7 +111,7 @@ def execute_capability_requests(requests, *, role, ticker, cutoff, ledger, ensur
             ledger.settle(token, ok=False, usage_available=False, detail="cancelled")
             raise
         except Exception as exc:
-            reason = str(exc).strip()[:80] if isinstance(exc, ValueError) else type(exc).__name__
+            reason = _gap_reason(exc)
             gaps.append(f"capability_unavailable:{request.capability_id}:{reason}")
             ledger.settle(token, ok=False, usage_available=False, detail=reason)
 
@@ -120,6 +121,17 @@ def execute_capability_requests(requests, *, role, ticker, cutoff, ledger, ensur
                                "gaps": list(admitted.rejections), "executed": list(executed),
                                "rejected": list(dict.fromkeys(rejected))})
     return GatewayResult(admitted, admitted.rejections, tuple(executed), tuple(dict.fromkeys(rejected)))
+
+
+def _gap_reason(exc):
+    """Typed, bounded reason: our codes, vendor details/codes, or the class name."""
+    if isinstance(exc, ValueError):
+        return str(exc).strip()[:80]
+    for attribute in ("detail", "code"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:80]
+    return type(exc).__name__
 
 
 def _card_calls_this_run(ledger, role, capability_id):
@@ -136,19 +148,28 @@ def _fetch(request, *, ticker, cutoff, session, ensure_active):
         return _disclosure_rows(ticker, cutoff, request.query.strip(), session=session, ensure_active=ensure_active)
     if request.capability_id == "shareholder_count":
         ensure_active()
-        return _shareholder_rows(ticker, cutoff)
+        return _shareholder_rows(ticker, cutoff, session=session)
     if request.capability_id == "ir_qa":
         ensure_active()
-        return _ir_rows(ticker, cutoff)
+        return _ir_rows(ticker, cutoff, session=session)
     if request.capability_id == "longhubang":
         ensure_active()
-        return _dragon_tiger_rows(ticker, cutoff)
+        return _dragon_tiger_rows(ticker, cutoff, session=session)
     if request.capability_id == "holder_change":
         ensure_active()
-        return _holder_change_rows(ticker, cutoff)
+        return _holder_change_rows(ticker, cutoff, session=session)
     if request.capability_id == "consensus_eps":
         ensure_active()
-        return _consensus_rows(ticker, cutoff)
+        return _consensus_rows(ticker, cutoff, session=session)
+    if request.capability_id == "valuation_history":
+        ensure_active()
+        return _valuation_history_rows(ticker, cutoff, session=session)
+    if request.capability_id == "northbound_flow":
+        ensure_active()
+        return _northbound_rows(cutoff, session=session)
+    if request.capability_id == "wind_enrich":
+        ensure_active()
+        return _wind_rows(ticker, cutoff)
     raise ValueError(f"capability_not_implemented:{request.capability_id}")
 
 
@@ -206,10 +227,10 @@ def _disclosure_records(records, cutoff):
     return rows
 
 
-def _shareholder_rows(ticker, cutoff):
+def _shareholder_rows(ticker, cutoff, *, session=None):
     from tradingagents.dataflows.china_specialty_em import get_a_share_shareholder_counts_em
 
-    text = str(get_a_share_shareholder_counts_em(ticker))
+    text = str(get_a_share_shareholder_counts_em(ticker, session=session))
     rows = []
     for row in _csv_rows(text):
         day = str(row.get("Date") or "")[:10]
@@ -223,11 +244,11 @@ def _shareholder_rows(ticker, cutoff):
     return rows
 
 
-def _dragon_tiger_rows(ticker, cutoff):
+def _dragon_tiger_rows(ticker, cutoff, *, session=None):
     from tradingagents.dataflows.china_specialty_em import get_a_share_dragon_tiger_em
 
     # Appearance records only; the adapter's TOP5 seat section starts at "## ".
-    text = str(get_a_share_dragon_tiger_em(ticker, cutoff.isoformat())).split("\n\n## ", 1)[0]
+    text = str(get_a_share_dragon_tiger_em(ticker, cutoff.isoformat(), session=session)).split("\n\n## ", 1)[0]
     rows = []
     for row in _csv_rows(text):
         day = str(row.get("Date") or "")[:10]
@@ -241,13 +262,13 @@ def _dragon_tiger_rows(ticker, cutoff):
     return rows
 
 
-def _holder_change_rows(ticker, cutoff):
+def _holder_change_rows(ticker, cutoff, *, session=None):
     from tradingagents.dataflows.china_capabilities import AshareCapabilityUnavailableError
     from tradingagents.dataflows.china_capital_flow import get_a_share_insider_trades
 
     try:
         text = str(get_a_share_insider_trades(
-            ticker, (cutoff - timedelta(days=365)).isoformat(), cutoff.isoformat()))
+            ticker, (cutoff - timedelta(days=365)).isoformat(), cutoff.isoformat(), session=session))
     except AshareCapabilityUnavailableError as exc:
         if exc.capability == "date_window":
             return []
@@ -267,14 +288,14 @@ def _holder_change_rows(ticker, cutoff):
     return rows
 
 
-def _consensus_rows(ticker, cutoff):
+def _consensus_rows(ticker, cutoff, *, session=None):
     from tradingagents.dataflows.china_specialty_em import get_a_share_eps_forecast
 
     # The adapter reads a live snapshot with no archived vintage, so a historical
     # cutoff would silently present today's forecast as of that date.
     if cutoff != datetime.now(SHANGHAI).date():
         raise ValueError("capability_not_point_in_time")
-    text = str(get_a_share_eps_forecast(ticker, as_of=cutoff.isoformat()))
+    text = str(get_a_share_eps_forecast(ticker, as_of=cutoff.isoformat(), session=session))
     rows = []
     for row in _csv_rows(text):
         year = str(row.get("年度") or "").strip()
@@ -289,7 +310,56 @@ def _consensus_rows(ticker, cutoff):
     return rows
 
 
-def _ir_rows(ticker, cutoff):
+def _valuation_history_rows(ticker, cutoff, *, session=None):
+    from tradingagents.dataflows.valuation_history import get_a_share_valuation_history_rows
+
+    rows = get_a_share_valuation_history_rows(
+        ticker, (cutoff - timedelta(days=180)).isoformat(), cutoff.isoformat(), session=session)
+    kept = [row for row in rows if row["published"] <= cutoff.isoformat()]
+    return kept[:_MAX_ROWS["valuation_history"]]
+
+
+def _northbound_rows(cutoff, *, session=None):
+    from tradingagents.dataflows.china_capital_flow import get_a_share_northbound_flow
+
+    # THS serves today's intraday aggregate only; a historical cutoff has no vintage.
+    if cutoff != datetime.now(SHANGHAI).date():
+        raise ValueError("capability_not_point_in_time")
+    rows = _csv_rows(str(get_a_share_northbound_flow(session=session)))
+    if not rows:
+        return []
+    latest = rows[-1]
+    return [{"published": cutoff.isoformat(), "last_time": str(latest.get("time") or ""),
+             "minutes": len(rows),
+             "hgt": str(latest.get("hgt_net_buy_yi") or "NA"),
+             "sgt": str(latest.get("sgt_net_buy_yi") or "NA"),
+             "source_name": "ths.northbound_flow"}]
+
+
+def _wind_rows(ticker, cutoff):
+    from tradingagents.dataflows.wind_provider import (
+        WindNotConfiguredError,
+        get_equity_risk_metrics,
+    )
+
+    if cutoff != datetime.now(SHANGHAI).date():
+        raise ValueError("capability_not_point_in_time")
+    try:
+        rows = _csv_rows(str(get_equity_risk_metrics(ticker)))
+    except WindNotConfiguredError:
+        raise ValueError("capability_wind_not_configured") from None
+    if not rows:
+        return []
+    record = rows[0]
+    wanted = ("BETA", "波动", "回撤", "SHARPE", "夏普")
+    metrics = {str(key): str(value) for key, value in record.items()
+               if value not in (None, "") and any(token in str(key).upper() or token in str(key) for token in wanted)}
+    if not metrics:
+        return []
+    return [{"published": cutoff.isoformat(), "metrics": metrics, "source_name": "wind.risk_metrics"}]
+
+
+def _ir_rows(ticker, cutoff, *, session=None):
     from tradingagents.dataflows.ticker_utils import (
         infer_a_share_exchange,
         normalize_ticker_symbol,
@@ -300,17 +370,18 @@ def _ir_rows(ticker, cutoff):
     code = to_akshare_symbol(normalize_ticker_symbol(ticker))
     exchange = infer_a_share_exchange(code)
     if exchange == "SH":
-        return _sse_ir_rows(strict_ticker_code(ticker, stock_only=True), cutoff)
+        return _sse_ir_rows(strict_ticker_code(ticker, stock_only=True), cutoff, session=session)
     if exchange == "SZ":
-        return _cninfo_irm_rows(code, cutoff)
+        return _cninfo_irm_rows(code, cutoff, session=session)
     raise ValueError("ir_qa_exchange_unsupported")
 
 
-def _sse_ir_rows(code, cutoff):
+def _sse_ir_rows(code, cutoff, *, session=None):
     from tradingagents.dataflows.a_share_official import get_a_share_sse_e_interaction
 
     rows = []
-    for row in _csv_rows(str(get_a_share_sse_e_interaction(code, kind="answered", page=1, page_size=10))):
+    for row in _csv_rows(str(get_a_share_sse_e_interaction(
+            code, kind="answered", page=1, page_size=10, session=session))):
         stamp = str(row.get("answer_time") or "")
         day = stamp[:10]
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) or day > cutoff.isoformat():
@@ -322,13 +393,13 @@ def _sse_ir_rows(code, cutoff):
     return rows
 
 
-def _cninfo_irm_rows(code, cutoff):
+def _cninfo_irm_rows(code, cutoff, *, session=None):
     """Bounded CNINFO IRM (a-stock-data §10.1); one page only, never AKShare's 10×1000 crawl."""
     import requests
 
     from tradingagents.dataflows.china_specialty import _cninfo_orgid
 
-    response = requests.post(
+    response = (session or requests).post(
         "https://irm.cninfo.com.cn/newircs/company/question",
         params={"_t": 1, "stockcode": code, "orgId": _cninfo_orgid(code), "pageSize": 30, "pageNum": 1,
                 "keyWord": "", "startDay": "", "endDay": ""},
@@ -363,7 +434,8 @@ def _csv_rows(text):
 
 def _observation(request, *, role, ticker, row, index):
     source_name = row["source_name"]
-    source_kind = "vendor" if source_name.startswith(("eastmoney.", "ths.")) else "official"
+    source_kind = "vendor" if source_name.startswith(
+        ("eastmoney.", "ths.", "wind.", "baostock.", "tushare.")) else "official"
     if request.capability_id == "disclosure_search":
         text = f"{row['published']} 《{row['title']}》" + (f" 类型:{row['kind']}" if row.get("kind") else "")
         statement = f"巨潮公告目录载明：{text}"
@@ -390,6 +462,23 @@ def _observation(request, *, role, ticker, row, index):
                 f"区间={row.get('eps_low')}~{row.get('eps_high')} 行业平均={row.get('industry_mean')}")
         statement = f"同花顺一致预期样本：{text}"
         url, locator = None, "机构一致预期表"
+    elif request.capability_id == "valuation_history":
+        text = " ".join(f"{label}={row.get(key) if row.get(key) is not None else 'NA'}"
+                        for key, label in (("close", "收盘"), ("pe_ttm", "PE(TTM)"), ("pb_mrq", "PB"),
+                                           ("ps_ttm", "PS"), ("pcf", "PCF"), ("turnover", "换手率")))
+        text = f"{row['published']} {text} 来源={row['source_name']}"
+        statement = f"日频估值记录：{text}"
+        url, locator = None, "日频估值序列"
+    elif request.capability_id == "northbound_flow":
+        text = (f"{row['published']} 北向累计净买入截至 {row.get('last_time') or 'NA'}："
+                f"沪股通={row.get('hgt')}亿元 深股通={row.get('sgt')}亿元（样本 {row.get('minutes')} 分钟）")
+        statement = f"同花顺北向资金（全市场）：{text}"
+        url, locator = None, "当日北向累计净买入"
+    elif request.capability_id == "wind_enrich":
+        text = f"{row['published']} Wind 1年风险指标：" + "；".join(
+            f"{key}={value}" for key, value in row["metrics"].items())
+        statement = f"Wind 风险指标快照：{text}"
+        url, locator = None, "Wind 风险指标"
     else:
         text = f"问：{row.get('question', '')}\n答：{row.get('answer') or '（尚未回复）'}"
         statement = f"投资者互动问答：{text[:1000]}"
@@ -397,7 +486,10 @@ def _observation(request, *, role, ticker, row, index):
     text = text[:4000]
     extra_limitations = {"consensus_eps": ("forecast_snapshot_not_reported_eps",),
                          "longhubang": ("market_record_not_motive",),
-                         "holder_change": ("disclosure_record_not_motive",)}.get(request.capability_id, ())
+                         "holder_change": ("disclosure_record_not_motive",),
+                         "valuation_history": ("valuation_record_not_fair_value",),
+                         "northbound_flow": ("market_wide_not_ticker_attribution",),
+                         "wind_enrich": ("provider_snapshot_not_forecast",)}.get(request.capability_id, ())
     digest = hashlib.sha256(text.encode()).hexdigest()
     identity = hashlib.sha256(
         f"{request.capability_id}|{ticker}|{role}|{row['published']}|{text}|{index}".encode()).hexdigest()

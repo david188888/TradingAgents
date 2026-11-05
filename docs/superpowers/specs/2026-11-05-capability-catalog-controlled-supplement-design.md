@@ -266,3 +266,9 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 2. 已按备忘修复：CNINFO `searchkey` 服务端标题检索 + 查询归一化 + 最长词降级 + 关闭高亮；卡片 `query` 收窄为 1–3 个标题关键词。
 3. 修复后用同一批真实 query 回归：进展公告、董事会决议、翌日披露报表、股东会决议、乐庭智联均能入证；`股价异常波动公告` 因标题无对应词仍为 typed 空结果。
 4. 第二次 live 验收已完成（2026-11-05，用户授权）：能力请求改用标题关键词，3 次调用入证 17 条 capability 事实（经营视图 16 条、事件视图 1 条），并支撑一条 accepted Insight；报告仅剩 `capability_use_search_path`/`capability_budget_exhausted`/`capability_role_limit` 缺口。详见验收备忘。
+
+### 13.4 收尾实现（2026-11-05）
+
+1. 剩余能力卡：`valuation_history`（baostock 日频 PE/PB/PS/PCF，Tushare daily_basic 兜底，最近 60 个交易日、不做分位）、`northbound_flow`（THS 当日沪/深股通累计净买入快照，历史 cutoff 返回 `capability_not_point_in_time`）、`wind_enrich`（Wind 1 年 Beta/年化波动/最大回撤/夏普；要求 `wind_enabled` 且本机 CLI 可解析，否则目录隐藏）。`financials_detail` 与 `industry_peers` 改标 `prefetch_only`：最小证据包已分别采集细项与同行样本，不做同源重复卡。
+2. 预算会话：能力适配器接受 run 的 `BudgetedSession`——CNINFO 公告、股东户数、龙虎榜、增减持（经 EastMoney 限速客户端包一层）、THS 一致预期、THS 北向、SSE/CNINFO 互动问答、Tushare 估值兜底均计入 `DATA_HTTP_ATTEMPTS`；baostock TCP 与 Wind CLI 按设计不入 HTTP 预算，仍计 capability 调用。
+3. 审计：Audit Center 的 capabilities 分区从 research journal 的 `results`（`capability.batch.*`）派生 batch 摘要（admitted/empty/budget/failure、原因码、提供方、结果 ID），无需新事件类型或前端改动；capability 详情补充可用性/提供方/结果标识。

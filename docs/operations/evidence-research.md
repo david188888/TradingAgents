@@ -104,8 +104,9 @@ frozen in the research journal as `insight.capability_requests.<role>[.supplemen
 executed round's admitted increment under the `insight.capability.round.<round>` result key, and each
 dispatch is a `supplement_capabilities` budget attempt whose stage names the role and card. Rejections,
 empty results and card/role limits remain typed `capability_*` codes in the saved report gaps; none of
-them proves the event did not happen. Known v1 limit: the Audit Center renders source degradation and
-source-capability summaries, not these gateway calls, so review them from the journal and report.
+them proves the event did not happen. The Audit Center capabilities section lists each gateway batch
+with its admitted/empty/budget/failure state, reason codes, providers and saved result id, in addition
+to the older source-degradation summaries.
 A review may explicitly find no effective counterevidence; missing or failed review remains visible.
 The latter does not prove the Insight correct. See [V9 semantics](../contracts/research-record.md#insight-first-v9).
 

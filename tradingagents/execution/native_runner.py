@@ -98,7 +98,7 @@ def native_identity(request):
 
 
 def capability_supplement_policy():
-    """Frozen model-visible card sets; v1 never probes credential-gated cards."""
+    """Frozen model-visible card sets; credential-gated cards are probed here once."""
     from tradingagents.dataflows.capability_catalog import (
         CATALOG_SCHEMA_VERSION,
         catalog_identity_digest,
@@ -106,9 +106,18 @@ def capability_supplement_policy():
     )
     from tradingagents.graph.insight_research import CAPABILITY_CALLS_PER_ROLE
     from tradingagents.research.native_policy import ROLE_ORDER
+    requirements = capability_requirements()
     return {"version": CATALOG_SCHEMA_VERSION, "calls_per_role": CAPABILITY_CALLS_PER_ROLE,
-            "requirements": [], "roles": {role: catalog_identity_digest(load_capability_catalog(role=role))
-                                          for role in ROLE_ORDER}}
+            "requirements": sorted(requirements),
+            "roles": {role: catalog_identity_digest(
+                load_capability_catalog(role=role, available_requirements=requirements))
+                      for role in ROLE_ORDER}}
+
+
+def capability_requirements():
+    """Requirements satisfied on this machine, frozen into run identity."""
+    from tradingagents.dataflows.wind_provider import wind_requirement_available
+    return frozenset({"wind_cli"}) if wind_requirement_available() else frozenset()
 
 
 @dataclass(frozen=True)
@@ -353,11 +362,15 @@ class NativeRunner:
             from tradingagents.execution.insight_capability import collect_capability_supplement
             with BudgetedSession(journal.ledger, active, lambda: deadline - time.monotonic()) as session:
                 search_record, result = collect_capability_supplement(search_record, requests,
-                    ledger=journal.ledger, ensure_active=active, round_id=round_id, session=session)
+                    ledger=journal.ledger, ensure_active=active, round_id=round_id, session=session,
+                    available_requirements=capability_requirements_frozen)
             return result
 
         capability_policy = journal.state['identity'].get('capability_supplement_policy')
-        capability_cards = {role: compact_capability_cards(load_capability_catalog(role=role)) for role in ROLE_ORDER}
+        capability_requirements_frozen = frozenset(
+            (capability_policy or {}).get('requirements', ()))
+        capability_cards = {role: compact_capability_cards(load_capability_catalog(
+            role=role, available_requirements=capability_requirements_frozen)) for role in ROLE_ORDER}
 
         record = run_insight_research(run_id=run_id, ticker=request.ticker, analysis_date=seed.analysis_date,
             catalogs=catalogs, caller=delegate, journal=journal, ensure_active=active, focus_question=request.research_question,

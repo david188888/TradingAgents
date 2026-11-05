@@ -330,6 +330,16 @@ def set_transport(transport: WindTransport | None) -> None:
         _transport = transport
 
 
+def wind_requirement_available() -> bool:
+    """Whether the capability catalog may expose the Wind card on this machine."""
+    try:
+        _check_wind_enabled()
+        _resolve_cli_path()
+    except (WindNotConfiguredError, OSError):
+        return False
+    return True
+
+
 def _call_wind(
     server_type: str, tool_name: str, params: dict[str, Any]
 ) -> WindEnvelope:

@@ -819,6 +819,7 @@ def em_datacenter_strict(
     max_rows: int = 5000,
     columns: str = "ALL",
     extra: Mapping[str, Any] | None = None,
+    client: EastMoneyHTTPClient | None = None,
 ) -> DatacenterPage:
     """Page an EastMoney datacenter report, or raise.
 
@@ -847,7 +848,7 @@ def em_datacenter_strict(
         }
         params.update(extra or {})
         try:
-            payload = em_get(EASTMONEY_DATACENTER_URL, params=params, timeout=20)
+            payload = em_get(EASTMONEY_DATACENTER_URL, params=params, timeout=20, client=client)
         except VendorError as exc:
             raise ChinaDataUnavailableError(
                 f"东财 {report_name} 请求失败: {type(exc).__name__}: {exc}"

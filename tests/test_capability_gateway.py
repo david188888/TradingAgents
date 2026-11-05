@@ -19,13 +19,13 @@ def test_rejects_invisible_news_path_and_empty_disclosure_query():
     result, _ = run([
         {"capability_id": "news_search", "query": "客户", "gap_reason": "缺新闻"},
         {"capability_id": "disclosure_search", "query": "", "gap_reason": "缺公告"},
-        {"capability_id": "valuation_history", "query": "", "gap_reason": "未实现"},
+        {"capability_id": "financials_detail", "query": "", "gap_reason": "未实现"},
         {"capability_id": "shareholder_count", "query": "", "gap_reason": " "},
     ], role="market_context")
     assert result.executed == ()
     assert "capability_use_search_path:news_search" in result.rejected
     assert "capability_query_required:disclosure_search" in result.rejected
-    assert "capability_not_visible:valuation_history" in result.rejected
+    assert "capability_not_visible:financials_detail" in result.rejected
     assert "capability_request_invalid" in result.rejected
 
 
@@ -40,7 +40,7 @@ def test_shareholder_fetch_is_admitted_and_budgeted(monkeypatch):
     ])
     monkeypatch.setattr(
         "tradingagents.dataflows.china_specialty_em.get_a_share_shareholder_counts_em",
-        lambda ticker: report)
+        lambda ticker, *, session=None: report)
     result, journal = run([CapabilityRequest(
         capability_id="shareholder_count", query="", gap_reason="缺股东户数变化")])
     assert result.executed == ("shareholder_count",)
@@ -151,7 +151,7 @@ def test_card_limit_counts_durable_attempts_not_one_call(monkeypatch):
     report = "\n".join(["# China A-share shareholder counts for 002130.SZ", "# Source: eastmoney", "",
                         "Date,Holder Num,Change Num,Change %,Avg Hold Num", "2026-09-30,12000,-500,-4.0,8000"])
     monkeypatch.setattr("tradingagents.dataflows.china_specialty_em.get_a_share_shareholder_counts_em",
-                        lambda ticker: report)
+                        lambda ticker, *, session=None: report)
     first, journal = run([{"capability_id": "shareholder_count", "query": "", "gap_reason": "缺户数"}])
     assert first.executed == ("shareholder_count",)
     again, _ = run([{"capability_id": "shareholder_count", "query": "", "gap_reason": "仍缺户数变化"}],
@@ -185,7 +185,7 @@ def test_consensus_eps_snapshot_is_admitted_only_for_a_live_cutoff(monkeypatch):
         "2027,2,1.19,1.37,1.54,4.14",
     ])
     monkeypatch.setattr("tradingagents.dataflows.china_specialty_em.get_a_share_eps_forecast",
-                        lambda ticker, as_of=None: text)
+                        lambda ticker, as_of=None, *, session=None: text)
     result, journal = run([{"capability_id": "consensus_eps", "query": "", "gap_reason": "缺机构预期"}],
                           cutoff=date.today())
     assert result.executed == ("consensus_eps",)
@@ -211,7 +211,7 @@ def test_dragon_tiger_admits_appearances_and_keeps_empty_typed(monkeypatch):
         "buy,深股通专用,11138.9,5905.0,5233.9",
     ])
     monkeypatch.setattr("tradingagents.dataflows.china_specialty_em.get_a_share_dragon_tiger_em",
-                        lambda ticker, trade_date: text)
+                        lambda ticker, trade_date, *, session=None: text)
     result, _ = run([{"capability_id": "longhubang", "query": "", "gap_reason": "需核实上榜"}],
                     role="market_context")
     assert result.executed == ("longhubang",)
@@ -223,7 +223,7 @@ def test_dragon_tiger_admits_appearances_and_keeps_empty_typed(monkeypatch):
     empty = "\n".join(["# China A-share dragon-tiger records for 300308.SZ", "# Source: eastmoney", "",
                        "# Total records: 0", "# Coverage: complete (0 matching records)", "", ""])
     monkeypatch.setattr("tradingagents.dataflows.china_specialty_em.get_a_share_dragon_tiger_em",
-                        lambda ticker, trade_date: empty)
+                        lambda ticker, trade_date, *, session=None: empty)
     again, _ = run([{"capability_id": "longhubang", "query": "", "gap_reason": "另一个缺口"}],
                    role="market_context")
     assert again.executed == ("longhubang",)
@@ -239,7 +239,7 @@ def test_holder_change_admits_disclosures_and_empty_window_is_not_a_failure(monk
         "20.0,2026-06-12 00:00:00,某私募基金,减持,0.0142,-20.0,2026-06-10 00:00:00,19.35",
     ])
     monkeypatch.setattr("tradingagents.dataflows.china_capital_flow.get_a_share_insider_trades",
-                        lambda ticker, start_date=None, end_date=None: text)
+                        lambda ticker, start_date=None, end_date=None, *, session=None: text)
     result, _ = run([{"capability_id": "holder_change", "query": "", "gap_reason": "需核实增减持"}],
                     role="event_context")
     assert result.executed == ("holder_change",)
@@ -248,7 +248,7 @@ def test_holder_change_admits_disclosures_and_empty_window_is_not_a_failure(monk
 
     from tradingagents.dataflows.china_capabilities import AshareCapabilityUnavailableError
 
-    def no_rows(ticker, start_date=None, end_date=None):
+    def no_rows(ticker, start_date=None, end_date=None, *, session=None):
         raise AshareCapabilityUnavailableError("date_window", "eastmoney", "no rows in requested date window")
 
     monkeypatch.setattr("tradingagents.dataflows.china_capital_flow.get_a_share_insider_trades", no_rows)
@@ -257,3 +257,113 @@ def test_holder_change_admits_disclosures_and_empty_window_is_not_a_failure(monk
     assert empty.executed == ("holder_change",)
     assert empty.admitted.observations == ()
     assert "capability_empty:holder_change" in empty.gaps
+
+
+def test_valuation_history_admits_bounded_newest_rows(monkeypatch):
+    captured = {}
+
+    def fake(ticker, start_date, end_date, *, session=None):
+        captured.update(ticker=ticker, start=start_date, end=end_date)
+        return tuple({"published": f"2026-11-{day:02d}", "close": 14.5, "pe_ttm": 17.2,
+                      "pb_mrq": 2.1, "ps_ttm": 1.4, "pcf": 12.0, "turnover": 2.2,
+                      "is_st": "0", "source_name": "tushare.valuation_history"}
+                     for day in range(5, 0, -1))
+
+    monkeypatch.setattr("tradingagents.dataflows.valuation_history.get_a_share_valuation_history_rows", fake)
+    result, _ = run([{"capability_id": "valuation_history", "query": "", "gap_reason": "缺估值历史"}],
+                    cutoff=date(2026, 11, 5))
+    assert captured["ticker"] == "002130.SZ" and captured["end"] == "2026-11-05"
+    assert result.executed == ("valuation_history",)
+    assert len(result.admitted.observations) == 5
+    text = result.admitted.observations[0].source.content.text
+    assert "PE(TTM)=17.2" in text and "来源=tushare.valuation_history" in text
+    assert "valuation_record_not_fair_value" in result.admitted.observations[0].source.limitations
+
+
+def test_valuation_history_caps_rows_and_drops_future_dates(monkeypatch):
+    def fake(ticker, start_date, end_date, *, session=None):
+        return tuple({"published": f"2026-{month:02d}-15", "close": 14.0, "pe_ttm": 17.0,
+                      "pb_mrq": 2.0, "ps_ttm": None, "pcf": None, "turnover": None,
+                      "is_st": "", "source_name": "baostock.valuation_history"}
+                     for month in range(12, 6, -1)) + (
+            {"published": "2026-12-15", "close": 15.0, "pe_ttm": 18.0, "pb_mrq": 2.2,
+             "ps_ttm": None, "pcf": None, "turnover": None, "is_st": "",
+             "source_name": "baostock.valuation_history"},)
+
+    monkeypatch.setattr("tradingagents.dataflows.valuation_history.get_a_share_valuation_history_rows", fake)
+    result, _ = run([{"capability_id": "valuation_history", "query": "", "gap_reason": "缺历史"}],
+                    cutoff=date(2026, 11, 5))
+    dates = [observation.source.published_at.date().isoformat() for observation in result.admitted.observations]
+    assert "2026-12-15" not in dates
+    assert dates == sorted(dates, reverse=True)
+
+
+def test_northbound_flow_is_a_today_snapshot_only(monkeypatch):
+    text = "\n".join(["# China A-share northbound flow for market-wide", "# Source: ths", "",
+                      "time,hgt_net_buy_yi,sgt_net_buy_yi",
+                      "09:30,1.0,10.0", "14:55,2.5,20.0", "15:00,3.0,"])
+    monkeypatch.setattr("tradingagents.dataflows.china_capital_flow.get_a_share_northbound_flow",
+                        lambda *, session=None: text)
+    result, _ = run([{"capability_id": "northbound_flow", "query": "", "gap_reason": "缺北向"}],
+                    role="market_context", cutoff=date.today())
+    assert result.executed == ("northbound_flow",)
+    assert len(result.admitted.observations) == 1
+    observed = result.admitted.observations[0].source.content.text
+    assert "沪股通=3.0亿元" in observed and "深股通=NA" in observed and "样本 3 分钟" in observed
+    assert "market_wide_not_ticker_attribution" in result.admitted.observations[0].source.limitations
+
+    stale, _ = run([{"capability_id": "northbound_flow", "query": "", "gap_reason": "补历史北向"}],
+                   role="market_context", cutoff=date(2026, 1, 1))
+    assert stale.executed == ()
+    assert "capability_unavailable:northbound_flow:capability_not_point_in_time" in stale.gaps
+
+
+def test_wind_risk_metrics_need_the_requirement_and_a_live_cutoff(monkeypatch):
+    text = "\n".join(["# Equity risk metrics for 002130.SZ (002130.SZ)", "# Source: wind", "",
+                      "Wind代码,证券简称,过去1年的BETA,过去1年的年化波动率,过去1年的最大回撤,过去1年的SHARPE",
+                      "002130.SZ,沃尔核材,1.9003,43.0042,-57.9799,-0.0716"])
+    monkeypatch.setattr("tradingagents.dataflows.wind_provider.get_equity_risk_metrics",
+                        lambda ticker: text)
+    result, _ = run([{"capability_id": "wind_enrich", "query": "", "gap_reason": "缺风险指标"}],
+                    role="market_context", cutoff=date.today(), available_requirements={"wind_cli"})
+    assert result.executed == ("wind_enrich",)
+    observed = result.admitted.observations[0].source.content.text
+    assert "BETA=1.9003" in observed and "最大回撤=-57.9799" in observed
+    assert result.admitted.observations[0].source.source_kind == "vendor"
+    assert "provider_snapshot_not_forecast" in result.admitted.observations[0].source.limitations
+
+    hidden, _ = run([{"capability_id": "wind_enrich", "query": "", "gap_reason": "缺风险指标"}],
+                    role="market_context", cutoff=date.today())
+    assert "capability_not_visible:wind_enrich" in hidden.rejected
+
+    stale, _ = run([{"capability_id": "wind_enrich", "query": "", "gap_reason": "补历史"}],
+                   role="market_context", cutoff=date(2026, 1, 1), available_requirements={"wind_cli"})
+    assert "capability_unavailable:wind_enrich:capability_not_point_in_time" in stale.gaps
+
+
+def test_vendor_failure_keeps_its_typed_detail_in_the_gap(monkeypatch):
+    from tradingagents.dataflows.china_capabilities import AshareCapabilityUnavailableError
+
+    def fail(ticker, start_date, end_date, *, session=None):
+        raise AshareCapabilityUnavailableError("valuation_history", "baostock", "login failed")
+
+    monkeypatch.setattr("tradingagents.dataflows.valuation_history.get_a_share_valuation_history_rows", fail)
+    result, _ = run([{"capability_id": "valuation_history", "query": "", "gap_reason": "缺估值历史"}])
+    assert "capability_unavailable:valuation_history:login failed" in result.gaps
+
+
+def test_gateway_hands_the_budgeted_session_to_card_adapters(monkeypatch):
+    captured = {}
+
+    def fake(ticker, *, session=None):
+        captured["session"] = session
+        return "\n".join(["# China A-share shareholder counts for 002130.SZ", "# Source: eastmoney",
+                          "", "Date,Holder Num,Change Num,Change %,Avg Hold Num",
+                          "2026-09-30,12000,-500,-4.0,8000"])
+
+    monkeypatch.setattr("tradingagents.dataflows.china_specialty_em.get_a_share_shareholder_counts_em", fake)
+    marker = object()
+    result, _ = run([{"capability_id": "shareholder_count", "query": "", "gap_reason": "缺户数"}],
+                    session=marker)
+    assert result.executed == ("shareholder_count",)
+    assert captured["session"] is marker

@@ -31,7 +31,7 @@ def capability_fact(record):
 
 def test_shareholder_supplement_is_admitted_for_the_requesting_role_only(monkeypatch):
     monkeypatch.setattr("tradingagents.dataflows.china_specialty_em.get_a_share_shareholder_counts_em",
-                        lambda ticker: SHAREHOLDER_REPORT)
+                        lambda ticker, *, session=None: SHAREHOLDER_REPORT)
     journal, before = base_record()
     updated, result = collect_capability_supplement(before, {"operating_quality": (
         {"capability_id": "shareholder_count", "query": "", "gap_reason": "缺近一年股东户数"},)},
@@ -71,7 +71,7 @@ def test_market_role_disclosure_supplement_stays_in_its_own_view(monkeypatch):
 def test_round_replay_returns_the_saved_increment_without_refetching(monkeypatch):
     fetched = []
 
-    def fake(ticker):
+    def fake(ticker, *, session=None):
         fetched.append(ticker)
         return SHAREHOLDER_REPORT
 

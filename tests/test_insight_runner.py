@@ -99,6 +99,7 @@ def test_new_research_defaults_to_insight_workflow():
     policy = native_identity(request)['capability_supplement_policy']
     assert policy['version'] == 'capability-catalog-v1'
     assert set(policy['roles']) == {'operating_quality', 'event_context', 'market_context'}
+    assert isinstance(policy['requirements'], list)
 
 
 def test_changed_capability_catalog_digest_blocks_resume(tmp_path, monkeypatch):

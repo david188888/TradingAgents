@@ -27,6 +27,7 @@ from .china_data import ChinaDataUnavailableError
 from .coverage import CoveredText, ScreeningCoverageV1, SourceCoverageV1
 from .eastmoney import (
     DatacenterPage,
+    EastMoneyHTTPClient,
     datacenter_screening_coverage,
     dedupe_datacenter_rows,
     em_datacenter_strict,
@@ -161,6 +162,11 @@ def _combine_screening_coverage(
     )
 
 
+def _budgeted_client(session):
+    """EastMoney pacing over the caller's budgeted session when one is supplied."""
+    return EastMoneyHTTPClient(session=session) if session is not None else None
+
+
 def _require_a_share_code(ticker: str) -> str:
     canonical = normalize_ticker_symbol(ticker)
     if not is_a_share_ticker(canonical):
@@ -240,7 +246,8 @@ def _capture_vendor_raw(data: Any, *, metadata: dict[str, Any]) -> None:
     capture_vendor_raw(data, metadata=dict(metadata))
 
 
-def get_a_share_dragon_tiger_em(ticker: str, trade_date: str, flag: str = "买入") -> CoveredText:
+def get_a_share_dragon_tiger_em(ticker: str, trade_date: str, flag: str = "买入", *,
+                                session: requests.Session | None = None) -> CoveredText:
     """A-share dragon-tiger board (个股龙虎榜) via EastMoney datacenter direct.
 
     Returns appearance records within a 30-day look-back from ``trade_date``
@@ -264,6 +271,7 @@ def get_a_share_dragon_tiger_em(ticker: str, trade_date: str, flag: str = "买�
         sort_types="-1",
         page_size=min(_DRAGON_TIGER_MAX_ROWS, 500),
         max_rows=_DRAGON_TIGER_MAX_ROWS,
+        client=_budgeted_client(session),
     )
     records = dedupe_datacenter_rows(records_page, "RPT_DAILYBILLBOARD_DETAILSNEW")
     _require_filtered_rows(
@@ -306,6 +314,7 @@ def get_a_share_dragon_tiger_em(ticker: str, trade_date: str, flag: str = "买�
                 sort_types="-1",
                 page_size=min(_DRAGON_TIGER_MAX_ROWS, 500),
                 max_rows=_DRAGON_TIGER_MAX_ROWS,
+                client=_budgeted_client(session),
             )
             detail = dedupe_datacenter_rows(page, report_name)
             _require_filtered_rows(
@@ -511,7 +520,7 @@ def get_a_share_bulk_trades_em(ticker: str, start_date: str, end_date: str) -> C
     )
 
 
-def get_a_share_shareholder_counts_em(ticker: str) -> CoveredText:
+def get_a_share_shareholder_counts_em(ticker: str, *, session: requests.Session | None = None) -> CoveredText:
     """A-share shareholder-count changes (股东户数) via EastMoney datacenter direct."""
     code = _require_a_share_code(ticker)
     scope = f"ticker={to_tushare_symbol(ticker)} series=quarterly"
@@ -523,6 +532,7 @@ def get_a_share_shareholder_counts_em(ticker: str) -> CoveredText:
         sort_types="-1",
         page_size=min(_SHAREHOLDER_COUNTS_MAX_ROWS, 500),
         max_rows=_SHAREHOLDER_COUNTS_MAX_ROWS,
+        client=_budgeted_client(session),
     )
     data = dedupe_datacenter_rows(page, "RPT_HOLDERNUMLATEST")
     _require_filtered_rows(
@@ -1014,7 +1024,8 @@ def get_a_share_research_reports(
     return CoveredText(report, coverage)
 
 
-def get_a_share_eps_forecast(ticker: str, as_of: str | None = None) -> str:
+def get_a_share_eps_forecast(ticker: str, as_of: str | None = None, *,
+                             session: requests.Session | None = None) -> str:
     """A-share consensus EPS forecast (机构一致预期EPS) via THS (10jqka).
 
     Parses the THS worth.html table; the 'mean' column is the institutional
@@ -1023,7 +1034,7 @@ def get_a_share_eps_forecast(ticker: str, as_of: str | None = None) -> str:
     code = _require_strict_a_share_code(ticker)
     url = f"https://basic.10jqka.com.cn/new/{code}/worth.html"
     try:
-        resp = requests.get(
+        resp = (session or requests).get(
             url,
             headers={
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
