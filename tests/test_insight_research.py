@@ -370,6 +370,8 @@ def test_challenge_rejections_are_recorded_with_safe_reason_codes(tmp_path):
             return {'insights': [proposal(), proposal(claim='第二观点需要核查。', evidence_refs=['E1'])]}
         if stage == 'operating_quality':
             return {'insights': [proposal(claim='第二观点需要核查。', evidence_refs=['E1'])]}
+        if stage == 'challenge' and phase == 'repair':
+            return {'reviews': []}
         if stage == 'challenge':
             return {'reviews': [
                 {'target': 'I1', 'concern': None, 'reasoning': '已审阅，未发现额外有效反证。', 'evidence_refs': []},
@@ -383,5 +385,42 @@ def test_challenge_rejections_are_recorded_with_safe_reason_codes(tmp_path):
     codes = [item['code'] for item in diagnostics]
     assert 'numeric_literal_unbound' in codes
     assert 'target_unknown' in codes
+    assert 'repair_unresolved' in codes
     assert [review.status for review in report.reviews] == ['no_counterevidence', 'unreviewed']
     assert 'unreviewed_insights' in report.gaps
+
+
+def test_challenge_reviews_are_repaired_once_for_failed_targets(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    seen = []
+
+    def respond(stage, context, *, phase='main'):
+        seen.append((stage, phase))
+        if stage == 'operating_quality' and phase == 'main':
+            return {'insights': [proposal(), proposal(claim='第二观点需要核查。', evidence_refs=['E1'])]}
+        if stage == 'operating_quality':
+            return {'insights': [proposal(claim='第二观点需要核查。', evidence_refs=['E1'])]}
+        if stage == 'challenge' and phase == 'main':
+            return {'reviews': [
+                {'target': 'I1', 'concern': None, 'reasoning': '已审阅，未发现额外有效反证。', 'evidence_refs': []},
+                {'target': 'I2', 'concern': None, 'reasoning': '收入增长 10% 需要关注。', 'evidence_refs': []},
+            ]}
+        if stage == 'challenge':
+            assert context['repair_targets'] == ['I2']
+            return {'reviews': [
+                {'target': 'I2', 'concern': '客户集中度需要复核。', 'reasoning': '需要复核客户依赖是否改善 [E1]。', 'evidence_refs': ['E1']},
+            ]}
+        if stage.startswith('response_'):
+            return {'responses': [{'target': 'I2', 'action': 'maintain', 'reasoning': '维持现有观点 [E1]。',
+                                   'evidence_refs': ['E1'], 'replacement': None}]}
+        return response(stage, context, phase=phase)
+
+    report = execute(journal, respond)
+    assert seen.count(('challenge', 'repair')) == 1
+    assert [review.status for review in report.reviews] == ['no_counterevidence', 'challenged']
+    assert report.stages['challenge'] == 'completed'
+    assert 'unreviewed_insights' not in report.gaps
+    diagnostics = journal.state['insight.diagnostics.challenge']
+    assert any(item['target'] == 'I2' and item['code'] == 'numeric_literal_unbound' for item in diagnostics)
+    assert not any(item.get('code') == 'repair_unresolved' for item in diagnostics)
+    assert execute(journal, lambda *a, **k: (_ for _ in ()).throw(AssertionError('replay called model'))) == report

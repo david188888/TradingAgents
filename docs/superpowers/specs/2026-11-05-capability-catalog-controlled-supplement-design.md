@@ -277,4 +277,5 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 
 1. 两次 live 验收的 challenge 阶段均失败：第一次 7 条 review 只有 3 条有效，第二次 9 条全部 `unreviewed`。模型有返回、但 review 校验失败且此前没有原因落盘。
 2. 已在 `graph/insight_research.py` 记录 `insight.diagnostics.challenge`（`target_unknown` / `blank_text` / `numeric_literal_unbound` / `review_shape_invalid` / `target_missing` / `duplicate_target` 等安全原因码，不保存原文），并在 challenge prompt 约束：每个 I 引用恰好一条 review、不引入新数字（用 `[N]` token 或省略）、只引用已给 E 引用。
-3. 尚未修完：需要一次授权 live run 读取诊断码定位根因，再决定改 prompt 还是改校验策略，并再跑一次验证。
+3. 已加一次**有界 review repair**：首轮后仅对未覆盖/重复 target 追加一次 `challenge` repair 调用（复用现有 `STRUCTURED_REPAIR` 预算与“只重试失败项”语义），repair 成功则清除重复，仍失败记 `repair_unresolved`；未知派发结果（response_unknown）不会变成新的 repair 尝试。
+4. 尚未完成：需要一次授权 live run 读取诊断码确认 repair 是否足以覆盖真实失败（若码显示系统性 schema/prompt 问题，再针对性修），并跑一次验证 run。
