@@ -14,7 +14,7 @@
 
 **Spec:** [数据能力目录与受控补证工具层](../superpowers/specs/2026-11-05-capability-catalog-controlled-supplement-design.md)
 
-Status: Tasks 1–5 offline complete; Task 6 (live run) needs explicit authorization. Task 5 decision: capability supplement stays always-on, so no `default_config` enable/per-role-limit key was added; per-role limit is code-frozen and the audit reading path is documented (design §13.1).
+Status: Tasks 1–5 offline complete; Task 6 (live run) needs explicit authorization. Task 5 decision: capability supplement stays always-on, so no `default_config` enable/per-role-limit key was added; per-role limit is code-frozen and the audit reading path is documented (design §13.1). Task 3 was later extended with consensus_eps, longhubang and holder_change (design §13.2).
 
 ## 设计 §12 关闭结论（对照当前代码）
 

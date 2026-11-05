@@ -27,8 +27,9 @@ A source failure never proves no event occurred. Source routes are not investmen
 DeepSeek/Tavily search discovers dated news, industry, policy and competition, and attempts only
 missing dedicated fields. Snippets are discovery aids. Specialists may also request structured
 supplements through the model-facing [capability catalog](../../tradingagents/dataflows/capability_catalog.py):
-announcement titles, shareholder counts and IR Q&A reuse a-stock-data-aligned adapters; the host owns
-ticker injection, routing and qualification. Search qualification, field recovery, immutable revisions
+announcement titles, shareholder counts, IR Q&A, consensus EPS samples, dragon-tiger appearance
+records and disclosed insider changes reuse a-stock-data-aligned adapters; the host owns ticker
+injection, routing and qualification. Search qualification, field recovery, immutable revisions
 and shared budgets follow the [research contract](../contracts/research-record.md). Unsupported layouts
 or incomplete price/valuation inputs stay unavailable, even when a page was found.
 
