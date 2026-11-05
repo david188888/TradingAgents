@@ -300,11 +300,15 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     else:
         raw = ask('challenge', review_context) if targets else None
         candidates = raw.get('reviews', []) if isinstance(raw, dict) else []
-        accepted, duplicates = {}, set()
-        for value in candidates if isinstance(candidates, list) else []:
+        accepted, duplicates, diagnostics = {}, set(), []
+        for index, value in enumerate(candidates if isinstance(candidates, list) else []):
             try:
                 review = ReviewProposal.model_validate(value)
-                if review.target not in targets or not review.reasoning.strip() or (review.concern is not None and not review.concern.strip()):
+                if review.target not in targets:
+                    diagnostics.append({'index': index, 'target': None, 'code': 'target_unknown'})
+                    continue
+                if not review.reasoning.strip() or (review.concern is not None and not review.concern.strip()):
+                    diagnostics.append({'index': index, 'target': review.target, 'code': 'blank_text'})
                     continue
                 checked = note(review.reasoning, review.evidence_refs, claim=review.concern or '未发现有效反证')
                 if review.target in accepted:
@@ -313,8 +317,18 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     status='challenged' if review.concern else 'no_counterevidence',
                     concern=checked.rendered.claim if review.concern else None, reasoning=checked.rendered.reasoning,
                     source_ids=checked.source_ids, note=checked)
-            except (ValueError, ValidationError):
+            except (ValueError, ValidationError) as exc:
+                code = (str(exc) if str(exc) in {'numeric_literal_unbound', 'numeric_scope', 'reference_unknown',
+                    'source_unavailable', 'evidence_missing'} else 'review_shape_invalid')
+                target = value.get('target') if isinstance(value, dict) else None
+                diagnostics.append({'index': index,
+                    'target': target if isinstance(target, str) and target in targets else None, 'code': code})
                 continue
+        for target in targets:
+            if target not in accepted and not any(item['target'] == target for item in diagnostics):
+                diagnostics.append({'index': None, 'target': target,
+                    'code': 'review_unavailable' if raw is None else 'target_missing'})
+        journal.put('insight.diagnostics.challenge', diagnostics)
         reviews = [accepted[key] if key in accepted and key not in duplicates else SavedReview(target_id=value.insight_id,
             status='unreviewed' if raw is not None else 'failed') for key, value in targets.items()]
         journal.put('insight.reviews', [r.model_dump(mode='json') for r in reviews])
