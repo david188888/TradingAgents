@@ -3,8 +3,8 @@
 Status: Dated acceptance record. Not current-state architecture or operating guidance.
 
 Task 6 of [the capability-catalog plan](../plans/2026-11-05-capability-catalog-controlled-supplement-plan.md):
-one authorized live V9 study to measure model usage, capability audit and supplement counts after
-the catalog/gateway work (PR #44, #45). No default budget or configuration was changed.
+two authorized live V9 studies after the catalog/gateway work (PR #44, #45) — the first before the
+disclosure-search fix (PR #46) and the second after it. No default budget or configuration was changed.
 
 ## Run
 
@@ -124,3 +124,50 @@ progress-announcement, next-day-disclosure, shareholder-meeting and 乐庭智联
 Offline tests cover normalization, the fallback, empty results and card/budget behavior. A second
 live model run is pending explicit authorization; the acceptance verdict above remains the record of
 this run itself.
+
+## Second run after the fix (authorized re-acceptance)
+
+| Item | Value |
+| --- | --- |
+| Run | `run_20261105T114159677532Z_16686591` (separate workspace-local store) |
+| Ticker / date / model | `002130.SZ` / 2026-11-05 / DeepSeek `deepseek-flash` both tiers, thinking high |
+| Result | `completed` in 687 s; readable report; synthesis stance 中性 over 9 accepted Insights (31 items: 9 accepted, 4 pending, 18 superseded) |
+| Token usage | 704,582 input / 72,305 output across 12 calls |
+| Ledger | `supplement_capabilities` 3, `main_analysis` 5, `structured_repair` 3, `search_review` 4, `deepseek_search` 14, `tavily_search` 13, `search_page` 8, `search_rounds` 3 |
+
+The model followed the new card contract and requested title keywords instead of sentences:
+`增资扩股 进展公告`, `期货套期保值 可行性分析报告`, `投资者关系活动记录表`, `三季度报告 在建工程`,
+`股票交易异常波动 风险提示`, plus ticker-only `ir_qa`, `longhubang` and `shareholder_count` requests.
+
+Outcome of the three dispatched capability calls (budget 3/3 consumed):
+
+| Call | Result |
+| --- | --- |
+| operating `disclosure_search` (`投资者关系活动记录表`) | 8 CNINFO titles admitted |
+| operating `ir_qa` | 9 CNINFO IRM question/answer records admitted |
+| event `disclosure_search` (`增资扩股 进展公告`) | the 2026-10-09 progress announcement admitted |
+
+- **17 `capability.*` sources were admitted** into the evidence record and the review catalog;
+  `fact_views` exposed 16 of them to `operating_quality` and 1 to `event_context` (market's requests
+  arrived after the run budget was spent, so its view gained none).
+- One accepted event Insight cites the capability progress announcement as supporting evidence, so
+  the supplement is no longer inert: it changed an admitted view and reached a saved judgement.
+- Report gaps contain only `capability_use_search_path:news_search`, `capability_budget_exhausted` and
+  `capability_role_limit:*` — no `capability_empty` remains.
+- The three-call budget and the per-specialty cap are still the binding limit: all three roles asked
+  for more than they could dispatch, and `news_search` requests continued to route to the dual-search
+  path rather than the gateway (as designed).
+- Challenge again reported `failed` (unreviewed items) and `market_context` failed a repair; both are
+  pre-existing review/repair behaviour, not capability regressions. Responses were skipped because no
+  review concern was accepted, which is why this run used fewer tokens than the first.
+
+**Acceptance:** capability supplements now pass the live evidence-yield check. Infrastructure behaviour
+from the first run (caps, typed gaps, `news_search` routing, deadline, no Bull/Bear regression) is
+unchanged; the only remaining gap is the pre-existing challenge/reply failure surface.
+
+## Final state
+
+Three follow-ups stay open, none blocking this acceptance: remaining capability cards
+(`valuation_history`, `financials_detail`, `industry_peers`, `northbound_flow`, `wind_enrich`), joining
+the new adapters to `BudgetedSession`, and rendering gateway calls in the Audit Center. Default budgets
+and configuration were not changed by either run.
