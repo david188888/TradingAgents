@@ -55,7 +55,7 @@ def execute_capability_requests(requests, *, role, ticker, cutoff, ledger, ensur
         if request.capability_id == "news_search":
             rejected.append("capability_use_search_path:news_search")
             continue
-        if request.capability_id == "disclosure_search" and not request.query.strip():
+        if request.capability_id == "disclosure_search" and not _disclosure_terms(request.query):
             rejected.append("capability_query_required:disclosure_search")
             continue
         if len(normalized) >= _MAX_REQUESTS:
@@ -152,18 +152,49 @@ def _fetch(request, *, ticker, cutoff, session, ensure_active):
     raise ValueError(f"capability_not_implemented:{request.capability_id}")
 
 
+_DATE_LITERAL = re.compile(r"\d{4}-\d{2}-\d{2}|\d{4}年\d{1,2}月\d{1,2}日")
+_QUERY_SPLIT = re.compile(r"[\s，,。；;：:、（）()《》【】\[\]/]+")
+_DISCLOSURE_FILLER = frozenset({"全文", "原文", "公告全文"})
+
+
+def _disclosure_terms(query):
+    """Model prose -> CNINFO title keywords; dates and filler words never match titles."""
+    terms = []
+    for part in _QUERY_SPLIT.split(_DATE_LITERAL.sub(" ", query)):
+        part = part.strip()
+        if part and part not in _DISCLOSURE_FILLER and part not in terms:
+            terms.append(part)
+    return tuple(terms)
+
+
 def _disclosure_rows(ticker, cutoff, query, *, session, ensure_active):
     from tradingagents.dataflows.china_specialty import get_a_share_cninfo_announcements
+    from tradingagents.dataflows.errors import NoMarketDataError
 
-    records = []
-    ensure_active()
-    get_a_share_cninfo_announcements(
-        ticker, (cutoff - timedelta(days=400)).isoformat(), cutoff.isoformat(),
-        page_size=30, max_pages=2, session=session, records_sink=records.extend)
-    needle, end, rows = query.casefold(), cutoff.isoformat(), []
+    terms = _disclosure_terms(query) or (query.strip(),)
+    # CNINFO ANDs space-separated title terms, so phrases naming different
+    # announcements return nothing; the longest term is the bounded fallback.
+    for searchkey in dict.fromkeys((" ".join(terms), max(terms, key=len))):
+        ensure_active()
+        records = []
+        try:
+            get_a_share_cninfo_announcements(
+                ticker, (cutoff - timedelta(days=400)).isoformat(), cutoff.isoformat(),
+                page_size=30, max_pages=2, searchkey=searchkey, session=session,
+                records_sink=records.extend)
+        except NoMarketDataError:
+            continue
+        rows = _disclosure_records(records, cutoff)
+        if rows:
+            return rows
+    return []
+
+
+def _disclosure_records(records, cutoff):
+    end, rows = cutoff.isoformat(), []
     for record in records:
         title, published = str(record.get("Title") or ""), str(record.get("Published") or "")
-        if needle not in title.casefold() or not published or published > end:
+        if not title or not published or published > end:
             continue
         detail = str(record.get("Detail URL") or "")
         rows.append({"published": published, "title": title[:200],

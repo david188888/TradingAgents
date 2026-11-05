@@ -145,3 +145,44 @@ def test_eastmoney_announcement_does_not_prepend_szse_cdn_prefix():
     )
 
     assert record.source_uri == "https://pdf.dfcfw.com/x.pdf"
+
+
+def test_cninfo_announcement_searchkey_uses_server_side_title_search_without_highlight(monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from tradingagents.dataflows import china_specialty
+
+    published_ms = int(datetime(2026, 10, 9, 12, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp() * 1000)
+    payload = {
+        "announcements": [{
+            "secCode": "002130",
+            "announcementTitle": "关于控股子公司增资扩股暨关联交易的进展公告",
+            "announcementTime": published_ms,
+            "announcementId": "a1",
+            "announcementTypeName": "重大事项",
+            "adjunctUrl": "",
+        }],
+        "totalpages": 1,
+        "hasMore": False,
+    }
+    calls = []
+
+    class _PostResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return payload
+
+    def fake_post(url, *, data, headers, timeout):
+        calls.append(dict(data))
+        return _PostResponse()
+
+    monkeypatch.setattr(china_specialty.requests, "post", fake_post)
+    monkeypatch.setattr(china_specialty, "_cninfo_orgid", lambda code, *, session=None: "org-x")
+    text = china_specialty.get_a_share_cninfo_announcements(
+        "002130.SZ", "2025-10-01", "2026-11-05", searchkey="增资扩股 进展公告")
+    assert calls[0]["searchkey"] == "增资扩股 进展公告"
+    assert calls[0]["isHLtitle"] == "false"
+    assert "增资扩股暨关联交易的进展公告" in text

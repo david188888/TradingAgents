@@ -208,6 +208,7 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 2. `disclosure_search` v1 只返回公告目录的标题、日期与链接（可带类型），标注为目录摘录；不下载 PDF 正文。
 3. 结构化卡优先复用仓库内 a-stock-data 同源适配：`get_a_share_cninfo_announcements`、`get_a_share_shareholder_counts_em`、`get_a_share_sse_e_interaction`；深市互动易按 a-stock-data §10.1 新写有界一页请求，不走 AKShare 的 10×1000 翻页。
 4. 已知限制：股东户数 / 上证e互动 / 深市互动易的底层 HTTP 暂不接入 `BudgetedSession`，不计入 `DATA_HTTP_ATTEMPTS`；每 run 仍受 `SUPPLEMENT_CAPABILITIES`（默认 3）约束，调用前后检查取消。
+5. `disclosure_search` 的匹配语义在 2026-11-05 live 验收后修订：改用 CNINFO 服务端标题关键词检索（`searchkey`，空格分隔为 AND）；Gateway 先去日期字面量与 `全文/原文` 填充词，多词 AND 未命中时用最长词再检索一次（每请求 ≤2 次 HTTP）；`isHLtitle=false` 关闭高亮标签。只出现在正文、未出现在标题的词仍返回 typed `capability_empty`，空结果照常消耗一次能力调用。
 
 ## 10. 验收标准（设计层）
 
@@ -258,3 +259,10 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 3. `longhubang` 只入证上榜记录（日期/原因/净买入/换手），席位明细本次不入证；卡面文案与 `not_for` 同步收窄，避免模型据此推断特定投资者意图。
 4. `holder_change` 以公告日 `NOTICE_DATE` 为 `published` 并按 cutoff 截断；窗口内无记录属 `capability_empty`，不伪装成来源失败。
 5. 三个适配器都不接受 `BudgetedSession`，故仍只计 `SUPPLEMENT_CAPABILITIES`、不计 `DATA_HTTP_ATTEMPTS`（已知 v1 限制，已写入 research contract）。
+
+### 13.3 Live 验收与修订（2026-11-05）
+
+1. Task 6 已执行一次真实 V9 run（002130，deepseek-flash，762 s 完成）：补证基础设施按设计工作，但 4 次 `disclosure_search` 全部空结果，暴露出整串标题匹配缺陷。详见 [验收备忘](../../reviews/2026-11-05-capability-supplement-live-acceptance.md)。
+2. 已按备忘修复：CNINFO `searchkey` 服务端标题检索 + 查询归一化 + 最长词降级 + 关闭高亮；卡片 `query` 收窄为 1–3 个标题关键词。
+3. 修复后用同一批真实 query 回归：进展公告、董事会决议、翌日披露报表、股东会决议、乐庭智联均能入证；`股价异常波动公告` 因标题无对应词仍为 typed 空结果。
+4. 第二次 live 模型验收待用户明确授权。

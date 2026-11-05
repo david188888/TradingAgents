@@ -54,7 +54,19 @@ def test_shareholder_fetch_is_admitted_and_budgeted(monkeypatch):
     assert journal.ledger.consumed(BudgetBucket.SUPPLEMENT_CAPABILITIES) == 1
 
 
-def test_disclosure_filters_by_query_and_cutoff(monkeypatch):
+def fake_cninfo(*, calls, records, empty_keywords=()):
+    def fake(ticker, start, end, page_size=30, max_pages=2, *, searchkey="", session=None, records_sink=None):
+        calls.append(searchkey)
+        if any(key in searchkey for key in empty_keywords):
+            from tradingagents.dataflows.errors import NoMarketDataError
+            raise NoMarketDataError(ticker, ticker, "CNINFO completed the query with no records")
+        records_sink([record for record in records if searchkey in record["Title"]])
+        return "ok"
+
+    return fake
+
+
+def test_disclosure_search_uses_cninfo_title_keywords_and_cutoff(monkeypatch):
     records = [
         {"Published": "2026-10-01", "Title": "限售股解禁提示性公告", "Type": "提示",
          "Announcement ID": "1", "Detail URL": "https://www.cninfo.com.cn/a"},
@@ -63,20 +75,76 @@ def test_disclosure_filters_by_query_and_cutoff(monkeypatch):
         {"Published": "2026-12-01", "Title": "限售股解禁未来公告", "Type": "提示",
          "Announcement ID": "3", "Detail URL": "https://www.cninfo.com.cn/c"},
     ]
+    calls = []
 
-    def fake(ticker, start, end, page_size=30, max_pages=10, session=None, records_sink=None):
+    def fake(ticker, start, end, page_size=30, max_pages=2, *, searchkey="", session=None, records_sink=None):
         assert ticker == "600418.SS"
-        if records_sink is not None:
-            records_sink(records)
+        calls.append(searchkey)
+        records_sink([record for record in records if searchkey in record["Title"]])
         return "ok"
 
     monkeypatch.setattr(
         "tradingagents.dataflows.china_specialty.get_a_share_cninfo_announcements", fake)
     result, _ = run([{"capability_id": "disclosure_search", "query": "解禁",
                       "gap_reason": "需核实解禁公告"}], ticker="600418.SS", role="market_context")
+    assert calls == ["解禁"]
     assert result.executed == ("disclosure_search",)
     assert len(result.admitted.observations) == 1
     assert "限售股解禁提示性公告" in result.admitted.observations[0].source.content.text
+
+
+def test_disclosure_search_drops_dates_and_filler_before_searching(monkeypatch):
+    calls = []
+    monkeypatch.setattr("tradingagents.dataflows.china_specialty.get_a_share_cninfo_announcements",
+        fake_cninfo(calls=calls, records=[{"Published": "2026-10-09",
+            "Title": "关于控股子公司增资扩股暨关联交易的进展公告", "Type": "重大事项",
+            "Announcement ID": "1", "Detail URL": "https://www.cninfo.com.cn/a"}]))
+    result, _ = run([{"capability_id": "disclosure_search",
+        "query": "关于控股子公司增资扩股暨关联交易的进展公告 2026-10-09 全文",
+        "gap_reason": "需核实进展公告"}])
+    assert calls == ["关于控股子公司增资扩股暨关联交易的进展公告"]
+    assert result.executed == ("disclosure_search",)
+    assert len(result.admitted.observations) == 1
+
+
+def test_disclosure_search_retries_the_longest_term_when_and_finds_nothing(monkeypatch):
+    calls = []
+    monkeypatch.setattr("tradingagents.dataflows.china_specialty.get_a_share_cninfo_announcements",
+        fake_cninfo(calls=calls, records=[{"Published": "2026-09-18",
+            "Title": "第八届董事会第十二次会议决议公告", "Type": "重大事项",
+            "Announcement ID": "1", "Detail URL": "https://www.cninfo.com.cn/a"}],
+            empty_keywords=(" ",)))
+    result, _ = run([{"capability_id": "disclosure_search",
+        "query": "第八届董事会第十二次会议决议公告 控股子公司增资扩股暨关联交易",
+        "gap_reason": "需核实董事会决议"}])
+    assert calls == ["第八届董事会第十二次会议决议公告 控股子公司增资扩股暨关联交易",
+                     "第八届董事会第十二次会议决议公告"]
+    assert result.executed == ("disclosure_search",)
+    assert len(result.admitted.observations) == 1
+
+
+def test_disclosure_search_reports_empty_after_both_attempts(monkeypatch):
+    calls = []
+    monkeypatch.setattr("tradingagents.dataflows.china_specialty.get_a_share_cninfo_announcements",
+        fake_cninfo(calls=calls, records=[], empty_keywords=("", " ", "增资", "公告")))
+    result, _ = run([{"capability_id": "disclosure_search",
+        "query": "增资 公告", "gap_reason": "需核实增资公告"}])
+    assert len(calls) == 2
+    assert result.executed == ("disclosure_search",)
+    assert result.admitted.observations == ()
+    assert "capability_empty:disclosure_search" in result.gaps
+
+
+def test_disclosure_query_of_only_dates_and_filler_is_rejected_before_dispatch(monkeypatch):
+    calls = []
+    monkeypatch.setattr("tradingagents.dataflows.china_specialty.get_a_share_cninfo_announcements",
+        fake_cninfo(calls=calls, records=[]))
+    result, journal = run([{"capability_id": "disclosure_search", "query": "2026-10-09 全文",
+                            "gap_reason": "需核实公告"}])
+    assert result.executed == ()
+    assert "capability_query_required:disclosure_search" in result.rejected
+    assert calls == []
+    assert journal.ledger.consumed(BudgetBucket.SUPPLEMENT_CAPABILITIES) == 0
 
 
 def test_card_limit_counts_durable_attempts_not_one_call(monkeypatch):
