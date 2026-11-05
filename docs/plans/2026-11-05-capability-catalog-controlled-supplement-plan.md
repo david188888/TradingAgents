@@ -14,7 +14,7 @@
 
 **Spec:** [数据能力目录与受控补证工具层](../superpowers/specs/2026-11-05-capability-catalog-controlled-supplement-design.md)
 
-Status: Tasks 1–5 offline complete; Task 6 (live run) needs explicit authorization. Task 5 decision: capability supplement stays always-on, so no `default_config` enable/per-role-limit key was added; per-role limit is code-frozen and the audit reading path is documented (design §13.1). Task 3 was later extended with consensus_eps, longhubang and holder_change (design §13.2).
+Status: Tasks 1–6 complete and live-verified on 2026-11-05. Task 5 decision: capability supplement stays always-on, so no `default_config` enable/per-role-limit key was added; per-role limit is code-frozen and the audit reading path is documented (design §13.1). Later work is recorded in design §13.2–§13.5: three extra cards, the CNINFO title-keyword fix, the remaining cards with BudgetedSession and Audit Center rendering, and the challenge-review fix. Acceptance records: [capability supplements](../reviews/2026-11-05-capability-supplement-live-acceptance.md), [challenge diagnostics](../reviews/2026-11-05-challenge-review-diagnostics.md).
 
 ## 设计 §12 关闭结论（对照当前代码）
 

@@ -101,9 +101,10 @@ Not accepted yet:
 
 Open, outside this change: the challenge/reply stages failed again (review completeness, response
 validation). This matches the pre-change failure surface and is not caused by capability cards, but it
-means live runs still cannot produce a fully reviewed report.
+meant live runs could not produce a fully reviewed report. The challenge half was fixed later the same
+day — see [challenge diagnostics](2026-11-05-challenge-review-diagnostics.md).
 
-## Proposed next step (not executed here)
+## Proposed next step (all items executed later on 2026-11-05)
 
 1. Give `get_a_share_cninfo_announcements` an optional `searchkey` pass-through and have the gateway
    send the model query to CNINFO's own search, keeping the same person/date qualification and bounded rows.
@@ -121,9 +122,8 @@ nothing, and highlight tags disabled. The card now asks for 1–3 space-separate
 Replaying the recorded queries against live public CNINFO admits titles for the board-resolution,
 progress-announcement, next-day-disclosure, shareholder-meeting and 乐庭智联 queries; the
 `股价异常波动公告` query stays correctly empty because no title in the window carries those words.
-Offline tests cover normalization, the fallback, empty results and card/budget behavior. A second
-live model run is pending explicit authorization; the acceptance verdict above remains the record of
-this run itself.
+Offline tests cover normalization, the fallback, empty results and card/budget behavior. The second
+run below confirmed the fix; the acceptance verdict above remains the record of this first run.
 
 ## Second run after the fix (authorized re-acceptance)
 
@@ -159,15 +159,18 @@ Outcome of the three dispatched capability calls (budget 3/3 consumed):
   path rather than the gateway (as designed).
 - Challenge again reported `failed` (unreviewed items) and `market_context` failed a repair; both are
   pre-existing review/repair behaviour, not capability regressions. Responses were skipped because no
-  review concern was accepted, which is why this run used fewer tokens than the first.
+  review concern was accepted, which is why this run used fewer tokens than the first. The challenge
+  half was fixed later the same day — see [challenge diagnostics](2026-11-05-challenge-review-diagnostics.md).
 
 **Acceptance:** capability supplements now pass the live evidence-yield check. Infrastructure behaviour
 from the first run (caps, typed gaps, `news_search` routing, deadline, no Bull/Bear regression) is
-unchanged; the only remaining gap is the pre-existing challenge/reply failure surface.
+unchanged. The challenge half of the review failure was fixed later the same day; the separate
+response-stage failure surface remains.
 
 ## Final state
 
-Three follow-ups stay open, none blocking this acceptance: remaining capability cards
-(`valuation_history`, `financials_detail`, `industry_peers`, `northbound_flow`, `wind_enrich`), joining
-the new adapters to `BudgetedSession`, and rendering gateway calls in the Audit Center. Default budgets
-and configuration were not changed by either run.
+The follow-ups listed at this run's writing time were completed later on 2026-11-05 (design
+§13.4–§13.5): the remaining capability cards (with `financials_detail` and `industry_peers` documented
+as prefetch-only), joining the adapters to `BudgetedSession`, rendering gateway calls in the Audit
+Center, and the challenge-review fix. Default budgets and configuration were not changed by any live
+run.

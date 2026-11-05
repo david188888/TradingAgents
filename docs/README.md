@@ -24,6 +24,9 @@ Markdown explains purpose, ownership and important limits. A passing link check 
 
 ## History and maintenance
 
+Dated acceptance and diagnosis records live under [reviews](reviews/); treat them as evidence for their
+run date, not current guarantees.
+
 [Archive](archive/README.md) retains historical plans, designs and verification records at their existing
 paths. They describe their writing-time state, not current behavior or new authorization. Some older
 current-document URLs now point to their maintained owner instead of repeating the same explanation.
