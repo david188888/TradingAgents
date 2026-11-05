@@ -360,3 +360,28 @@ def test_supplement_can_follow_new_gaps_but_stops_at_three_rounds(tmp_path):
     assert rounds == [1, 2, 3]
     assert 'search_requests_remaining' in report.gaps
     assert len([i for i in report.insights if i.status == 'accepted']) == 1
+
+
+def test_challenge_rejections_are_recorded_with_safe_reason_codes(tmp_path):
+    _, journal, _ = setup(tmp_path)
+
+    def respond(stage, context, *, phase='main'):
+        if stage == 'operating_quality' and phase == 'main':
+            return {'insights': [proposal(), proposal(claim='第二观点需要核查。', evidence_refs=['E1'])]}
+        if stage == 'operating_quality':
+            return {'insights': [proposal(claim='第二观点需要核查。', evidence_refs=['E1'])]}
+        if stage == 'challenge':
+            return {'reviews': [
+                {'target': 'I1', 'concern': None, 'reasoning': '已审阅，未发现额外有效反证。', 'evidence_refs': []},
+                {'target': 'I2', 'concern': None, 'reasoning': '收入增长 10% 需要关注。', 'evidence_refs': []},
+                {'target': 'I9', 'concern': None, 'reasoning': '越界目标。', 'evidence_refs': []},
+            ]}
+        return response(stage, context, phase=phase)
+
+    report = execute(journal, respond)
+    diagnostics = journal.state['insight.diagnostics.challenge']
+    codes = [item['code'] for item in diagnostics]
+    assert 'numeric_literal_unbound' in codes
+    assert 'target_unknown' in codes
+    assert [review.status for review in report.reviews] == ['no_counterevidence', 'unreviewed']
+    assert 'unreviewed_insights' in report.gaps

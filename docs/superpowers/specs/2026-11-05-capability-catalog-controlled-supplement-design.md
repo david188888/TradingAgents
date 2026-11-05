@@ -272,3 +272,9 @@ Gateway 属于 `dataflows/` + `execution/` 协作：适配与规范化在 datafl
 1. 剩余能力卡：`valuation_history`（baostock 日频 PE/PB/PS/PCF，Tushare daily_basic 兜底，最近 60 个交易日、不做分位）、`northbound_flow`（THS 当日沪/深股通累计净买入快照，历史 cutoff 返回 `capability_not_point_in_time`）、`wind_enrich`（Wind 1 年 Beta/年化波动/最大回撤/夏普；要求 `wind_enabled` 且本机 CLI 可解析，否则目录隐藏）。`financials_detail` 与 `industry_peers` 改标 `prefetch_only`：最小证据包已分别采集细项与同行样本，不做同源重复卡。
 2. 预算会话：能力适配器接受 run 的 `BudgetedSession`——CNINFO 公告、股东户数、龙虎榜、增减持（经 EastMoney 限速客户端包一层）、THS 一致预期、THS 北向、SSE/CNINFO 互动问答、Tushare 估值兜底均计入 `DATA_HTTP_ATTEMPTS`；baostock TCP 与 Wind CLI 按设计不入 HTTP 预算，仍计 capability 调用。
 3. 审计：Audit Center 的 capabilities 分区从 research journal 的 `results`（`capability.batch.*`）派生 batch 摘要（admitted/empty/budget/failure、原因码、提供方、结果 ID），无需新事件类型或前端改动；capability 详情补充可用性/提供方/结果标识。
+
+### 13.5 Challenge 审阅诊断（2026-11-05，离线）
+
+1. 两次 live 验收的 challenge 阶段均失败：第一次 7 条 review 只有 3 条有效，第二次 9 条全部 `unreviewed`。模型有返回、但 review 校验失败且此前没有原因落盘。
+2. 已在 `graph/insight_research.py` 记录 `insight.diagnostics.challenge`（`target_unknown` / `blank_text` / `numeric_literal_unbound` / `review_shape_invalid` / `target_missing` / `duplicate_target` 等安全原因码，不保存原文），并在 challenge prompt 约束：每个 I 引用恰好一条 review、不引入新数字（用 `[N]` token 或省略）、只引用已给 E 引用。
+3. 尚未修完：需要一次授权 live run 读取诊断码定位根因，再决定改 prompt 还是改校验策略，并再跑一次验证。
