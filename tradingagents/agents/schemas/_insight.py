@@ -28,9 +28,24 @@ class InsightProposal(_InsightModel):
         return value
 
 
+class CapabilityRequest(_InsightModel):
+    """A gap-driven supplement request; the host owns ticker, routing and qualification."""
+    capability_id: str
+    query: str
+    gap_reason: str
+
+    @field_validator('capability_id', 'gap_reason')
+    @classmethod
+    def nonempty_text(cls, value):
+        if not value.strip():
+            raise ValueError('capability_request_text_empty')
+        return value.strip()
+
+
 class InsightSubmission(_InsightModel):
     insights: tuple[InsightProposal, ...]
     search_requests: tuple[str, ...] = ()
+    capability_requests: tuple[CapabilityRequest, ...] = ()
 
 
 class EvidenceCard(_InsightModel):

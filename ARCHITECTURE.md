@@ -20,16 +20,16 @@ flowchart LR
   S --> R[Insight Reader and Markdown]
 ```
 
-Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add qualified context. Operating, event and market specialists independently propose four-field Insights. Code resolves references, renders exact numbers, saves valid siblings, and bounds supplementary search. Only affected specialties revisit new evidence. One critique/reply round precedes synthesis, which uses saved effective Insights. Missing overall support suppresses the rating without discarding usable research. Optional focus follows the baseline and cannot change it.
+Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add qualified context. Specialists may also request bounded structured supplements from a short capability catalog (announcement titles, shareholder counts, IR Q&A); the host routes a-stock-data-aligned adapters, qualifies results and reopens only affected specialties. Operating, event and market specialists independently propose four-field Insights. Code resolves references, renders exact numbers, saves valid siblings, and bounds supplementary search plus capability calls. One critique/reply round precedes synthesis, which uses saved effective Insights. Missing overall support suppresses the rating without discarding usable research. Optional focus follows the baseline and cannot change it.
 
 ## Owners and boundaries
 
 | Responsibility | Owner |
 | --- | --- |
 | Consumer-neutral request, execution and model dispatch | `execution/models.py`, `native_runner.py`, `insight_model.py` |
-| V9 sequence, review, response and synthesis | `graph/insight_research.py`, `research/insights.py` |
+| V9 sequence, review, response, web/capability supplements and synthesis | `graph/insight_research.py`, `execution/insight_search.py`, `execution/insight_capability.py`, `execution/capability_gateway.py`, `research/insights.py` |
 | Public Insight report and reference/numeric validation | `agents/schemas/_insight.py`, `research/insight_report.py` |
-| Source retrieval, qualification and calculations | `dataflows/`, `research/` |
+| Source retrieval, model-facing capability catalog, qualification and calculations | `dataflows/` (including `capability_catalog.py`), `research/` |
 | Append-only attempts, budgets, events and report publication | `runtime/`, `execution/budget.py`, `native_publication.py` |
 | HTTP, scheduling and saved projections | `web/` |
 | Terminal configuration, lifecycle and presentation | `cli/config.py`, `cli/research.py`, `cli/main.py` |

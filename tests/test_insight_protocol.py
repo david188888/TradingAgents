@@ -108,6 +108,33 @@ def test_outer_shape_failure_is_explicit():
         compile_insights({'insights': 'not an array'}, catalog=catalog(), role='operating_quality')
 
 
+def test_capability_requests_are_an_accepted_sibling_of_insights():
+    payload = {'insights': [proposal()], 'capability_requests': [
+        {'capability_id': 'shareholder_count', 'query': '', 'gap_reason': '缺少股东户数变化'}]}
+    assert compile_insights(payload, catalog=catalog(), role='operating_quality').items[0].status == 'accepted'
+
+
+def test_capability_request_contract_is_closed_and_host_owns_ticker():
+    from pydantic import ValidationError
+
+    from tradingagents.agents.schemas._insight import (
+        CapabilityRequest,
+        InsightSubmission,
+        ResponseSubmission,
+        ReviewSubmission,
+        SynthesisProposal,
+    )
+    assert InsightSubmission.model_validate({'insights': []}).capability_requests == ()
+    assert CapabilityRequest(capability_id=' ir_qa ', query='', gap_reason=' 缺回复 ').capability_id == 'ir_qa'
+    for bad in ({'capability_id': 'ir_qa', 'query': '', 'gap_reason': ' '},
+                {'capability_id': '', 'query': '', 'gap_reason': '缺口'},
+                {'capability_id': 'ir_qa', 'query': '', 'gap_reason': '缺口', 'ticker': '600000'}):
+        with pytest.raises(ValidationError):
+            CapabilityRequest.model_validate(bad)
+    for model in (ReviewSubmission, ResponseSubmission, SynthesisProposal):
+        assert 'capability_requests' not in model.model_fields
+
+
 @pytest.mark.parametrize('text', ['收入10亿 [E1]。', '收入10 dollars [E1]。', '增长10 basis points [E1]。'])
 def test_explicit_quantity_units_cannot_escape_numeric_binding(text):
     assert compile_one(reasoning=text).status == 'pending'

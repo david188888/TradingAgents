@@ -6,6 +6,7 @@ import re
 from pydantic import ValidationError
 
 from tradingagents.agents.schemas._insight import (
+    CapabilityRequest,
     EvidenceCard,
     InsightBatch,
     InsightCatalog,
@@ -24,6 +25,8 @@ from tradingagents.research.insight_report import parse_insight_report, validate
 from tradingagents.research.insights import compile_insights
 from tradingagents.research.numeric_catalog import render_numeric_anchor
 from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
+
+CAPABILITY_CALLS_PER_ROLE = 2
 
 
 def catalog_prompt(catalog, query='', *, compact=False):
@@ -64,7 +67,9 @@ def merge_catalogs(catalogs):
 
 
 def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, journal,
-                         ensure_active, on_stage=lambda stage, status: None, source_gaps=(), supplement=None, focus_question=None, company_basics=None, foundation_catalog=None):
+                         ensure_active, on_stage=lambda stage, status: None, source_gaps=(), supplement=None, focus_question=None, company_basics=None, foundation_catalog=None,
+                         capability=None, capability_catalog=None):
+    capability_catalog = capability_catalog or {}
     identity = {'run_id': run_id, 'ticker': ticker, 'date': analysis_date.isoformat(),
                 'catalogs': {r: c.model_dump(mode='json') for r, c in catalogs.items()}, 'gaps': list(source_gaps), 'focus_question': focus_question,
                 'company_basics': company_basics.model_dump(mode='json') if company_basics else None,
@@ -93,14 +98,28 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
         try:
             raw = caller(stage, context, phase=phase)
             if (phase == 'main' or phase.startswith('supplement_')) and stage in catalogs and isinstance(raw, dict):
+                suffix = '' if phase == 'main' else '.' + phase
                 questions = raw.get('search_requests', [])
                 if isinstance(questions, list):
                     valid = tuple(dict.fromkeys(q.strip() for q in questions if isinstance(q, str) and 0 < len(q.strip()) <= 400))
-                    journal.put('insight.search_requests.' + stage + ('' if phase == 'main' else '.' + phase), list(valid))
+                    journal.put('insight.search_requests.' + stage + suffix, list(valid))
                     if len(valid) != len({q.strip() for q in questions if isinstance(q, str)}):
                         gaps.append('search_request_invalid')
                 else:
                     gaps.append('search_request_invalid')
+                if 'capability_catalog' in context:
+                    values = raw.get('capability_requests', [])
+                    accepted = {}
+                    for value in values if isinstance(values, list) else ():
+                        try:
+                            request = CapabilityRequest.model_validate(value).model_dump(mode='json')
+                        except ValidationError:
+                            gaps.append('capability_request_invalid')
+                            continue
+                        accepted[canonical_sha256(request)] = request
+                    if not isinstance(values, list):
+                        gaps.append('capability_request_invalid')
+                    journal.put('insight.capability_requests.' + stage + suffix, list(accepted.values()))
             return raw
         except InsightUnavailable as exc:
             if journal.failed:
@@ -121,7 +140,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             batch = InsightBatch()
             journal.put(key, batch.model_dump(mode='json'))
         else:
-            context = {**catalog_prompt(catalog, compact=compact), 'search_requests_allowed': supplement is not None}
+            context = {**catalog_prompt(catalog, compact=compact), 'search_requests_allowed': supplement is not None,
+                **({'capability_catalog': capability_catalog.get(role, [])} if capability is not None else {})}
             if key + '.main' in journal.state:
                 main = InsightBatch.model_validate(journal.state[key + '.main'])
             else:
@@ -160,22 +180,58 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     seen_questions = set(pending)
     if pending and supplement is None:
         gaps.append('search_unavailable')
-    for round_id in range(1, 4) if supplement is not None else ():
-        if not pending:
+    # Structured capability requests run before web questions each round and keep separate budgets.
+    cap_pending, cap_seen, cap_used = [], set(), {}
+
+    def queue_capabilities(role, suffix=''):
+        for value in journal.state.get('insight.capability_requests.' + role + suffix, ()):
+            identity = (role, canonical_sha256(value))
+            if identity in cap_seen:
+                continue
+            cap_seen.add(identity)
+            if cap_used.get(role, 0) >= CAPABILITY_CALLS_PER_ROLE:
+                gaps.append('capability_role_limit:' + role)
+                continue
+            cap_used[role] = cap_used.get(role, 0) + 1
+            cap_pending.append((role, value))
+
+    if capability is not None:
+        for role in catalogs:
+            queue_capabilities(role)
+    for round_id in range(1, 4):
+        web = supplement is not None and bool(pending)
+        if not cap_pending and not web:
             break
-        selected, pending = pending[:3], pending[3:]
-        scoped = {role: tuple(question for owner, question in selected if owner == role) for role in catalogs}
-        scoped = {role: values for role, values in scoped.items() if values}
-        ensure_active()
-        result = supplement(scoped, round_id)
-        gaps.extend(result['gaps'])
-        if not result['affected_roles']:
-            gaps.append('search_no_qualified_delta')
+        affected = []
+        if cap_pending:
+            selected, cap_pending = cap_pending, []
+            scoped = {}
+            for owner, value in selected:
+                scoped.setdefault(owner, []).append(value)
+            ensure_active()
+            result = capability({role: tuple(values) for role, values in scoped.items()}, round_id)
+            gaps.extend(result['gaps'])
+            if not result['affected_roles']:
+                gaps.append('capability_no_qualified_delta')
+            affected.extend(result['affected_roles'])
+            catalogs = result['catalogs']
+        if web:
+            selected, pending = pending[:3], pending[3:]
+            scoped = {role: tuple(question for owner, question in selected if owner == role) for role in catalogs}
+            scoped = {role: values for role, values in scoped.items() if values}
+            ensure_active()
+            result = supplement(scoped, round_id)
+            gaps.extend(result['gaps'])
+            if not result['affected_roles']:
+                gaps.append('search_no_qualified_delta')
+            affected.extend(result['affected_roles'])
+            catalogs = result['catalogs']
+        affected = [role for role in catalogs if role in affected]
+        if not affected:
             break
-        catalogs = result['catalogs']
         catalog_history.update((canonical_sha256(c.model_dump(mode='json')), c) for c in catalogs.values())
         journal.put('insight.catalog_history', {key: c.model_dump(mode='json') for key, c in catalog_history.items()})
-        for role in result['affected_roles']:
+        for role in affected:
             previous = [i for i in insights if i.role == role and i.status != 'excluded']
             superseded_ids.extend(i.insight_id for i in previous)
             insights = [i.model_copy(update={'status': 'excluded'}) if i in previous else i for i in insights]
@@ -183,7 +239,10 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             if key in journal.state:
                 batch = InsightBatch.model_validate(journal.state[key])
             else:
-                context = {**catalog_prompt(catalogs[role], compact=compact), 'search_requests_allowed': round_id < 3,
+                context = {**catalog_prompt(catalogs[role], compact=compact),
+                    'search_requests_allowed': supplement is not None and round_id < 3,
+                    **({'capability_catalog': capability_catalog.get(role, [])}
+                       if capability is not None and round_id < 3 else {}),
                     'previous_findings': [i.rendered.model_dump() for i in previous],
                     'instruction': '资料已更新。重新核查本专项观点；旧观点不会自动用于综合。'}
                 raw = ask(role, context, f'supplement_{round_id}')
@@ -192,17 +251,22 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 except ValueError:
                     batch = InsightBatch()
                 journal.put(key, batch.model_dump(mode='json'))
-            for question in journal.state.get(f'insight.search_requests.{role}.supplement_{round_id}', ()):
-                if (role, question) not in seen_questions:
-                    seen_questions.add((role, question))
-                    pending.append((role, question))
-                    requests[role] = (*requests.get(role, ()), question)
+            if supplement is not None:
+                for question in journal.state.get(f'insight.search_requests.{role}.supplement_{round_id}', ()):
+                    if (role, question) not in seen_questions:
+                        seen_questions.add((role, question))
+                        pending.append((role, question))
+                        requests[role] = (*requests.get(role, ()), question)
+            if capability is not None:
+                queue_capabilities(role, f'.supplement_{round_id}')
             insights.extend(batch.items)
             finish(role, 'completed' if any(i.status == 'accepted' for i in batch.items) else 'failed')
             if not batch.items or batch.rejected or any(i.status != 'accepted' for i in batch.items):
                 gaps.append(role + '_supplement_unresolved')
     if pending:
         gaps.append('search_requests_remaining')
+    if cap_pending:
+        gaps.append('capability_requests_remaining')
 
     merged = merge_catalogs(catalogs)
     journal.put('insight.review_catalog', merged.model_dump(mode='json'))

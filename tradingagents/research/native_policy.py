@@ -38,7 +38,11 @@ def fact_views(record, *, valuation=False):
                or sources[key].usable_as_of is None for key in fact.evidence_ids):
             continue
         names = [sources[key].source_name for key in fact.evidence_ids]
-        if record.schema_version == 'evidence-record-v1' and any(name.startswith(('web.', 'derived.web_fields.')) for name in names):
+        evidence_ids = fact.evidence_ids
+        # Web and capability supplements carry their requesting role; route by that, not by source name.
+        if record.schema_version == 'evidence-record-v1' and (
+                any(name.startswith(('web.', 'derived.web_fields.')) for name in names)
+                or any(key.startswith('capability.') for key in evidence_ids)):
             roles = [r for r in ROLE_ORDER if 'native_dimension:'+r in fact.limitations]
             if len(roles) == 1:
                 views[roles[0]].append(fact)

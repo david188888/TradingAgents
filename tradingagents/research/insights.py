@@ -49,7 +49,7 @@ def build_insight_catalog(record, *, facts=None):
 
 def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: int = 1, indices=None):
     """Validate each external item once; retain valid siblings and safe diagnostics."""
-    if not isinstance(payload, dict) or not {'insights'} <= set(payload) <= {'insights', 'search_requests'} or not isinstance(payload['insights'], list):
+    if not isinstance(payload, dict) or not {'insights'} <= set(payload) <= {'insights', 'search_requests', 'capability_requests'} or not isinstance(payload['insights'], list):
         raise ValueError('insight_batch_shape')
     if revision < 1:
         raise ValueError('insight_revision_invalid')

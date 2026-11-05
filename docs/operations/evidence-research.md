@@ -92,9 +92,20 @@ round and synthesis. Source availability is distinct from
 fact qualification. Reposts do not create independent confirmation; titles/snippets do not prove delivery.
 
 Fresh studies present all qualified fact cards and selected exact saved-source passages. Models return
-four-field Insights and optional outer `search_requests`; code resolves references and renders numbers.
-Questions enter at most three supplementary rounds, with three selected questions per round;
-new gaps from reanalysis consume the remaining rounds instead of resetting the budget. Changed evidence requires affected roles to reanalyse.
+four-field Insights plus optional outer `search_requests` and `capability_requests`; code resolves
+references and renders numbers. Capability cards are short, role-filtered and host-routed; `news_search`
+stays on the dual-search path, while structured cards reuse a-stock-data-aligned adapters. Each
+supplement round runs capability calls before web questions with separate budgets; capability work still
+runs when web search is disabled. At most three rounds apply; new gaps from reanalysis consume remaining
+rounds instead of resetting the budget. Changed evidence requires affected roles to reanalyse.
+
+Capability calls are reviewable from the saved run: accepted requests (card id, query, gap reason) are
+frozen in the research journal as `insight.capability_requests.<role>[.supplement_<round>]`, each
+executed round's admitted increment under the `insight.capability.round.<round>` result key, and each
+dispatch is a `supplement_capabilities` budget attempt whose stage names the role and card. Rejections,
+empty results and card/role limits remain typed `capability_*` codes in the saved report gaps; none of
+them proves the event did not happen. Known v1 limit: the Audit Center renders source degradation and
+source-capability summaries, not these gateway calls, so review them from the journal and report.
 A review may explicitly find no effective counterevidence; missing or failed review remains visible.
 The latter does not prove the Insight correct. See [V9 semantics](../contracts/research-record.md#insight-first-v9).
 

@@ -171,6 +171,80 @@ def test_search_requests_revise_affected_role_and_resume_without_resending(tmp_p
     assert len(searched) == 1
 
 
+def test_capability_requests_run_without_web_search_and_resume_without_resending(tmp_path):
+    from tradingagents.research.insight_report import parse_insight_report
+    _, journal, _ = setup(tmp_path)
+    called = []
+    base = catalog()
+    updated = base.model_copy(update={'snapshot_id': 'snapshot-cap', 'numbers': (),
+        'evidence': (*base.evidence, base.evidence[0].model_copy(update={'ref': 'E9', 'fact_id': 'cap-fact'}))})
+    cards = [{'id': 'shareholder_count', 'title': '股东户数', 'solves': '户数变化',
+              'not_for': '定价', 'inputs': {'query': '留空'}, 'cost': 'low'}]
+
+    def capability(requests, round_id):
+        called.append((round_id, requests))
+        assert list(requests) == ['operating_quality']
+        assert requests['operating_quality'][0]['capability_id'] == 'shareholder_count'
+        return {'catalogs': {'operating_quality': updated}, 'affected_roles': ['operating_quality'], 'gaps': []}
+
+    def respond(stage, context, *, phase='main'):
+        if stage == 'operating_quality':
+            assert 'capability_catalog' in context
+            assert context['capability_catalog'][0]['id'] == 'shareholder_count'
+            if phase == 'supplement_1':
+                assert context['search_requests_allowed'] is False
+                return {'insights': [proposal(claim='按户数补证后修正。', evidence_refs=['E9'],
+                    reasoning='新材料改变判断 [E9]。')], 'search_requests': [], 'capability_requests': []}
+            return {'insights': [proposal()], 'search_requests': [],
+                'capability_requests': [{'capability_id': 'shareholder_count', 'query': '',
+                    'gap_reason': '缺近一年股东户数'}]}
+        if stage == 'challenge':
+            assert 'capability_catalog' not in context
+        return response(stage, context, phase=phase)
+
+    kwargs = {'run_id': journal.observer.run_id, 'ticker': '002130.SZ', 'analysis_date': date(2026, 10, 28),
+        'catalogs': {'operating_quality': base}, 'caller': respond, 'journal': journal,
+        'ensure_active': lambda: None, 'capability': capability,
+        'capability_catalog': {'operating_quality': cards}}
+    report = run_insight_research(**kwargs)
+    assert len(called) == 1
+    assert [i.status for i in report.insights] == ['excluded', 'accepted']
+    assert report.synthesis.insight_ids == (report.insights[-1].insight_id,)
+    assert parse_insight_report(report.model_dump(mode='json')) == report
+    assert run_insight_research(**kwargs) == report
+    assert len(called) == 1
+
+
+def test_capability_runs_before_web_search_in_same_round(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    order = []
+    base = catalog()
+    updated = base.model_copy(update={'snapshot_id': 'snapshot-both', 'numbers': ()})
+
+    def capability(requests, round_id):
+        order.append(('capability', round_id))
+        return {'catalogs': {'operating_quality': updated}, 'affected_roles': ['operating_quality'], 'gaps': []}
+
+    def supplement(requests, round_id):
+        order.append(('search', round_id))
+        return {'catalogs': {'operating_quality': updated}, 'affected_roles': ['operating_quality'], 'gaps': []}
+
+    def respond(stage, context, *, phase='main'):
+        if stage == 'operating_quality' and phase == 'main':
+            return {'insights': [proposal()], 'search_requests': ['客户订单是否变化'],
+                'capability_requests': [{'capability_id': 'shareholder_count', 'query': '',
+                    'gap_reason': '缺户数'}]}
+        if stage == 'operating_quality':
+            return {'insights': [proposal(claim='已更新')], 'search_requests': [], 'capability_requests': []}
+        return response(stage, context, phase=phase)
+
+    run_insight_research(run_id=journal.observer.run_id, ticker='002130.SZ', analysis_date=date(2026, 10, 28),
+        catalogs={'operating_quality': base}, caller=respond, journal=journal, ensure_active=lambda: None,
+        supplement=supplement, capability=capability,
+        capability_catalog={'operating_quality': [{'id': 'shareholder_count'}]})
+    assert order[:2] == [('capability', 1), ('search', 1)]
+
+
 def test_prompt_keeps_all_facts_but_retrieves_bounded_original_passages():
     import hashlib
 

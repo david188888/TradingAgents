@@ -2,10 +2,18 @@
 
 from dataclasses import replace
 
+import pytest
+
 from tests.test_insight_protocol import proposal
-from tests.v9_fixtures import setup
-from tradingagents.execution.native_runner import NativeResumeGuard, native_identity
+from tests.v9_fixtures import journal_setup, setup
+from tradingagents.execution.models import AnalysisRequest
+from tradingagents.execution.native_runner import (
+    NativeResumeGuard,
+    native_identity,
+    validate_native_resume,
+)
 from tradingagents.runtime.reports import ReportArtifactWriter
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 from tradingagents.web.research_record_projection import project_research_record
 
 
@@ -84,8 +92,23 @@ def test_insight_process_and_stage_outputs_are_readable(tmp_path, monkeypatch):
 
 
 def test_new_research_defaults_to_insight_workflow():
-    from tradingagents.execution.models import AnalysisRequest
     from tradingagents.execution.native_runner import WORKFLOW_VERSION
     assert WORKFLOW_VERSION == 'evidence-production-v9'
     request = AnalysisRequest('002130.SZ', '2026-10-28', research_profile='evidence_v1', effective_config={})
     assert native_identity(request)['insight_policy'] == 'insight-first-v1'
+    policy = native_identity(request)['capability_supplement_policy']
+    assert policy['version'] == 'capability-catalog-v1'
+    assert set(policy['roles']) == {'operating_quality', 'event_context', 'market_context'}
+
+
+def test_changed_capability_catalog_digest_blocks_resume(tmp_path, monkeypatch):
+    from tradingagents.dataflows import capability_catalog
+
+    observer, journal, _ = journal_setup(tmp_path)
+    request = AnalysisRequest('002130.SZ', '2026-10-28')
+    journal.put('identity', native_identity(request))
+    validate_native_resume(observer.store, observer.run_id, request)
+    monkeypatch.setattr(capability_catalog, 'CAPABILITY_CARDS',
+        tuple(card for card in capability_catalog.CAPABILITY_CARDS if card.id != 'ir_qa'))
+    with pytest.raises(ResearchCheckpointConflict):
+        validate_native_resume(observer.store, observer.run_id, request)
