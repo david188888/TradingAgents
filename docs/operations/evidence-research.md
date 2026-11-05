@@ -94,7 +94,9 @@ fact qualification. Reposts do not create independent confirmation; titles/snipp
 Fresh studies present all qualified fact cards and selected exact saved-source passages. Models return
 four-field Insights plus optional outer `search_requests` and `capability_requests`; code resolves
 references and renders numbers. Capability cards are short, role-filtered and host-routed; `news_search`
-stays on the dual-search path, while structured cards reuse a-stock-data-aligned adapters. Each
+stays on the dual-search path, while structured cards reuse a-stock-data-aligned adapters. The
+requestable set now also includes bounded valuation history, today's THS northbound aggregate and Wind
+risk metrics when the local CLI is configured; financial-detail and peer-context stay prefetch-only. Each
 supplement round runs capability calls before web questions with separate budgets; capability work still
 runs when web search is disabled. At most three rounds apply; new gaps from reanalysis consume remaining
 rounds instead of resetting the budget. Changed evidence requires affected roles to reanalyse.

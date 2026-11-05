@@ -119,7 +119,9 @@ Adding a provider adapter does not automatically admit it into current research.
 
 A-stock-data is a reference used for selected hand-written ports, not a runtime import dependency.
 Historical upstream reviews remain in the [archive](../archive/README.md). Wind is an optional
-integration, excluded from V9 collection; see [integration scope](../integrations/wind.md).
+integration excluded from V9 prefetch collection; an explicit `wind_enrich` capability request may use
+the local Wind CLI when `wind_enabled` and the CLI are available. See
+[integration scope](../integrations/wind.md).
 
 <!-- Compatibility anchors for existing section links. -->
 <a id="a-股补充数据能力"></a>
