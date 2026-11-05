@@ -179,6 +179,7 @@ def get_a_share_cninfo_announcements(
     page_size: int = 30,
     max_pages: int = 10,
     *,
+    searchkey: str = "",
     session: requests.Session | None = None,
     records_sink: Any = None,
 ) -> CoveredText:
@@ -186,6 +187,9 @@ def get_a_share_cninfo_announcements(
 
     CNINFO is kept separate from exchange bulletin metadata because it exposes
     disclosure type, full-text detail URL, and (when present) the PDF attachment.
+    ``searchkey`` uses CNINFO's own title-keyword search; space-separated terms
+    must all appear in the same title, and a body-only word returns no rows.
+    An empty ``searchkey`` keeps the plain date-window listing.
     """
     if max_pages < 1:
         raise ValueError("max_pages must be positive")
@@ -213,11 +217,11 @@ def get_a_share_cninfo_announcements(
                     if start_date or end_date
                     else ""
                 ),
-                "searchkey": "",
+                "searchkey": searchkey,
                 "secid": "",
                 "sortName": "",
                 "sortType": "",
-                "isHLtitle": "true",
+                "isHLtitle": "false",
             },
             headers={
                 "User-Agent": "TradingAgents/1.0",

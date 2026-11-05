@@ -52,7 +52,7 @@ def test_market_role_disclosure_supplement_stays_in_its_own_view(monkeypatch):
     records = [{"Published": "2026-10-01", "Title": "限售股解禁提示性公告", "Type": "提示",
                 "Announcement ID": "1", "Detail URL": "https://www.cninfo.com.cn/a"}]
 
-    def fake(ticker, start, end, page_size=30, max_pages=2, session=None, records_sink=None):
+    def fake(ticker, start, end, page_size=30, max_pages=2, *, searchkey="", session=None, records_sink=None):
         records_sink(records)
         return "ok"
 
