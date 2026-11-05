@@ -46,8 +46,22 @@ phrasings in the other reviews passed, which explains the partial success. The b
 2. The challenge task prompt now says the same: no Arabic digits in concern/reasoning (dates and
    amounts in Chinese words, or the saved `[N]` token).
 
-## Remaining
+## Verification run after the fix
 
-One more authorized live run is needed to confirm the challenge stage completes. The prior failure
-modes improved from 4 of 7 discarded, to 9 of 9, to 1 of 13 with repair; this fix targets the last
-observed reason code.
+| Item | Value |
+| --- | --- |
+| Run | `run_20261105T124829911739Z_e4d054cd` (workspace-local store) |
+| Result | `completed` in 523 s; readable report; synthesis stance 中性 over 11 accepted Insights |
+| Challenge | **completed**, `insight.diagnostics.challenge` empty (0 rejected reviews) |
+| Reviews | 11 of 11 effective: 10 challenged, 1 no-counterevidence; no repair call needed |
+| Tokens | 759,001 input / 55,306 output overall; challenge main 123,545 / 5,619 |
+
+The challenge chain now behaves as designed: every accepted Insight received a validated review, the
+numeric-style rejection is gone, and the bounded repair stays as a safety net rather than being
+needed. Failure modes across the sequence were 4 of 7 discarded, then 9 of 9, then 1 of 13 with
+repair, now 0 of 11.
+
+Residual, outside this fix: `response_operating_quality` failed validation in this run
+(`response_operating_quality_unresolved` in the report gaps) while the event and market responses
+completed. That is the response-stage resilience issue, separate from the challenge failure this
+record covers.
