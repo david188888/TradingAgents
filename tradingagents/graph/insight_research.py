@@ -298,36 +298,55 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     if 'insight.reviews' in journal.state:
         reviews = [SavedReview.model_validate(v) for v in journal.state['insight.reviews']]
     else:
+        def parse_reviews(raw, allowed=None):
+            accepted, duplicates, diagnostics = {}, set(), []
+            candidates = raw.get('reviews', []) if isinstance(raw, dict) else []
+            for index, value in enumerate(candidates if isinstance(candidates, list) else []):
+                try:
+                    review = ReviewProposal.model_validate(value)
+                    if review.target not in targets:
+                        diagnostics.append({'index': index, 'target': None, 'code': 'target_unknown'})
+                        continue
+                    if allowed is not None and review.target not in allowed:
+                        diagnostics.append({'index': index, 'target': review.target, 'code': 'repair_target_unexpected'})
+                        continue
+                    if not review.reasoning.strip() or (review.concern is not None and not review.concern.strip()):
+                        diagnostics.append({'index': index, 'target': review.target, 'code': 'blank_text'})
+                        continue
+                    checked = note(review.reasoning, review.evidence_refs, claim=review.concern or '未发现有效反证')
+                    if review.target in accepted:
+                        duplicates.add(review.target)
+                    accepted[review.target] = SavedReview(target_id=targets[review.target].insight_id,
+                        status='challenged' if review.concern else 'no_counterevidence',
+                        concern=checked.rendered.claim if review.concern else None, reasoning=checked.rendered.reasoning,
+                        source_ids=checked.source_ids, note=checked)
+                except (ValueError, ValidationError) as exc:
+                    code = (str(exc) if str(exc) in {'numeric_literal_unbound', 'numeric_scope', 'reference_unknown',
+                        'source_unavailable', 'evidence_missing'} else 'review_shape_invalid')
+                    target = value.get('target') if isinstance(value, dict) else None
+                    diagnostics.append({'index': index,
+                        'target': target if isinstance(target, str) and target in targets else None, 'code': code})
+                    continue
+            return accepted, duplicates, diagnostics
+
         raw = ask('challenge', review_context) if targets else None
-        candidates = raw.get('reviews', []) if isinstance(raw, dict) else []
-        accepted, duplicates, diagnostics = {}, set(), []
-        for index, value in enumerate(candidates if isinstance(candidates, list) else []):
-            try:
-                review = ReviewProposal.model_validate(value)
-                if review.target not in targets:
-                    diagnostics.append({'index': index, 'target': None, 'code': 'target_unknown'})
-                    continue
-                if not review.reasoning.strip() or (review.concern is not None and not review.concern.strip()):
-                    diagnostics.append({'index': index, 'target': review.target, 'code': 'blank_text'})
-                    continue
-                checked = note(review.reasoning, review.evidence_refs, claim=review.concern or '未发现有效反证')
-                if review.target in accepted:
-                    duplicates.add(review.target)
-                accepted[review.target] = SavedReview(target_id=targets[review.target].insight_id,
-                    status='challenged' if review.concern else 'no_counterevidence',
-                    concern=checked.rendered.claim if review.concern else None, reasoning=checked.rendered.reasoning,
-                    source_ids=checked.source_ids, note=checked)
-            except (ValueError, ValidationError) as exc:
-                code = (str(exc) if str(exc) in {'numeric_literal_unbound', 'numeric_scope', 'reference_unknown',
-                    'source_unavailable', 'evidence_missing'} else 'review_shape_invalid')
-                target = value.get('target') if isinstance(value, dict) else None
-                diagnostics.append({'index': index,
-                    'target': target if isinstance(target, str) and target in targets else None, 'code': code})
-                continue
-        for target in targets:
-            if target not in accepted and not any(item['target'] == target for item in diagnostics):
-                diagnostics.append({'index': None, 'target': target,
-                    'code': 'review_unavailable' if raw is None else 'target_missing'})
+        accepted, duplicates, diagnostics = parse_reviews(raw)
+        missing = [ref for ref in targets if ref not in accepted or ref in duplicates]
+        repaired = False
+        if (missing and raw is not None
+                and journal.state.get('insight.failure.challenge.main') != 'response_unknown'):
+            repaired = True
+            repair_raw = ask('challenge', {**review_context, 'repair_targets': missing,
+                'issues': [item for item in diagnostics if item.get('target') in set(missing)]}, 'repair')
+            repaired_accepted, _, repair_diagnostics = parse_reviews(repair_raw, allowed=set(missing))
+            accepted.update(repaired_accepted)
+            diagnostics.extend(repair_diagnostics)
+            for ref in repaired_accepted:
+                duplicates.discard(ref)
+        missing = [ref for ref in targets if ref not in accepted or ref in duplicates]
+        for ref in missing:
+            diagnostics.append({'index': None, 'target': ref,
+                'code': 'repair_unresolved' if repaired else 'review_unavailable' if raw is None else 'target_missing'})
         journal.put('insight.diagnostics.challenge', diagnostics)
         reviews = [accepted[key] if key in accepted and key not in duplicates else SavedReview(target_id=value.insight_id,
             status='unreviewed' if raw is not None else 'failed') for key, value in targets.items()]
