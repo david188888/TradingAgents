@@ -77,6 +77,11 @@ future, ambiguous-column or unsupported layouts remain unavailable; no OCR/model
 Selected excerpts are partial body coverage. A passed structured profit/CFO comparison is distinct
 from a complete reported cash bridge. Empty disclosed cells stay missing rather than zero.
 
+For CNINFO title collection, the native collector checks each publication date against the
+collection window and captures the title, date and link as source evidence. The
+[V9 record builder](../../tradingagents/research/native_record.py) derives announcement facts
+from that evidence. Collection coverage travels with the evidence into the run audit.
+
 [coverage.py](../../tradingagents/dataflows/coverage.py) owns source coverage semantics.
 Screening-capable adapters can report a complete zero-result search only with proven pagination and
 scope; unavailable/partial/unknown cannot become “nothing happened”. Supplemental screening tools use

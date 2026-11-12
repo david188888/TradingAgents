@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from tradingagents.dataflows import tencent_kline as tk
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 
 
 class _FakeResponse:

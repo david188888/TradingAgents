@@ -23,7 +23,6 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .china_data import ChinaDataUnavailableError
 from .coverage import CoveredText, ScreeningCoverageV1, SourceCoverageV1
 from .eastmoney import (
     DatacenterPage,
@@ -38,6 +37,7 @@ from .eastmoney import (
     strict_number,
     strict_source_day,
 )
+from .errors import ChinaDataUnavailableError
 from .ticker_utils import (
     is_a_share_ticker,
     normalize_ticker_symbol,

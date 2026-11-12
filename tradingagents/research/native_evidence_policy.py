@@ -29,10 +29,3 @@ class NativeEvidencePolicyV1(BaseModel):
 
     def as_identity(self):
         return self.model_dump(mode="json")
-
-    def collector_policy(self):
-        # This adapter reuses the proven collector's source windows. Its
-        # legacy forward field does not become a company/holding outlook.
-        from .collection_policy import collection_policy
-
-        return collection_policy()

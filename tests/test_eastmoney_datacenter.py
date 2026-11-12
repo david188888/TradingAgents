@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 
 from tradingagents.dataflows import eastmoney
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.eastmoney import (
     DatacenterPage,
     em_datacenter_strict,
@@ -16,7 +15,7 @@ from tradingagents.dataflows.eastmoney import (
     strict_number,
     strict_source_day,
 )
-from tradingagents.dataflows.errors import VendorHTTPError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError, VendorHTTPError
 
 # ---------------------------------------------------------------------------
 # Offline gateway helpers

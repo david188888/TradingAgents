@@ -49,7 +49,7 @@ from typing import Any, Literal
 import pandas as pd
 import requests
 
-from .china_data import ChinaDataUnavailableError
+from .errors import ChinaDataUnavailableError
 from .ticker_utils import is_a_share_ticker, normalize_ticker_symbol, to_akshare_symbol
 
 logger = logging.getLogger(__name__)

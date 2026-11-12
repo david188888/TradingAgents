@@ -22,9 +22,14 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .china_data import ChinaDataUnavailableError
 from .coverage import CoveredText, ScreeningCoverageV1, SourceCoverageV1
-from .errors import RateLimitError, VendorAccessDeniedError, VendorError, VendorHTTPError
+from .errors import (
+    ChinaDataUnavailableError,
+    RateLimitError,
+    VendorAccessDeniedError,
+    VendorError,
+    VendorHTTPError,
+)
 from .ticker_utils import (
     is_a_share_ticker,
     normalize_ticker_symbol,

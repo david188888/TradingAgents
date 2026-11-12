@@ -1,8 +1,8 @@
-"""Native V0 facts preserve source identity, PIT dates and epistemic limits."""
+"""V9 evidence facts preserve source identity, cutoff dates and scope."""
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -62,9 +62,7 @@ def fixture(*, financial_payload=None, statuses=None, extra=()):
         degradations=("fixture_partial",) if statuses.get(cap) == CapabilityStatus.PARTIAL else (),
         detail={"fixture": True}) for cap in (CAP_IDENTITY, CAP_FUNDAMENTALS, CAP_EVENT_COVERAGE, CAP_PRICE))
     draft = FrozenEvidenceDraft(run_id="native-run", ticker="600519", cutoff="2026-09-30",
-        policy_version="source-collection-policy-v1", draft_id="native-fixture",
-        frozen_at=datetime(2026, 9, 30, 8, tzinfo=timezone.utc), evidence=evidence,
-        capabilities=capabilities)
+        evidence=evidence, capabilities=capabilities)
     return draft, context
 
 

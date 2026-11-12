@@ -35,7 +35,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from .china_data import ChinaDataUnavailableError
+from .errors import ChinaDataUnavailableError
 from .ticker_utils import infer_a_share_exchange, strict_ticker_code
 
 SZSE_CALENDAR_URL = "https://www.szse.cn/api/report/exchange/onepersistenthour/monthList"

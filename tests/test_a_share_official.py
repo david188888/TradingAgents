@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 
 from tradingagents.dataflows import a_share_official
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 
 
 class _Response:

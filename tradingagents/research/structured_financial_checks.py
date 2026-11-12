@@ -52,12 +52,11 @@ def observation_operands(key, period):
 def qualified_statements(record):
     result = []
     for source in record.evidence:
-        if record.schema_version == 'evidence-record-v1':
-            from tradingagents.research.search_recovery import recovered_statement
-            recovered = recovered_statement(record, source)
-            if recovered:
-                _qualified_source(record, source.evidence_id)
-                result.append((source, recovered))
+        from tradingagents.research.search_recovery import recovered_statement
+        recovered = recovered_statement(record, source)
+        if recovered:
+            _qualified_source(record, source.evidence_id)
+            result.append((source, recovered))
         if source.source_name not in FINANCIAL_SOURCES:
             continue
         try:

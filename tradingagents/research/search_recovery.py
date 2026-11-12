@@ -15,7 +15,7 @@ TEXT_FIELDS = {'name': '公司名称', 'list_date': '上市日期', 'main_busine
 
 def qualified_financial_rows(record, source):
     """Re-read only cells covered by an admitted field's original table."""
-    if record.schema_version != 'evidence-record-v1' or source.content is None or source.content.truncated:
+    if source.content is None or source.content.truncated:
         return ()
     result = []
     for field in record.recovered_fields:

@@ -21,7 +21,8 @@ must stay out of commits. Node is for frontend development/builds, not installed
 | Change | Start here |
 | --- | --- |
 | Request/result, cancellation, execution identity | `tradingagents/execution/models.py`, `native_runner.py`, `runtime/` |
-| Research artifacts, qualification, calculations | `tradingagents/agents/schemas/`, `research/`, `dataflows/` |
+| Source collection and capability calls | `tradingagents/dataflows/search_sources.py`, `tradingagents/execution/capability_gateway.py`, [A-share data capabilities](docs/operations/a-share-data-capabilities.md) |
+| Research artifacts, evidence admission and calculations | `tradingagents/agents/schemas/`, `tradingagents/research/native_record.py`, `tradingagents/research/` |
 | Role sequence or scope | `tradingagents/graph/insight_research.py`, `research/native_evidence_policy.py` |
 | Web/Reader/SSE | `tradingagents/web/` and `frontend/src/api/contracts.ts`, then consumers |
 | Browser interaction/state | `frontend/AGENTS.md`, API transport, stores/hooks, components |
@@ -47,7 +48,8 @@ Run `git diff --check` for every change. For a local fix, select explicit test p
 for example `python -m pytest tests/test_search_budget.py` or
 `npm --prefix frontend run test -- --run src/hooks/useRunStream.test.ts`.
 Add or adjust tests for meaningful behavior changes and regression gaps; small edits do not
-automatically need new tests. Preserve existing tests unless their removal is separately agreed.
+automatically need new tests. For an agreed retirement, remove tests dedicated to the deleted
+path. Preserve coverage of shared behavior, including V9 evidence admission and saved-run replay.
 
 Reuse passing checks while the relevant code, tests, fixtures, configuration, dependencies and
 environment remain unchanged. Commit, push or PR creation alone does not invalidate them.

@@ -18,7 +18,6 @@ from tradingagents.dataflows.native_qualification import sina_statement
 from tradingagents.dataflows.native_sources import NativeSources
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.execution.native_runner import native_identity
-from tradingagents.research.collection_policy import collection_policy
 from tradingagents.research.native_record import _financial_detail_content, build_native_record
 from tradingagents.research.native_versions import FINANCIAL_DETAIL_POLICY
 from tradingagents.research.verification_tools import _financial_operand
@@ -42,7 +41,7 @@ def payload(table, periods=2):
 
 def collector(monkeypatch, *, detail):
     request = SimpleNamespace(ticker="002130.SZ", analysis_date="2026-10-03",
-        collection_policy=collection_policy(), effective_config={
+        effective_config={
             "evidence_source_vendors": {"identity": ["sina"], "events": [], "calendar": [], "price": []}})
     if detail:
         request.financial_detail_policy = FINANCIAL_DETAIL_POLICY

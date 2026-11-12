@@ -1,8 +1,7 @@
 """Code-owned descriptive statistics inside a qualifying price payload.
 
-This payload is frozen and checkpointed with its source evidence, then read
-by the market specialist. Saved results can be projected into research-record-v1;
-this computation is not a valuation.
+V9 saves this payload with its source evidence for the market specialist.
+These statistics describe the qualified historical window.
 """
 
 from __future__ import annotations

@@ -22,7 +22,7 @@ import pandas as pd
 import pytest
 
 from tradingagents.dataflows import tencent_kline
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 
 
 class _FakeResponse:

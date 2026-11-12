@@ -2,7 +2,7 @@
 import copy
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -39,8 +39,8 @@ def valuation_fixture(*, annual=True, history=True, cutoff="2026-09-30"):
         context[key] = payload
     caps = tuple(FrozenCapability(capability=cap, status=CapabilityStatus.QUALIFIED, reason="offline qualification")
         for cap in {x[0] for x in payloads})
-    return FrozenEvidenceDraft(run_id="valuation-600803", ticker="600803", cutoff=cutoff, policy_version="source-collection-policy-v1",
-        draft_id="valuation-fixture", frozen_at=datetime(2026, 9, 30, 8, 30, tzinfo=timezone.utc), evidence=tuple(evidence), capabilities=caps), context
+    return FrozenEvidenceDraft(run_id="valuation-600803", ticker="600803", cutoff=cutoff,
+        evidence=tuple(evidence), capabilities=caps), context
 
 
 

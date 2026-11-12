@@ -11,7 +11,7 @@ import pytest
 
 from tradingagents.dataflows import a_stock_v37
 from tradingagents.dataflows.china_capabilities import AshareCapabilityUnavailableError
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 
 
 class _TextResp:

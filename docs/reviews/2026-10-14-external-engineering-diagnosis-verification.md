@@ -83,7 +83,7 @@ subagent 对同一合成 facts-only seed 注入调用异常：`RuntimeError` 会
 
 subagent用同日、不同URL的“甲公司2026半年报营收增长15%”与“甲公司2026半年报营收增长25%”输入兼容新闻去重（显式启用默认模糊参数：阈值0.5、两天窗口、最少5个重叠bigram），结果只剩一条，保留数字随输入顺序变化。这证明相近标题可吞掉数字差异；未证明现役V7研究受影响。算法未确认数字或修订关系，不能将另一条直接丢弃归于合法版本更新。处理原则应保留数值/时间/否定/修订差异与全部原始出处，再考虑事件聚类。复现入口为 `news_curator._dedupe_news_items`，368–423、463–485 行。
 
-V7使用另一条确定性去重路径：[catalyst_events.py](../../tradingagents/dataflows/catalyst_events.py) 261–289 行的key包含证券、公告ID、发布时间和内容指纹；数字变化不会被该指纹正常化抹掉。[minimum_sources.py](../../tradingagents/dataflows/minimum_sources.py)按公告ID整理目录；机构预测按机构/年份选最新是显式版本规则。不能把兼容新闻复现推广到V7。
+V7使用另一条确定性去重路径：当时的 `tradingagents/dataflows/catalyst_events.py` 261–289 行的key包含证券、公告ID、发布时间和内容指纹；数字变化不会被该指纹正常化抹掉。[minimum_sources.py](../../tradingagents/dataflows/minimum_sources.py)按公告ID整理目录；机构预测按机构/年份选最新是显式版本规则。不能把兼容新闻复现推广到V7。
 
 ## 对优化建议的取舍
 

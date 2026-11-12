@@ -124,7 +124,6 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # (e.g. some deepseek-v4-flash deployments, #1204).
     "max_tokens": None,
     "output_language": "Chinese",
-    "akshare_adjust": "",
     # Wind AIFin Market (https://aifinmarket.wind.com.cn) premium data.
     # Enabled by default for this local research workspace. Set
     # wind_enabled=False to disable Wind capabilities without affecting core

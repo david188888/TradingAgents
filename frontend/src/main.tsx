@@ -4,7 +4,6 @@ import { App } from "./App";
 import "./styles/global.css";
 import "./styles/tokens.css";
 import "./styles/workbench.css";
-import "./styles/catalyst.css";
 
 const container = document.getElementById("root");
 if (!container) {

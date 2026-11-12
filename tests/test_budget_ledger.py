@@ -1,10 +1,4 @@
-"""Budget ledger behaviour for the bounded research flow (plan T20).
-
-The tests here are mostly negative on purpose.  A budget that is only ever
-exercised on the happy path proves nothing, because the failure mode -- a
-ceiling that quietly overspends, or a resume that quietly refunds a run's
-spend -- looks exactly like success from the outside.
-"""
+"""Run-budget limits, attempt accounting and durable replay for V9."""
 
 from __future__ import annotations
 
@@ -106,14 +100,14 @@ def test_structured_repair_is_capped_per_stage_and_per_run() -> None:
     stage would have none -- while still looking compliant with the run total.
     """
     ledger = _ledger()
-    for stage in ("specialist:catalyst_events", "specialist:market_reaction"):
+    for stage in ("native.event_context", "native.market_context"):
         grant = ledger.reserve(BudgetBucket.STRUCTURED_REPAIR, stage=stage)
         assert not isinstance(grant, BudgetLimitHit)
         ledger.mark_dispatched(grant)
         ledger.settle(grant, ok=True)
 
     third = ledger.reserve(
-        BudgetBucket.STRUCTURED_REPAIR, stage="specialist:catalyst_events"
+        BudgetBucket.STRUCTURED_REPAIR, stage="native.event_context"
     )
     assert isinstance(third, BudgetLimitHit)
     assert third.reason == "per_stage_limit_reached"
