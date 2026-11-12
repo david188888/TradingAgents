@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
+from tradingagents.llm_clients.stage_models import stage_model_overrides
 from tradingagents.research.native_evidence_policy import (
     NativeEvidencePolicyV1,
     is_native_stock_ticker,
@@ -21,6 +22,13 @@ def current_analysis_date() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
+class StageModelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=256)
+    effort: str | None = Field(default=None, max_length=16)
+
+
 class BatchRunConfigRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     analysis_date: str = Field(default_factory=current_analysis_date)
@@ -28,14 +36,18 @@ class BatchRunConfigRequest(BaseModel):
     chatgpt_account_ref: str | None = Field(default=None, pattern=r"^cg_[0-9a-f]{32}$")
     quick_think_llm: str = Field(min_length=1, max_length=256)
     deep_think_llm: str = Field(min_length=1, max_length=256)
+    stage_models: dict[str, StageModelRequest] = Field(default_factory=dict, max_length=7)
     output_language: Literal["English", "Chinese"] = "English"
     research_profile: Literal["evidence_v1"] = "evidence_v1"
     research_question: str | None = Field(default=None, max_length=400)
     evidence_policy: NativeEvidencePolicyV1 | None = None
 
     @model_validator(mode="after")
-    def validate_chatgpt_account(self):
-        if (self.llm_provider.lower() == "chatgpt") != (self.chatgpt_account_ref is not None):
+    def validate_models_and_account(self):
+        stages = {key: value.model_dump(exclude_none=True) for key, value in self.stage_models.items()}
+        stage_model_overrides({"stage_models": stages})
+        subscription = "chatgpt" in {self.llm_provider.lower(), *(v["provider"] for v in stages.values())}
+        if subscription != (self.chatgpt_account_ref is not None):
             raise ValueError("chatgpt_account_ref is required only for ChatGPT subscription")
         self.research_question = self.research_question.strip() or None if self.research_question else None
         return self

@@ -30,7 +30,8 @@ The Web server does not load the CLI's `tradingagents.local.json`.
 
 | Purpose | Configuration |
 | --- | --- |
-| Research model | Select provider plus specialist/challenge and synthesis models in the workbench. API providers need their own key. Defaults are DeepSeek `deepseek-flash` for both tiers. |
+| Research model | Select provider plus specialist/challenge and synthesis models in the workbench. API providers need their own key. Defaults are DeepSeek `deepseek-flash` for both tiers. Tencent Hunyuan (`hunyuan`, TokenHub endpoint, `HUNYUAN_API_KEY`) offers `hy4-preview`, uses JSON Schema output and keeps the model's default `high` reasoning; it accepts no stage effort. |
+| Stage models (optional) | The collapsed **分阶段模型（高级）** panel overrides provider, model and effort for operating, event and market specialists, challenge and synthesis. Unset rows inherit the two tiers; each response follows its specialist. Every selected provider needs its key; ChatGPT stages share the signed-in account. |
 | ChatGPT research | Choose ChatGPT subscription and complete official sign-in; use the returned account catalog. See [account setup](chatgpt-subscription.md). |
 | Search, independently of research model | `DEEPSEEK_API_KEY` for Search/Fetch and `TAVILY_API_KEY` or comma-separated `TAVILY_API_KEYS` for Search/Extract. ChatGPT login supplies neither. |
 | Optional data access | Tushare token/entitlement can supply fallback data and valuation history; public default sources remain independent. See [data capabilities](a-share-data-capabilities.md). |
@@ -47,8 +48,10 @@ DeepSeek defaults to enabled thinking/high effort. Environment controls include
 `TRADINGAGENTS_OPENAI_REASONING_EFFORT` and optional `TRADINGAGENTS_LLM_MAX_TOKENS`.
 ChatGPT effort support is model-dependent; its output-cap omission is intentional. Google maps the
 shared output cap to `max_output_tokens`, and Azure forwards `max_tokens`; provider-side acceptance
-and enforcement depend on the selected model. Task-effort mappings are programmatic/CLI settings, not Web selectors;
-[task_effort.py](../../tradingagents/llm_clients/task_effort.py) owns valid tasks and values.
+and enforcement depend on the selected model. A stage `effort` replaces the former task-effort mapping and lands on the
+selected provider's own setting; providers without one reject it. A failed stage call fails under the normal rules and never
+falls back to another model. [stage_models.py](../../tradingagents/llm_clients/stage_models.py) owns stage keys, resolution and
+valid efforts; runs freeze the resolved policy for resume and the audit configuration view.
 
 Fresh V9 research sends strict structured output on SIWC/OpenAI and JSON mode on the existing
 DeepSeek Chat Completions route. Canonical evidence and numeric checks still apply; only V9 requests are supported. A successful small schema probe is separate from complete real-model

@@ -54,6 +54,7 @@ CONFIG_ALLOWLIST = frozenset(
         "mode",
         "output_language",
         "quick_think_llm",
+        "stage_models",
     }
 )
 

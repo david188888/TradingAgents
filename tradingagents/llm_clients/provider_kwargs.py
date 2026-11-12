@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from .task_effort import resolve_task_effort, task_effort_overrides
+from .task_effort import resolve_task_effort
 
 
 def _coerce_max_retries(value):
@@ -35,7 +35,6 @@ def _coerce_max_retries(value):
 def provider_llm_kwargs(config: Mapping[str, Any], *, task: str | None = None) -> dict[str, Any]:
     """Get provider-specific kwargs for LLM client creation."""
     kwargs = {}
-    task_effort_overrides(config)
     provider = config.get("llm_provider", "").lower()
 
     if provider == "google":
@@ -61,7 +60,10 @@ def provider_llm_kwargs(config: Mapping[str, Any], *, task: str | None = None) -
             kwargs["thinking"] = {"type": thinking_mode}
         # A non-none effort enables thinking at the API. Do not override an
         # explicit disabled mode with the retained default effort.
-        effort = resolve_task_effort(config, task)
+        if "deepseek_task_efforts" in config and "stage_models" not in config:
+            effort = resolve_task_effort(config, task)
+        else:
+            effort = config.get("deepseek_reasoning_effort")
         if effort and thinking_mode != "disabled":
             kwargs["reasoning_effort"] = str(effort).strip().lower()
 

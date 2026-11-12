@@ -4383,6 +4383,12 @@ aside.sidebar { min-width: 0; scrollbar-gutter: stable; }
 .account-options { margin-top: 12px; color: var(--muted); font-size: 11px; }
 .account-options summary { width: fit-content; padding: 4px 0; cursor: pointer; }
 .account-options .connection-actions { margin-top: 6px; }
+.stage-models { margin-bottom: var(--sp-4); color: var(--muted); font-size: 12px; }
+.stage-models summary { width: fit-content; padding: 4px 0; font-weight: 500; cursor: pointer; }
+.stage-models-hint { margin: 6px 0 10px; color: var(--faint); font-size: 11px; line-height: 1.6; }
+.stage-model-row { display: grid; grid-template-columns: 2.5em minmax(0, 1fr); gap: 6px 8px; align-items: center; margin-bottom: var(--sp-2); }
+.stage-model-row > label { margin: 0; }
+.stage-model-row > :not(label) { grid-column: 2; }
 .sidebar .account-logout { color: var(--muted); }
 .sidebar .history { margin-top: 24px; padding-top: 20px; }
 .sidebar .history > .section-title h2 { font: 650 13px var(--font-sans); }

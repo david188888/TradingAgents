@@ -26,7 +26,7 @@ Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add 
 
 | Responsibility | Owner |
 | --- | --- |
-| Consumer-neutral request, execution and model dispatch | `execution/models.py`, `native_runner.py`, `insight_model.py` |
+| Consumer-neutral request, execution and model dispatch | `execution/models.py`, `native_runner.py`, `insight_model.py`, per-stage routing in `llm_clients/stage_models.py` |
 | V9 sequence, review, response, web/capability supplements and synthesis | `graph/insight_research.py`, `execution/insight_search.py`, `execution/insight_capability.py`, `execution/capability_gateway.py`, `research/insights.py` |
 | Public Insight report and reference/numeric validation | `agents/schemas/_insight.py`, `research/insight_report.py` |
 | Source retrieval, model-facing capability catalog, qualification and calculations | `dataflows/` (including `capability_catalog.py`), `research/` |

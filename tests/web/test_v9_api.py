@@ -62,6 +62,24 @@ def test_current_http_flow_publishes_exact_insight_and_stage_views(tmp_path):
             assert client.get(f"/api/runs/{run_id}/{endpoint}").status_code == 404
 
 
+def test_stage_models_are_admitted_frozen_and_require_every_provider_key(tmp_path):
+    stages = {"challenge": {"provider": "deepseek", "model": "deepseek-v4-pro", "effort": "max"}}
+    with workbench(tmp_path) as (client, manager, store, calls):
+        response = client.post("/api/runs", json={**BODY, "stage_models": stages})
+        assert response.status_code == 201, response.text
+        snapshot = manager.wait(response.json()["run_id"], timeout=5)
+        assert snapshot.metadata["effective_config"]["stage_models"] == stages
+        missing = client.post("/api/runs", json={**BODY, "stage_models": {
+            "synthesis": {"provider": "qwen-cn", "model": "qwen3.7-max"}}})
+        assert missing.status_code == 422
+        assert missing.json()["detail"]["fields"] == ["stage_models.synthesis.provider"]
+        assert client.post("/api/runs", json={**BODY, "stage_models": {
+            "risk": {"provider": "deepseek", "model": "x"}}}).status_code == 422
+        assert client.post("/api/runs", json={**BODY, "stage_models": {
+            "synthesis": {"provider": "chatgpt", "model": "gpt-5.6"}}}).status_code == 422
+        assert len(store.list_runs()) == 1
+
+
 @pytest.mark.parametrize("field,value", [("research_profile", "classic"), ("research_profile", "catalyst_v1"),
     ("ticker", "AAPL"), ("mode", "holding_review"), ("selected_analysts", ["market"]), ("research_depth", 2)])
 def test_retired_or_non_a_share_requests_reject_before_worker(tmp_path, field, value):

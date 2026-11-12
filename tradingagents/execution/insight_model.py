@@ -16,6 +16,7 @@ from tradingagents.execution.model_support import global_model_slots, unique_obj
 from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.capabilities import native_structured_method
+from tradingagents.llm_clients.stage_models import resolve_stage_model
 from tradingagents.llm_clients.structured_output import strict_schema
 from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
@@ -99,15 +100,14 @@ class InsightModelCaller:
                 raise exc
             raise InsightUnavailable(category) from None
 
-        method = native_structured_method(self.config['llm_provider'],
-            self.config['deep_think_llm'] if stage == 'synthesis' else self.config['quick_think_llm'])
+        call_config, model = resolve_stage_model(self.config, stage)
+        method = native_structured_method(call_config['llm_provider'], model)
         response_format = ({'type': 'json_schema', 'json_schema': {'name': 'insight_stage', 'schema': schema, 'strict': True}}
             if method == 'json_schema' else {'type': 'json_object'} if method == 'json_mode' else None)
-        journal.put(logical + '.structured', {'method': method, 'schema_sha256': hashlib.sha256(
-            json.dumps(schema, sort_keys=True).encode()).hexdigest()})
+        journal.put(logical + '.structured', {'method': method, 'provider': call_config['llm_provider'], 'model': model,
+            'schema_sha256': hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()})
         try:
-            response = invoke_model_request(config=self.config,
-                model=self.config['deep_think_llm'] if stage == 'synthesis' else self.config['quick_think_llm'],
+            response = invoke_model_request(config=call_config, model=model,
                 task='native.' + stage.removeprefix('response_'), prompt=prompt, client_factory=create_llm_client,
                 slots=global_model_slots(), ensure_active=self._active, cancelled=self.cancelled, deadline=self.deadline,
                 dispatch=lambda: self.ledger.mark_dispatched(token), on_error=on_error, on_usage=on_usage,

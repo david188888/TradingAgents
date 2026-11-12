@@ -39,7 +39,7 @@ from tradingagents.llm_clients.chatgpt_policy import (
     CHATGPT_REQUEST_POLICY,
     validate_reasoning_effort,
 )
-from tradingagents.llm_clients.task_effort import task_effort_overrides
+from tradingagents.llm_clients.stage_models import stage_model_overrides, stage_model_providers
 from tradingagents.observability.events import RunEventDraft
 from tradingagents.observability.roles import (
     role_instance_id,
@@ -70,7 +70,7 @@ def native_identity(request):
     from tradingagents.llm_clients.structured_output import STRUCTURED_OUTPUT_POLICY
     from tradingagents.research.native_versions import FINANCIAL_DETAIL_POLICY
 
-    subscription = request.effective_config.get("llm_provider") == "chatgpt"
+    subscription = "chatgpt" in stage_model_providers(request.effective_config)
     if subscription:
         validate_reasoning_effort(request.effective_config.get("openai_reasoning_effort"))
     return {
@@ -226,7 +226,7 @@ class NativeRunner:
             raise ValueError("unsupported native request")
         request = replace(request, effective_config=deepcopy(dict(request.effective_config)))
         try:
-            task_effort_overrides(request.effective_config)
+            stage_model_overrides(request.effective_config)
             timeout = float(request.effective_config.get("evidence_timeout_seconds", 300))
         except (ValueError, TypeError, OverflowError) as exc:
             raise SemanticConfigError("invalid native execution configuration") from exc

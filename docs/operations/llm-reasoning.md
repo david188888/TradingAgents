@@ -3,7 +3,7 @@
 Status: Current — navigation pointer.
 
 Maintained explanation: [owning reference](evidence-research.md#model-settings).
-Canonical detail or related owner: [source](../../tradingagents/llm_clients/task_effort.py).
+Canonical detail or related owner: [source](../../tradingagents/llm_clients/stage_models.py).
 
 Web configuration is maintained in the operating guide; code owns provider option mapping and task names. Historical identities retain saved effort/retry semantics.
 

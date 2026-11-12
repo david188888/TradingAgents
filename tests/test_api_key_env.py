@@ -16,7 +16,7 @@ def test_every_supported_provider_has_an_entry():
         "qwen", "qwen-cn",
         "glm", "glm-cn",
         "minimax", "minimax-cn",
-        "openrouter", "azure", "ollama",
+        "openrouter", "azure", "ollama", "hunyuan",
     }
     assert expected.issubset(PROVIDER_API_KEY_ENV.keys())
 
@@ -38,6 +38,7 @@ def test_every_supported_provider_has_an_entry():
         ("minimax",    "MINIMAX_API_KEY"),
         ("minimax-cn", "MINIMAX_CN_API_KEY"),
         ("openrouter", "OPENROUTER_API_KEY"),
+        ("hunyuan",    "HUNYUAN_API_KEY"),
     ],
 )
 def test_known_providers_resolve(provider, env_var):

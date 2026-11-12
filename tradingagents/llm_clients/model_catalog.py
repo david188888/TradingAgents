@@ -167,6 +167,17 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # so the two provider keys share one model list.
     "minimax": _MINIMAX_MODELS,
     "minimax-cn": _MINIMAX_MODELS,
+    # Hunyuan via Tencent TokenHub (cloud.tencent.com/document/product/1823/132252).
+    "hunyuan": {
+        "quick": [
+            ("Hy4 Preview - Tencent flagship, thinking on by default", "hy4-preview"),
+            ("Custom model ID", "custom"),
+        ],
+        "deep": [
+            ("Hy4 Preview - Tencent flagship, thinking on by default", "hy4-preview"),
+            ("Custom model ID", "custom"),
+        ],
+    },
     # OpenRouter: fetched dynamically. Azure: any deployed model name.
     # Ollama display labels intentionally omit a "local" marker — the
     # endpoint is now configurable via OLLAMA_BASE_URL, so the same labels

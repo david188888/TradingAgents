@@ -63,6 +63,27 @@ def test_cancel_before_dispatch_consumes_no_model_attempt(tmp_path):
     assert len(journal.ledger.records()) == 0
 
 
+def test_each_stage_dispatches_its_configured_provider_and_model(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+    seen = []
+
+    def invoke(**kwargs):
+        seen.append((kwargs['config']['llm_provider'], kwargs['model']))
+        kwargs['dispatch']()
+        return SimpleNamespace(content='{"insights": []}')
+
+    monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
+    delegate = InsightModelCaller(effective_config={'llm_provider': 'openai', 'quick_think_llm': 'gpt-4o',
+        'deep_think_llm': 'gpt-4o', 'stage_models': {'challenge': {'provider': 'deepseek', 'model': 'deepseek-v4-pro'}}},
+        run_id=journal.observer.run_id, ledger=journal.ledger, cancelled=lambda: False,
+        deadline=lambda: time.monotonic() + 60)
+    delegate('operating_quality', {})
+    delegate('challenge', {})
+    assert seen == [('openai', 'gpt-4o'), ('deepseek', 'deepseek-v4-pro')]
+    assert journal.state['insight.challenge.main.structured']['method'] == 'json_mode'
+    assert journal.state['insight.challenge.main.structured']['model'] == 'deepseek-v4-pro'
+
+
 def test_prompt_identity_cannot_change_after_dispatch(tmp_path, monkeypatch):
     _, journal, _ = setup(tmp_path)
 
@@ -76,3 +97,31 @@ def test_prompt_identity_cannot_change_after_dispatch(tmp_path, monkeypatch):
     from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
     with pytest.raises(ResearchCheckpointConflict, match='prompt'):
         delegate('operating_quality', {'evidence': ['E2']})
+
+
+def test_saved_deepseek_effort_reaches_model_request(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+    efforts = []
+
+    def client_factory(**kwargs):
+        efforts.append(kwargs.get("reasoning_effort"))
+        llm = SimpleNamespace(invoke=lambda prompt: SimpleNamespace(content="{}"))
+        return SimpleNamespace(get_llm=lambda: llm)
+
+    monkeypatch.setattr("tradingagents.execution.insight_model.create_llm_client", client_factory)
+    delegate = InsightModelCaller(
+        effective_config={
+            "llm_provider": "deepseek",
+            "quick_think_llm": "deepseek-v4-flash",
+            "deep_think_llm": "deepseek-v4-pro",
+            "deepseek_reasoning_effort": "high",
+            "deepseek_task_efforts": {"native.challenge": "max", "native.operating_quality": "low"},
+        },
+        run_id=journal.observer.run_id,
+        ledger=journal.ledger,
+        cancelled=lambda: False,
+        deadline=lambda: time.monotonic() + 60,
+    )
+    delegate("challenge", {})
+    delegate("response_operating_quality", {})
+    assert efforts == ["max", "low"]
