@@ -225,6 +225,28 @@ describe("Controls", () => {
     expect(mockClient.createRun.mock.calls[0][0]).not.toHaveProperty("selected_analysts");
   });
 
+  it("sends stage model overrides and blocks an unconfigured stage provider", async () => {
+    const cfg = makeConfig();
+    cfg.stage_model_efforts = { deepseek: ["low", "high", "max"] };
+    mockClient.getConfig.mockResolvedValue(cfg);
+    mockClient.createRun.mockResolvedValue(makeSnapshot());
+    render(<Controls />);
+    await waitForConfig();
+    fireEvent.change(screen.getByLabelText("股票代码"), { target: { value: "600803" } });
+    fireEvent.change(screen.getByLabelText("质疑"), { target: { value: "deepseek" } });
+    fireEvent.change(screen.getByLabelText("质疑模型"), { target: { value: "deepseek-reasoner" } });
+    fireEvent.change(screen.getByLabelText("质疑推理强度"), { target: { value: "max" } });
+    fireEvent.change(screen.getByLabelText("综合"), { target: { value: "openai" } });
+    expect(screen.getByRole("button", { name: /开始分析/ })).toBeDisabled();
+    expect(screen.getByText(/分阶段模型「综合」的 Provider 未配置 API Key/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("综合"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /开始分析/ }));
+    await waitFor(() => expect(mockClient.createRun).toHaveBeenCalledTimes(1));
+    expect(mockClient.createRun.mock.calls[0][0].stage_models).toEqual({
+      challenge: { provider: "deepseek", model: "deepseek-reasoner", effort: "max" },
+    });
+  });
+
   it("disables start when the selected provider is not configured", async () => {
     const cfg = makeConfig();
     cfg.defaults.llm_provider = "openai";

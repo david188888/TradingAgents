@@ -23,6 +23,7 @@ from tradingagents.execution.models import AnalysisRequest
 from tradingagents.execution.native_runner import NEW_STUDY_TIMEOUT_SECONDS
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
+from tradingagents.llm_clients.stage_models import EFFORT_CONFIG_KEYS
 from tradingagents.research.native_evidence_policy import is_native_stock_ticker
 from tradingagents.runtime.batch_models import BatchItem
 from tradingagents.runtime.run_models import generate_run_id
@@ -657,26 +658,39 @@ def _analysis_request(body, environment, *, checkpoint_available=True, chatgpt_a
     provider = body.llm_provider.lower()
     if provider not in PROVIDER_API_KEY_ENV and provider != "chatgpt":
         raise ApiBoundaryError(422, "unsupported_provider", "Unsupported LLM provider.", fields=("llm_provider",))
-    if provider == "chatgpt":
+    stages = {key: value.model_dump(exclude_none=True) for key, value in body.stage_models.items()}
+    # Each selection is (provider, model, catalog mode, request field); stages accept either tier.
+    selections = [(provider, body.quick_think_llm, "quick", "quick_think_llm"),
+                  (provider, body.deep_think_llm, "deep", "deep_think_llm")]
+    selections += [(v["provider"], v["model"], None, f"stage_models.{key}.model")
+                   for key, v in stages.items()]
+    for selected, model, mode, field in selections:
+        if selected == "chatgpt":
+            continue
+        _validate_model(selected, model, field, mode)
+        if not _provider_configured(selected, environment):
+            raise ApiBoundaryError(422, "missing_configuration", "The selected provider is not configured.",
+                fields=("llm_provider" if field.endswith("_llm") else field.replace(".model", ".provider"),))
+    subscription = [model for selected, model, _mode, _field in selections if selected == "chatgpt"]
+    if subscription:
         from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
         if chatgpt_auth is None:
             raise ChatGPTError("not_signed_in")
         chatgpt_auth.access(body.chatgpt_account_ref, for_inference=True)
         available = {item["id"] for item in chatgpt_auth.models(body.chatgpt_account_ref)["models"]}
-        if not {body.quick_think_llm, body.deep_think_llm} <= available:
+        if not set(subscription) <= available:
             raise ChatGPTError("model_not_available")
-    else:
-        _validate_model(provider, body.quick_think_llm, "quick_think_llm", "quick")
-        _validate_model(provider, body.deep_think_llm, "deep_think_llm", "deep")
-        if not _provider_configured(provider, environment):
-            raise ApiBoundaryError(422, "missing_configuration", "The selected provider is not configured.", fields=("llm_provider",))
     config = {"llm_provider": provider, "quick_think_llm": body.quick_think_llm,
         "deep_think_llm": body.deep_think_llm, "output_language": body.output_language,
         "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS}
+    if stages:
+        config["stage_models"] = stages
+    if subscription:
+        config["chatgpt_account_ref"] = body.chatgpt_account_ref
     if provider == "chatgpt":
-        config.update(chatgpt_account_ref=body.chatgpt_account_ref, backend_url=None)
+        config["backend_url"] = None
     configured = _configured_keys(environment)
-    if provider == "chatgpt":
+    if subscription:
         configured["chatgpt"] = True
     return AnalysisRequest(ticker=body.ticker, analysis_date=body.analysis_date,
         effective_config=config, research_question=body.research_question), configured
@@ -723,11 +737,11 @@ _A_SHARE_SUFFIXES = (".SS", ".SZ", ".BJ", ".SH")
 
 
 
-def _validate_model(provider: str, model: str, field: str, mode: str) -> None:
+def _validate_model(provider: str, model: str, field: str, mode: str | None) -> None:
     options = MODEL_OPTIONS.get(provider)
     if options is None:
         return
-    mode_options = options[mode]
+    mode_options = options[mode] if mode else (*options["quick"], *options["deep"])
     allowed = {value for _label, value in mode_options if value != "custom"}
     custom_allowed = any(value == "custom" for _label, value in mode_options)
     if model == "custom" or (not custom_allowed and model not in allowed):
@@ -762,6 +776,9 @@ def _provider_configured(provider: str, environment: Mapping[str, str]) -> bool:
     return provider != "azure" or not any(
         not environment.get(required) for required in AZURE_REQUIRED_ENV
     )
+
+
+_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
 
 def _configuration_payload(
@@ -804,6 +821,9 @@ def _configuration_payload(
         "providers": providers,
         "configured_keys": configured,
         "output_languages": list(SUPPORTED_OUTPUT_LANGUAGES),
+        # Providers absent here reject a stage effort.
+        "stage_model_efforts": {provider: [e for e in _EFFORT_ORDER if e in values]
+                                for provider, (_key, values) in EFFORT_CONFIG_KEYS.items()},
         "checkpoint_available": checkpoint_available,
         "research_profiles": {
             "evidence_v1": {"supported": evidence_profile_enabled(),

@@ -28,6 +28,7 @@ PROVIDER_API_KEY_ENV: dict[str, str | None] = {
     "minimax":    "MINIMAX_API_KEY",
     "minimax-cn": "MINIMAX_CN_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "hunyuan":    "HUNYUAN_API_KEY",
     # Local runtimes do not authenticate.
     "ollama":     None,
 }

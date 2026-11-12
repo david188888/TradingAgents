@@ -42,6 +42,7 @@ def run_analysis(
 ):
     from cli.research import DEFAULT_RUN_ROOT, run_research
     from tradingagents.llm_clients.api_key_env import get_api_key_env
+    from tradingagents.llm_clients.stage_models import stage_model_providers
 
     try:
         local = load_cli_config(config)
@@ -51,12 +52,11 @@ def run_analysis(
                 ticker = typer.prompt("A 股股票代码（如 002130）")
             request = build_request(local, ticker=ticker, analysis_date=analysis_date, provider=provider,
                                     quick_model=quick_model, deep_model=deep_model, language=language, focus=focus)
-            env_name = get_api_key_env(request.effective_config["llm_provider"])
-            if env_name:
-                import os
+            import os
 
-                if not os.getenv(env_name):
-                    raise ValueError(f"请在 .env 或本地 JSON api_keys 中设置 {env_name}。")
+            for name in filter(None, map(get_api_key_env, stage_model_providers(request.effective_config))):
+                if not os.getenv(name):
+                    raise ValueError(f"请在 .env 或本地 JSON api_keys 中设置 {name}。")
         elif any(v is not None for v in (ticker, analysis_date, provider, quick_model, deep_model, language, focus)):
             raise ValueError("恢复使用已保存的研究配置，不能同时改动代码、日期或模型选项。")
     except (ValueError, OSError) as exc:
@@ -64,7 +64,7 @@ def run_analysis(
     root = Path(run_dir) if run_dir else DEFAULT_RUN_ROOT
     auth = None
     # Existing locally registered ChatGPT accounts are shared with the Web workbench.
-    if request is None or request.effective_config["llm_provider"] == "chatgpt":
+    if request is None or "chatgpt" in stage_model_providers(request.effective_config):
         from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
 
         auth = ChatGPTAuth()

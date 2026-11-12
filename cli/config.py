@@ -14,15 +14,16 @@ from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
+from tradingagents.llm_clients.stage_models import stage_model_providers
 
 DEFAULT_LOCAL_CONFIG_PATH = Path(__file__).resolve().parents[1] / "tradingagents.local.json"
 
-_LLM_KEYS = {"provider", "quick_think_llm", "deep_think_llm", "backend_url", "chatgpt_account_ref"}
+_LLM_KEYS = {"provider", "quick_think_llm", "deep_think_llm", "backend_url", "chatgpt_account_ref", "stage_models"}
 _RUN_KEYS = {
     "ticker", "analysis_date", "research_question", "output_language", "evidence_search_enabled",
     "evidence_timeout_seconds", "evidence_source_vendors", "evidence_source_exclusions",
     "google_thinking_level", "openai_reasoning_effort", "anthropic_effort", "deepseek_thinking",
-    "deepseek_reasoning_effort", "deepseek_task_efforts", "temperature", "llm_max_tokens",
+    "deepseek_reasoning_effort", "temperature", "llm_max_tokens",
     "display_report",
 }
 
@@ -100,7 +101,7 @@ def build_request(
     for key in ("quick_think_llm", "deep_think_llm"):
         if not isinstance(config.get(key), str) or not config[key].strip():
             raise ValueError(f"{key} 必须填写实际模型 ID。")
-    if config["llm_provider"] == "chatgpt" and not re.fullmatch(r"cg_[0-9a-f]{32}", str(config.get("chatgpt_account_ref", ""))):
+    if "chatgpt" in stage_model_providers(config) and not re.fullmatch(r"cg_[0-9a-f]{32}", str(config.get("chatgpt_account_ref", ""))):
         raise ValueError("请在 llm.chatgpt_account_ref 设置已登录的 ChatGPT 账户引用。")
     if config["output_language"] not in {"Chinese", "English"}:
         raise ValueError("output_language 必须是 Chinese 或 English。")

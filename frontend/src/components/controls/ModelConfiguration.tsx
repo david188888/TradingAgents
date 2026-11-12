@@ -1,4 +1,4 @@
-import type { UseConfigResult } from "../../hooks/useConfig";
+import { STAGE_ROWS, type UseConfigResult } from "../../hooks/useConfig";
 import { ChatGPTControls } from "./ChatGPTControls";
 
 /** Shared single/batch model form; recovery state belongs to useChatGPT. */
@@ -7,7 +7,7 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
   const modelDisabled = cfg.loading || (subscription && (cfg.chatgpt.busy || !cfg.chatgpt.catalog));
   const placeholder = !subscription ? "暂无可选模型" : cfg.chatgpt.busy ? "正在加载模型…" : cfg.chatgpt.error ? "模型暂不可用，请先恢复连接"
     : !cfg.chatgpt.account?.plan_enabled ? "请先登录并授权" : "等待模型列表";
-  const notice = subscription ? (!cfg.chatgpt.busy && cfg.chatgpt.catalog ? cfg.configurationError : null) : cfg.configurationError;
+  const notice = cfg.usesSubscription ? (!cfg.chatgpt.busy && cfg.chatgpt.catalog ? cfg.configurationError : null) : cfg.configurationError;
   return <section className="sidebar-section model-configuration" aria-labelledby={`${prefix}-model-heading`}>
     <div className="section-title"><h2 id={`${prefix}-model-heading`}>模型与账户</h2></div>
     <div className="input-group">
@@ -21,7 +21,7 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
       </div>}
     </div>
     <div id={`${prefix}-configuration-message`}>
-      {subscription && <ChatGPTControls auth={cfg.chatgpt} />}
+      {cfg.usesSubscription && <ChatGPTControls auth={cfg.chatgpt} />}
       {notice && <p className="error-text" role="alert">{notice}</p>}
     </div>
     {([
@@ -39,6 +39,31 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
         <input id={`${prefix}-${field.key}-custom`} type="text" value={field.custom} onChange={e => field.setCustom(e.target.value)} placeholder="填写 Provider 支持的实际模型 ID" />
       </>}
     </div>)}
+    <details className="stage-models">
+      <summary>分阶段模型（高级）</summary>
+      <p className="stage-models-hint">未设置的阶段沿用上方模型；回应阶段自动跟随对应专项。</p>
+      {STAGE_ROWS.map(({ key, label }) => {
+        const s = cfg.stageSelections[key];
+        const options = s ? cfg.stageModelOptions(s.provider) : [];
+        const efforts = s ? cfg.stageEfforts(s.provider) : [];
+        return <div className="input-group stage-model-row" key={key}>
+          <label htmlFor={`${prefix}-stage-${key}`}>{label}</label>
+          <select id={`${prefix}-stage-${key}`} value={s?.provider ?? ""} onChange={e => cfg.updateStage(key, { provider: e.target.value })} disabled={cfg.loading}>
+            <option value="">继承</option>
+            {cfg.config?.providers.map(p => <option key={p.id} value={p.id}>{p.id === "chatgpt" ? "ChatGPT 订阅" : p.id}</option>)}
+          </select>
+          {s && <select aria-label={`${label}模型`} value={s.model} onChange={e => cfg.updateStage(key, { model: e.target.value })} disabled={!options.length}>
+            {options.length ? options.map(m => <option key={m.id} value={m.id}>{m.label}</option>) : <option value="">暂无可选模型</option>}
+          </select>}
+          {s && efforts.length > 0 && <select aria-label={`${label}推理强度`} value={s.effort} onChange={e => cfg.updateStage(key, { effort: e.target.value })}>
+            <option value="">默认强度</option>
+            {efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}
+          </select>}
+          {s && s.provider !== "chatgpt" && s.model === "custom" && <input aria-label={`${label}模型 ID`} type="text" value={s.custom}
+            onChange={e => cfg.updateStage(key, { custom: e.target.value })} placeholder="填写 Provider 支持的实际模型 ID" />}
+        </div>;
+      })}
+    </details>
     <div className="input-group">
       <label htmlFor={`${prefix}-lang`}>输出语言</label>
       <select id={`${prefix}-lang`} value={cfg.output_language} onChange={e => cfg.setOutputLanguage(e.target.value)} disabled={cfg.loading}>

@@ -143,10 +143,10 @@ def validate_config(config: dict) -> list[str]:
     client layer validates model availability.
     """
     problems: list[str] = []
-    from tradingagents.llm_clients.task_effort import task_effort_overrides
+    from tradingagents.llm_clients.stage_models import stage_model_overrides
 
     try:
-        task_effort_overrides(config)
+        stage_model_overrides(config)
     except ValueError as exc:
         problems.append(str(exc))
     provider = str(config.get("llm_provider", "")).strip().lower()

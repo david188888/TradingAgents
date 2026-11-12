@@ -1,4 +1,4 @@
-"""Code-owned DeepSeek task overrides; no dispatch, escalation or mutation."""
+"""DeepSeek task effort stored in V9 runs created before stage model routing."""
 
 from __future__ import annotations
 
@@ -38,15 +38,3 @@ def resolve_task_effort(config: Mapping[str, Any], task: str | None = None) -> s
     if effort:
         return str(effort).strip().lower()
     return "high" if policy else None
-
-
-def bind_task_effort(llm: Any, config: Mapping[str, Any], task: str) -> Any:
-    """Bind auxiliary invocation kwargs without modifying a shared client.
-
-    Helpers must bind from their original client on each call, not chain task
-    bindings. With no active policy return the exact legacy client unchanged.
-    """
-    policy = task_effort_overrides(config)
-    if str(config.get("llm_provider", "")).lower() != "deepseek" or not policy:
-        return llm
-    return llm.bind(reasoning_effort=resolve_task_effort(config, task))

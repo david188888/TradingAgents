@@ -170,6 +170,8 @@ export interface ConfigResponseDTO {
   providers: ProviderDTO[];
   configured_keys: Record<string, boolean>;
   output_languages: string[];
+  /** Providers listed here accept a per-stage effort; others reject one. */
+  stage_model_efforts?: Record<string, string[]>;
   checkpoint_available: boolean;
   wind: WindStatusDTO;
   defaults: ConfigDefaultsDTO;
@@ -179,6 +181,16 @@ export type AssetTypeLiteral = "stock";
 /** Current company research mode. */
 export type ResearchMode = "company_research";
 
+/** Code-owned stage routing keys; responses follow their specialist. */
+export type StageModelKey = "specialist" | "challenge" | "synthesis" | "focus_response"
+  | "operating_quality" | "event_context" | "market_context";
+
+export interface StageModelDTO {
+  provider: string;
+  model: string;
+  effort?: string;
+}
+
 export interface RunCreateRequestDTO {
   ticker: string;
   analysis_date?: string;
@@ -186,6 +198,8 @@ export interface RunCreateRequestDTO {
   chatgpt_account_ref?: string;
   quick_think_llm: string;
   deep_think_llm: string;
+  /** Unset stages use quick_think_llm, synthesis uses deep_think_llm. */
+  stage_models?: Partial<Record<StageModelKey, StageModelDTO>>;
   output_language: string;
   /** Current evidence research profile. */
   research_profile?: ResearchProfile;
