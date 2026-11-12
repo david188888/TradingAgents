@@ -154,14 +154,6 @@ def is_a_share_ticker(ticker: str) -> bool:
     return bool(re.fullmatch(r"\d{6}\.(SS|SH|SZ|BJ)", canonical))
 
 
-def to_yfinance_symbol(ticker: str) -> str:
-    """Convert a ticker to the suffix convention expected by Yahoo Finance."""
-    canonical = normalize_ticker_symbol(ticker)
-    if canonical.endswith(".SH"):
-        return canonical[:-3] + ".SS"
-    return canonical
-
-
 def to_tushare_symbol(ticker: str) -> str:
     """Convert a ticker to the ts_code convention expected by Tushare."""
     canonical = normalize_ticker_symbol(ticker)

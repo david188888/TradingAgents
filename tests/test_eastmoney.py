@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import copy
-
 import pytest
 
-import tradingagents.default_config as default_config
-from tradingagents.dataflows import eastmoney, interface
+from tradingagents.dataflows import eastmoney
 from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.errors import RateLimitError, VendorAccessDeniedError, VendorHTTPError
 
@@ -81,12 +78,6 @@ def test_em_client_does_not_retry_forbidden_response():
         client.get("https://example.test/forbidden")
 
     assert len(session.calls) == 1
-
-
-def test_typed_http_failure_maps_to_router_cooldown_policy():
-    assert interface._cooldown_for_exception(VendorHTTPError("eastmoney", 503)) == (20.0, "http_503")
-    assert interface._cooldown_for_exception(VendorHTTPError("eastmoney", 0)) == (20.0, "network")
-    assert interface._cooldown_for_exception(VendorAccessDeniedError("eastmoney", 403)) == (0.0, "forbidden")
 
 
 def test_em_get_rejects_non_object_json():
@@ -365,46 +356,3 @@ def test_capital_flow_sina_backup_raises_on_empty(monkeypatch):
 
     with pytest.raises(ChinaDataUnavailableError, match="no capital-flow rows"):
         eastmoney.get_a_share_capital_flow_sina("000001")
-
-
-def test_capital_flow_falls_back_to_sina_when_eastmoney_fails(monkeypatch):
-    """EastMoney failure degrades to the Sina backup via the router fallback chain."""
-    monkeypatch.setattr(interface, "get_vendor", lambda _category, method=None: "default")
-    monkeypatch.setitem(
-        interface.VENDOR_METHODS,
-        "get_a_share_capital_flow",
-        {
-            "eastmoney": lambda *_args, **_kwargs: (_ for _ in ()).throw(ChinaDataUnavailableError("eastmoney down")),
-            "sina": lambda *_args, **_kwargs: "sina capital flow",
-        },
-    )
-
-    assert interface.route_to_vendor("get_a_share_capital_flow", "600519") == "sina capital flow"
-
-
-def test_a_share_capability_routes_through_eastmoney_and_non_a_share_skips(monkeypatch):
-    calls: list[str] = []
-    monkeypatch.setattr(interface, "get_vendor", lambda _category, method=None: "eastmoney")
-    monkeypatch.setitem(
-        interface.VENDOR_METHODS,
-        "get_a_share_capital_flow",
-        {"eastmoney": lambda *_args, **_kwargs: calls.append("eastmoney") or "capital flow"},
-    )
-
-    assert interface.route_to_vendor("get_a_share_capital_flow", "600519") == "capital flow"
-    assert calls == ["eastmoney"]
-
-    with pytest.raises(RuntimeError, match="No available vendor"):
-        interface.route_to_vendor("get_a_share_capital_flow", "AAPL")
-    assert calls == ["eastmoney"]
-
-
-@pytest.fixture(autouse=True)
-def _reset_dataflow_config():
-    # This module changes no config itself, but mirrors the router tests and
-    # prevents an earlier test module's mutable global config from leaking in.
-    import tradingagents.dataflows.config as config_module
-
-    config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
-    yield
-    config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)

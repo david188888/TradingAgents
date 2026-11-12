@@ -31,7 +31,7 @@ def test_no_env_uses_built_in_defaults(monkeypatch):
     assert dc.DEFAULT_CONFIG["quick_think_llm"] == "deepseek-flash"
     assert dc.DEFAULT_CONFIG["backend_url"] is None
     assert dc.DEFAULT_CONFIG["wind_max_concurrency"] == 1
-    assert dc.DEFAULT_CONFIG["halt_on_missing_data"] is True
+    assert dc.DEFAULT_CONFIG["evidence_search_enabled"] is True
 
 
 def test_string_overrides(monkeypatch):
@@ -64,8 +64,8 @@ def test_int_coercion(monkeypatch):
     ],
 )
 def test_bool_coercion(monkeypatch, raw, expected):
-    dc = _reload_with_env(monkeypatch, TRADINGAGENTS_HALT_ON_MISSING_DATA=raw)
-    assert dc.DEFAULT_CONFIG["halt_on_missing_data"] is expected
+    dc = _reload_with_env(monkeypatch, TRADINGAGENTS_EVIDENCE_SEARCH_ENABLED=raw)
+    assert dc.DEFAULT_CONFIG["evidence_search_enabled"] is expected
 
 
 def test_reasoning_thinking_overrides(monkeypatch):
@@ -132,10 +132,10 @@ def test_invalid_int_raises(monkeypatch):
 @pytest.mark.parametrize("bad", ["treu", "flase", "maybe", "2", "enabled"])
 def test_invalid_bool_raises(monkeypatch, bad):
     """A misspelled boolean must fail loudly (like ints) instead of silently False."""
-    monkeypatch.setenv("TRADINGAGENTS_HALT_ON_MISSING_DATA", bad)
-    with pytest.raises(ValueError, match="TRADINGAGENTS_HALT_ON_MISSING_DATA"):
+    monkeypatch.setenv("TRADINGAGENTS_EVIDENCE_SEARCH_ENABLED", bad)
+    with pytest.raises(ValueError, match="TRADINGAGENTS_EVIDENCE_SEARCH_ENABLED"):
         importlib.reload(default_config_module)
-    monkeypatch.delenv("TRADINGAGENTS_HALT_ON_MISSING_DATA", raising=False)
+    monkeypatch.delenv("TRADINGAGENTS_EVIDENCE_SEARCH_ENABLED", raising=False)
     importlib.reload(default_config_module)
 
 

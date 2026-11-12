@@ -40,7 +40,9 @@ or incomplete price/valuation inputs stay unavailable, even when a page was foun
 
 Programmatic `effective_config.evidence_source_vendors` orders native candidate subsets by capability;
 empty disables that capability. `evidence_source_exclusions` removes vendors afterward. These keys
-freeze into checkpoint identity. Legacy `data_vendors`/`tool_vendors` do not configure the native chain.
+freeze into checkpoint identity. Use these keys to configure V9 source selection. The former Python
+`route_to_vendor` API and its `data_vendors`/`tool_vendors` configuration are retired. Saved V9
+runs retain their original frozen configuration for resume.
 The browser has no arbitrary source-policy editor. Provider attempts/selection retain safe provenance;
 a Tushare rate-limit rejection suppresses further Tushare attempts within that run.
 
@@ -92,7 +94,6 @@ The default china extra includes PDF/spreadsheet parsers, AKShare, baostock and 
 mootdx. mootdx 0.11.x's httpx/tenacity constraints conflict with the maintained Web/model stack;
 do not force it in with `--no-deps`. If `pip check` identifies that conflict in an old installation,
 remove the conflicting mootdx SDK and reinstall the supported combination. Keep user data intact.
-Optional adapter routing remains; SDK absence/import failure yields typed unavailability, not no data.
 TDX package HEAD witnesses in the native calendar do not require the mootdx SDK.
 
 For clean resolution diagnostics use `pip install --dry-run --ignore-installed -e ".[china,web]"`.
@@ -100,8 +101,9 @@ That checks dependency resolution rather than only metadata; it does not install
 
 ## Supplemental tools and known limits
 
-Source capabilities are registered in [registry.py](../../tradingagents/dataflows/registry.py).
-Adding a provider adapter does not automatically admit it into current research.
+The [capability catalog](../../tradingagents/dataflows/capability_catalog.py) defines the model-facing
+supplements. The [capability gateway](../../tradingagents/execution/capability_gateway.py) binds
+them to bounded source calls and qualifies their results.
 
 - EastMoney datacenter screening validates response code, stable pagination/counts and returned filters.
   push2/push2ex tools are separate: several still have single-page/response-shape gaps; an empty table

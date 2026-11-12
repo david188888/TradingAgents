@@ -108,19 +108,6 @@ def test_eastmoney_public_fallback_preserves_absent_uri_instead_of_constructing_
     assert records[0].announcement_id == "a-1"
 
 
-def test_announcement_capability_is_registered_in_the_existing_router(monkeypatch):
-    from tradingagents.dataflows import interface
-
-    monkeypatch.setattr(interface, "get_vendor", lambda _category, method=None: "china_exchange")
-    monkeypatch.setitem(
-        interface.VENDOR_METHODS,
-        "get_a_share_exchange_announcements",
-        {"china_exchange": lambda *_args, **_kwargs: "source-labelled announcements"},
-    )
-
-    assert interface.route_to_vendor("get_a_share_exchange_announcements", "600519") == "source-labelled announcements"
-
-
 def test_szse_announcement_prepends_cdn_prefix_to_attach_path():
     from tradingagents.dataflows.china_specialty import _record_from_mapping
 

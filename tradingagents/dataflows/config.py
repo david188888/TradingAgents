@@ -36,9 +36,7 @@ def initialize_config():
 def set_config(config: dict):
     """Update the active run config, or the process config when unscoped.
 
-    Dict-valued keys (e.g. ``data_vendors``) are merged one level deep so a
-    partial update like ``{"data_vendors": {"core_stock_apis": "alpha_vantage"}}``
-    keeps the other nested keys from the default; scalar keys are replaced.
+    Dict-valued keys are merged one level deep. Scalar keys are replaced.
     """
     global _config
     scoped = _run_config.get()

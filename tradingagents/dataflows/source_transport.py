@@ -29,12 +29,6 @@ class SourceTransport:
         self.request, self.run_id, self.session, self.fetch = request, run_id, session, fetch
         self.context: dict[str, Any] = {}
 
-    def require_vendor(self, vendor: str, category: str, method: str = "") -> None:
-        config = self.request.effective_config
-        selected = config.get("tool_vendors", {}).get(method) or config.get("data_vendors", {}).get(category, "")
-        if vendor not in {item.strip() for item in selected.split(",")}:
-            raise ValueError("configured_source_has_no_bounded_adapter")
-
     def tushare(self, api_name: str, fields: str, **params) -> list[dict[str, Any]]:
         token = os.getenv("TUSHARE_TOKEN") or os.getenv("TUSHARE_API_KEY")
         if not token:

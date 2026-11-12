@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -67,8 +67,6 @@ TERMINAL_STREAM_STATUSES = frozenset(
     {"completed", "failed", "cancelled", "interrupted"}
 )
 DATA_CREDENTIAL_ENV = {
-    "alpha_vantage": ("ALPHA_VANTAGE_API_KEY",),
-    "fred": ("FRED_API_KEY",),
     "tavily": ("TAVILY_API_KEY",),
     "tushare": ("TUSHARE_TOKEN", "TUSHARE_API_KEY"),
 }
@@ -118,14 +116,9 @@ def create_app(
     environment: Mapping[str, str] | None = None,
     checkpoint_available: bool = True,
     recover_startup: bool = True,
-    connectivity_check: Callable[[str], None] | None = None,
     chatgpt_auth=None,
 ) -> FastAPI:
-    """Compose the HTTP layer without importing it from legacy CLI paths.
-
-    ``connectivity_check`` is injected so tests can avoid a real Yahoo probe;
-    production wires it to :func:`tradingagents.web.connectivity.check_yfinance_reachable`.
-    """
+    """Compose the local V9 research API and workbench."""
     from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
     from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
     from tradingagents.web.chatgpt_routes import install_chatgpt_routes
@@ -372,11 +365,6 @@ def create_app(
 
     @app.post("/api/runs", status_code=201)
     def create_run(body: RunCreateRequest) -> dict[str, Any]:
-        # Global (non-A-share) tickers route through yfinance, which is
-        # unreachable from a mainland network without a VPN. Fail fast with a
-        # 503 before creating the run instead of wasting the whole analysis.
-        # Reject retired/disabled workflows and unsupported markets before
-        # a connectivity probe or background work can run.
         request_model, configured_keys = _analysis_request(
             body,
             selected_environment,

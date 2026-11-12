@@ -148,17 +148,3 @@ def test_cls_telegraph_raises_on_request_failure(monkeypatch):
 
     with pytest.raises(AshareCapabilityUnavailableError, match="cls_telegraph"):
         get_cls_telegraph()
-
-
-def test_date_only_limit_up_capability_routes_as_a_share_without_a_ticker_argument(monkeypatch):
-    from tradingagents.dataflows import interface
-
-    monkeypatch.setattr(interface, "get_vendor", lambda _category, method=None: "akshare")
-    monkeypatch.setitem(
-        interface.VENDOR_METHODS,
-        "get_a_share_limit_up_ladder",
-        {"akshare": lambda trade_date: f"limit-up pool {trade_date}"},
-    )
-
-    assert interface.route_to_vendor("get_a_share_limit_up_ladder", "2026-07-21") == "limit-up pool 2026-07-21"
-    assert interface._market_for_request(("2026-07-21",), "get_a_share_limit_up_ladder") == "a_share"
