@@ -12,7 +12,6 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from tradingagents.dataflows.config import config_scope
-from tradingagents.dataflows.interface import news_cache_scope
 from tradingagents.dataflows.progress import DataProgressEvent, progress_sink
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.config_identity import prepare_effective_config
@@ -480,7 +479,7 @@ class SingleRunManager:
         try:
             with config_scope(request.effective_config), progress_sink(
                 self._progress_sink(observer)
-            ), news_cache_scope(run_id), provenance_scope(observer):
+            ), provenance_scope(observer):
                 config_artifact = observer.store_artifact(
                     "data",
                     prepare_effective_config(request.effective_config),

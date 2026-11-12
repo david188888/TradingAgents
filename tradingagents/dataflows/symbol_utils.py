@@ -1,22 +1,4 @@
-"""Symbol normalization and market-data error types for vendor calls.
-
-Yahoo Finance (the default vendor) uses specific ticker conventions that
-differ from the broker / TradingView / MT5 style symbols users often type:
-
-    user types        Yahoo wants       why
-    ---------------   ---------------   -----------------------------------
-    XAUUSD, XAUUSD+   GC=F              gold has no forex pair on Yahoo;
-                                        it is quoted as a COMEX future
-    EURUSD            EURUSD=X          spot forex pairs take a ``=X`` suffix
-    BTCUSD            BTC-USD           crypto pairs use a ``-`` separator
-    SPX500, US500     ^GSPC             index CFDs map to Yahoo index symbols
-
-Passing the raw broker symbol to Yahoo returns an empty result, which the
-agents previously received as free text and could hallucinate a price
-around (see issue #781). Centralizing the mapping here means every yfinance
-entry point resolves symbols the same way, and new instruments are added by
-appending a table row rather than editing call sites.
-"""
+"""Normalize A-share and broker-style symbols at the input boundary."""
 
 from __future__ import annotations
 

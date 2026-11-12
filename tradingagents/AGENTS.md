@@ -11,8 +11,9 @@ for repository-wide setup and finish rules.
 - `graph/insight_research.py` owns isolated specialists, bounded supplementary
   search, one review/reply round and synthesis. Graph code receives saved facts
   and a durable ledger; provider I/O stays in execution/dataflows.
-- `dataflows/` owns provider interfaces, vendor selection, normalization, and
-  capability results. Provider failures must remain typed and source-labelled.
+- `dataflows/` owns native source selection, provider adapters, normalization,
+  and capability results. The V9 capability gateway calls source adapters directly.
+  Provider failures must remain typed and source-labelled.
 - `agents/schemas/` and `research/` own public Insight artifacts, evidence and
   numeric binding, effective versions, and saved-report validation. Start public
   artifact changes from these canonical models rather than rendered Markdown or a web DTO.

@@ -77,7 +77,7 @@ classic 的 analyst 工具循环、结构化回退、经理纠错可能产生额
 
 | 调用位置 | 什么时候执行/当前设置 | 候选与风险 |
 | --- | --- | --- |
-| [新闻语义聚类](../../../tradingagents/dataflows/consistency.py) | consistency 默认开启；有模型且多于一条新闻时可调用。curator 在多源成功时使用，Evidence Steward 评估原始/补充新闻也使用；读取全局 effort | `low` 候选。必须检查不同公司、不同报告期、意向与履行被误合并；聚类影响 cross_source 权重，不是无风险去重。 |
+| 新闻语义聚类（历史源码 `tradingagents/dataflows/consistency.py`） | consistency 默认开启；有模型且多于一条新闻时可调用。curator 在多源成功时使用，Evidence Steward 评估原始/补充新闻也使用；读取全局 effort | `low` 候选。必须检查不同公司、不同报告期、意向与履行被误合并；聚类影响 cross_source 权重，不是无风险去重。 |
 | `新闻覆盖顾问`（历史路径 `../../../tradingagents/dataflows/news_advisor.py`，V9 清理已移除） | news_advisor 默认开启；Evidence Steward 初始资格不足且未硬停时识别缺口并生成最多三条查询；读取全局 effort | `low` 对照候选。检查关键公告/财务缺口遗漏、无必要搜索；涉及关键资料取舍时不宜直接降档。 |
 | 单条新闻 Layer 1 分类 | 默认关闭；显式开启后一次紧凑批量分类，仍用传入的全局客户端 | 较适合 `low`。只做方向分类，保留“不足以判断”，校验 ID、遗漏和否定语义；不要为了测试降档而启用当前关闭的调用。 |
 | 新闻 Layer 2 复查 | 默认关闭；启用后按冲突/不足触发，且需要缓存目录；仍用同一客户端 | `high`。它整理重大风险与证据缺口，名称中的“deeper”目前没有自动提高 effort。 |

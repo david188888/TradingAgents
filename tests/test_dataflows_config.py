@@ -22,62 +22,25 @@ class DataflowsConfigIsolationTests(unittest.TestCase):
         set_config(copy.deepcopy(default_config.DEFAULT_CONFIG))
 
     def test_get_config_returns_deep_copy(self):
+        set_config({"evidence_source_vendors": {"financial": ["sina"]}})
         cfg = get_config()
-        cfg["data_vendors"]["core_stock_apis"] = "alpha_vantage"
-        cfg["tool_vendors"]["get_stock_data"] = "alpha_vantage"
+        cfg["evidence_source_vendors"]["financial"].append("tushare")
 
-        fresh = get_config()
-        self.assertEqual(
-            fresh["data_vendors"]["core_stock_apis"],
-            default_config.DEFAULT_CONFIG["data_vendors"]["core_stock_apis"],
-        )
-        self.assertNotIn("get_stock_data", fresh["tool_vendors"])
+        self.assertEqual(get_config()["evidence_source_vendors"], {"financial": ["sina"]})
 
     def test_set_config_does_not_alias_caller_nested_dicts(self):
-        custom = copy.deepcopy(default_config.DEFAULT_CONFIG)
-        custom["data_vendors"]["core_stock_apis"] = "alpha_vantage"
-        custom["tool_vendors"]["get_stock_data"] = "alpha_vantage"
-
+        custom = {"evidence_source_vendors": {"financial": ["sina"]}}
         set_config(custom)
+        custom["evidence_source_vendors"]["financial"].append("tushare")
 
-        custom["data_vendors"]["core_stock_apis"] = "yfinance"
-        custom["tool_vendors"]["get_stock_data"] = "yfinance"
+        self.assertEqual(get_config()["evidence_source_vendors"], {"financial": ["sina"]})
 
-        fresh = get_config()
-        self.assertEqual(fresh["data_vendors"]["core_stock_apis"], "alpha_vantage")
-        self.assertEqual(fresh["tool_vendors"]["get_stock_data"], "alpha_vantage")
+    def test_nested_dict_updates_preserve_other_keys_and_replace_lists(self):
+        set_config({"evidence_source_vendors": {"identity": ["eastmoney"], "financial": ["sina"]}})
+        set_config({"evidence_source_vendors": {"financial": ["tushare"]}})
 
-    def test_partial_nested_update_preserves_existing_defaults(self):
-        set_config(
-            {
-                "data_vendors": {
-                    "core_stock_apis": "alpha_vantage",
-                }
-            }
-        )
-
-        fresh = get_config()
-        self.assertEqual(fresh["data_vendors"]["core_stock_apis"], "alpha_vantage")
-        self.assertEqual(
-            fresh["data_vendors"]["technical_indicators"],
-            default_config.DEFAULT_CONFIG["data_vendors"]["technical_indicators"],
-        )
-        self.assertEqual(
-            fresh["data_vendors"]["fundamental_data"],
-            default_config.DEFAULT_CONFIG["data_vendors"]["fundamental_data"],
-        )
-        self.assertEqual(
-            fresh["data_vendors"]["news_data"],
-            default_config.DEFAULT_CONFIG["data_vendors"]["news_data"],
-        )
-
-    def test_nested_dict_updates_merge_one_level_deep(self):
-        set_config({"tool_vendors": {"get_stock_data": "alpha_vantage"}})
-        set_config({"tool_vendors": {"get_news": "alpha_vantage"}})
-
-        fresh = get_config()
-        self.assertEqual(fresh["tool_vendors"]["get_stock_data"], "alpha_vantage")
-        self.assertEqual(fresh["tool_vendors"]["get_news"], "alpha_vantage")
+        self.assertEqual(get_config()["evidence_source_vendors"],
+                         {"identity": ["eastmoney"], "financial": ["tushare"]})
 
     def test_concurrent_run_scopes_do_not_leak_config(self):
         barrier = threading.Barrier(2)
@@ -99,9 +62,9 @@ class DataflowsConfigIsolationTests(unittest.TestCase):
         self.assertEqual(results, ["first-updated", "second-updated"])
         self.assertEqual(get_config(), original)
 
-    def test_partial_graph_config_inherits_defaults(self):
+    def test_partial_config_inherits_defaults(self):
         merged = merge_config({"run_marker": "scoped"})
 
         self.assertEqual(merged["run_marker"], "scoped")
-        self.assertIn("data_vendors", merged)
+        self.assertEqual(merged["wind_enabled"], default_config.DEFAULT_CONFIG["wind_enabled"])
         self.assertEqual(get_config(), default_config.DEFAULT_CONFIG)

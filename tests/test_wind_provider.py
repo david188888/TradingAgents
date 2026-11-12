@@ -5,9 +5,7 @@ Covers:
 - Response parsing (tables, EDB series, numeric coercion, INVALID→null)
 - Error classification (CLI envelopes → typed exceptions)
 - Transport safety (realpath, @file params, no key in argv)
-- Health/error mapping (cooldowns, manual locks, recoverability)
-- Registry/router wiring
-- Config feature flag (disabled by default, graceful degradation)
+- Config feature flag and typed unavailability
 - Contract hash drift detection
 - Live smoke (skipped without WIND_API_KEY)
 """
@@ -21,25 +19,13 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from tradingagents.dataflows import router as router_module, wind_provider as wind_provider_module
+from tradingagents.dataflows import wind_provider as wind_provider_module
 from tradingagents.dataflows.config import config_scope, get_config
-from tradingagents.dataflows.health import VendorHealthRegistry
-from tradingagents.dataflows.interface import _market_for_request, route_to_vendor
-from tradingagents.dataflows.registry import (
-    VENDOR_LIST,
-    VENDOR_MARKETS,
-    VENDOR_METHODS,
-    registry_consistency_problems,
-)
-from tradingagents.dataflows.vendor_errors import (
-    _cooldown_for_exception,
-    _is_recoverable_vendor_error,
-    _is_transient_vendor_error,
-)
+from tradingagents.dataflows.errors import VendorNotConfiguredError
 from tradingagents.dataflows.wind_provider import (
     SKILL_VERSION,
     WindAuthError,
@@ -658,193 +644,6 @@ class TestWindCliTransport:
 
 
 # ---------------------------------------------------------------------------
-# 5. Health and error mapping
-# ---------------------------------------------------------------------------
-
-
-class TestHealthMapping:
-    def test_auth_manual_lock(self):
-        """AUTH_ERROR should create a manual-recovery lock, not a timed cooldown."""
-        from tradingagents.dataflows import interface as iface
-
-        reg = VendorHealthRegistry()
-        exc = WindAuthError("AUTH_ERROR", "bad key")
-
-        with (
-            patch.object(iface, "_vendor_health", reg),
-            patch.object(iface, "_market_for_request", return_value="a_share"),
-        ):
-            from tradingagents.dataflows.vendor_errors import (
-                _record_vendor_failure,
-            )
-
-            _record_vendor_failure(
-                "wind", "get_index_snapshot", ("000300.SH",), exc
-            )
-
-        cd = reg.cooldown_for(
-            vendor="wind", market="a_share", capability="get_index_snapshot"
-        )
-        assert cd is not None
-        assert cd.recovery == "manual"
-        assert cd.reason == "wind_auth"
-        # Manual lock never auto-expires
-        assert cd.remaining_seconds(0) == float("inf")
-        assert cd.remaining_seconds(999_999_999) == float("inf")
-
-    def test_quota_lock(self):
-        from tradingagents.dataflows import interface as iface
-
-        reg = VendorHealthRegistry()
-        exc = WindQuotaError("DAILY_LIMIT_ERROR", "over quota")
-        with (
-            patch.object(iface, "_vendor_health", reg),
-            patch.object(iface, "_market_for_request", return_value="a_share"),
-        ):
-            from tradingagents.dataflows.vendor_errors import (
-                _record_vendor_failure,
-            )
-
-            _record_vendor_failure(
-                "wind", "get_macro_series", ("M0001395",), exc
-            )
-
-        cd = reg.cooldown_for(
-            vendor="wind", market="a_share", capability="get_macro_series"
-        )
-        assert cd is not None
-        assert cd.recovery == "quota"
-
-    def test_rate_limit_cooldown(self):
-        seconds, reason = _cooldown_for_exception(
-            WindRateLimitError("RATE_LIMIT_ERROR", "slow down")
-        )
-        assert seconds == 60.0
-        assert reason == "rate_limit"
-
-    def test_network_cooldown(self):
-        seconds, reason = _cooldown_for_exception(
-            WindNetworkError("NETWORK_ERROR", "timeout")
-        )
-        assert seconds == 20.0
-        assert reason == "network"
-
-    def test_no_results_no_cooldown(self):
-        seconds, reason = _cooldown_for_exception(
-            WindNoResultsError("NO_RESULTS", "empty")
-        )
-        assert seconds == 0.0
-
-    def test_all_wind_errors_recoverable(self):
-        for exc in [
-            WindAuthError("A", "b"),
-            WindQuotaError("A", "b"),
-            WindRateLimitError("A", "b"),
-            WindNetworkError("A", "b"),
-            WindNoResultsError("A", "b"),
-            WindParamError("A", "b"),
-        ]:
-            assert _is_recoverable_vendor_error("wind", exc), (
-                f"{type(exc).__name__} should be recoverable"
-            )
-
-    def test_network_and_rate_limit_are_transient(self):
-        assert _is_transient_vendor_error(
-            WindRateLimitError("A", "b")
-        )
-        assert _is_transient_vendor_error(
-            WindNetworkError("A", "b")
-        )
-
-    def test_auth_and_quota_not_transient(self):
-        # Auth/quota are recoverable (try another vendor) but NOT transient
-        # (don't pull in vendors outside the configured chain)
-        assert not _is_transient_vendor_error(WindAuthError("A", "b"))
-        assert not _is_transient_vendor_error(WindQuotaError("A", "b"))
-
-    def test_success_clears_manual_lock(self):
-        reg = VendorHealthRegistry()
-        reg.record_lock(
-            vendor="wind",
-            market="a_share",
-            capability="get_index_snapshot",
-            reason="wind_auth",
-            recovery="manual",
-        )
-        assert reg.cooldown_for(
-            vendor="wind", market="a_share", capability="get_index_snapshot"
-        )
-        reg.record_success(
-            vendor="wind", market="a_share", capability="get_index_snapshot"
-        )
-        assert (
-            reg.cooldown_for(
-                vendor="wind", market="a_share", capability="get_index_snapshot"
-            )
-            is None
-        )
-
-
-# ---------------------------------------------------------------------------
-# 6. Registry / router wiring
-# ---------------------------------------------------------------------------
-
-
-class TestRegistryWiring:
-    def test_wind_in_vendor_list(self):
-        assert "wind" in VENDOR_LIST
-
-    def test_wind_a_share_market(self):
-        assert VENDOR_MARKETS["wind"] == frozenset({"a_share"})
-
-    def test_wind_methods_registered(self):
-        wind_methods = {
-            "get_index_snapshot",
-            "get_index_history",
-            "get_index_profile",
-            "get_index_fundamentals",
-            "search_macro_series",
-            "get_macro_series",
-            "get_equity_risk_metrics",
-        }
-        for method in wind_methods:
-            assert method in VENDOR_METHODS, f"{method} missing from VENDOR_METHODS"
-            assert "wind" in VENDOR_METHODS[method], f"wind not in {method}"
-
-    def test_registry_consistency(self):
-        problems = registry_consistency_problems()
-        assert not problems, f"Registry consistency problems: {problems}"
-
-
-class TestRouterWiring:
-    def test_index_methods_are_non_ticker(self):
-        """Index/macro methods must bypass the ticker market filter."""
-        for method in [
-            "get_index_snapshot",
-            "get_index_history",
-            "get_index_profile",
-            "get_index_fundamentals",
-            "search_macro_series",
-            "get_macro_series",
-        ]:
-            assert method in router_module._A_SHARE_NON_TICKER_CAPABILITIES
-            assert method not in router_module._A_SHARE_TICKER_CAPABILITIES
-
-    def test_risk_metrics_is_ticker_capability(self):
-        """Risk metrics first arg IS a stock ticker."""
-        assert "get_equity_risk_metrics" in router_module._A_SHARE_TICKER_CAPABILITIES
-
-    def test_non_ticker_market_is_a_share(self):
-        assert _market_for_request(("沪深300",), "get_index_snapshot") == "a_share"
-        assert _market_for_request(("中国GDP",), "search_macro_series") == "a_share"
-
-    def test_risk_metrics_market_from_ticker(self):
-        assert (
-            _market_for_request(("600519.SS",), "get_equity_risk_metrics") == "a_share"
-        )
-
-
-# ---------------------------------------------------------------------------
 # 7. Config / feature flag
 # ---------------------------------------------------------------------------
 
@@ -855,12 +654,11 @@ class TestConfigFlag:
 
     def test_explicitly_disabled_returns_data_unavailable(self):
         """Turning Wind off must still degrade gracefully without a crash."""
-        # Pin the subject provider: the default EastMoney fallback is live and
-        # may succeed, which is valid routing rather than a Wind-disable bug.
-        with config_scope({"wind_enabled": False, "tool_vendors": {"get_index_snapshot": "wind"}}):
-            result = route_to_vendor("get_index_snapshot", "000300.SH")
-        assert "DATA_UNAVAILABLE" in str(result)
-        assert "disabled" in str(result).lower() or "wind" in str(result).lower()
+        with (
+            config_scope({"wind_enabled": False}),
+            pytest.raises(VendorNotConfiguredError, match="disabled"),
+        ):
+            get_equity_risk_metrics("600519.SH", window="1年")
 
     def test_enable_via_config_scope(self, wind_enabled):
         assert get_config().get("wind_enabled") is True
@@ -1031,17 +829,6 @@ class TestProviderWithMock:
         call_params = self.mock.call.call_args[0][2]
         # .SS should be converted to .SH in the question
         assert "600519.SH" in call_params["question"]
-
-    def test_risk_metrics_router_supports_positional_args(self):
-        """The router invokes provider functions as impl_func(*args)."""
-        self._mock_with_fixture(
-            "risk_metrics.raw.json", "stock_data", "get_risk_metrics"
-        )
-        result = route_to_vendor(
-            "get_equity_risk_metrics", "600519.SS", "1年", None, None
-        )
-        assert "600519.SH" in result
-        assert "过去1年的BETA" in result
 
     def test_index_snapshot_as_of_is_explicitly_latest_only(self):
         self._mock_with_fixture(

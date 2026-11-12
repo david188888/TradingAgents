@@ -110,7 +110,7 @@ Current behavior belongs to [ARCHITECTURE.md](../../../ARCHITECTURE.md) and
 
 ### 1. 日期错误必须可见，而非静默改变问题
 
-本地 [as_of_window](../../../tradingagents/dataflows/date_window.py) 对无效起止日期
+本地 `as_of_window`（历史源码 `tradingagents/dataflows/date_window.py`） 对无效起止日期
 返回截点当天。离线函数对照复现：
 
 | 请求 | 本地当前结果 | 上游 v0.6.0 |

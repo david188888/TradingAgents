@@ -60,7 +60,7 @@ cp .env.example .env
 tradingagents web --port 8765 --open
 ```
 
-The install command explicitly uses official PyPI to avoid mirror access failures. The default A-share installation excludes mootdx because its dependencies conflict with Web; see [A-share data capabilities](docs/operations/a-share-data-capabilities.md) for existing-environment repair and TDX supplements.
+The install command explicitly uses official PyPI to avoid mirror access failures. V9 checks the trading calendar against TDX daily packages without the mootdx SDK. See [A-share data capabilities](docs/operations/a-share-data-capabilities.md) for existing-environment repair.
 
 After subscription sign-in, model choices follow the account’s official catalog; permissions and limits are confirmed by the official service. See [ChatGPT subscription configuration](docs/operations/chatgpt-subscription.md).
 Fresh ChatGPT studies support explicit reasoning-effort configuration while historical recovery preserves its original request semantics; token refresh uses per-account backoff for transient failures.

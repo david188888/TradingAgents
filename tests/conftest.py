@@ -25,7 +25,6 @@ _API_KEY_ENV_VARS = (
     "MINIMAX_CN_API_KEY",
     "OPENROUTER_API_KEY",
     "AZURE_OPENAI_API_KEY",
-    "ALPHA_VANTAGE_API_KEY",
 )
 
 
@@ -55,8 +54,7 @@ def _isolate_config():
     """Reset the global dataflows config before and after each test.
 
     ``set_config`` merges (it never clears keys absent from the override), so a
-    test that sets e.g. ``tool_vendors`` would otherwise leak into later tests
-    and make routing behavior order-dependent. Replace the global outright so
+    test that updates it would otherwise affect later tests. Replace the global outright so
     every test starts from a clean DEFAULT_CONFIG.
     """
     import copy
@@ -67,33 +65,6 @@ def _isolate_config():
     config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
     yield
     config_module._config = copy.deepcopy(default_config.DEFAULT_CONFIG)
-
-
-@pytest.fixture(autouse=True)
-def _isolate_vendor_health():
-    """Circuit-breaker state is process-lived in production, not across tests."""
-    from tradingagents.dataflows.interface import clear_vendor_health
-
-    clear_vendor_health()
-    yield
-    clear_vendor_health()
-
-
-@pytest.fixture(autouse=True)
-def _no_live_yahoo_reachability_probe(monkeypatch):
-    """Keep the provider-outage probe off the network in every test.
-
-    ``stockstats_utils.raise_for_empty`` probes Yahoo only after an empty
-    result, so an ordinary unit test that simulates an empty frame would issue a
-    real HEAD request and wait out its timeout. Default the probe to "the vendor
-    is answering" (the pre-existing interpretation: empty means no data). Tests
-    that exercise the outage branch override it themselves::
-
-        monkeypatch.setattr(stockstats_utils, "vendor_reachable", lambda *a, **k: False)
-    """
-    from tradingagents.dataflows import stockstats_utils
-
-    monkeypatch.setattr(stockstats_utils, "vendor_reachable", lambda *a, **k: True)
 
 
 @pytest.fixture()

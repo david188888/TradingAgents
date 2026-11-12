@@ -155,10 +155,8 @@ def _capture_vendor_raw(data: Any, *, metadata: dict[str, Any]) -> None:
 def get_a_share_adjust_factors(ticker: str, kind: str = "qfq") -> str:
     """A-share adjusted-price factors (qfq/hfq) from Sina's realstock endpoint.
 
-    Returns the factor series per trading day (newest first).  This is a
-    *supplement* endpoint: it does not change the primary mootdx OHLCV chain,
-    which intentionally stays unadjusted.  Apply the factors downstream when a
-    cross-dividend comparison is needed.
+    Returns the factor series per trading day, newest first. Apply the factors
+    to raw bars when a cross-dividend comparison is needed.
     """
     if kind not in ("qfq", "hfq"):
         raise ValueError(f"kind 只能是 'qfq' 或 'hfq'，收到 {kind!r}")
@@ -335,7 +333,7 @@ def get_a_share_valuation_history(ticker: str, start_date: str | None = None, en
             start_date=start_date,
             end_date=end_date,
             frequency="d",
-            adjustflag="3",  # 3 = unadjusted, consistent with the mootdx OHLCV chain
+            adjustflag="3",  # 3 = unadjusted
         )
         df = _bs_to_df(rs)
     if df.empty:

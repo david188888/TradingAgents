@@ -35,7 +35,7 @@ Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add 
 | Terminal configuration, lifecycle and presentation | `cli/config.py`, `cli/research.py`, `cli/main.py` |
 | Browser transport and presentation | `frontend/src/api/`, `state/`, `hooks/`, `components/` |
 
-Dependency direction is adapters → execution/runtime → graph/research/dataflows/domain schemas. Provider I/O stays outside the graph. Source and numeric evidence structures that V9 needs remain current infrastructure; their schema version numbers do not select an older workflow.
+Dependency direction is adapters → execution/runtime → graph/research/dataflows/domain schemas. Provider I/O stays outside the graph. Native collection and the capability gateway own source selection. Source and numeric evidence structures that V9 needs remain current infrastructure; their schema version numbers do not select an older workflow.
 
 ## Persistence and publication
 
