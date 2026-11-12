@@ -1,17 +1,15 @@
-"""Bounded multi-source routing for the three evidence_v1 research modes."""
+"""Bounded source collection for V9 A-share company research."""
 
 from __future__ import annotations
 
 import hashlib
-import json
 from datetime import date, datetime, timedelta, timezone
 
 import requests
 
 from tradingagents.agents.schemas._verification_plan import VERIFIABLE_FIELDS
-from tradingagents.dataflows.catalyst_events import CatalystEventV1, classify_earnings_title
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.china_specialty import get_a_share_cninfo_announcements
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 from tradingagents.dataflows.native_qualification import (
     CALENDAR_INDEX_SYMBOL,
     NativeSourceUnavailable,
@@ -43,10 +41,9 @@ from tradingagents.research.evidence_freeze import (
     CAP_IDENTITY,
     CAP_PRICE,
     CapabilityStatus,
-    EvidenceFreezer,
     FreezeInputs,
     FrozenCapability,
-    PriceObservation,
+    freeze_evidence_draft,
 )
 from tradingagents.research.native_versions import FINANCIAL_DETAIL_POLICY
 from tradingagents.research.price_statistics import build_price_statistics
@@ -212,12 +209,6 @@ class NativeSources(SourceTransport):
                 continue
             self.evidence(inputs, CAP_EVENT_COVERAGE, "cninfo", row,
                 published=row["Published"], public_url=row["Detail URL"])
-            digest = hashlib.sha256(json.dumps(row, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-            inputs.events.append(CatalystEventV1(security_id=self.request.ticker,
-                kind=classify_earnings_title(row["Title"]), channel="official", title=row["Title"][:160],
-                publication_date=row["Published"], state="point_in_time",
-                announcement_id=row["Announcement ID"] or None,
-                content_fingerprint=digest, source_family_id="cninfo:"+digest))
         complete = coverage["completeness"] == "complete" and coverage["pagination_exhausted"] is True
         self._cap(inputs, CAP_EVENT_COVERAGE, ("cninfo.announcements",), partial=not complete,
                   gaps=coverage["degradations"])
@@ -427,8 +418,6 @@ class NativeSources(SourceTransport):
             if result is not None:
                 source = "tencent.sina_adjusted_daily" if vendor == "tencent" else "tushare.adjusted_daily"
                 self.evidence(inputs, CAP_PRICE, source, result)
-                inputs.prices.extend(PriceObservation(observed_on=row["Date"], close=row["Close"],
-                    adjustment="qfq", source=vendor, pit_verified=True) for row in result["bars"])
                 # A calendar accepted without a witness stays qualified but says so.
                 self._cap(inputs, CAP_PRICE, (source,), gaps=self.calendar_gaps,
                           detail={**result["provenance"], **self.calendar_detail})
@@ -436,14 +425,10 @@ class NativeSources(SourceTransport):
         self._cap(inputs, CAP_PRICE)
 
     def collect(self):
-        inputs = FreezeInputs(self.run_id, self.request.ticker, self.request.analysis_date, self.request.collection_policy)
+        inputs = FreezeInputs(self.run_id, self.request.ticker, self.request.analysis_date)
         ts_code = to_tushare_symbol(self.request.ticker)
         identity = self._identity(inputs, ts_code)
         self._events(inputs)
         self._financial(inputs, ts_code)
         self._prices(inputs, ts_code, identity)
-        draft = EvidenceFreezer(inputs).close()
-        by_family = {row["source_family_id"]: row["evidence_id"] for row in draft.evidence if row["capability"] == CAP_EVENT_COVERAGE}
-        return draft.model_copy(update={"events": tuple(event.model_copy(update={
-            "evidence_ids": (by_family[event.source_family_id],) if event.source_family_id in by_family else (),
-        }) for event in draft.events)}), self.context
+        return freeze_evidence_draft(inputs), self.context

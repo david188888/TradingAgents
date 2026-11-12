@@ -1,4 +1,4 @@
-"""V8 collection: dedicated facts first, dual discovery and exact gap recovery."""
+"""Collect V9 evidence with dedicated sources, dual discovery and field recovery."""
 
 from datetime import date, timedelta
 

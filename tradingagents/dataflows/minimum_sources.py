@@ -1,4 +1,4 @@
-"""V5 collector: qualified official rows and optional valuation context."""
+"""Collect qualified disclosures, forecasts and comparable-company context."""
 
 from copy import deepcopy
 from datetime import date, datetime, timedelta

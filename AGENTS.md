@@ -10,6 +10,8 @@ references.
 Start here, then read the scoped `AGENTS.md` for the files being changed.
 Use the architecture and documentation index to find the owning contract and
 inspect its canonical code before changing behavior. CLI and Web research use only `evidence_v1` / `evidence-production-v9`; older workflow implementations are retired.
+When removing retired paths, trace shared code through the current collector, capability gateway,
+and saved V9 run consumers. Keep the regression tests for those contracts.
 
 - `README.md` is the concise Chinese product overview; `README.en.md` is its
   English counterpart and the package long description. Keep their structure,
@@ -86,7 +88,7 @@ workbench is loopback-only; it binds to `127.0.0.1`.
 | --- | --- |
 | Public Python request, result, artifact, or runtime contract | `tradingagents/execution/models.py`, `tradingagents/agents/schemas/`, `tradingagents/runtime/`, consumers and projections |
 | Graph roles, routing, or evidence sequence | `tradingagents/graph/`, `tradingagents/agents/`, `ARCHITECTURE.md` |
-| Vendor capability or A-share source behavior | `tradingagents/dataflows/`, `docs/operations/a-share-data-capabilities.md` |
+| Vendor capability or A-share source behavior | `tradingagents/dataflows/`, `tradingagents/execution/capability_gateway.py`, [A-share data capabilities](docs/operations/a-share-data-capabilities.md) |
 | Reference research methodology skills | `tradingagents/skills/library/` (not loaded by V9); keep threshold heuristics labeled advisory |
 | Web API, SSE, persistence, or Reader/Audit projection | `tradingagents/web/`, `frontend/src/api/contracts.ts`, relevant frontend consumers |
 | React/TypeScript source | `frontend/AGENTS.md`; rebuild generated assets |

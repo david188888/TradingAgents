@@ -11,9 +11,10 @@ for repository-wide setup and finish rules.
 - `graph/insight_research.py` owns isolated specialists, bounded supplementary
   search, one review/reply round and synthesis. Graph code receives saved facts
   and a durable ledger; provider I/O stays in execution/dataflows.
-- `dataflows/` owns native source selection, provider adapters, normalization,
-  and capability results. The V9 capability gateway calls source adapters directly.
-  Provider failures must remain typed and source-labelled.
+- `dataflows/` owns source selection, provider adapters, normalization, and capability
+  results. The collector passes captured sources and coverage to `research/native_record.py`.
+  The V9 capability gateway calls source adapters directly. Shared adapter errors live in
+  `dataflows/errors.py`. Keep provider failures typed and source-labelled.
 - `agents/schemas/` and `research/` own public Insight artifacts, evidence and
   numeric binding, effective versions, and saved-report validation. Start public
   artifact changes from these canonical models rather than rendered Markdown or a web DTO.
@@ -26,7 +27,7 @@ for repository-wide setup and finish rules.
 
 For new code, keep dependencies pointed inward: adapters (`cli/`, `web/`) call
 execution and runtime; execution coordinates graph, research, dataflows, and
-runtime; graph invokes agents and dataflows; projections read durable artifacts.
+runtime; graph invokes agents; projections read durable artifacts.
 Avoid importing Web/HTTP types into `execution/`, `graph/`, `research/`, or
 `dataflows/`. Keep provider-specific code behind `dataflows/` interfaces and
 avoid a UI projection becoming a domain-schema dependency.

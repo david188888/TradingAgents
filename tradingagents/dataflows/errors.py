@@ -1,23 +1,10 @@
-"""Vendor data-error taxonomy.
-
-A single hierarchy so the routing layer reacts by *behavior*, not by vendor:
-every condition where a vendor cannot return usable data derives from
-``VendorError``, and the router catches the base types. A new vendor raises
-these (or a thin vendor-named subclass) and needs no new ``except`` clause.
-
-    VendorError
-    ├── NoMarketDataError          no usable rows (empty result OR stale data)
-    ├── VendorRateLimitError       transient throttle -> skip to next vendor
-    ├── VendorRequestError         the call failed and proved nothing about the symbol
-    ├── VendorHTTPError            typed direct-HTTP response failure
-    └── VendorNotConfiguredError   missing API key/config -> vendor unavailable
-
-The number of types is the number of distinct router reactions, not the number
-of human-describable causes: empty and stale data get identical handling, so
-they share ``NoMarketDataError`` and differ only in the free-text ``detail``.
-"""
+"""Typed failures raised by source adapters."""
 
 from __future__ import annotations
+
+
+class ChinaDataUnavailableError(Exception):
+    """An A-share source could not supply usable data."""
 
 
 class VendorError(Exception):
@@ -46,45 +33,11 @@ class NoMarketDataError(VendorError):
 
 
 class VendorRateLimitError(VendorError):
-    """A vendor throttled the request; the router skips to the next vendor."""
-
-
-class VendorRequestError(VendorError):
-    """A provider call failed without proving anything about the instrument.
-
-    ``NoMarketDataError`` means the vendor answered and had nothing.
-    ``VendorRateLimitError`` means it answered "too many requests". This type is
-    the remaining case: the call itself failed (transport error, unusable
-    payload) or returned an empty result while the provider was unreachable.
-
-    It exists so a broken provider can no longer masquerade as evidence. Before
-    it, yfinance paths returned an ``"Error retrieving ..."`` string that the
-    router counted as a successful answer: the fallback chain stopped and the
-    error text reached the analyst as if it were data. The router treats every
-    ``VendorError`` as recoverable, so this type falls through to the next
-    configured vendor instead, and a chain where *every* vendor failed reports
-    the vendor failure rather than "no such data".
-
-    ``provider`` is a stable vendor id (``"yfinance"``); ``detail`` is free text
-    that must never claim the symbol is absent.
-    """
-
-    def __init__(self, provider: str, detail: str = "") -> None:
-        self.provider = provider
-        self.detail = detail
-        message = f"{provider} request failed"
-        if detail:
-            message += f": {detail}"
-        super().__init__(message)
+    """A vendor throttled the request."""
 
 
 class RateLimitError(VendorRateLimitError):
-    """HTTP-provider rate limit with the router's standard fallback semantics.
-
-    This deliberately names the transport-level condition without coupling the
-    routing layer to a particular provider (EastMoney, Sina, and a future
-    direct HTTP source can all raise it).
-    """
+    """A direct HTTP source throttled the request."""
 
 
 class VendorHTTPError(VendorError):
@@ -111,19 +64,5 @@ class VendorAccessDeniedError(VendorHTTPError):
 class VendorNotConfiguredError(VendorError, ValueError):
     """A vendor was selected but its API key/configuration is missing.
 
-    Also a ``ValueError`` so existing callers that catch ``ValueError`` keep
-    working while the routing layer can treat it as "vendor unavailable".
+    Also a ``ValueError`` for callers that handle configuration errors.
     """
-
-
-class DataSourceUnavailableError(RuntimeError):
-    """All eligible providers for a required data capability were unavailable.
-
-    This is deliberately separate from ``VendorError``: it is a router-level
-    aggregate after every provider attempt (or cooldown skip), not an error
-    emitted by one provider adapter.
-    """
-
-
-class DataUnavailableError(DataSourceUnavailableError):
-    """Compatibility name for a router-level unavailable data source error."""

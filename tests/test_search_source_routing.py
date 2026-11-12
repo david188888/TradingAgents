@@ -9,7 +9,6 @@ from tests.test_native_multisource import PROFILE, statement
 from tradingagents.agents.schemas._search import SearchBatchV1, SearchHitV1, SearchOutcomeV1
 from tradingagents.dataflows.search_sources import SearchEvidenceSources
 from tradingagents.execution.models import AnalysisCancelled
-from tradingagents.research.collection_policy import collection_policy
 from tradingagents.research.native_versions import (
     REPORT_DELIVERY_POLICY,
 )
@@ -32,7 +31,7 @@ class Coordinator:
 
 def collector(monkeypatch, coordinator=None, *, identity=True, financial=True):
     request = SimpleNamespace(ticker='002130.SZ', analysis_date=date.today().isoformat(),
-        mode='company_research', collection_policy=collection_policy(),
+        mode='company_research',
         report_delivery_policy=REPORT_DELIVERY_POLICY, financial_detail_policy=None,
         effective_config={'evidence_source_vendors': {'identity': ['sina'] if identity else [],
             'financial': ['sina'] if financial else [], 'events': [], 'calendar': [], 'price': [],

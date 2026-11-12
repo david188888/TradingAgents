@@ -28,10 +28,17 @@ def test_new_version_omits_legacy_output_gates(tmp_path, monkeypatch):
 
 
 def test_actual_runner_publishes_and_resumes_insight_record(tmp_path, monkeypatch):
+    from cli.research import _saved_request
+    from tradingagents.execution.config_identity import prepare_effective_config
+
     runner, request, store, run_id, session, _ = setup(tmp_path, monkeypatch, enabled=False)
+    # Earlier V9 runs froze this now-retired default into their identity.
+    request = replace(request, effective_config={**request.effective_config, 'akshare_adjust': ''})
     monkeypatch.setattr('tradingagents.execution.native_runner.WORKFLOW_VERSION', 'evidence-production-v9')
     snapshot = store.read_snapshot(run_id)
-    store.write_snapshot_atomic(replace(snapshot, metadata={**snapshot.metadata, 'native_workflow_version': 'evidence-production-v9'}))
+    store.write_snapshot_atomic(replace(snapshot, metadata={**snapshot.metadata,
+        'native_workflow_version': 'evidence-production-v9',
+        'effective_config': prepare_effective_config(request.effective_config)}))
     calls = []
 
     def delegate(stage, context, *, phase='main'):
@@ -63,7 +70,8 @@ def test_actual_runner_publishes_and_resumes_insight_record(tmp_path, monkeypatc
     published = ReportArtifactWriter(store).publish_final(run_id, result.final_state, ticker=request.ticker)
     assert published.complete_report.exists()
     count = len(calls), len(session.calls)
-    runner.run(request, checkpoint_guard=NativeResumeGuard(), publication_authorizer=lambda j: j.put('publication_authorized', True))
+    resumed = _saved_request(store.read_snapshot(run_id))
+    runner.run(resumed, checkpoint_guard=NativeResumeGuard(), publication_authorizer=lambda j: j.put('publication_authorized', True))
     assert (len(calls), len(session.calls)) == count
 
 

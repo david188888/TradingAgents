@@ -1,7 +1,7 @@
 import pytest
 
 from tradingagents.dataflows import tencent_kline
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 
 
 def test_adapter_refuses_to_serve_raw_bars_as_qfq() -> None:

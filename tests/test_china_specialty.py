@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.china_specialty import (
     AnnouncementRecord,
     EastMoneyAnnouncementFallback,
     SSEAnnouncementProvider,
     get_a_share_exchange_announcements,
 )
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 
 
 class _Response:

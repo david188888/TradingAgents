@@ -5,9 +5,8 @@ from __future__ import annotations
 import pytest
 
 from tradingagents.dataflows import china_specialty_em, eastmoney
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
 from tradingagents.dataflows.coverage import CoveredText
-from tradingagents.dataflows.errors import VendorHTTPError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError, VendorHTTPError
 
 
 def _envelope(data, *, pages=1, count=None, code=0, message=""):

@@ -1,4 +1,4 @@
-"""Admission, independent fallback, mode consumers and topology recovery."""
+"""V9 source admission, independent fallback and collection recovery."""
 
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -25,7 +25,7 @@ from tradingagents.dataflows.tushare_price_history import settled_sessions
 from tradingagents.execution.budget import BudgetBucket, BudgetLedger
 from tradingagents.execution.config_identity import SemanticConfigError
 from tradingagents.execution.models import AnalysisCancelled
-from tradingagents.research.collection_policy import collection_policy
+from tradingagents.research.evidence_freeze import CAP_EVENT_COVERAGE, CapabilityStatus
 from tradingagents.research.native_record import build_native_record
 from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
@@ -41,7 +41,7 @@ def statement(table):
 
 def collector(monkeypatch):
     request = SimpleNamespace(ticker="002130.SZ", analysis_date="2026-10-03",
-        collection_policy=collection_policy(), effective_config={
+        effective_config={
             "evidence_source_vendors": {"identity": ["sina"], "events": [], "calendar": [], "price": []}})
     calls = []
     def fetch(key, operation):
@@ -57,8 +57,8 @@ def collector(monkeypatch):
     return sources, calls
 
 
-def test_native_defaults_and_explicit_overrides_are_independent_of_classic():
-    chains = source_chains({"data_vendors": {"fundamental_data": "tushare"}})
+def test_native_defaults_and_explicit_overrides():
+    chains = source_chains({})
     assert chains["financial"] == ("sina", "tushare")
     # The official SZSE calendar serves every A-share exchange; the quota-free
     # index walk is its witness and fallback; capped tushare is the last resort.
@@ -67,6 +67,33 @@ def test_native_defaults_and_explicit_overrides_are_independent_of_classic():
     assert source_chains({"evidence_source_exclusions": ["tushare"]})["financial"] == ("sina",)
     assert source_chains({"evidence_source_exclusions": ["tushare"]})["calendar"] == ("szse", "tencent")
     assert source_chains({"evidence_source_vendors": {"identity": []}})["identity"] == ()
+
+
+def test_partial_cninfo_collection_saves_only_in_window_announcement_evidence(monkeypatch):
+    sources, _ = collector(monkeypatch)
+    sources.chains["events"] = ("cninfo",)
+    detail_url = "https://www.cninfo.com.cn/new/disclosure/detail?announcementId=1"
+    row = {"Title": "关于拟签订合同的公告", "Published": "2026-10-03",
+           "Announcement ID": "1", "Detail URL": detail_url}
+
+    def announcements(ticker, start, cutoff, *, session, records_sink):
+        assert (ticker, start, cutoff) == ("002130.SZ", "2026-07-05", "2026-10-03")
+        records_sink([row, {**row, "Published": "2026-10-04"}, {**row, "Published": "2026-07-04"}])
+        return SimpleNamespace(coverage=SimpleNamespace(model_dump=lambda **kwargs: {
+            "completeness": "partial", "pagination_exhausted": False,
+            "degradations": ("pagination_incomplete",),
+        }))
+
+    monkeypatch.setattr("tradingagents.dataflows.native_sources.get_a_share_cninfo_announcements", announcements)
+    draft, context = sources.collect()
+    capability = draft.capability(CAP_EVENT_COVERAGE)
+    assert capability.status is CapabilityStatus.PARTIAL
+    assert capability.degradations == ("pagination_incomplete",)
+    record = build_native_record(draft, context, mode="company_research")
+    announcements = [source for source in record.evidence if source.source_name == "cninfo.announcements"]
+    assert len(announcements) == 1
+    assert announcements[0].public_url == detail_url
+    assert any(row["Title"] in fact.statement for fact in record.claims)
 
 
 @pytest.mark.parametrize("config", [{"evidence_source_vendors": {"typo": []}},
@@ -303,7 +330,7 @@ class CalendarHarness:
         self.calls = []
         self.tdx = tdx or {}
         request = SimpleNamespace(ticker=ticker, analysis_date="2026-10-16",
-            collection_policy=collection_policy(), effective_config=config or {})
+            effective_config=config or {})
         session = SimpleNamespace(head=self.head)
         self.sources = NativeSources(request, "calendar-run", session, self.fetch)
         def get(url, **kwargs):

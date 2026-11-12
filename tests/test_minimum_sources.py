@@ -1,4 +1,4 @@
-"""Optional V5 branches retain qualified inputs under shared controls."""
+"""Optional V9 source branches retain qualified inputs under shared controls."""
 
 from datetime import datetime
 from types import SimpleNamespace
@@ -10,13 +10,12 @@ from tests.test_minimum_evidence import documents, forecast
 from tradingagents.dataflows.minimum_sources import MinimumEvidenceSources
 from tradingagents.execution.budget import BudgetBucket, BudgetLedger
 from tradingagents.execution.models import AnalysisCancelled
-from tradingagents.research.collection_policy import collection_policy
 from tradingagents.research.evidence_freeze import CapabilityStatus, FreezeInputs
 from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 
 def inputs():
-    return FreezeInputs("bounded", "600803", datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat(), collection_policy())
+    return FreezeInputs("bounded", "600803", datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat())
 
 
 def sources(fetch, config=None):

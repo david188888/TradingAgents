@@ -29,19 +29,20 @@ Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add 
 | Consumer-neutral request, execution and model dispatch | `execution/models.py`, `native_runner.py`, `insight_model.py`, per-stage routing in `llm_clients/stage_models.py` |
 | V9 sequence, review, response, web/capability supplements and synthesis | `graph/insight_research.py`, `execution/insight_search.py`, `execution/insight_capability.py`, `execution/capability_gateway.py`, `research/insights.py` |
 | Public Insight report and reference/numeric validation | `agents/schemas/_insight.py`, `research/insight_report.py` |
-| Source retrieval, model-facing capability catalog, qualification and calculations | `dataflows/` (including `capability_catalog.py`), `research/` |
+| Source collection, routing and the model-facing capability catalog | `dataflows/search_sources.py`, `native_sources.py`, `minimum_sources.py`, `capability_catalog.py` |
+| Source coverage, evidence admission and calculations | `dataflows/coverage.py`, `research/evidence_freeze.py`, `native_record.py`, `research/` |
 | Append-only attempts, budgets, events and report publication | `runtime/`, `execution/budget.py`, `native_publication.py` |
 | HTTP, scheduling and saved projections | `web/` |
 | Terminal configuration, lifecycle and presentation | `cli/config.py`, `cli/research.py`, `cli/main.py` |
 | Browser transport and presentation | `frontend/src/api/`, `state/`, `hooks/`, `components/` |
 
-Dependency direction is adapters → execution/runtime → graph/research/dataflows/domain schemas. Provider I/O stays outside the graph. Native collection and the capability gateway own source selection. Source and numeric evidence structures that V9 needs remain current infrastructure; their schema version numbers do not select an older workflow.
+Dependency direction is adapters → execution/runtime → graph/research/dataflows/domain schemas. Provider I/O stays outside the graph. Native collection and the capability gateway own source selection. The collector passes captured sources and capability outcomes through an in-memory draft. V9 builds the saved `EvidenceRecord` from those inputs, then derives specialist views from its admitted facts. Source and numeric schema versions identify individual contracts.
 
 ## Persistence and publication
 
 Web stores run data under `~/.tradingagents/web/runs/`; CLI uses `~/.tradingagents/cli/runs/`. Each adapter holds its store's cross-process writer lock. User data is never cleared during development.
 
-Request identity and budgets freeze before dispatch. Resume checks current V9 identity and replays saved valid results; unknown provider outcomes remain spent. A frozen report candidate and durable lifecycle authorization must precede committed publication. Cancellation and publication are serialized by the owning lifecycle lock. A publication failure cannot become completion.
+Request identity and budgets freeze before dispatch. Resume checks current V9 identity and replays saved valid results, including the saved evidence record when available. Unknown provider outcomes remain spent. A frozen report candidate and durable lifecycle authorization must precede committed publication. Cancellation and publication are serialized by the owning lifecycle lock. A publication failure cannot become completion.
 
 Reader, stage views and Markdown expose saved qualified content. Reading never fetches new research or dispatches a model. Web schedules independent bounded explanation jobs after report completion; explicit retry uses a separate command. Their artifacts preserve baseline evidence and judgement. Completed, readable, evidence-complete and research-quality remain separate states; passing structural checks does not establish economic correctness.
 

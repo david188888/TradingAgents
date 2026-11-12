@@ -19,10 +19,9 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 
-from .china_data import ChinaDataUnavailableError
 from .coverage import CoveredText, SourceCoverageV1
 from .eastmoney import EASTMONEY_DATACENTER_URL, em_get
-from .errors import NoMarketDataError, VendorHTTPError
+from .errors import ChinaDataUnavailableError, NoMarketDataError, VendorHTTPError
 from .ticker_utils import (
     infer_a_share_exchange,
     is_a_share_ticker,

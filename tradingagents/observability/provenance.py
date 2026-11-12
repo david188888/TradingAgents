@@ -373,7 +373,7 @@ def _failure_code(error: BaseException | str) -> str:
     """
     if isinstance(error, VendorNotConfiguredError):
         return "not_configured"
-    if isinstance(error, VendorRateLimitError) or type(error).__name__ == "YFRateLimitError":
+    if isinstance(error, VendorRateLimitError):
         return "rate_limited"
     if isinstance(error, NoMarketDataError):
         return "no_market_data"

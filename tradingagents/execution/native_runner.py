@@ -17,7 +17,7 @@ from tradingagents.dataflows.capability_catalog import (
     compact_capability_cards,
     load_capability_catalog,
 )
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
+from tradingagents.dataflows.errors import ChinaDataUnavailableError
 from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
 from tradingagents.dataflows.search_sources import SearchEvidenceSources
 from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
@@ -308,7 +308,7 @@ class NativeRunner:
                 active()
                 return value
 
-            source_fields = {**vars(request), "collection_policy": request.evidence_policy.collector_policy()}
+            source_fields = dict(vars(request))
             source_fields.pop("research_question", None)
             source_fields["effective_config"] = {
                 key: value for key, value in request.effective_config.items()

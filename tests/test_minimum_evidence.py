@@ -3,7 +3,6 @@
 import copy
 import hashlib
 import json
-from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -96,8 +95,8 @@ def fixture(*, forecasts=True, peers=True, snapshot=True, numeric_mutator=None):
             "time_basis": "offline fixture", "value_basis": "explicit units"})
         context[key] = payload
     caps = tuple(FrozenCapability(capability=cap, status=CapabilityStatus.QUALIFIED, reason="offline fixture") for cap in sorted({p[0] for p in payloads}))
-    draft = FrozenEvidenceDraft(run_id="minimum-600803", ticker="600803", cutoff="2026-10-05", policy_version="source-collection-policy-v1",
-        draft_id="minimum-fixture", frozen_at=datetime(2026, 10, 5, 8, tzinfo=timezone.utc), evidence=tuple(evidence), capabilities=caps)
+    draft = FrozenEvidenceDraft(run_id="minimum-600803", ticker="600803", cutoff="2026-10-05",
+        evidence=tuple(evidence), capabilities=caps)
     return draft, context
 
 

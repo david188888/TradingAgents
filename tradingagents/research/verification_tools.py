@@ -49,10 +49,9 @@ class _Unavailable(ValueError):
 
 def _qualified_source(record: Any, evidence_id: str) -> SourceEvidenceV1:
     source = next((item for item in record.evidence if item.evidence_id == evidence_id), None)
-    if source is None or evidence_id not in record.snapshots[-1 if record.schema_version == "evidence-record-v1" else 0].evidence_ids:
+    if source is None or evidence_id not in record.snapshots[-1].evidence_ids:
         raise _Unavailable("source_unqualified")
-    if (record.schema_version == 'evidence-record-v1' and
-            record.superseded_evidence.get(evidence_id) in record.snapshots[-1].evidence_ids):
+    if record.superseded_evidence.get(evidence_id) in record.snapshots[-1].evidence_ids:
         raise _Unavailable('source_unqualified')
     if source.availability != "available" or source.usable_as_of is None:
         raise _Unavailable("source_unqualified")
@@ -115,14 +114,13 @@ def _financial_operand(
     from tradingagents.research.source_families import FINANCIAL_DETAIL_SOURCES, FINANCIAL_SOURCES
 
     source = _qualified_source(record, operand.evidence_id)
-    if record.schema_version == "evidence-record-v1":
-        from tradingagents.research.search_recovery import recovered_statement
-        rows = recovered_statement(record, source).get(operand.table, [])
-        candidates = [r for r in rows if r['end_date'] == operand.report_period and operand.field in r]
-        if len(candidates) == 1:
-            value = _number(candidates[0][operand.field])
-            return value, {**operand.model_dump(mode="json"), "value": str(value),
-                "source_content_sha256": source.content.content_sha256}
+    from tradingagents.research.search_recovery import recovered_statement
+    rows = recovered_statement(record, source).get(operand.table, [])
+    candidates = [r for r in rows if r['end_date'] == operand.report_period and operand.field in r]
+    if len(candidates) == 1:
+        value = _number(candidates[0][operand.field])
+        return value, {**operand.model_dump(mode="json"), "value": str(value),
+            "source_content_sha256": source.content.content_sha256}
     if (
         source.source_name not in FINANCIAL_SOURCES | FINANCIAL_DETAIL_SOURCES
         or source.source_kind not in {"official", "vendor"}

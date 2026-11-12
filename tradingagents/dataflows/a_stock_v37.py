@@ -33,7 +33,7 @@ import pandas as pd
 import requests
 
 from .china_capabilities import AshareCapabilityUnavailableError
-from .china_data import ChinaDataUnavailableError
+from .errors import ChinaDataUnavailableError
 from .ticker_utils import (
     infer_a_share_exchange,
     is_a_share_ticker,

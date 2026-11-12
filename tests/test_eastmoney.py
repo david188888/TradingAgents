@@ -5,8 +5,12 @@ from __future__ import annotations
 import pytest
 
 from tradingagents.dataflows import eastmoney
-from tradingagents.dataflows.china_data import ChinaDataUnavailableError
-from tradingagents.dataflows.errors import RateLimitError, VendorAccessDeniedError, VendorHTTPError
+from tradingagents.dataflows.errors import (
+    ChinaDataUnavailableError,
+    RateLimitError,
+    VendorAccessDeniedError,
+    VendorHTTPError,
+)
 
 
 class _Response:

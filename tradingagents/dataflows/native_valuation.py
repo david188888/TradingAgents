@@ -85,7 +85,7 @@ def qualify_history(rows, *, ts_code, start, end):
 
 class ValuationSources(DisclosureSources):
     def __init__(self, request, run_id, session, fetch):
-        # Validate v4-only overrides separately, never broaden old collectors.
+        # Validate valuation overrides before routing the shared source chains.
         from copy import deepcopy
         from types import SimpleNamespace
         config = deepcopy(request.effective_config)
@@ -171,7 +171,7 @@ class ValuationSources(DisclosureSources):
             degradations=tuple(gaps), detail={"attempts": self.attempts.get(CAP_VALUATION, [])}))
 
     def _prices(self, inputs, ts_code, identity):
-        # V4 prioritizes valuation before optional document supplements.
+        # Collect valuation before optional document retrieval.
         from tradingagents.dataflows.native_sources import NativeSources
         NativeSources._prices(self, inputs, ts_code, identity)
         try:
