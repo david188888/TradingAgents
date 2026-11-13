@@ -93,6 +93,10 @@ def native_identity(request):
         "insight_policy": INSIGHT_POLICY,
         "insight_budget_policy": {"structured_repair": 8, "basic_model_attempts": 20, "model_attempts": 29},
         "insight_context_policy": "compact-saved-evidence-v1",
+        "jev_verification_enabled": request.effective_config.get("jev_verification_enabled", False),
+        "jev_model": request.effective_config.get("jev_model", "typesafe/jev-1.14"),
+        "jev_threshold_clear": request.effective_config.get("jev_threshold_clear", 0.85),
+        "jev_threshold_risk": request.effective_config.get("jev_threshold_risk", 0.15),
         "capability_supplement_policy": capability_supplement_policy(),
     }
 

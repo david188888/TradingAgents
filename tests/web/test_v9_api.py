@@ -19,20 +19,27 @@ BODY = {"ticker": "002130.SZ", "analysis_date": "2026-10-28", "llm_provider": "d
 
 
 @contextmanager
-def workbench(tmp_path, *, caller=None):
+def workbench(tmp_path, *, caller=None, environment=None):
     store = RunStore(tmp_path / "runs")
     calls = []
 
     def factory(request, observer):
-        def invoke(stage, context, *, phase="main"):
-            calls.append(stage)
-            return (caller or InsightFixtureCaller())(stage, context, phase=phase)
+        fixture = caller or InsightFixtureCaller()
+
+        class Caller:
+            def __call__(self, stage, context, *, phase="main"):
+                calls.append(stage)
+                return fixture(stage, context, phase=phase)
+
+            def call_jev_verification(self, insight_id, insight_state, questions):
+                return fixture.call_jev_verification(insight_id, insight_state, questions)
+
         return NativeRunner(observer, sources_factory=InsightFixtureSources,
-            caller_factory=lambda **kwargs: invoke)
+            caller_factory=lambda **kwargs: Caller())
 
     manager = SingleRunManager(store, runner_factory=factory)
     manager.explanations.start = lambda run_id: None
-    app = create_app(manager=manager, environment={"DEEPSEEK_API_KEY": "offline-key"},
+    app = create_app(manager=manager, environment={"DEEPSEEK_API_KEY": "offline-key", **(environment or {})},
         chatgpt_auth=ChatGPTAuth(tmp_path / "auth"))
     with TestClient(app) as client:
         yield client, manager, store, calls
@@ -78,6 +85,54 @@ def test_stage_models_are_admitted_frozen_and_require_every_provider_key(tmp_pat
         assert client.post("/api/runs", json={**BODY, "stage_models": {
             "synthesis": {"provider": "chatgpt", "model": "gpt-5.6"}}}).status_code == 422
         assert len(store.list_runs()) == 1
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_bailian_workbench_catalog_and_run_admission(tmp_path, configured):
+    environment = {"BAILIAN_API_KEY": "offline-bailian-key"} if configured else {}
+    with workbench(tmp_path, environment=environment) as (client, manager, store, _calls):
+        config = client.get("/api/config").json()
+        provider = next((p for p in config["providers"] if p["id"] == "bailian"), None)
+        assert provider is not None
+        assert provider["configured"] is configured
+        assert "offline-bailian-key" not in json.dumps(config)
+        for tier in ("quick", "deep"):
+            assert {m["id"] for m in provider["models"][tier]} == {"deepseek-v4.1-flash-1017", "kimi-k3.1-pro"}
+
+        stages = {"challenge": {"provider": "bailian", "model": "kimi-k3.1-pro"}}
+        response = client.post("/api/runs", json={**BODY, "llm_provider": "bailian",
+            "quick_think_llm": "deepseek-v4.1-flash-1017", "deep_think_llm": "kimi-k3.1-pro",
+            "stage_models": stages})
+        if configured:
+            assert response.status_code == 201, response.text
+            snapshot = manager.wait(response.json()["run_id"], timeout=5)
+            assert snapshot.status == "completed", snapshot.error_message
+            assert snapshot.metadata["effective_config"]["stage_models"] == stages
+            assert "offline-bailian-key" not in json.dumps(snapshot.as_dict())
+        else:
+            assert response.status_code == 422
+            assert response.json()["detail"]["code"] == "missing_configuration"
+            assert store.list_runs() == []
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_jev_verification_admission_requires_openrouter_key(tmp_path, configured):
+    environment = {"OPENROUTER_API_KEY": "offline-openrouter-key"} if configured else {}
+    with workbench(tmp_path, environment=environment) as (client, manager, store, _calls):
+        response = client.post("/api/runs", json={**BODY, "jev_verification_enabled": True,
+            "jev_model": "typesafe/jev-1.14"})
+        if configured:
+            assert response.status_code == 201, response.text
+            snapshot = manager.wait(response.json()["run_id"], timeout=5)
+            assert snapshot.status == "completed", snapshot.error_message
+            config = snapshot.metadata["effective_config"]
+            assert config["jev_verification_enabled"] is True
+            assert config["jev_model"] == "typesafe/jev-1.14"
+            assert "offline-openrouter-key" not in json.dumps(snapshot.as_dict())
+        else:
+            assert response.status_code == 422
+            assert response.json()["detail"]["code"] == "missing_configuration"
+            assert store.list_runs() == []
 
 
 @pytest.mark.parametrize("field,value", [("research_profile", "classic"), ("research_profile", "catalyst_v1"),

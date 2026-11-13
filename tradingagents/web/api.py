@@ -685,6 +685,12 @@ def _analysis_request(body, environment, *, checkpoint_available=True, chatgpt_a
         "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS}
     if stages:
         config["stage_models"] = stages
+    if body.jev_verification_enabled:
+        if not _provider_configured("openrouter", environment):
+            raise ApiBoundaryError(422, "missing_configuration", "Jev verification requires OPENROUTER_API_KEY.",
+                fields=("jev_verification_enabled",))
+        config["jev_verification_enabled"] = True
+        config["jev_model"] = body.jev_model
     if subscription:
         config["chatgpt_account_ref"] = body.chatgpt_account_ref
     if provider == "chatgpt":

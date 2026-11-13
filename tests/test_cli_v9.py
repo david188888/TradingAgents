@@ -63,6 +63,25 @@ def test_changing_provider_does_not_reuse_another_providers_default_models():
     assert request.effective_config["deep_think_llm"].startswith("gpt-")
 
 
+def test_bailian_cli_selects_research_models():
+    request = cli_config.build_request({}, ticker="002130", provider="bailian")
+    assert request.effective_config["quick_think_llm"] == "deepseek-v4.1-flash-1017"
+    assert request.effective_config["deep_think_llm"] == "kimi-k3.1-pro"
+
+
+def test_jev_verification_requires_openrouter_key_and_reaches_config(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "offline-placeholder")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    local = {"run": {"jev_verification_enabled": True, "jev_model": "typesafe/jev-1.14"}}
+    with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+        cli_config.build_request(local, ticker="002130")
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-openrouter-key")
+    config = cli_config.build_request(local, ticker="002130").effective_config
+    assert config["jev_verification_enabled"] is True
+    assert config["jev_model"] == "typesafe/jev-1.14"
+
+
 def test_resume_endpoint_credentials_are_runtime_only_and_identity_cannot_change():
     from types import SimpleNamespace
 

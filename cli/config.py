@@ -24,6 +24,7 @@ _RUN_KEYS = {
     "evidence_timeout_seconds", "evidence_source_vendors", "evidence_source_exclusions",
     "google_thinking_level", "openai_reasoning_effort", "anthropic_effort", "deepseek_thinking",
     "deepseek_reasoning_effort", "temperature", "llm_max_tokens",
+    "jev_verification_enabled", "jev_model",
     "display_report",
 }
 
@@ -105,6 +106,8 @@ def build_request(
         raise ValueError("请在 llm.chatgpt_account_ref 设置已登录的 ChatGPT 账户引用。")
     if config["output_language"] not in {"Chinese", "English"}:
         raise ValueError("output_language 必须是 Chinese 或 English。")
+    if config.get("jev_verification_enabled") and not os.environ.get(PROVIDER_API_KEY_ENV["openrouter"]):
+        raise ValueError("启用 Jev 验证需要在 .env 中设置 OPENROUTER_API_KEY。")
     config.setdefault("evidence_timeout_seconds", 900)
     return AnalysisRequest(
         ticker=symbol,

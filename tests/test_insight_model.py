@@ -1,13 +1,16 @@
 """Request boundary uses native formats, durable budgets and no lost-call resend."""
 
+import json
 import time
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from tests.v9_fixtures import journal_setup as setup
 from tradingagents.execution.insight_model import InsightModelCaller, InsightUnavailable
 from tradingagents.execution.models import AnalysisCancelled
+from tradingagents.llm_clients.factory import create_llm_client
 
 
 def caller(journal, **kwargs):
@@ -82,6 +85,44 @@ def test_each_stage_dispatches_its_configured_provider_and_model(tmp_path, monke
     assert seen == [('openai', 'gpt-4o'), ('deepseek', 'deepseek-v4-pro')]
     assert journal.state['insight.challenge.main.structured']['method'] == 'json_mode'
     assert journal.state['insight.challenge.main.structured']['model'] == 'deepseek-v4-pro'
+
+
+@pytest.mark.parametrize("model", ["deepseek-v4.1-flash-1017", "kimi-k3.1-pro"])
+def test_bailian_stage_sends_json_mode_to_beijing(tmp_path, monkeypatch, model):
+    _, journal, _ = setup(tmp_path)
+    monkeypatch.setenv("BAILIAN_API_KEY", "offline-bailian-key")
+    requests = []
+
+    def reply(request):
+        requests.append(request)
+        return httpx.Response(200, json={
+            "id": "chatcmpl-fixture", "object": "chat.completion", "created": 0, "model": model,
+            "choices": [{"index": 0, "finish_reason": "stop", "message": {
+                "role": "assistant", "content": '{"insights": []}', "reasoning_content": "fixture reasoning",
+            }}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(reply)) as http_client:
+        monkeypatch.setattr("tradingagents.execution.insight_model.create_llm_client",
+                            lambda **kwargs: create_llm_client(**kwargs, http_client=http_client))
+        delegate = InsightModelCaller(effective_config={
+            "llm_provider": "deepseek", "quick_think_llm": "deepseek-flash", "deep_think_llm": "deepseek-flash",
+            "backend_url": "https://other-provider.example/v1", "deepseek_reasoning_effort": "high",
+            "stage_models": {"operating_quality": {"provider": "bailian", "model": model}},
+        }, run_id=journal.observer.run_id, ledger=journal.ledger, cancelled=lambda: False,
+            deadline=lambda: time.monotonic() + 60)
+        assert delegate("operating_quality", {}) == {"insights": []}
+
+    request, = requests
+    assert request.method == "POST"
+    assert str(request.url) == "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    assert request.headers["Authorization"] == "Bearer offline-bailian-key"
+    payload = json.loads(request.content)
+    assert payload["model"] == model
+    assert payload["response_format"] == {"type": "json_object"}
+    assert "JSON" in payload["messages"][0]["content"]
+    assert not {"thinking", "reasoning_effort"} & payload.keys()
 
 
 def test_prompt_identity_cannot_change_after_dispatch(tmp_path, monkeypatch):

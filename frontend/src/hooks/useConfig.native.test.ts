@@ -101,3 +101,18 @@ it("can configure a provider without preset models and clears custom IDs on a pr
   expect(result.current.quick_custom_model_id).toBe("");
   expect(result.current.buildRequest()?.quick_think_llm).toBe("gpt-4o-mini");
 });
+
+it("adds Jev verification only when enabled and requires an OpenRouter key", async () => {
+  const {result} = await mount();
+  expect(result.current.buildRequest()).not.toHaveProperty("jev_verification_enabled");
+  act(() => result.current.setJevVerificationEnabled(true));
+  expect(result.current.validationError).toBe("启用 Jev 验证需要在 .env 中配置 OPENROUTER_API_KEY");
+  expect(result.current.buildRequest()).toBeNull();
+  const config = configResponse();
+  config.configured_keys.openrouter = true;
+  mockedGetConfig.mockResolvedValue(config);
+  const enabled = await mount(config);
+  act(() => enabled.result.current.setJevVerificationEnabled(true));
+  expect(enabled.result.current.buildRequest()).toMatchObject({
+    jev_verification_enabled: true, jev_model: "typesafe/jev-1.14"});
+});

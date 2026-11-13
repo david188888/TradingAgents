@@ -72,6 +72,7 @@ class BudgetBucket(str, Enum):
     SPECIALIST_CONCURRENCY = "specialist_concurrency"
     SUPPLEMENT_ROUNDS = "supplement_rounds"
     SUPPLEMENT_CAPABILITIES = "supplement_capabilities"
+    JEV_VERIFICATION = "jev_verification"
 
 
 # A repair attempt or a network retry is a model attempt, so those buckets
@@ -119,6 +120,7 @@ DEFAULT_LIMITS: Mapping[BudgetBucket, int] = {
     BudgetBucket.SPECIALIST_CONCURRENCY: 2,
     BudgetBucket.SUPPLEMENT_ROUNDS: 1,
     BudgetBucket.SUPPLEMENT_CAPABILITIES: 3,
+    BudgetBucket.JEV_VERIFICATION: 64,
 }
 
 # Design SS5.5: at most one structured repair per stage, and at most two across

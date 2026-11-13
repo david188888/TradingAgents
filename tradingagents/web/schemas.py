@@ -41,6 +41,8 @@ class BatchRunConfigRequest(BaseModel):
     research_profile: Literal["evidence_v1"] = "evidence_v1"
     research_question: str | None = Field(default=None, max_length=400)
     evidence_policy: NativeEvidencePolicyV1 | None = None
+    jev_verification_enabled: bool = False
+    jev_model: str = Field(default="typesafe/jev-1.14", min_length=1, max_length=128)
 
     @model_validator(mode="after")
     def validate_models_and_account(self):

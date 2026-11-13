@@ -105,8 +105,10 @@ export interface InsightReportDTO {
     evidence: Array<{ ref: string; fact_id: string; text: string; source_ids: string[] }>;
     numbers: Array<{ ref: string; anchor: NumericAnchorV1DTO }> }>;
   insights: SavedInsightDTO[];
-  reviews: Array<{ target_id: string; status: "challenged" | "no_counterevidence" | "unreviewed" | "failed";
-    concern: string | null; reasoning: string; source_ids: string[]; note: SavedInsightDTO | null }>;
+  reviews: Array<{ target_id: string; status: "challenged" | "no_counterevidence" | "unreviewed" | "failed" | "verified";
+    concern: string | null; reasoning: string; source_ids: string[]; note: SavedInsightDTO | null;
+    jev_scores?: Record<string, number> | null; jev_conflicts?: string[] | null;
+    jev_meta?: { id: string; model: string; provider: string; usage: Record<string, unknown> } | null }>;
   responses: Array<{ target_id: string; action: "maintain" | "revise" | "withdraw" | "uncertain";
     reasoning: string; source_ids: string[]; replacement_id: string | null; note: SavedInsightDTO }>;
   synthesis: { judgement: string; stance: "favorable" | "neutral" | "unfavorable" | null;
@@ -206,6 +208,9 @@ export interface RunCreateRequestDTO {
   research_question?: string | null;
   /** Frozen server policy; clients may omit it to use the profile default. */
   evidence_policy?: NativeEvidencePolicyV1DTO;
+  /** Optional Jev decision verification before challenge; needs an OpenRouter key. */
+  jev_verification_enabled?: boolean;
+  jev_model?: string;
 }
 
 export interface BatchResolvedItemDTO {
