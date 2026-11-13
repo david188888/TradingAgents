@@ -159,6 +159,16 @@ MODEL_OPTIONS: ProviderModeOptions = {
     # (dashscope) endpoints, so the two provider keys share one model list.
     "qwen": _QWEN_MODELS,
     "qwen-cn": _QWEN_MODELS,
+    "bailian": {
+        "quick": [
+            ("DeepSeek V4.1 Flash 1017", "deepseek-v4.1-flash-1017"),
+            ("Kimi K3.1 Pro", "kimi-k3.1-pro"),
+        ],
+        "deep": [
+            ("Kimi K3.1 Pro", "kimi-k3.1-pro"),
+            ("DeepSeek V4.1 Flash 1017", "deepseek-v4.1-flash-1017"),
+        ],
+    },
     # GLM: Z.AI (international) and BigModel (China) host the same model
     # IDs; the two provider keys share one model list.
     "glm": _GLM_MODELS,

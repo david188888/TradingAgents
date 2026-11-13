@@ -4,6 +4,7 @@ from datetime import date
 
 from tests.test_insight_protocol import catalog, proposal
 from tests.v9_fixtures import journal_setup as setup
+from tradingagents.execution.insight_model import InsightUnavailable
 from tradingagents.graph.insight_research import run_insight_research
 
 
@@ -426,3 +427,65 @@ def test_challenge_reviews_are_repaired_once_for_failed_targets(tmp_path):
     assert any(item['target'] == 'I2' and item['code'] == 'numeric_literal_unbound' for item in diagnostics)
     assert not any(item.get('code') == 'repair_unresolved' for item in diagnostics)
     assert execute(journal, lambda *a, **k: (_ for _ in ()).throw(AssertionError('replay called model'))) == report
+
+
+class JevCaller:
+    """Stage caller that also answers the Jev verification stage."""
+
+    def __init__(self, result):
+        self.result, self.stages, self.jev_calls = result, [], []
+
+    def __call__(self, stage, context, *, phase='main'):
+        self.stages.append((stage, phase))
+        return response(stage, context, phase=phase)
+
+    def call_jev_verification(self, insight_id, insight_state, questions):
+        self.jev_calls.append((insight_id, insight_state, questions))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result, {'id': 'gen-test', 'model': 'typesafe/jev-1.14',
+            'provider': 'TypeSafe', 'usage': {'input_tokens': 100}}
+
+
+def jev_report(journal, caller):
+    return run_insight_research(run_id=journal.observer.run_id, ticker='002130.SZ',
+        analysis_date=date(2026, 10, 28), catalogs={'operating_quality': catalog()},
+        caller=caller, journal=journal, ensure_active=lambda: None)
+
+
+def test_jev_verification_is_skipped_unless_enabled(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    caller = JevCaller({'evidence_sufficient': 0.95, 'reasoning_sound': 0.95})
+    report = jev_report(journal, caller)
+    assert caller.jev_calls == []
+    assert report.stages['jev_verify'] == 'skipped'
+    assert [review.status for review in report.reviews] == ['no_counterevidence']
+    assert ('challenge', 'main') in caller.stages
+
+
+def test_clear_jev_scores_verify_the_insight_without_challenge(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    journal.state['identity']['jev_verification_enabled'] = True
+    caller = JevCaller({'evidence_sufficient': 0.93, 'reasoning_sound': 0.91})
+    report = jev_report(journal, caller)
+    assert report.stages['jev_verify'] == 'completed'
+    assert ('challenge', 'main') not in caller.stages
+    review, = report.reviews
+    assert review.status == 'verified' and review.note is None
+    assert review.jev_scores == {'evidence_sufficient': 0.93, 'reasoning_sound': 0.91}
+    assert review.jev_meta is not None and review.jev_meta.model == 'typesafe/jev-1.14'
+    insight_id, state, questions = caller.jev_calls[0]
+    assert insight_id == review.target_id and state['insight']['claim'] == proposal()['claim']
+    assert {'evidence_sufficient', 'reasoning_sound'} <= set(questions)
+
+
+def test_failed_jev_verification_does_not_fall_back_to_challenge(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    journal.state['identity']['jev_verification_enabled'] = True
+    caller = JevCaller(InsightUnavailable('jev_unavailable'))
+    report = jev_report(journal, caller)
+    assert ('challenge', 'main') not in caller.stages
+    review, = report.reviews
+    assert review.status == 'failed' and review.jev_scores is None
+    assert f'jev_failed:{review.target_id}' in report.gaps and 'unreviewed_insights' in report.gaps
+    assert journal.state['insight.diagnostics.jev'] == [{'insight_id': review.target_id, 'error': 'jev_unavailable'}]

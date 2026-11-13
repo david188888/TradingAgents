@@ -127,3 +127,83 @@ class InsightModelCaller:
         self.ledger.settle(token, ok=True, detail='insight_response_received', usage_available=bool(usage),
             input_tokens=usage.get('input_tokens'), output_tokens=usage.get('output_tokens'))
         return payload
+
+    def call_jev_verification(self, insight_id, insight_state, questions):
+        """
+        调用 Jev 验证单条 insight 的风险等级。
+
+        Args:
+            insight_id: insight 的唯一标识
+            insight_state: 包含 insight、evidence、global_catalog_summary 的字典
+            questions: Decisions API 问题字典
+
+        Returns:
+            (scores, meta): scores 是问题名到概率的映射，meta 是审计信息
+
+        Raises:
+            InsightUnavailable: 验证失败（budget/error/unavailable/response_unknown）
+        """
+        self._active()
+
+        model = self.config.get("jev_model", "typesafe/jev-1.14")
+
+        from tradingagents.llm_clients.decisions_client import (
+            JevVerificationError,
+            JevVerificationUnavailable,
+            verify_insight_risk,
+        )
+
+        logical = f'insight.jev_verify.{insight_id}'
+        journal = self.ledger.journal
+
+        # 幂等性检查：已验证过就直接返回
+        cached = journal.state.get(logical)
+        if cached is not None:
+            return cached['scores'], cached['meta']
+
+        # 已派发但未结算的请求在恢复时不得重发
+        if any(r.logical_call_id == logical and r.dispatched_at is not None
+               for r in self.ledger.records()):
+            raise InsightUnavailable('response_unknown')
+
+        token = self.ledger.reserve(
+            BudgetBucket.JEV_VERIFICATION,
+            stage='jev_verify',
+            logical_call_id=logical
+        )
+        if isinstance(token, BudgetLimitHit):
+            raise InsightUnavailable('budget_exhausted')
+
+        usage = {}
+        try:
+            self.ledger.mark_dispatched(token)
+            scores, meta = verify_insight_risk(
+                model=model,
+                insight_state=insight_state,
+                questions=questions,
+                timeout=30,
+                retries=3
+            )
+            usage = meta.get('usage', {})
+
+            result = {'scores': scores, 'meta': meta}
+            journal.put(logical, result)
+
+            self.ledger.settle(
+                token, ok=True, detail='jev_verification_complete',
+                usage_available=bool(usage),
+                input_tokens=usage.get('input_tokens'),
+                output_tokens=usage.get('output_tokens')
+            )
+            return scores, meta
+
+        except JevVerificationError as exc:
+            if not journal.failed:
+                self.ledger.settle(token, ok=False, detail='jev_verification_failed',
+                                 usage_available=False)
+            raise InsightUnavailable(f'jev_error: {exc}') from None
+        except JevVerificationUnavailable:
+            if not journal.failed:
+                self.ledger.settle(token, ok=False, detail='jev_unavailable',
+                                 usage_available=False)
+            raise InsightUnavailable('jev_unavailable') from None

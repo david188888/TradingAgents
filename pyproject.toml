@@ -66,6 +66,7 @@ markers = [
     "unit: fast isolated unit tests",
     "integration: tests requiring external services",
     "smoke: quick sanity-check tests",
+    "live: tests requiring real API credentials",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

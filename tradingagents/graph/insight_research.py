@@ -294,6 +294,186 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             raise ValueError(next(issue for issue in compiled.issues if issue != 'evidence_missing'))
         return compiled
 
+    # ===== Jev Verification Stage =====
+    from tradingagents.agents.schemas._insight import JevVerificationMeta
+    pre_reviews = []  # verified / failed reviews produced by Jev, not by Challenge LLM
+    challenge_targets = dict(targets)  # default: all targets go to Challenge
+    if 'insight.jev_verifications' not in journal.state:
+        jev_enabled = journal.state['identity'].get('jev_verification_enabled', False)
+        threshold_clear = journal.state['identity'].get('jev_threshold_clear', 0.85)
+        threshold_risk = journal.state['identity'].get('jev_threshold_risk', 0.15)
+
+        if jev_enabled and targets:
+            on_stage('jev_verify', 'running')
+            verifications = {}
+            jev_diagnostics = []
+
+            for _ref, item in targets.items():
+                evidence_cards = [e for e in merged.evidence if e.fact_id in item.fact_ids]
+
+                # Build per-evidence conflict questions (each evidence gets its own noul)
+                questions = {
+                    "evidence_sufficient": {
+                        "type": "noul",
+                        "instructions": "引用的证据卡片是否充分支持该观点的程度与范围？",
+                        "criteria": {
+                            "true": "证据直接覆盖观点主张，数量与质量足够",
+                            "false": "证据不足、证据与观点主张存在程度差距、或推理需要额外假设"
+                        }
+                    },
+                    "reasoning_sound": {
+                        "type": "noul",
+                        "instructions": "从证据到观点的推理链是否严密？",
+                        "criteria": {
+                            "true": "每步推理都有明确依据，无因果跳跃",
+                            "false": "存在未说明的因果假设、或将相关性当作因果、或忽略其他可能解释"
+                        }
+                    }
+                }
+                # Per-evidence conflict detection
+                for e in merged.evidence:
+                    questions[f"conflict_{e.ref}"] = {
+                        "type": "noul",
+                        "instructions": f"证据 {e.ref}（{e.text[:80]}）是否与该观点冲突？",
+                        "criteria": {
+                            "true": "存在时间、数值、方向性矛盾",
+                            "false": "与观点一致或互补或不相关"
+                        }
+                    }
+
+                insight_state = {
+                    "insight": {
+                        "claim": item.rendered.claim,
+                        "reasoning": item.rendered.reasoning,
+                    },
+                    "cited_evidence": [
+                        {"ref": e.ref, "text": e.text, "limitations": list(e.limitations)}
+                        for e in evidence_cards
+                    ],
+                    "global_evidence": [
+                        {"ref": e.ref, "text": e.text[:200]}
+                        for e in merged.evidence[:50]
+                    ]
+                }
+
+                try:
+                    ensure_active()
+                    scores, meta = caller.call_jev_verification(
+                        item.insight_id, insight_state, questions
+                    )
+
+                    # Extract base scores
+                    sufficient = scores.get('evidence_sufficient', 0)
+                    sound = scores.get('reasoning_sound', 0)
+
+                    # Find conflicts (any evidence scored high for conflict)
+                    conflicts = tuple(
+                        k.removeprefix('conflict_')
+                        for k, v in scores.items()
+                        if k.startswith('conflict_') and v >= threshold_clear
+                    )
+
+                    # Classify
+                    is_clear = (
+                        sufficient >= threshold_clear
+                        and sound >= threshold_clear
+                        and not conflicts
+                    )
+                    has_low_score = (
+                        sufficient <= threshold_risk
+                        or sound <= threshold_risk
+                    )
+
+                    if is_clear:
+                        risk_level = 'jev_clear'
+                    elif has_low_score or conflicts:
+                        risk_level = 'jev_high_risk'
+                    else:
+                        risk_level = 'jev_uncertain'
+
+                    verifications[item.insight_id] = {
+                        'scores': {k: v for k, v in scores.items() if not k.startswith('conflict_')},
+                        'conflicts': list(conflicts),
+                        'risk_level': risk_level,
+                        'meta': meta
+                    }
+
+                except InsightUnavailable as exc:
+                    verifications[item.insight_id] = {
+                        'scores': {},
+                        'conflicts': [],
+                        'risk_level': 'jev_failed',
+                        'meta': {},
+                        'error': str(exc)
+                    }
+                    gaps.append(f'jev_failed:{item.insight_id}')
+                    jev_diagnostics.append({
+                        'insight_id': item.insight_id,
+                        'error': str(exc)
+                    })
+
+            journal.put('insight.jev_verifications', verifications)
+            if jev_diagnostics:
+                journal.put('insight.diagnostics.jev', jev_diagnostics)
+            finish('jev_verify', 'completed' if verifications else 'failed')
+        else:
+            journal.put('insight.jev_verifications', {})
+            finish('jev_verify', 'skipped')
+
+    # Route targets based on Jev results
+    jev_verifications = journal.state.get('insight.jev_verifications', {})
+    if jev_verifications:
+        challenge_targets = {}
+        for ref, item in targets.items():
+            v = jev_verifications.get(item.insight_id, {})
+            risk = v.get('risk_level')
+
+            if risk == 'jev_clear':
+                # Auto-verify: no Challenge needed
+                pre_reviews.append(SavedReview(
+                    target_id=item.insight_id,
+                    status='verified',
+                    concern=None,
+                    reasoning=f"Jev 验证通过（充分性 {v['scores'].get('evidence_sufficient', 0):.2f}，推理 {v['scores'].get('reasoning_sound', 0):.2f}，无冲突证据）",
+                    source_ids=(),
+                    note=None,
+                    jev_scores=v['scores'],
+                    jev_conflicts=(),
+                    jev_meta=JevVerificationMeta(**v['meta']) if v.get('meta') else None,
+                ))
+            elif risk == 'jev_failed':
+                # Jev failed: mark as failed, do NOT fall back to Challenge
+                pre_reviews.append(SavedReview(
+                    target_id=item.insight_id,
+                    status='failed',
+                    concern=None,
+                    reasoning=f"Jev 验证失败：{v.get('error', '未知错误')}",
+                    source_ids=(),
+                    note=None,
+                ))
+            else:
+                # jev_uncertain or jev_high_risk → Challenge LLM
+                challenge_targets[ref] = item
+
+        # Build challenge context with only conflicting evidence for flagged targets
+        if challenge_targets and jev_verifications:
+            # For targets with identified conflicts, scope the evidence
+            scoped_context = {**catalog_prompt(merged, compact=compact),
+                'insights': project_targets(challenge_targets)}
+            # Add conflict annotations
+            conflict_notes = []
+            for ref, item in challenge_targets.items():
+                v = jev_verifications.get(item.insight_id, {})
+                conflicts = v.get('conflicts', [])
+                if conflicts:
+                    conflict_notes.append(f"{ref}（{item.insight_id}）：Jev 检测到与 {', '.join(conflicts)} 冲突")
+            if conflict_notes:
+                scoped_context['jev_conflict_notes'] = conflict_notes
+            review_context = scoped_context
+        else:
+            review_context = {**catalog_prompt(merged, compact=compact),
+                'insights': project_targets(challenge_targets)}
+
     reviews = []
     if 'insight.reviews' in journal.state:
         reviews = [SavedReview.model_validate(v) for v in journal.state['insight.reviews']]
@@ -329,9 +509,9 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     continue
             return accepted, duplicates, diagnostics
 
-        raw = ask('challenge', review_context) if targets else None
+        raw = ask('challenge', review_context) if challenge_targets else None
         accepted, duplicates, diagnostics = parse_reviews(raw)
-        missing = [ref for ref in targets if ref not in accepted or ref in duplicates]
+        missing = [ref for ref in challenge_targets if ref not in accepted or ref in duplicates]
         repaired = False
         if (missing and raw is not None
                 and journal.state.get('insight.failure.challenge.main') != 'response_unknown'):
@@ -348,13 +528,17 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             diagnostics.extend(repair_diagnostics)
             for ref in repaired_accepted:
                 duplicates.discard(ref)
-        missing = [ref for ref in targets if ref not in accepted or ref in duplicates]
+        missing = [ref for ref in challenge_targets if ref not in accepted or ref in duplicates]
         for ref in missing:
             diagnostics.append({'index': None, 'target': ref,
                 'code': 'repair_unresolved' if repaired else 'review_unavailable' if raw is None else 'target_missing'})
         journal.put('insight.diagnostics.challenge', diagnostics)
-        reviews = [accepted[key] if key in accepted and key not in duplicates else SavedReview(target_id=value.insight_id,
-            status='unreviewed' if raw is not None else 'failed') for key, value in targets.items()]
+        challenge_reviews = [accepted[key] if key in accepted and key not in duplicates else SavedReview(target_id=value.insight_id,
+            status='unreviewed' if raw is not None else 'failed') for key, value in challenge_targets.items()]
+
+        # Merge pre-reviews (verified/failed from Jev) with challenge reviews
+        reviews = pre_reviews + challenge_reviews
+
         journal.put('insight.reviews', [r.model_dump(mode='json') for r in reviews])
     if any(r.status in {'unreviewed', 'failed'} for r in reviews):
         gaps.append('unreviewed_insights')

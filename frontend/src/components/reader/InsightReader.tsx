@@ -2,7 +2,7 @@ import type { InsightReportDTO, SourceEvidenceV1DTO, ReportExplanationDTO, Saved
 
 const ROLES: Record<string, string> = { operating_quality: "经营研究", event_context: "事件研究", market_context: "市场研究", focus_response: "关注点回应" };
 const STATUS = { accepted: "可追溯研究观点", pending: "待验证", excluded: "已撤回或修订" };
-const REVIEW = { challenged: "提出质疑", no_counterevidence: "审阅后未发现有效反证", unreviewed: "尚未审阅", failed: "审阅失败" };
+const REVIEW = { challenged: "提出质疑", no_counterevidence: "审阅后未发现有效反证", unreviewed: "尚未审阅", failed: "审阅失败", verified: "Jev 自动验证通过" };
 const ACTION = { maintain: "维持", revise: "修订", withdraw: "撤回", uncertain: "尚不能回答" };
 
 function gapLabel(value: string): string {

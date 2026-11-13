@@ -159,6 +159,9 @@ def native_structured_method(provider: str, model: str) -> StructuredMethod:
         # A custom model label must not inherit the OpenAI default's schema
         # flag: DeepSeek's documented response_format supports json_object.
         return "json_mode"
+    if provider == "bailian":
+        # Both Bailian catalog models support JSON Object over Chat Completions.
+        return "json_mode"
     if provider == "hunyuan":
         # TokenHub documents response_format json_schema for hy4-preview.
         return "json_schema"

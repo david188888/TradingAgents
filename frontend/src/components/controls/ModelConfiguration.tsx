@@ -1,6 +1,8 @@
 import { STAGE_ROWS, type UseConfigResult } from "../../hooks/useConfig";
 import { ChatGPTControls } from "./ChatGPTControls";
 
+const providerLabels: Record<string, string> = { chatgpt: "ChatGPT 订阅", bailian: "阿里云百炼" };
+
 /** Shared single/batch model form; recovery state belongs to useChatGPT. */
 export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; prefix: string }) {
   const subscription = cfg.llm_provider === "chatgpt";
@@ -13,7 +15,7 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
     <div className="input-group">
       <label htmlFor={`${prefix}-provider`}>LLM Provider</label>
       <select id={`${prefix}-provider`} value={cfg.llm_provider} onChange={e => cfg.setLlmProvider(e.target.value)} disabled={cfg.loading}>
-        {cfg.config?.providers.map(p => <option key={p.id} value={p.id}>{p.id === "chatgpt" ? "ChatGPT 订阅" : `${p.id} · ${p.configured ? "已配置" : "未配置"}`}</option>)}
+        {cfg.config?.providers.map(p => <option key={p.id} value={p.id}>{providerLabels[p.id] ?? p.id}{p.id !== "chatgpt" && ` · ${p.configured ? "已配置" : "未配置"}`}</option>)}
       </select>
       {!subscription && cfg.selectedProvider && <div className="key-status">
         {cfg.selectedProvider.requires_api_key === false ? <span className="ok">无需 API Key</span>
@@ -50,7 +52,7 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
           <label htmlFor={`${prefix}-stage-${key}`}>{label}</label>
           <select id={`${prefix}-stage-${key}`} value={s?.provider ?? ""} onChange={e => cfg.updateStage(key, { provider: e.target.value })} disabled={cfg.loading}>
             <option value="">继承</option>
-            {cfg.config?.providers.map(p => <option key={p.id} value={p.id}>{p.id === "chatgpt" ? "ChatGPT 订阅" : p.id}</option>)}
+            {cfg.config?.providers.map(p => <option key={p.id} value={p.id}>{providerLabels[p.id] ?? p.id}</option>)}
           </select>
           {s && <select aria-label={`${label}模型`} value={s.model} onChange={e => cfg.updateStage(key, { model: e.target.value })} disabled={!options.length}>
             {options.length ? options.map(m => <option key={m.id} value={m.id}>{m.label}</option>) : <option value="">暂无可选模型</option>}
@@ -63,6 +65,20 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
             onChange={e => cfg.updateStage(key, { custom: e.target.value })} placeholder="填写 Provider 支持的实际模型 ID" />}
         </div>;
       })}
+      <div className="input-group">
+        <label htmlFor={`${prefix}-jev-enabled`}>
+          <input id={`${prefix}-jev-enabled`} type="checkbox" checked={cfg.jev_verification_enabled}
+            onChange={e => cfg.setJevVerificationEnabled(e.target.checked)} disabled={cfg.loading} />
+          {" "}启用 Jev 决策验证（需 OPENROUTER_API_KEY）
+        </label>
+        {cfg.jev_verification_enabled && <>
+          <label htmlFor={`${prefix}-jev-model`}>Jev 验证模型</label>
+          <select id={`${prefix}-jev-model`} value={cfg.jev_model} onChange={e => cfg.setJevModel(e.target.value)}>
+            <option value="typesafe/jev-1.14">TypeSafe Jev 1.14</option>
+            <option value="perplexity/pplx-decider-flash-v1.3:free">Perplexity Decider Flash V1.3（免费）</option>
+          </select>
+        </>}
+      </div>
     </details>
     <div className="input-group">
       <label htmlFor={`${prefix}-lang`}>输出语言</label>

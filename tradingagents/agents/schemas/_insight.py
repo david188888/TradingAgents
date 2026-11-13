@@ -144,13 +144,25 @@ class SynthesisProposal(_InsightModel):
         return value
 
 
+class JevVerificationMeta(_InsightModel):
+    """OpenRouter Decisions API 返回的审计信息。"""
+    id: str = ''
+    model: str = ''
+    provider: str = ''
+    usage: dict = {}
+
+
 class SavedReview(_InsightModel):
     note: SavedInsight | None = None
     target_id: str
-    status: Literal['challenged', 'no_counterevidence', 'unreviewed', 'failed']
+    status: Literal['challenged', 'no_counterevidence', 'unreviewed', 'failed', 'verified']
     concern: str | None = None
     reasoning: str = ''
     source_ids: tuple[str, ...] = ()
+    # Jev 验证结果（仅 status == 'verified' 时存在）
+    jev_scores: dict | None = None
+    jev_conflicts: tuple[str, ...] | None = None
+    jev_meta: JevVerificationMeta | None = None
 
 
 class SavedResponse(_InsightModel):

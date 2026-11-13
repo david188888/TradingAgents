@@ -41,6 +41,8 @@ export function useConfig() {
       [key, s?.provider === "chatgpt" && !s.model ? { ...s, model: first } : s])));
   }, [llm_provider, chatgpt.catalog]);
   const [output_language, setOutputLanguage] = useState("Chinese");
+  const [jev_verification_enabled, setJevVerificationEnabled] = useState(false);
+  const [jev_model, setJevModel] = useState("typesafe/jev-1.14");
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +120,7 @@ export function useConfig() {
     : llm_provider === "chatgpt" && (!subscriptionModels.some(m => m.id === quick_think_llm) || !subscriptionModels.some(m => m.id === deep_think_llm)) ? "所选模型当前不可用，请刷新模型并重新选择"
     : selectedProvider.requires_api_key && configured_keys[llm_provider] !== true ? "所选 Provider 未配置 API Key"
     : !quick_think_llm || !deep_think_llm || (llm_provider !== "chatgpt" && (quick_think_llm === "custom" || deep_think_llm === "custom")) ? "请选择研究模型；自定义模型需填写实际 ID"
+    : jev_verification_enabled && configured_keys.openrouter !== true ? "启用 Jev 验证需要在 .env 中配置 OPENROUTER_API_KEY"
     : stageError;
   const commonError = error ? "无法读取服务配置" : config === null ? "正在读取服务配置"
     : support?.supported !== true ? support?.reason ?? "此服务不支持新建证据研究"
@@ -130,6 +133,7 @@ export function useConfig() {
       research_question: research_question.trim() || null,
       llm_provider, quick_think_llm, deep_think_llm, output_language,
       ...(Object.keys(stage_models).length ? { stage_models } : {}),
+      ...(jev_verification_enabled ? { jev_verification_enabled, jev_model } : {}),
       ...(usesSubscription && chatgpt.account_ref ? {chatgpt_account_ref: chatgpt.account_ref} : {}),
     };
   }
@@ -139,6 +143,7 @@ export function useConfig() {
     quick_model_selection, deep_model_selection, quick_custom_model_id, setQuickCustomModelId, deep_custom_model_id, setDeepCustomModelId,
     selectedProvider, quickOptions, deepOptions, configured_keys, chatgpt, configurationError, validationError, batchValidationError: commonError,
     usesSubscription, stageSelections, updateStage, stageModelOptions,
+    jev_verification_enabled, setJevVerificationEnabled, jev_model, setJevModel,
     stageEfforts: (providerId: string) => config?.stage_model_efforts?.[providerId] ?? [],
     buildRequest: () => nativeRequest(ticker),
     buildRequestForTicker: (value: string) => nativeRequest(value),

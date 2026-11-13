@@ -18,6 +18,7 @@ Read only what your task needs:
 - [ChatGPT accounts](operations/chatgpt-subscription.md): sign-in, catalog, failure handling and credential ownership.
 - [Observability and replay](operations/observability-replay.md): safe diagnostics, event recovery and saved-run replay.
 - [CLI research](operations/cli-research.md): terminal configuration, saved progress, report export and V9 resume.
+- [Decisions API guide](openrouter-decisions-agent-guide.md): OpenRouter request/response shapes, Jev call behavior and integration limits behind the optional verification stage.
 
 Coding Agents use [AGENTS.md](../AGENTS.md) and its scoped guides. Machine contracts live in code;
 Markdown explains purpose, ownership and important limits. A passing link check is not semantic proof.

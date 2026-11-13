@@ -58,6 +58,10 @@ class InsightFixtureCaller:
             "evidence_refs": [context["evidence"][0]["ref"]], "reasoning": "保存片段支持有边界的研究解释。",
             "limitations": "无法从本测试判断未来业绩。"}], "search_requests": []}
 
+    def call_jev_verification(self, insight_id, insight_state, questions):
+        return ({name: 0.02 if name.startswith("conflict_") else 0.92 for name in questions},
+            {"id": "fixture-jev", "model": "typesafe/jev-1.14", "provider": "TypeSafe", "usage": {"input_tokens": 10}})
+
 
 def build_app():
     from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
@@ -82,7 +86,7 @@ def build_app():
         get_llm=lambda: SimpleNamespace(invoke=explain_fixture))
     os.environ["TRADINGAGENTS_EVIDENCE_ENABLED"] = "true"
     return create_app(manager=manager, chatgpt_auth=ChatGPTAuth(Path(root) / "fixture-chatgpt-auth"),
-        environment={"DEEPSEEK_API_KEY": "synthetic-fixture-key"})
+        environment={"DEEPSEEK_API_KEY": "synthetic-fixture-key", "BAILIAN_API_KEY": "synthetic-bailian-key"})
 
 
 if __name__ == "__main__":

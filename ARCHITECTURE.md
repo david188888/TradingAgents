@@ -20,7 +20,7 @@ flowchart LR
   S --> R[Insight Reader and Markdown]
 ```
 
-Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add qualified context. Specialists may also request bounded structured supplements from a short capability catalog (official disclosures, shareholder counts, IR Q&A, consensus samples, market records, bounded valuation history, and Wind risk metrics only when configured); the host routes a-stock-data-aligned adapters, qualifies results and reopens only affected specialties. Operating, event and market specialists independently propose four-field Insights. Code resolves references, renders exact numbers, saves valid siblings, and bounds supplementary search plus capability calls. One critique/reply round precedes synthesis, which uses saved effective Insights. Missing overall support suppresses the rating without discarding usable research. Optional focus follows the baseline and cannot change it.
+Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add qualified context. Specialists may also request bounded structured supplements from a short capability catalog (official disclosures, shareholder counts, IR Q&A, consensus samples, market records, bounded valuation history, and Wind risk metrics only when configured); the host routes a-stock-data-aligned adapters, qualifies results and reopens only affected specialties. Operating, event and market specialists independently propose four-field Insights. Code resolves references, renders exact numbers, saves valid siblings, and bounds supplementary search plus capability calls. Optional Jev decision model verification (OpenRouter Decisions API) triages accepted Insights by three-dimension risk assessment (evidence sufficiency, reasoning soundness, catalog consistency) before challenge; high-confidence Insights bypass LLM critique. One critique/reply round precedes synthesis, which uses saved effective Insights. Missing overall support suppresses the rating without discarding usable research. Optional focus follows the baseline and cannot change it.
 
 ## Owners and boundaries
 
@@ -28,6 +28,7 @@ Dedicated interfaces collect company and quantitative data; DeepSeek/Tavily add 
 | --- | --- |
 | Consumer-neutral request, execution and model dispatch | `execution/models.py`, `native_runner.py`, `insight_model.py`, per-stage routing in `llm_clients/stage_models.py` |
 | V9 sequence, review, response, web/capability supplements and synthesis | `graph/insight_research.py`, `execution/insight_search.py`, `execution/insight_capability.py`, `execution/capability_gateway.py`, `research/insights.py` |
+| Optional Jev decision model verification (risk-level triage before challenge) | `graph/insight_research.py` (jev_verify stage), `llm_clients/decisions_client.py`, gated by `jev_verification_enabled` config |
 | Public Insight report and reference/numeric validation | `agents/schemas/_insight.py`, `research/insight_report.py` |
 | Source collection, routing and the model-facing capability catalog | `dataflows/search_sources.py`, `native_sources.py`, `minimum_sources.py`, `capability_catalog.py` |
 | Source coverage, evidence admission and calculations | `dataflows/coverage.py`, `research/evidence_freeze.py`, `native_record.py`, `research/` |

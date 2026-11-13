@@ -37,6 +37,41 @@ The Web server does not load the CLI's `tradingagents.local.json`.
 | Optional data access | Tushare token/entitlement can supply fallback data and valuation history; public default sources remain independent. See [data capabilities](a-share-data-capabilities.md). |
 | Disable new research | `TRADINGAGENTS_EVIDENCE_ENABLED=false`; saved reads and compatible recovery remain available. |
 
+### Alibaba Cloud Model Studio
+
+Set `BAILIAN_API_KEY` in the ignored `.env` to an ordinary Model Studio key from China (Beijing),
+then restart Web and select **阿里云百炼** (`bailian`) under **模型与账户**. Both
+`deepseek-v4.1-flash-1017` and `kimi-k3.1-pro` are available in either model tier and in stage overrides.
+When you select this provider, DeepSeek Flash is the initial specialist and challenge model, and Kimi Pro
+is the initial synthesis model. Calls use the [Beijing DashScope endpoint](https://docs.bailian.console.aliyun.com/zh/model-studio/base-url)
+and [Chat Completions JSON Object output](https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-structured-output).
+The models use Bailian's default thinking settings.
+
+The CLI reads the same `.env` key or `api_keys.BAILIAN_API_KEY` from its ignored local JSON. To use
+the two catalog defaults, run:
+
+```bash
+tradingagents analyze --ticker 002130 --provider bailian
+```
+
+### Optional Jev verification
+
+Jev adds an automated review step between the specialists and challenge. Set `OPENROUTER_API_KEY` in the
+ignored `.env`, then either tick **启用 Jev 决策验证** in the advanced model panel, or set
+`jev_verification_enabled` (and optionally `jev_model`) in the `run` section of the CLI local JSON.
+Enabling it without the key is rejected at admission, so a run never starts with verification it cannot call.
+
+Each accepted Insight is scored for evidence sufficiency, reasoning soundness and conflict against the
+saved evidence. Insights that clear both thresholds are saved with the `verified` review status and skip
+challenge; uncertain or high-risk Insights proceed to challenge with the conflicting evidence named in the
+context. A failed Jev call marks that Insight `failed` and does not fall back to challenge, so an
+unverified Insight cannot silently pass as reviewed. `jev_model` defaults to `typesafe/jev-1.14`;
+`perplexity/pplx-decider-flash-v1.3:free` is the free alternative. The clear/risk thresholds are fixed
+run-identity defaults (0.85 / 0.15) and are not yet calibrated on real samples. Request and response
+shapes are in the [Decisions API guide](../openrouter-decisions-agent-guide.md).
+
+### Model behavior
+
 Missing search credentials degrade coverage rather than disable available dedicated sources.
 Set `TRADINGAGENTS_EVIDENCE_SEARCH_ENABLED=false` before starting the server to disable independent
 Search/Fetch for new runs. Research-model calls and dedicated data sources remain available.

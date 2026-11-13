@@ -35,6 +35,9 @@ def validate_insight_report(record):
                 or review.reasoning != review.note.rendered.reasoning or review.source_ids != review.note.source_ids
                 or review.concern is not None and review.concern != review.note.rendered.claim):
             raise ValueError('insight_review_replay_mismatch')
+        if review.status == 'verified' and (review.note is not None
+                or review.jev_scores is None):
+            raise ValueError('insight_review_verified_mismatch')
         if review.target_id not in ids:
             raise ValueError('insight_review_target')
     for reply in record.responses:

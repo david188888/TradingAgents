@@ -68,7 +68,8 @@ run E2E only for affected complete browser flows. Add or adjust tests for meanin
 behavior or regression gaps, rather than adding tests for every small optimization.
 
 Live model/provider checks require explicit authorization. The real DeepSeek
-integration test also requires `TRADINGAGENTS_RUN_LIVE_TESTS=1` and a real key.
+integration test also requires `TRADINGAGENTS_RUN_LIVE_TESTS=1` and a real key,
+and the Jev test is selected by the `live` marker with `OPENROUTER_API_KEY` set.
 Marker selection alone does not guarantee offline execution; report the actual
 scope and exclusions.
 
@@ -88,6 +89,7 @@ workbench is loopback-only; it binds to `127.0.0.1`.
 | --- | --- |
 | Public Python request, result, artifact, or runtime contract | `tradingagents/execution/models.py`, `tradingagents/agents/schemas/`, `tradingagents/runtime/`, consumers and projections |
 | Graph roles, routing, or evidence sequence | `tradingagents/graph/`, `tradingagents/agents/`, `ARCHITECTURE.md` |
+| Optional Jev verification stage, its config switches, or the Decisions client | `tradingagents/graph/insight_research.py` (jev_verify), `tradingagents/llm_clients/decisions_client.py`, `tradingagents/web/schemas.py`, `cli/config.py`, [Decisions API guide](docs/openrouter-decisions-agent-guide.md) |
 | Vendor capability or A-share source behavior | `tradingagents/dataflows/`, `tradingagents/execution/capability_gateway.py`, [A-share data capabilities](docs/operations/a-share-data-capabilities.md) |
 | Reference research methodology skills | `tradingagents/skills/library/` (not loaded by V9); keep threshold heuristics labeled advisory |
 | Web API, SSE, persistence, or Reader/Audit projection | `tradingagents/web/`, `frontend/src/api/contracts.ts`, relevant frontend consumers |
