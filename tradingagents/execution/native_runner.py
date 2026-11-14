@@ -48,6 +48,7 @@ from tradingagents.observability.roles import (
 from tradingagents.research.native_policy import ROLE_ORDER
 from tradingagents.research.native_versions import (
     COMPANY_RESEARCH_POLICY,
+    INSIGHT_CONTEXT_POLICY,
     INSIGHT_POLICY,
     INSIGHT_WORKFLOW_VERSION,
     REPORT_DELIVERY_POLICY,
@@ -92,7 +93,7 @@ def native_identity(request):
         "report_delivery_policy": REPORT_DELIVERY_POLICY,
         "insight_policy": INSIGHT_POLICY,
         "insight_budget_policy": {"structured_repair": 8, "basic_model_attempts": 20, "model_attempts": 29},
-        "insight_context_policy": "compact-saved-evidence-v1",
+        "insight_context_policy": INSIGHT_CONTEXT_POLICY,
         "jev_verification_enabled": request.effective_config.get("jev_verification_enabled", False),
         "jev_model": request.effective_config.get("jev_model", "typesafe/jev-1.14"),
         "jev_threshold_clear": request.effective_config.get("jev_threshold_clear", 0.85),

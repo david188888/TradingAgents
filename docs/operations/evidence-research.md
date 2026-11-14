@@ -130,9 +130,11 @@ round and synthesis. Source availability is distinct from
 fact qualification. Reposts do not create independent confirmation; titles/snippets do not prove delivery.
 
 Fresh studies present all qualified fact cards and selected exact saved-source passages. Models return
-four-field Insights plus optional outer `search_requests` and `capability_requests`; code resolves
-references and renders numbers. Capability cards are short, role-filtered and host-routed; `news_search`
-stays on the dual-search path, while structured cards reuse a-stock-data-aligned adapters. The
+four-field Insights plus optional outer `search_requests` and `capability_requests`. The host resolves
+references and renders numbers. [V9 semantics](../contracts/research-record.md#insight-first-v9) describes
+how references keep their meaning across stages and how failed drafts are repaired. News questions use
+`search_requests` on the dual-search path. Structured capability cards are short, role-filtered and
+routed to a-stock-data-aligned adapters. The
 requestable set now also includes bounded valuation history, today's THS northbound aggregate and Wind
 risk metrics when the local CLI is configured; financial-detail and peer-context stay prefetch-only. Each
 supplement round runs capability calls before web questions with separate budgets; capability work still
@@ -190,7 +192,9 @@ cancellation. Search, HTTP, review and
 model pools have independent ceilings; see [shared limits](../contracts/research-record.md#search-and-execution-limits).
 Missing usage remains unknown; authorization counts are not confirmed charges.
 
-- Interrupted runs may resume the same ID using their saved request, versions, inputs and budgets.
+- Interrupted runs can resume the same ID when their saved execution policy still matches.
+  [Resume compatibility](../contracts/research-record.md#budgets-and-durable-execution) covers policy
+  changes that require starting a new study.
 - Failed/cancelled runs need a new study or an allowed retry; retry creates a new run rather than
   rewriting the old report. Only supported V9 runs are eligible for retry or resume.
 - A dispatched request without a saved outcome remains spent and is not automatically repeated.

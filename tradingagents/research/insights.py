@@ -21,10 +21,46 @@ from tradingagents.research.numeric_catalog import build_numeric_catalog, render
 from tradingagents.research.quantity_tokens import _CN_QUANTITY, _EN_QUANTITY
 
 _REFERENCE = re.compile(r'\[([ENI][0-9]+)\]')
+_ALIAS = r'(?:\[[ENI][0-9]+\]|(?<![A-Za-z0-9_])[ENI][0-9]+(?![A-Za-z0-9_]))'
+_MODEL_REFERENCE = re.compile(rf'({_ALIAS})(?:\s*[-–—~～至到]\s*({_ALIAS}))?')
+
+
+def normalize_insight_references(text, aliases):
+    """Normalize standalone model aliases in their original catalog scope."""
+    def replace(match):
+        start = match[1].strip('[]')
+        if match[2] is None:
+            return f'[{start}]'
+        end = match[2].strip('[]')
+        if start not in aliases or end not in aliases or start[0] != end[0]:
+            raise ValueError('reference_range_invalid')
+        first, last = int(start[1:]), int(end[1:])
+        # Bound expansion by the supplied catalog, even for malformed model ranges.
+        if not 0 <= last - first < len(aliases):
+            raise ValueError('reference_range_invalid')
+        refs = [f'{start[0]}{index}' for index in range(first, last + 1)]
+        if not all(ref in aliases for ref in refs):
+            raise ValueError('reference_range_invalid')
+        return '、'.join(f'[{ref}]' for ref in refs)
+
+    return _MODEL_REFERENCE.sub(replace, text)
+
 _QUANTITY = re.compile(
     r'(?:[+-]?\d[\d,]*(?:\.\d+)?)\s*(?:%|％|亿元|万元|亿|万|元|美元|人民币|倍|股|吨|辆|个百分点|基点|percent|basis\s+points?|dollars?|yuan|shares?|times|million|billion)'
     r'|(?:CNY|RMB|USD|\$|￥|¥)\s*[+-]?\d', re.I)
 _TEXT_FIELDS = ('claim', 'reasoning', 'limitations')
+
+
+def project_insight_text(item: SavedInsight, origin: InsightCatalog, target: InsightCatalog) -> dict[str, str]:
+    """Numeric aliases are already rendered; rebind fact aliases by saved identity."""
+    refs_by_id = {card.fact_id: card.ref for card in target.evidence}
+    aliases = {card.ref: refs_by_id.get(card.fact_id) for card in origin.evidence}
+
+    def replace(match):
+        ref = aliases.get(match[1])
+        return f'[{ref}]' if ref else '（原引用不在本轮目录）'
+
+    return {field: _REFERENCE.sub(replace, text) for field, text in item.rendered.model_dump().items()}
 
 
 def build_insight_catalog(record, *, facts=None):
@@ -47,7 +83,7 @@ def build_insight_catalog(record, *, facts=None):
         numbers=tuple(NumericReference(ref=f'N{i}', anchor=a) for i, a in enumerate(anchors, 1)))
 
 
-def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: int = 1, indices=None):
+def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: int = 1, indices=None, normalize_refs=False):
     """Validate each external item once; retain valid siblings and safe diagnostics."""
     if not isinstance(payload, dict) or not {'insights'} <= set(payload) <= {'insights', 'search_requests', 'capability_requests'} or not isinstance(payload['insights'], list):
         raise ValueError('insight_batch_shape')
@@ -59,6 +95,7 @@ def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: i
     facts = {e.fact_id: e for e in catalog.evidence}
     numbers = {n.ref: n.anchor for n in catalog.numbers}
     sources = {s.evidence_id: s for s in catalog.sources}
+    aliases = cards.keys() | numbers.keys()
     items, rejected = [], []
     for position, raw in enumerate(payload['insights']):
         index = position if indices is None else indices[position]
@@ -70,6 +107,14 @@ def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: i
             rejected.append(InsightRejection(index=index, fields=fields))
             continue
         texts = {name: getattr(proposal, name) for name in _TEXT_FIELDS}
+        if normalize_refs:
+            try:
+                for name, value in texts.items():
+                    texts[name] = normalize_insight_references(value, aliases)
+            except ValueError:
+                rejected.append(InsightRejection(index=index, code='reference_range_invalid', fields=(name,)))
+                continue
+            proposal = proposal.model_copy(update=texts)
         references = list(dict.fromkeys([*proposal.evidence_refs,
             *(ref for text in texts.values() for ref in _REFERENCE.findall(text))]))
         issues, fact_ids, source_ids, numeric_ids = [], [], [], []

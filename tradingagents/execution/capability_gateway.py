@@ -49,12 +49,11 @@ def execute_capability_requests(requests, *, role, ticker, cutoff, ledger, ensur
         except Exception:
             rejected.append("capability_request_invalid")
             continue
-        card = visible.get(request.capability_id)
-        if card is None:
-            rejected.append(f"capability_not_visible:{request.capability_id}")
-            continue
         if request.capability_id == "news_search":
             rejected.append("capability_use_search_path:news_search")
+            continue
+        if request.capability_id not in visible:
+            rejected.append(f"capability_not_visible:{request.capability_id}")
             continue
         if request.capability_id == "disclosure_search" and not _disclosure_terms(request.query):
             rejected.append("capability_query_required:disclosure_search")

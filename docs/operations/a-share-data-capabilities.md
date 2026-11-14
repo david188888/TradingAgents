@@ -110,6 +110,8 @@ The [capability catalog](../../tradingagents/dataflows/capability_catalog.py) de
 supplements. The [capability gateway](../../tradingagents/execution/capability_gateway.py) binds
 them to bounded source calls and qualifies their results.
 
+News and industry questions go through `search_requests` when web search is enabled. They use the dual-search budget; the structured capability catalog contains only requests the gateway can dispatch. The host supplies a suffix-qualified A-share ticker for supplements, including when the user enters a bare six-digit code in Web.
+
 - EastMoney datacenter screening validates response code, stable pagination/counts and returned filters.
   push2/push2ex tools are separate: several still have single-page/response-shape gaps; an empty table
   from them cannot prove complete absence. See source-specific adapters before using negative findings.

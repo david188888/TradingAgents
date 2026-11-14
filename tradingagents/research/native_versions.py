@@ -12,6 +12,8 @@ INSIGHT_WORKFLOW_VERSION = 'evidence-production-v9'
 
 INSIGHT_POLICY = 'insight-first-v1'
 
+INSIGHT_CONTEXT_POLICY = 'insight-handoff-v1'
+
 SEARCH_RESEARCH_POLICY = {
     'version': 'dual-search-research-v1',
     'enabled': True,
