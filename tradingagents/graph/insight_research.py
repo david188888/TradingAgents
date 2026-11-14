@@ -1,7 +1,6 @@
 """A saved Insight pipeline with one research review/response and bounded repair."""
 
 import contextlib
-import re
 
 from pydantic import ValidationError
 
@@ -10,6 +9,7 @@ from tradingagents.agents.schemas._insight import (
     EvidenceCard,
     InsightBatch,
     InsightCatalog,
+    InsightRepairItem,
     InsightReport,
     NumericReference,
     ResponseProposal,
@@ -22,7 +22,12 @@ from tradingagents.agents.schemas._insight import (
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
 from tradingagents.execution.insight_model import InsightUnavailable
 from tradingagents.research.insight_report import parse_insight_report, validate_saved_synthesis
-from tradingagents.research.insights import compile_insights
+from tradingagents.research.insights import (
+    compile_insights,
+    normalize_insight_references,
+    project_insight_text,
+)
+from tradingagents.research.native_versions import INSIGHT_CONTEXT_POLICY
 from tradingagents.research.numeric_catalog import render_numeric_anchor
 from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
@@ -84,7 +89,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     if journal.state.get('insight.report') is not None:
         return parse_insight_report(journal.state['insight.report'])
     ensure_active()
-    compact = journal.state['identity'].get('insight_context_policy') == 'compact-saved-evidence-v1'
+    compact = journal.state['identity'].get('insight_context_policy') == INSIGHT_CONTEXT_POLICY
     gaps, stages, insights = list(source_gaps), {}, []
     catalog_history = {canonical_sha256(c.model_dump(mode='json')): c for c in catalogs.values()}
     if foundation_catalog is not None:
@@ -143,32 +148,62 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             context = {**catalog_prompt(catalog, compact=compact), 'search_requests_allowed': supplement is not None,
                 **({'capability_catalog': capability_catalog.get(role, [])} if capability is not None else {})}
             if key + '.main' in journal.state:
-                main = InsightBatch.model_validate(journal.state[key + '.main'])
+                saved = journal.state[key + '.main']
+                main = InsightBatch.model_validate(saved['batch'])
+                repair_items = saved['repair_items']
             else:
                 raw = ask(role, context)
                 try:
-                    main = compile_insights(raw, catalog=catalog, role=role)
+                    main = compile_insights(raw, catalog=catalog, role=role, normalize_refs=True)
                 except ValueError:
                     main = InsightBatch()
-                journal.put(key + '.main', main.model_dump(mode='json'))
-            failed = sorted([i.index for i in main.items if i.status != 'accepted'] + [r.index for r in main.rejected])
+                repair_items = [
+                    {'target': item.index, 'proposal': item.proposal.model_dump(mode='json'),
+                     'issues': list(item.issues), 'fields': []}
+                    for item in main.items if item.status != 'accepted']
+                for rejected in main.rejected:
+                    draft = raw['insights'][rejected.index]
+                    # Save only the known fields of the rejected draft for the repair task.
+                    draft = {k: v for k, v in draft.items()
+                             if (k in {'claim', 'reasoning', 'limitations'} and isinstance(v, str))
+                             or (k == 'evidence_refs' and isinstance(v, list)
+                                 and all(isinstance(ref, str) for ref in v))} if isinstance(draft, dict) else {}
+                    if draft:
+                        repair_items.append({'target': rejected.index, 'proposal': draft,
+                            'issues': [rejected.code], 'fields': list(rejected.fields)})
+                journal.put(key + '.main', {'batch': main.model_dump(mode='json'), 'repair_items': repair_items})
             batch = main
-            # Unknown dispatches must not become fresh attempts under a repair label.
             unknown = journal.state.get(f'insight.failure.{role}.main') == 'response_unknown'
-            if not unknown and (failed or not main.items):
-                raw = ask(role, {**context, 'repair_indices': failed,
-                    'issues': [{'index': i.index, 'issues': i.issues} for i in main.items if i.status != 'accepted']
-                        + [r.model_dump(mode='json') for r in main.rejected]}, 'repair')
-                try:
-                    repaired = compile_insights(raw, catalog=catalog, role=role, indices=failed or None)
-                    replacements = {i.index: i for i in repaired.items}
-                    old = {i.index: i for i in main.items}
-                    old.update(replacements)
-                    errors = {r.index: r for r in main.rejected if r.index not in replacements}
-                    errors.update((r.index, r) for r in repaired.rejected)
-                    batch = InsightBatch(items=tuple(old[i] for i in sorted(old)), rejected=tuple(errors[i] for i in sorted(errors)))
-                except ValueError:
-                    pass  # Preserve the compiled main candidate, including valid siblings.
+            if not unknown and repair_items:
+                failed = {task['target'] for task in repair_items}
+                raw = ask(role, {**context, 'repair_items': repair_items}, 'repair')
+                entries = raw.get('repairs') if isinstance(raw, dict) and set(raw) == {'repairs'} else None
+                replacements, seen, duplicates = {}, set(), set()
+                for entry in entries if isinstance(entries, list) else ():
+                    try:
+                        repair = InsightRepairItem.model_validate(entry)
+                    except ValidationError:
+                        continue
+                    if repair.target not in failed:
+                        continue
+                    if repair.target in seen:
+                        duplicates.add(repair.target)
+                    seen.add(repair.target)
+                    if repair.proposal is not None:
+                        replacements[repair.target] = repair.proposal
+                for target in duplicates:
+                    replacements.pop(target, None)
+                repaired = compile_insights({'insights': list(replacements.values())}, catalog=catalog,
+                    role=role, indices=list(replacements), normalize_refs=True)
+                valid = {i.index: i for i in repaired.items if i.status == 'accepted'}
+                items = {item.index: item for item in main.items} | valid
+                batch = InsightBatch(items=tuple(items[index] for index in sorted(items)),
+                    rejected=tuple(item for item in main.rejected if item.index not in valid))
+            elif not unknown and not main.items and not main.rejected:
+                # No usable response to repair. Keep the existing bounded retry.
+                raw = ask(role, context, 'repair')
+                with contextlib.suppress(ValueError):
+                    batch = compile_insights(raw, catalog=catalog, role=role, normalize_refs=True)
             journal.put(key, batch.model_dump(mode='json'))
         insights.extend(batch.items)
         finish(role, 'skipped' if not catalog.evidence else 'completed' if any(i.status == 'accepted' for i in batch.items) else 'failed')
@@ -243,11 +278,12 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     'search_requests_allowed': supplement is not None and round_id < 3,
                     **({'capability_catalog': capability_catalog.get(role, [])}
                        if capability is not None and round_id < 3 else {}),
-                    'previous_findings': [i.rendered.model_dump() for i in previous],
+                    'previous_findings': [project_insight_text(i, catalog_history[i.catalog_id], catalogs[role])
+                        for i in previous],
                     'instruction': '资料已更新。重新核查本专项观点；旧观点不会自动用于综合。'}
                 raw = ask(role, context, f'supplement_{round_id}')
                 try:
-                    batch = compile_insights(raw, catalog=catalogs[role], role=role, revision=round_id + 1)
+                    batch = compile_insights(raw, catalog=catalogs[role], role=role, revision=round_id + 1, normalize_refs=True)
                 except ValueError:
                     batch = InsightBatch()
                 journal.put(key, batch.model_dump(mode='json'))
@@ -274,13 +310,9 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     journal.put('insight.catalog_history', {key: c.model_dump(mode='json') for key, c in catalog_history.items()})
     targets = {f'I{i}': item for i, item in enumerate((s for s in insights if s.status == 'accepted'), 1)}
     def project_targets(values):
-        evidence_aliases = {e.fact_id: e.ref for e in merged.evidence}
         result = []
         for ref, item in values.items():
-            origin = catalog_history[item.catalog_id]
-            aliases = {e.ref: evidence_aliases[e.fact_id] for e in origin.evidence}
-            texts = {key: re.sub(r'\[(E[0-9]+)\]', lambda match, aliases=aliases: '[' + aliases[match[1]] + ']', text)
-                     for key, text in item.rendered.model_dump().items()}
+            texts = project_insight_text(item, catalog_history[item.catalog_id], merged)
             result.append({'ref': ref, 'insight_id': item.insight_id, **texts,
                 'evidence_refs': [e.ref for e in merged.evidence if e.fact_id in item.fact_ids]})
         return result
@@ -289,7 +321,10 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
 
     def note(text, refs, *, claim='研究审阅'):
         compiled = compile_insights({'insights': [{'claim': claim, 'evidence_refs': list(refs),
-            'reasoning': text, 'limitations': '研究意见，不能视为事实证明。'}]}, catalog=merged, role='review').items[0]
+            'reasoning': text, 'limitations': '研究意见，不能视为事实证明。'}]}, catalog=merged, role='review', normalize_refs=True)
+        if compiled.rejected:
+            raise ValueError(compiled.rejected[0].code)
+        compiled = compiled.items[0]
         if set(compiled.issues) - {'evidence_missing'}:
             raise ValueError(next(issue for issue in compiled.issues if issue != 'evidence_missing'))
         return compiled
@@ -308,7 +343,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             verifications = {}
             jev_diagnostics = []
 
-            for _ref, item in targets.items():
+            projected = {item['ref']: item for item in review_context['insights']}
+            for ref, item in targets.items():
                 evidence_cards = [e for e in merged.evidence if e.fact_id in item.fact_ids]
 
                 # Build per-evidence conflict questions (each evidence gets its own noul)
@@ -342,10 +378,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     }
 
                 insight_state = {
-                    "insight": {
-                        "claim": item.rendered.claim,
-                        "reasoning": item.rendered.reasoning,
-                    },
+                    "insight": {field: projected[ref][field]
+                                for field in ('claim', 'reasoning', 'limitations')},
                     "cited_evidence": [
                         {"ref": e.ref, "text": e.text, "limitations": list(e.limitations)}
                         for e in evidence_cards
@@ -502,7 +536,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                         source_ids=checked.source_ids, note=checked)
                 except (ValueError, ValidationError) as exc:
                     code = (str(exc) if str(exc) in {'numeric_literal_unbound', 'numeric_scope', 'reference_unknown',
-                        'source_unavailable', 'evidence_missing'} else 'review_shape_invalid')
+                        'source_unavailable', 'evidence_missing', 'reference_range_invalid'} else 'review_shape_invalid')
                     target = value.get('target') if isinstance(value, dict) else None
                     diagnostics.append({'index': index,
                         'target': target if isinstance(target, str) and target in targets else None, 'code': code})
@@ -579,7 +613,11 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                             diagnostics.append({'index': index, 'target': reply.target, 'code': 'replacement_missing'})
                             continue
                         replacement = compile_insights({'insights': [reply.replacement.model_dump(mode='json')]},
-                            catalog=merged, role=role, revision=current.revision + 1, indices=[current.index]).items[0]
+                            catalog=merged, role=role, revision=current.revision + 1, indices=[current.index], normalize_refs=True)
+                        if replacement.rejected:
+                            diagnostics.append({'index': index, 'target': reply.target, 'code': replacement.rejected[0].code})
+                            continue
+                        replacement = replacement.items[0]
                         if replacement.status != 'accepted':
                             diagnostics.extend({'index': index, 'target': reply.target, 'code': issue} for issue in replacement.issues)
                             continue
@@ -645,6 +683,9 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             raw = ask('synthesis', context, phase)
             try:
                 value = SynthesisProposal.model_validate(raw)
+                aliases = set(targets)
+                value = value.model_copy(update={field: normalize_insight_references(getattr(value, field), aliases)
+                    for field in ('judgement', 'reasoning', 'limitations', 'next_check')})
                 checked = compile_insights({'insights': [{'claim': value.judgement,
                     'evidence_refs': list(value.insight_refs), 'reasoning': value.reasoning,
                     'limitations': value.limitations + '\n' + value.next_check}]}, catalog=final_catalog, role='synthesis').items[0]
@@ -670,7 +711,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 'question': focus_question, 'insights': project_targets(targets), 'search_requests_allowed': False,
                 'synthesis': synthesis.model_dump(mode='json') if synthesis else None})
             with contextlib.suppress(ValueError):
-                focus_batch = compile_insights(raw, catalog=merged, role='focus_response')
+                focus_batch = compile_insights(raw, catalog=merged, role='focus_response', normalize_refs=True)
             journal.put('insight.focus', focus_batch.model_dump(mode='json'))
         ok = any(i.status == 'accepted' for i in focus_batch.items)
         finish('focus_response', 'completed' if ok else 'failed')

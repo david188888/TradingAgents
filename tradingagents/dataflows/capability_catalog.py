@@ -48,9 +48,6 @@ CAPABILITY_CARDS = (
         "不是公允价值结论", {"ticker": "A股代码"}, "带时间戳的估值快照",
         ("tencent", "tushare"), "low", 0, (_OPERATING, _MARKET), prefetch_only=True),
     # Requestable after an explicit gap.
-    CapabilityCard("news_search", "新闻与行业检索", "公司新闻、行业动态、政策与竞争信息",
-        "不用于为既有观点寻找支持", {"query": "要核实的具体问题"}, "带日期与来源的检索摘录",
-        ("deepseek", "tavily"), "medium", 3, _ALL_ROLES, implemented=True),
     CapabilityCard("disclosure_search", "公告检索", "按标题关键词检索定期报告与临时公告",
         "不用于非公告类新闻；只出现在正文里的词不会命中",
         {"query": "空格分隔的 1–3 个标题关键词（如：增资扩股 进展公告）"},

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
 from tradingagents.llm_clients.stage_models import stage_model_overrides
 from tradingagents.research.native_evidence_policy import (
@@ -71,7 +72,7 @@ class RunCreateRequest(BatchRunConfigRequest):
     def validate_ticker(cls, value):
         if not is_native_stock_ticker(value):
             raise ValueError("research requires A-share common stocks")
-        return value
+        return normalize_ticker_symbol(value)
 
 
 class BatchEntryRequest(BaseModel):

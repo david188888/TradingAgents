@@ -20,7 +20,7 @@ def test_card_ids_are_unique_and_roles_match_specialists():
 
 def test_prefetch_only_and_unimplemented_cards_are_not_requestable():
     visible = ids(load_capability_catalog())
-    assert visible == {"news_search", "disclosure_search", "shareholder_count", "ir_qa",
+    assert visible == {"disclosure_search", "shareholder_count", "ir_qa",
         "longhubang", "holder_change", "consensus_eps", "valuation_history", "northbound_flow"}
     assert "core_financials" not in visible
     assert {"financials_detail", "industry_peers", "wind_enrich"} & visible == set()
@@ -28,12 +28,12 @@ def test_prefetch_only_and_unimplemented_cards_are_not_requestable():
 
 def test_role_filter_limits_visible_cards():
     assert ids(load_capability_catalog(role="market_context")) == {
-        "news_search", "disclosure_search", "shareholder_count", "longhubang",
+        "disclosure_search", "shareholder_count", "longhubang",
         "valuation_history", "northbound_flow"}
     assert ids(load_capability_catalog(role="event_context")) == {
-        "news_search", "disclosure_search", "ir_qa", "longhubang", "holder_change"}
+        "disclosure_search", "ir_qa", "longhubang", "holder_change"}
     assert ids(load_capability_catalog(role="operating_quality")) == {
-        "news_search", "disclosure_search", "shareholder_count", "ir_qa", "holder_change",
+        "disclosure_search", "shareholder_count", "ir_qa", "holder_change",
         "consensus_eps", "valuation_history"}
 
 

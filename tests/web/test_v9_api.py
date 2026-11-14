@@ -47,7 +47,7 @@ def workbench(tmp_path, *, caller=None, environment=None):
 
 def test_current_http_flow_publishes_exact_insight_and_stage_views(tmp_path):
     with workbench(tmp_path) as (client, manager, store, calls):
-        response = client.post("/api/runs", json=BODY)
+        response = client.post("/api/runs", json={**BODY, "ticker": "002130"})
         assert response.status_code == 201, response.text
         run_id = response.json()["run_id"]
         completed = manager.wait(run_id, timeout=5)
@@ -56,6 +56,7 @@ def test_current_http_flow_publishes_exact_insight_and_stage_views(tmp_path):
         report = client.get(f"/api/runs/{run_id}/reader/record").json()
         assert report["state"] == "insight_ready"
         assert report["record"]["schema_version"] == "insight-research-v1"
+        assert completed.ticker == report["record"]["ticker"] == "002130.SZ"
         assert report["record"]["synthesis"]["stance"] == "neutral"
         assert client.get(f"/api/runs/{run_id}/reader/process").json()["availability"] == "ready"
         assert client.get(f"/api/runs/{run_id}/reader/agents/operating_quality").json()["insight_record"] == report["record"]

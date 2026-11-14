@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from tests.test_insight_protocol import catalog, proposal
 from tests.v9_fixtures import journal_setup as setup
 from tradingagents.execution.insight_model import InsightUnavailable
@@ -44,15 +46,54 @@ def test_only_failed_items_are_repaired_and_accepted_item_is_immutable(tmp_path)
         seen.append((stage, phase))
         if stage == 'operating_quality':
             if phase == 'main':
-                return {'insights': [proposal(), proposal(claim='待修正观点', evidence_refs=['E999'])]}
-            assert context['repair_indices'] == [1]
-            return {'insights': [proposal(claim='已修正观点')]}
+                return {'insights': [proposal(), proposal(claim='毛利率变化', evidence_refs=['E999']),
+                    proposal(claim='现金流变化', evidence_refs=['E998'])]}
+            tasks = context['repair_items']
+            assert [t['proposal']['claim'] for t in tasks] == ['毛利率变化', '现金流变化']
+            assert [t['issues'] for t in tasks] == [['reference_unknown'], ['reference_unknown']]
+            return {'repairs': [{'target': 2, 'proposal': proposal(claim='现金流变化')},
+                {'target': 1, 'proposal': proposal(claim='毛利率变化')}]}
         return response(stage, context, phase=phase)
 
     report = execute(journal, respond)
-    assert [i.proposal.claim for i in report.insights] == [proposal()['claim'], '已修正观点']
-    assert [i.index for i in report.insights] == [0, 1]
+    assert [i.proposal.claim for i in report.insights] == [proposal()['claim'], '毛利率变化', '现金流变化']
+    assert [i.index for i in report.insights] == [0, 1, 2]
     assert seen.count(('operating_quality', 'repair')) == 1
+
+
+def test_repair_preserves_the_original_draft_even_if_it_lacks_a_required_field(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    draft = {'claim': '毛利率下降', 'evidence_refs': ['E1'], 'reasoning': '依据 E1。'}
+
+    def respond(stage, context, *, phase='main'):
+        if stage == 'operating_quality':
+            if phase == 'main':
+                return {'insights': [draft]}
+            assert context['repair_items'] == [{'target': 0, 'proposal': draft,
+                'issues': ['insight_schema_invalid'], 'fields': ['limitations']}]
+            return {'repairs': [{'target': 0, 'proposal': proposal(**draft)}]}
+        return response(stage, context, phase=phase)
+
+    report = execute(journal, respond)
+    assert report.insights[0].status == 'accepted'
+    assert report.insights[0].proposal.claim == '毛利率下降'
+
+
+def test_ambiguous_alias_range_is_repaired_without_changing_other_findings(tmp_path):
+    _, journal, _ = setup(tmp_path)
+
+    def respond(stage, context, *, phase='main'):
+        if stage == 'operating_quality':
+            if phase == 'main':
+                return {'insights': [proposal(reasoning='依据 E2-N1。'), proposal(reasoning='依据 E2-E3。')]}
+            assert [item['target'] for item in context['repair_items']] == [0]
+            return {'repairs': [{'target': 0, 'proposal': None}]}
+        return response(stage, context, phase=phase)
+
+    report = execute(journal, respond)
+    assert [item.index for item in report.insights] == [1]
+    assert report.insights[0].proposal.reasoning == '依据 [E2]、[E3]。'
+    assert 'operating_quality_partial' in report.gaps
 
 
 def test_invalid_synthesis_keeps_specialist_findings_without_default_rating(tmp_path):
@@ -99,15 +140,22 @@ def test_empty_review_is_unreviewed_not_no_counterevidence(tmp_path):
     assert 'unreviewed_insights' in report.gaps
 
 
-def test_cross_specialist_aliases_and_review_targets_are_explicit(tmp_path):
+@pytest.mark.parametrize('jev_enabled', [False, True])
+def test_cross_specialist_aliases_and_review_targets_are_explicit(tmp_path, jev_enabled):
     _, journal, _ = setup(tmp_path)
+    journal.state['identity']['jev_verification_enabled'] = jev_enabled
     base = catalog()
     second = base.model_copy(update={'evidence': (base.evidence[1].model_copy(update={'ref': 'E1'}),), 'numbers': ()})
     first = base.model_copy(update={'evidence': (base.evidence[0],), 'numbers': ()})
+    jev_states = []
+
+    def verify(_id, state, _questions):
+        jev_states.append(state)
+        return {'evidence_sufficient': 0.5, 'reasoning_sound': 0.5}, {}
 
     def respond(stage, context, *, phase='main'):
         if stage in {'operating_quality', 'event_context'}:
-            return {'insights': [proposal(reasoning='依据 [E1]。')]}
+            return {'insights': [proposal(reasoning='依据 E1。')]}
         if stage == 'challenge':
             assert context['insights'][1]['reasoning'] == '依据 [E2]。'
             assert context['insights'][1]['evidence_refs'] == ['E2']
@@ -120,9 +168,15 @@ def test_cross_specialist_aliases_and_review_targets_are_explicit(tmp_path):
         assert context['insights'][1]['reasoning'] == '依据 [E2]。'
         return response(stage, context, phase=phase)
 
+    respond.call_jev_verification = verify
     run_insight_research(run_id=journal.observer.run_id, ticker='002130.SZ', analysis_date=date(2026, 10, 28),
         catalogs={'operating_quality': first, 'event_context': second}, caller=respond,
         journal=journal, ensure_active=lambda: None)
+    if jev_enabled:
+        assert jev_states[1]['insight']['reasoning'] == '依据 [E2]。'
+        assert [card['ref'] for card in jev_states[1]['cited_evidence']] == ['E2']
+    else:
+        assert jev_states == []
 
 
 def test_saved_synthesis_text_is_replayed_on_read_and_resume(tmp_path):
@@ -146,6 +200,9 @@ def test_search_requests_revise_affected_role_and_resume_without_resending(tmp_p
     base = catalog()
     updated = base.model_copy(update={'snapshot_id': 'snapshot-b', 'numbers': (),
         'evidence': (*base.evidence, base.evidence[0].model_copy(update={'ref': 'E9', 'fact_id': 'new-fact'}))})
+    updated = updated.model_copy(update={'evidence': tuple(
+        e.model_copy(update={'ref': 'E2' if e.ref == 'E1' else 'E1' if e.ref == 'E2' else e.ref})
+        for e in updated.evidence)})
 
     def supplement(requests, round_id):
         searched.append(requests)
@@ -156,6 +213,7 @@ def test_search_requests_revise_affected_role_and_resume_without_resending(tmp_p
         if stage == 'operating_quality':
             if phase == 'supplement_1':
                 assert context['search_requests_allowed'] is True
+                assert context['previous_findings'][0]['reasoning'] == '公司仍有客户依赖 [E2]。'
                 return {'insights': [proposal(claim='补证后修正判断。', evidence_refs=['E9'], reasoning='新证据改变判断 [E9]。')],
                     'search_requests': []}
             return {'insights': [proposal()], 'search_requests': ['客户订单是否变化', ' 客户订单是否变化 ']}

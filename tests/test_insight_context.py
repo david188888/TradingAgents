@@ -27,7 +27,6 @@ def test_compact_catalog_keeps_all_facts_limits_and_exact_source_passages():
 
 def test_compact_synthesis_keeps_saved_support_but_not_unrelated_new_facts(tmp_path):
     _, journal, _ = setup(tmp_path)
-    journal.state['identity']['insight_context_policy'] = 'compact-saved-evidence-v1'
     c = catalog()
     c = c.model_copy(update={'evidence': (*c.evidence, EvidenceCard(ref='E99', fact_id='unused',
         text='未被任何观点或审阅采用的材料。', source_ids=c.evidence[0].source_ids))})
@@ -74,6 +73,6 @@ def test_saved_v9_identity_requires_current_context_policy(tmp_path):
     identity = native_identity(request)
     journal.put('identity', identity)
     validate_native_resume(observer.store, observer.run_id, request)
-    journal.put('identity', {**identity, 'insight_context_policy': 'unknown-policy'})
+    journal.put('identity', {**identity, 'insight_context_policy': 'compact-saved-evidence-v1'})
     with pytest.raises(ResearchCheckpointConflict):
         validate_native_resume(observer.store, observer.run_id, request)

@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, field_validator
 
 from ._company_basics import CompanyBasicsV1
 from ._evidence import SourceEvidenceV1
@@ -46,6 +46,15 @@ class InsightSubmission(_InsightModel):
     insights: tuple[InsightProposal, ...]
     search_requests: tuple[str, ...] = ()
     capability_requests: tuple[CapabilityRequest, ...] = ()
+
+
+class InsightRepairItem(_InsightModel):
+    target: StrictInt
+    proposal: InsightProposal | None
+
+
+class InsightRepairSubmission(_InsightModel):
+    repairs: tuple[InsightRepairItem, ...]
 
 
 class EvidenceCard(_InsightModel):
@@ -96,7 +105,7 @@ class SavedInsight(_InsightModel):
 
 class InsightRejection(_InsightModel):
     index: int
-    code: Literal['insight_schema_invalid'] = 'insight_schema_invalid'
+    code: Literal['insight_schema_invalid', 'reference_range_invalid'] = 'insight_schema_invalid'
     fields: tuple[str, ...] = ()
 
 

@@ -30,4 +30,7 @@ Every run saves attempts, evidence, stage results, canonical Insight report and 
 
 Ctrl+C records interruption. Resume reuses the saved request and spent budgets. Unknown dispatched outcomes stay spent; resume never upgrades a request or repeats an unknown attempt. Use the original local provider credentials; endpoint credentials are reattached at runtime only when the endpoint's semantic identity matches. Completed resume only verifies and reads the committed report. A partial report may preserve usable research while withholding its overall rating.
 
+See [resume compatibility](../contracts/research-record.md#budgets-and-durable-execution) for changes
+to the saved execution policy that require a new run.
+
 Configuration failures exit before model/data dispatch. Execution failures remain failures with saved state; publication must pass its durable authorization barrier and produce the canonical report before completion is announced. No CLI invocation clears historical data or checkpoints.
