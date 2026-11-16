@@ -222,6 +222,16 @@ def get_model_options(provider: str, mode: str) -> list[ModelOption]:
     return MODEL_OPTIONS[provider.lower()][mode]
 
 
+def model_allowed(provider: str, model: str, mode: str | None) -> bool:
+    """Apply the workbench's catalog and custom-model admission rules."""
+    options = MODEL_OPTIONS.get(provider)
+    if options is None:
+        return True
+    choices = options[mode] if mode else (*options["quick"], *options["deep"])
+    allowed = {value for _, value in choices}
+    return model != "custom" and ("custom" in allowed or model in allowed)
+
+
 def get_known_models() -> dict[str, list[str]]:
     """Build validation IDs without advertising legacy IDs for new selection.
 

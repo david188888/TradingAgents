@@ -130,6 +130,10 @@ large schema definitions in prose.
 - Scope changes to the owning layer; retain existing uncommitted work.
 - Start contract changes from their canonical Python or TypeScript schema and
   update every affected adapter, projection, and consumer.
+- Keep CLI and Web research and evaluation capabilities aligned when changing
+  inputs, configuration, execution, or published research. Check both adapters
+  and run `tests/test_cli_web_parity.py` when those contracts change; interface
+  and run-management features need not be identical.
 - Apply the [scoped validation matrix](CONTRIBUTING.md#scoped-validation).
   Reuse applicable passing results; do not repeat covered subsets after a
   broader passing run. Keep the existing Ruff pre-commit gate.

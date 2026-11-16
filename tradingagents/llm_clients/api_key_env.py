@@ -11,6 +11,8 @@ checks report the missing key instead of failing on first API call.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 PROVIDER_API_KEY_ENV: dict[str, str | None] = {
     "openai":     "OPENAI_API_KEY",
     "anthropic":  "ANTHROPIC_API_KEY",
@@ -42,3 +44,10 @@ def get_api_key_env(provider: str) -> str | None:
     "no key check possible" rather than as "no key required".
     """
     return PROVIDER_API_KEY_ENV.get(provider.lower())
+
+
+def missing_provider_env(provider: str, environment: Mapping[str, str]) -> tuple[str, ...]:
+    required = (PROVIDER_API_KEY_ENV[provider],)
+    if provider == "azure":
+        required += ("AZURE_OPENAI_ENDPOINT", "OPENAI_API_VERSION")
+    return tuple(name for name in required if name is not None and not environment.get(name))

@@ -21,8 +21,8 @@ from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.execution.native_runner import NEW_STUDY_TIMEOUT_SECONDS
-from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
-from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS
+from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV, missing_provider_env
+from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS, model_allowed
 from tradingagents.llm_clients.stage_models import EFFORT_CONFIG_KEYS
 from tradingagents.research.native_evidence_policy import is_native_stock_ticker
 from tradingagents.runtime.batch_models import BatchItem
@@ -77,7 +77,6 @@ WIND_CAPABILITIES = (
     "个股风险指标",
     "宏观 EDB",
 )
-AZURE_REQUIRED_ENV = ("AZURE_OPENAI_ENDPOINT", "OPENAI_API_VERSION")
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors "
@@ -673,13 +672,11 @@ def _analysis_request(body, environment, *, checkpoint_available=True, chatgpt_a
                 fields=("llm_provider" if field.endswith("_llm") else field.replace(".model", ".provider"),))
     subscription = [model for selected, model, _mode, _field in selections if selected == "chatgpt"]
     if subscription:
+        from tradingagents.llm_clients.chatgpt_auth import validate_account_models
         from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
         if chatgpt_auth is None:
             raise ChatGPTError("not_signed_in")
-        chatgpt_auth.access(body.chatgpt_account_ref, for_inference=True)
-        available = {item["id"] for item in chatgpt_auth.models(body.chatgpt_account_ref)["models"]}
-        if not set(subscription) <= available:
-            raise ChatGPTError("model_not_available")
+        validate_account_models(chatgpt_auth, body.chatgpt_account_ref, subscription)
     config = {"llm_provider": provider, "quick_think_llm": body.quick_think_llm,
         "deep_think_llm": body.deep_think_llm, "output_language": body.output_language,
         "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS}
@@ -744,13 +741,7 @@ _A_SHARE_SUFFIXES = (".SS", ".SZ", ".BJ", ".SH")
 
 
 def _validate_model(provider: str, model: str, field: str, mode: str | None) -> None:
-    options = MODEL_OPTIONS.get(provider)
-    if options is None:
-        return
-    mode_options = options[mode] if mode else (*options["quick"], *options["deep"])
-    allowed = {value for _label, value in mode_options if value != "custom"}
-    custom_allowed = any(value == "custom" for _label, value in mode_options)
-    if model == "custom" or (not custom_allowed and model not in allowed):
+    if not model_allowed(provider, model, mode):
         raise ApiBoundaryError(
             422,
             "unsupported_model",
@@ -776,12 +767,7 @@ def _configured_keys(environment: Mapping[str, str]) -> dict[str, bool]:
 
 
 def _provider_configured(provider: str, environment: Mapping[str, str]) -> bool:
-    env_name = PROVIDER_API_KEY_ENV[provider]
-    if env_name is not None and not environment.get(env_name):
-        return False
-    return provider != "azure" or not any(
-        not environment.get(required) for required in AZURE_REQUIRED_ENV
-    )
+    return not missing_provider_env(provider, environment)
 
 
 _EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max")

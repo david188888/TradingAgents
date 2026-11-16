@@ -30,6 +30,9 @@ must stay out of commits. Node is for frontend development/builds, not installed
 Canonical schemas own fields and validation. Update producers, persistence/replay, projections and
 consumers together; do not derive a new machine contract from Markdown or a rendered report.
 Only V9 execution, reading and resume are supported. Do not reintroduce older workflow adapters.
+Research and evaluation changes must cover both CLI and Web, including equivalent inputs,
+effective configuration and published results. Run `tests/test_cli_web_parity.py` when changing
+those contracts; presentation and run-management features can differ.
 
 ## Scoped Validation
 
