@@ -6,7 +6,7 @@ import json
 import os
 import re
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -14,7 +14,8 @@ from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
-from tradingagents.llm_clients.stage_models import stage_model_providers
+from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS, model_allowed
+from tradingagents.llm_clients.stage_models import stage_model_overrides, stage_model_providers
 
 DEFAULT_LOCAL_CONFIG_PATH = Path(__file__).resolve().parents[1] / "tradingagents.local.json"
 
@@ -85,11 +86,10 @@ def build_request(
     if config["llm_provider"] not in {*PROVIDER_API_KEY_ENV, "chatgpt"}:
         raise ValueError(f"不支持的模型服务：{config['llm_provider']}")
     if config["llm_provider"] != DEFAULT_CONFIG["llm_provider"]:
-        from tradingagents.llm_clients.model_catalog import get_model_options
-
         for key, flag, mode in (("quick_think_llm", quick_model, "quick"), ("deep_think_llm", deep_model, "deep")):
             if flag is None and key not in llm:
-                choices = [model for _, model in get_model_options(config["llm_provider"], mode) if model != "custom"]
+                options = MODEL_OPTIONS.get(config["llm_provider"], {}).get(mode, ())
+                choices = [model for _, model in options if model != "custom"]
                 if not choices:
                     raise ValueError(f"请为 {config['llm_provider']} 显式配置 {key}。")
                 config[key] = choices[0]
@@ -102,6 +102,13 @@ def build_request(
     for key in ("quick_think_llm", "deep_think_llm"):
         if not isinstance(config.get(key), str) or not config[key].strip():
             raise ValueError(f"{key} 必须填写实际模型 ID。")
+    selections = [(config["llm_provider"], config["quick_think_llm"], "quick", "quick_think_llm"),
+                  (config["llm_provider"], config["deep_think_llm"], "deep", "deep_think_llm")]
+    selections.extend((entry["provider"], entry["model"], None, f"stage_models.{key}.model")
+                      for key, entry in stage_model_overrides(config).items())
+    for selected_provider, model, mode, field in selections:
+        if selected_provider != "chatgpt" and not model_allowed(selected_provider, model, mode):
+            raise ValueError(f"{field} 不在 {selected_provider} 支持的模型目录中：{model}")
     if "chatgpt" in stage_model_providers(config) and not re.fullmatch(r"cg_[0-9a-f]{32}", str(config.get("chatgpt_account_ref", ""))):
         raise ValueError("请在 llm.chatgpt_account_ref 设置已登录的 ChatGPT 账户引用。")
     if config["output_language"] not in {"Chinese", "English"}:
@@ -109,9 +116,12 @@ def build_request(
     if config.get("jev_verification_enabled") and not os.environ.get(PROVIDER_API_KEY_ENV["openrouter"]):
         raise ValueError("启用 Jev 验证需要在 .env 中设置 OPENROUTER_API_KEY。")
     config.setdefault("evidence_timeout_seconds", 900)
+    cutoff = analysis_date or run.get("analysis_date") or datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    if date.fromisoformat(cutoff) > datetime.now(ZoneInfo("Asia/Shanghai")).date():
+        raise ValueError("analysis_date 不能晚于当前日期。")
     return AnalysisRequest(
         ticker=symbol,
-        analysis_date=analysis_date or run.get("analysis_date") or datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat(),
+        analysis_date=cutoff,
         effective_config=config,
         research_question=focus if focus is not None else run.get("research_question"),
     )

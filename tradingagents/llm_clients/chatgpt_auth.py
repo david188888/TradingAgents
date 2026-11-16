@@ -38,6 +38,14 @@ REFRESH_BACKOFF_SECONDS = 60
 TOKEN_VALIDITY_MARGIN_SECONDS = 5
 
 
+def validate_account_models(auth, account_ref, models):
+    """Check inference access and the selected models against the account catalog."""
+    auth.access(account_ref, for_inference=True)
+    available = {item["id"] for item in auth.models(account_ref)["models"]}
+    if not set(models) <= available:
+        raise ChatGPTError("model_not_available")
+
+
 def _refresh_time(value):
     # Optional scheduling metadata must not discard a successfully rotated token.
     if type(value) is int:

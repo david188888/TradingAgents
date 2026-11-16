@@ -41,7 +41,7 @@ def run_analysis(
     language=None, focus=None, resume=None, run_dir=None, output=None, show=False,
 ):
     from cli.research import DEFAULT_RUN_ROOT, run_research
-    from tradingagents.llm_clients.api_key_env import get_api_key_env
+    from tradingagents.llm_clients.api_key_env import missing_provider_env
     from tradingagents.llm_clients.stage_models import stage_model_providers
 
     try:
@@ -54,8 +54,10 @@ def run_analysis(
                                     quick_model=quick_model, deep_model=deep_model, language=language, focus=focus)
             import os
 
-            for name in filter(None, map(get_api_key_env, stage_model_providers(request.effective_config))):
-                if not os.getenv(name):
+            for selected_provider in stage_model_providers(request.effective_config):
+                if selected_provider == "chatgpt":
+                    continue
+                for name in missing_provider_env(selected_provider, os.environ):
                     raise ValueError(f"请在 .env 或本地 JSON api_keys 中设置 {name}。")
         elif any(v is not None for v in (ticker, analysis_date, provider, quick_model, deep_model, language, focus)):
             raise ValueError("恢复使用已保存的研究配置，不能同时改动代码、日期或模型选项。")
@@ -65,9 +67,21 @@ def run_analysis(
     auth = None
     # Existing locally registered ChatGPT accounts are shared with the Web workbench.
     if request is None or "chatgpt" in stage_model_providers(request.effective_config):
-        from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
+        from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth, validate_account_models
+        from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
 
         auth = ChatGPTAuth()
+        if request is not None:
+            config = request.effective_config
+            selected = [entry["model"] for entry in config.get("stage_models", {}).values()
+                        if entry["provider"] == "chatgpt"]
+            if config["llm_provider"] == "chatgpt":
+                selected.extend((config["quick_think_llm"], config["deep_think_llm"]))
+            try:
+                validate_account_models(auth, config["chatgpt_account_ref"], selected)
+            except ChatGPTError as exc:
+                console.print(str(exc), style="red", markup=False)
+                raise typer.Exit(1) from exc
     try:
         from tradingagents.default_config import DEFAULT_CONFIG
 
