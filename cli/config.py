@@ -14,6 +14,7 @@ from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
+from tradingagents.llm_clients.decisions_client import DEFAULT_DECISION_MODEL, decision_run_config
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS, model_allowed
 from tradingagents.llm_clients.stage_models import stage_model_overrides, stage_model_providers
 
@@ -113,8 +114,10 @@ def build_request(
         raise ValueError("请在 llm.chatgpt_account_ref 设置已登录的 ChatGPT 账户引用。")
     if config["output_language"] not in {"Chinese", "English"}:
         raise ValueError("output_language 必须是 Chinese 或 English。")
-    if config.get("jev_verification_enabled") and not os.environ.get(PROVIDER_API_KEY_ENV["openrouter"]):
-        raise ValueError("启用 Jev 验证需要在 .env 中设置 OPENROUTER_API_KEY。")
+    config.update(decision_run_config(
+        config.get("jev_verification_enabled"), config.get("jev_model", DEFAULT_DECISION_MODEL),
+        configured=bool(os.environ.get(PROVIDER_API_KEY_ENV["openrouter"])),
+    ))
     config.setdefault("evidence_timeout_seconds", 900)
     cutoff = analysis_date or run.get("analysis_date") or datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
     if date.fromisoformat(cutoff) > datetime.now(ZoneInfo("Asia/Shanghai")).date():

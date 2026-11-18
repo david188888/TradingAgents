@@ -1,7 +1,7 @@
 /** Real local HTTP/SSE and publication, with synthetic sources and no live models. */
 import { expect, test } from "@playwright/test";
 
-test('Bailian model and stage selections reach an Insight run', async ({page}) => {
+test('Bailian model and stage thinking reach an Insight run', async ({page}) => {
   await page.goto('/');
   const provider = page.getByLabel('LLM Provider');
   await expect(provider.getByRole('option', {name: '阿里云百炼 · 已配置'})).toBeAttached();
@@ -11,13 +11,17 @@ test('Bailian model and stage selections reach an Insight run', async ({page}) =
   await page.getByText('分阶段模型（高级）', {exact: true}).click();
   await page.getByLabel('质疑', {exact: true}).selectOption({label: '阿里云百炼'});
   await page.getByLabel('质疑模型', {exact: true}).selectOption('kimi-k3.1-pro');
+  const thinking = page.getByLabel('质疑思考模式');
+  await expect(thinking).toHaveValue('');
+  await thinking.selectOption('disabled');
+  await expect(page.getByLabel('质疑推理强度')).toHaveCount(0);
   await page.getByLabel('股票代码').fill('600803');
 
   const submitted = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/runs');
   await page.getByRole('button', {name: '开始分析', exact: true}).click();
   expect((await submitted).postDataJSON()).toMatchObject({
     llm_provider: 'bailian', quick_think_llm: 'deepseek-v4.1-flash-1017', deep_think_llm: 'kimi-k3.1-pro',
-    stage_models: {challenge: {provider: 'bailian', model: 'kimi-k3.1-pro'}},
+    stage_models: {challenge: {provider: 'bailian', model: 'kimi-k3.1-pro', thinking: 'disabled'}},
   });
   await expect(page.getByRole('article', {name: 'Insight 研究报告'})).toBeVisible({timeout: 20000});
 });

@@ -55,6 +55,8 @@ def insight_agent(ctx, role):
         status = record.stages.get(role)
         if role == 'focus_response' and not record.focus_question:
             return ReaderAgentDTO(**base, availability='not_applicable', reason_code='focus_not_requested')
+        if role == 'jev_verify' and status == 'failed':
+            return ReaderAgentDTO(**base, availability='not_recorded', reason_code='output_not_recorded')
         if status not in {'completed', 'failed'} and role not in {'evidence', 'code_checks'}:
             return ReaderAgentDTO(**base, availability='not_recorded', reason_code='output_not_recorded')
         return ReaderAgentDTO(**base, availability='available' if ctx.record is not None else 'insight_stage_available',
@@ -68,13 +70,16 @@ def insight_process(ctx):
     roles = []
     statuses = {e.actor_id: e.payload.get('new_status') for e in ctx.events if e.type == 'role.status_changed'}
     for role in ROLE_INFO:
+        if role == 'jev_verify' and not (ctx.checkpoint.get('identity', {}).get('jev_verification_enabled')
+                                         or 'native.jev_verify' in statuses):
+            continue
         if role == 'focus_response' and not ctx.snapshot.metadata.get('research_question'):
             continue
         output = insight_agent(ctx, role)
         counts = native_counts(ctx.checkpoint, role=role)
         roles.append(ReaderRole(role_key=role, actor_id='native.' + role, label=ROLE_INFO[role][0],
             origin=output.origin, purpose='核查保存的引用、数值与有效版本。' if output.origin == 'code'
-                else '提出研究观点、质疑或综合判断，明确证据与局限。',
+                else ROLE_INFO[role][1] if role == 'jev_verify' else '提出研究观点、质疑或综合判断，明确证据与局限。',
             status=statuses.get('native.' + role, ctx.checkpoint.get('insight.stages', {}).get(role, 'pending')),
             output_availability=output.availability, reason_code=output.reason_code,
             output_sequence=ctx.sequence if output.insight_record is not None else None,

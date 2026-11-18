@@ -150,6 +150,26 @@ describe("Controls", () => {
     mockClient.cancelRun.mockReset();
   });
 
+  it("shows the default decision model and paid fallback outside advanced settings", async () => {
+    const config = makeConfig();
+    config.defaults.jev_verification_enabled = true;
+    config.defaults.jev_model = "perplexity/pplx-decider-flash-v1.3:free";
+    mockClient.getConfig.mockResolvedValue(config);
+    render(<Controls />);
+    await waitForConfig();
+
+    const toggle = screen.getByRole("checkbox", { name: /启用决策核验/ });
+    const primary = screen.getByRole("combobox", { name: "首选决策模型" });
+    expect(toggle).toBeChecked();
+    expect(primary).toHaveValue("perplexity/pplx-decider-flash-v1.3:free");
+    expect(primary).toHaveAccessibleDescription(/TypeSafe Jev 按量计费/);
+    expect(primary.closest("details")).toBeNull();
+    fireEvent.change(primary, { target: { value: "typesafe/jev-1.14" } });
+    expect(primary).toHaveValue("typesafe/jev-1.14");
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("combobox", { name: "首选决策模型" })).not.toBeInTheDocument();
+  });
+
   it("renders ticker/date/depth/analysts/provider/model selects from config", async () => {
     mockClient.getConfig.mockResolvedValue(makeConfig());
     render(<Controls />);

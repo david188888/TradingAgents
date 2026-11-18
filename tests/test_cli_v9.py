@@ -180,3 +180,15 @@ def test_terminal_publishes_real_insight_report_and_completed_resume_is_read_onl
     resumed = run_research(None, root, resume_run_id=result.run_id, runner_factory=factory)
     assert resumed.record == result.record
     assert len(calls) == count
+
+
+def test_new_cli_research_defaults_to_perplexity_with_credentials_and_respects_opt_out(monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert cli_config.build_request({}, ticker="002130").effective_config.get("jev_verification_enabled") is False
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline-openrouter")
+    effective = cli_config.build_request({}, ticker="002130").effective_config
+    assert effective["jev_verification_enabled"] is True
+    assert effective["jev_model"] == "perplexity/pplx-decider-flash-v1.3:free"
+    assert effective["jev_fallback_model"] == "typesafe/jev-1.14"
+    assert cli_config.build_request({"run": {"jev_verification_enabled": False}},
+                                    ticker="002130").effective_config["jev_verification_enabled"] is False

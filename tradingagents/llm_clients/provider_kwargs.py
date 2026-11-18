@@ -67,6 +67,13 @@ def provider_llm_kwargs(config: Mapping[str, Any], *, task: str | None = None) -
         if effort and thinking_mode != "disabled":
             kwargs["reasoning_effort"] = str(effort).strip().lower()
 
+    elif provider == "bailian":
+        mode = config.get("bailian_thinking")
+        if mode is not None:
+            kwargs["enable_thinking"] = mode == "enabled"
+        if mode != "disabled" and config.get("bailian_reasoning_effort"):
+            kwargs["reasoning_effort"] = config["bailian_reasoning_effort"]
+
     # Sampling temperature is cross-provider: forward it whenever set.
     # float() here so a value coming from a TRADINGAGENTS_TEMPERATURE env
     # string ("0.2") works the same as a programmatic float.

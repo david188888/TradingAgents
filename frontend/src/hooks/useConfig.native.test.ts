@@ -102,9 +102,9 @@ it("can configure a provider without preset models and clears custom IDs on a pr
   expect(result.current.buildRequest()?.quick_think_llm).toBe("gpt-4o-mini");
 });
 
-it("adds Jev verification only when enabled and requires an OpenRouter key", async () => {
+it("defaults to Perplexity when an OpenRouter key exists and sends explicit opt-out", async () => {
   const {result} = await mount();
-  expect(result.current.buildRequest()).not.toHaveProperty("jev_verification_enabled");
+  expect(result.current.buildRequest()?.jev_verification_enabled).toBe(false);
   act(() => result.current.setJevVerificationEnabled(true));
   expect(result.current.validationError).toBe("启用 Jev 验证需要在 .env 中配置 OPENROUTER_API_KEY");
   expect(result.current.buildRequest()).toBeNull();
@@ -112,7 +112,8 @@ it("adds Jev verification only when enabled and requires an OpenRouter key", asy
   config.configured_keys.openrouter = true;
   mockedGetConfig.mockResolvedValue(config);
   const enabled = await mount(config);
-  act(() => enabled.result.current.setJevVerificationEnabled(true));
   expect(enabled.result.current.buildRequest()).toMatchObject({
-    jev_verification_enabled: true, jev_model: "typesafe/jev-1.14"});
+    jev_verification_enabled: true, jev_model: "perplexity/pplx-decider-flash-v1.3:free"});
+  act(() => enabled.result.current.setJevVerificationEnabled(false));
+  expect(enabled.result.current.buildRequest()?.jev_verification_enabled).toBe(false);
 });

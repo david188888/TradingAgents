@@ -92,7 +92,7 @@ def test_verify_insight_risk_400_error(mock_env, sample_questions, sample_state)
     mock_response.text = "Bad Request: invalid question type"
 
     with patch('requests.post', return_value=mock_response), \
-         pytest.raises(JevVerificationError, match="400.*invalid question"):
+         pytest.raises(JevVerificationError, match=r"HTTP 400$"):
         verify_insight_risk(
                 model="typesafe/jev-1.14",
                 insight_state=sample_state,
@@ -191,7 +191,7 @@ def test_verify_insight_risk_invalid_probability(mock_env, sample_questions, sam
     }
 
     with patch('requests.post', return_value=mock_response), \
-         pytest.raises(JevVerificationError, match="Invalid probability.*1.5"):
+         pytest.raises(JevVerificationError, match="Invalid probability for evidence_sufficient"):
         verify_insight_risk(
                 model="typesafe/jev-1.14",
                 insight_state=sample_state,
@@ -225,3 +225,13 @@ def test_verify_insight_risk_multiple_questions(mock_env, sample_state):
         )
 
     assert scores == {"evidence_sufficient": 0.92, "reasoning_sound": 0.85}
+
+
+def test_malformed_usage_is_a_decision_failure(mock_env, sample_questions, sample_state):
+    response = Mock(status_code=200)
+    response.json.return_value = {
+        "answers": {"evidence_sufficient": {"type": "noul", "noul": 0.92}},
+        "usage": [1],
+    }
+    with patch("requests.post", return_value=response), pytest.raises(JevVerificationError, match="Invalid Decisions usage"):
+        verify_insight_risk("typesafe/jev-1.14", sample_state, sample_questions)

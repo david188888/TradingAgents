@@ -228,3 +228,38 @@ def test_old_batch_history_and_scheduler_do_not_admit_retired_children(tmp_path)
         manager.scheduler.drain()
         assert calls == [] and manager.active_run_ids == ()
         assert manifest.read_bytes() == before and json.loads(path.read_text()) == payload
+
+
+def test_default_decision_failure_is_terminal_and_publishes_no_report(tmp_path):
+    from tradingagents.execution.insight_model import InsightUnavailable
+
+    class DecisionFailure(InsightFixtureCaller):
+        def call_jev_verification(self, insight_id, insight_state, questions):
+            raise InsightUnavailable("both decision models unavailable")
+
+    with workbench(tmp_path, caller=DecisionFailure(),
+                   environment={"OPENROUTER_API_KEY": "offline-openrouter"}) as (client, manager, store, calls):
+        defaults = client.get("/api/config").json()["defaults"]
+        assert defaults["jev_verification_enabled"] is True
+        assert defaults["jev_model"] == "perplexity/pplx-decider-flash-v1.3:free"
+
+        response = client.post("/api/runs", json=BODY)
+        assert response.status_code == 201, response.text
+        run_id = response.json()["run_id"]
+        snapshot = manager.wait(run_id, timeout=5)
+        assert snapshot.status == "failed", snapshot.error_message
+        assert snapshot.error_category == "decision_verification"
+        assert "both decision models unavailable" in snapshot.error_message
+        roles = client.get(f"/api/runs/{run_id}/reader/process").json()["roles"]
+        verification = next(role for role in roles if role["role_key"] == "jev_verify")
+        assert verification["status"] == "failed"
+        assert verification["output_availability"] == "not_recorded"
+        agents = f"/api/runs/{run_id}/reader/agents"
+        verification_output = client.get(f"{agents}/jev_verify").json()
+        assert verification_output["availability"] == "not_recorded"
+        assert verification_output.get("insight_record") is None
+        specialist = client.get(f"{agents}/operating_quality").json()
+        assert specialist["availability"] == "insight_stage_available"
+        assert specialist["insight_record"]["insights"]
+        assert calls == ["operating_quality"]
+        assert not (store.root / run_id / "reports/complete_report.md").exists()

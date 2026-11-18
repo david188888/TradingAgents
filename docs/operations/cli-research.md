@@ -28,6 +28,12 @@ Saved runs that used `run.deepseek_task_efforts` retain those settings on resume
 }
 ```
 
+### Decision verification
+
+New runs with `OPENROUTER_API_KEY` use Perplexity Decider Flash first. A failed call automatically tries TypeSafe Jev, which is billed by usage. Set `run.jev_model` to `typesafe/jev-1.14` in local JSON to try Jev first and Decider Flash second, or set `run.jev_verification_enabled` to `false` to disable this stage and its fallback. If both models fail, the research stops. See [Decision verification and Challenge](evidence-research.md#decision-verification-and-challenge) for the shared behavior.
+
+### Saved runs and recovery
+
 Every run saves attempts, evidence, stage results, canonical Insight report and Markdown under `~/.tradingagents/cli/runs/`. `--run-dir` selects another CLI store. CLI holds an exclusive writer lock separately from the Web store, so both adapters may operate concurrently without sharing a writer. `--output` makes an additional Markdown export; `--show` displays it in the terminal. Saved reports are always persisted as part of completion.
 
 Ctrl+C records interruption. Resume reuses the saved request and spent budgets. Unknown dispatched outcomes stay spent; resume never upgrades a request or repeats an unknown attempt. Use the original local provider credentials; endpoint credentials are reattached at runtime only when the endpoint's semantic identity matches. Completed resume only verifies and reads the committed report. A partial report may preserve usable research while withholding its overall rating.

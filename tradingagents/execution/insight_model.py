@@ -27,6 +27,10 @@ class InsightUnavailable(ValueError):
     """Closed failure reason; never include rejected model prose."""
 
 
+class DecisionVerificationFailed(InsightUnavailable):
+    """The configured decision models could not finish mandatory screening."""
+
+
 class InsightModelCaller:
     def __init__(self, *, effective_config, run_id, ledger, cancelled, deadline, chatgpt_auth=None):
         if ledger.run_id != run_id:
@@ -63,6 +67,10 @@ class InsightModelCaller:
                 'Respond to the user question using saved research. Do not modify the baseline judgement.' if stage == 'focus_response' else
                 'Produce specific research Insights for your assigned specialist role. Explain reasoning and limitations, '
                 'distinguish observation from inference, and do not force a finding when evidence is insufficient.')
+        if (stage == 'challenge' or stage.startswith('response_')) and any(
+                'allowed_evidence_refs' in item for item in context.get('insights', ())):
+            task += (' For each target, cite only its allowed_evidence_refs and allowed_number_refs. '
+                     'Describe any absence of counterevidence within the supplied scope.')
         if targeted_repair:
             task = ('Repair only the supplied repair_items. Each repair must echo its target integer. '
                     'Keep the original research claim and its limits; correct only the reported defects. '
@@ -138,34 +146,33 @@ class InsightModelCaller:
         return payload
 
     def call_jev_verification(self, insight_id, insight_state, questions):
-        """
-        调用 Jev 验证单条 insight 的风险等级。
-
-        Args:
-            insight_id: insight 的唯一标识
-            insight_state: 包含 insight、evidence、global_catalog_summary 的字典
-            questions: Decisions API 问题字典
-
-        Returns:
-            (scores, meta): scores 是问题名到概率的映射，meta 是审计信息
-
-        Raises:
-            InsightUnavailable: 验证失败（budget/error/unavailable/response_unknown）
-        """
+        """Try the selected Decisions model, then the frozen alternate if configured."""
         self._active()
+        primary = self.config.get("jev_model", "typesafe/jev-1.14")
+        fallback = self.config.get("jev_fallback_model")
+        logical = f'insight.jev_verify.{insight_id}'
+        if not fallback:
+            return self._ask_decision(primary, logical, insight_state, questions, retries=3)
 
-        model = self.config.get("jev_model", "typesafe/jev-1.14")
+        failures = []
+        for index, model in enumerate(dict.fromkeys((primary, fallback)), 1):
+            try:
+                return self._ask_decision(model, f'{logical}.{index}', insight_state, questions, retries=1)
+            except InsightUnavailable as exc:
+                if str(exc) == 'budget_exhausted':
+                    raise
+                failures.append(f'{model}: {exc}')
+        raise InsightUnavailable('决策核验失败（' + '；'.join(failures) + '）')
 
+    def _ask_decision(self, model, logical, insight_state, questions, *, retries):
+        remaining = self._active()
         from tradingagents.llm_clients.decisions_client import (
             JevVerificationError,
             JevVerificationUnavailable,
             verify_insight_risk,
         )
 
-        logical = f'insight.jev_verify.{insight_id}'
         journal = self.ledger.journal
-
-        # 幂等性检查：已验证过就直接返回
         cached = journal.state.get(logical)
         if cached is not None:
             return cached['scores'], cached['meta']
@@ -177,7 +184,7 @@ class InsightModelCaller:
 
         token = self.ledger.reserve(
             BudgetBucket.JEV_VERIFICATION,
-            stage='jev_verify',
+            stage='native.jev_verify' if self.config.get('jev_fallback_model') else 'jev_verify',
             logical_call_id=logical
         )
         if isinstance(token, BudgetLimitHit):
@@ -190,10 +197,10 @@ class InsightModelCaller:
                 model=model,
                 insight_state=insight_state,
                 questions=questions,
-                timeout=30,
-                retries=3
+                timeout=min(remaining, 30),
+                retries=retries
             )
-            usage = meta.get('usage', {})
+            usage = meta.get('usage') or {}
 
             result = {'scores': scores, 'meta': meta}
             journal.put(logical, result)
@@ -211,8 +218,8 @@ class InsightModelCaller:
                 self.ledger.settle(token, ok=False, detail='jev_verification_failed',
                                  usage_available=False)
             raise InsightUnavailable(f'jev_error: {exc}') from None
-        except JevVerificationUnavailable:
+        except JevVerificationUnavailable as exc:
             if not journal.failed:
                 self.ledger.settle(token, ok=False, detail='jev_unavailable',
                                  usage_available=False)
-            raise InsightUnavailable('jev_unavailable') from None
+            raise InsightUnavailable(f'jev_unavailable: {exc}') from None

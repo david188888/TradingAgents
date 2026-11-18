@@ -15,7 +15,7 @@ export const STAGE_ROWS: readonly { key: StageModelKey; label: string }[] = [
   { key: "synthesis", label: "综合" },
 ];
 
-export interface StageSelection { provider: string; model: string; custom: string; effort: string }
+export interface StageSelection { provider: string; model: string; custom: string; effort: string; thinking: StageModelDTO["thinking"] }
 
 export function useConfig() {
   const [config, setConfig] = useState<ConfigResponseDTO | null>(null);
@@ -42,7 +42,7 @@ export function useConfig() {
   }, [llm_provider, chatgpt.catalog]);
   const [output_language, setOutputLanguage] = useState("Chinese");
   const [jev_verification_enabled, setJevVerificationEnabled] = useState(false);
-  const [jev_model, setJevModel] = useState("typesafe/jev-1.14");
+  const [jev_model, setJevModel] = useState("perplexity/pplx-decider-flash-v1.3:free");
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +58,8 @@ export function useConfig() {
       setQuickCustomModelId(quick === "custom" || provider?.models.quick.some(m => m.id === quick) ? "" : quick);
       setDeepCustomModelId(deep === "custom" || provider?.models.deep.some(m => m.id === deep) ? "" : deep);
       setOutputLanguage(c.defaults.output_language);
+      setJevVerificationEnabled(c.defaults.jev_verification_enabled ?? c.configured_keys.openrouter === true);
+      if (c.defaults.jev_model) setJevModel(c.defaults.jev_model);
     }).catch(e => { if (!cancelled) setError(e instanceof Error ? e : new Error(String(e))); });
     return () => { cancelled = true; };
   }, []);
@@ -80,20 +82,30 @@ export function useConfig() {
       .filter((m, i, all) => all.findIndex(o => o.id === m.id) === i);
     return listed.length ? listed : provider?.custom_model_allowed ? [{ id: "custom", label: "自定义模型 ID" }] : [];
   }
+  function stageSupportsThinking(provider: string, model: string): boolean {
+    return config?.stage_thinking_models?.[provider]?.includes(model) ?? false;
+  }
   function updateStage(key: StageModelKey, change: Partial<StageSelection>): void {
     setStageSelections(previous => {
       const current = previous[key];
       if (change.provider === "") return Object.fromEntries(Object.entries(previous).filter(([k]) => k !== key));
       if (change.provider !== undefined && change.provider !== current?.provider)
-        return { ...previous, [key]: { provider: change.provider, model: stageModelOptions(change.provider)[0]?.id ?? "", custom: "", effort: "" } };
-      return current ? { ...previous, [key]: { ...current, ...change } } : previous;
+        return { ...previous, [key]: { provider: change.provider, model: stageModelOptions(change.provider)[0]?.id ?? "", custom: "", effort: "", thinking: undefined } };
+      if (!current) return previous;
+      const next = { ...current, ...change };
+      if (!stageSupportsThinking(next.provider, next.model === "custom" ? next.custom.trim() : next.model)) {
+        next.thinking = undefined;
+        if (next.provider === "bailian") next.effort = "";
+      }
+      if (next.thinking === "disabled") next.effort = "";
+      return { ...previous, [key]: next };
     });
   }
   const stage_models: Partial<Record<StageModelKey, StageModelDTO>> = Object.fromEntries(STAGE_ROWS.flatMap(({ key }) => {
     const s = stageSelections[key];
     if (!s) return [];
     const model = s.provider !== "chatgpt" && s.model === "custom" ? s.custom.trim() : s.model;
-    return [[key, { provider: s.provider, model, ...(s.effort ? { effort: s.effort } : {}) }]];
+    return [[key, { provider: s.provider, model, ...(s.effort ? { effort: s.effort } : {}), ...(s.thinking ? { thinking: s.thinking } : {}) }]];
   }));
   const withSelection = (selection: string) => selection && !subscriptionModels.some(m => m.id === selection)
     ? [...subscriptionModels, {id: selection, label: `${selection} · 当前不可用`}] : subscriptionModels;
@@ -133,7 +145,8 @@ export function useConfig() {
       research_question: research_question.trim() || null,
       llm_provider, quick_think_llm, deep_think_llm, output_language,
       ...(Object.keys(stage_models).length ? { stage_models } : {}),
-      ...(jev_verification_enabled ? { jev_verification_enabled, jev_model } : {}),
+      jev_verification_enabled,
+      ...(jev_verification_enabled ? { jev_model } : {}),
       ...(usesSubscription && chatgpt.account_ref ? {chatgpt_account_ref: chatgpt.account_ref} : {}),
     };
   }
@@ -142,7 +155,7 @@ export function useConfig() {
     deep_think_llm, setDeepThinkLlm, output_language, setOutputLanguage,
     quick_model_selection, deep_model_selection, quick_custom_model_id, setQuickCustomModelId, deep_custom_model_id, setDeepCustomModelId,
     selectedProvider, quickOptions, deepOptions, configured_keys, chatgpt, configurationError, validationError, batchValidationError: commonError,
-    usesSubscription, stageSelections, updateStage, stageModelOptions,
+    usesSubscription, stageSelections, updateStage, stageModelOptions, stageSupportsThinking,
     jev_verification_enabled, setJevVerificationEnabled, jev_model, setJevModel,
     stageEfforts: (providerId: string) => config?.stage_model_efforts?.[providerId] ?? [],
     buildRequest: () => nativeRequest(ticker),

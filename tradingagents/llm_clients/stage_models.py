@@ -12,8 +12,14 @@ SPECIALIST_ROLES = ("operating_quality", "event_context", "market_context")
 STAGE_MODEL_KEYS = ("specialist", "challenge", "synthesis", "focus_response", *SPECIALIST_ROLES)
 # The unified ``effort`` lands on each provider's existing setting; others reject it.
 _EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
+STAGE_THINKING_MODELS = {
+    "deepseek": ("deepseek-flash", "deepseek-v4-pro"),
+    "bailian": ("deepseek-v4.1-flash-1017", "kimi-k3.1-pro"),
+}
+
 EFFORT_CONFIG_KEYS = {
     "deepseek": ("deepseek_reasoning_effort", _EFFORTS),
+    "bailian": ("bailian_reasoning_effort", frozenset({"low", "medium", "high", "max"})),
     "openai": ("openai_reasoning_effort", REASONING_EFFORTS),
     "chatgpt": ("openai_reasoning_effort", REASONING_EFFORTS),
     "anthropic": ("anthropic_effort", _EFFORTS),
@@ -30,18 +36,25 @@ def stage_model_overrides(config: Mapping[str, Any]) -> dict[str, dict[str, str]
     for key, entry in policy.items():
         if key not in STAGE_MODEL_KEYS:
             raise ValueError(f"stage_models: unknown stage {key!r}")
-        if not isinstance(entry, Mapping) or entry.keys() - {"provider", "model", "effort"}:
-            raise ValueError(f"stage_models[{key!r}] accepts only provider/model/effort")
+        if not isinstance(entry, Mapping) or entry.keys() - {"provider", "model", "effort", "thinking"}:
+            raise ValueError(f"stage_models[{key!r}] accepts only provider/model/effort/thinking")
         provider, model, effort = entry.get("provider"), entry.get("model"), entry.get("effort")
         if not isinstance(provider, str) or (provider not in PROVIDER_API_KEY_ENV and provider != "chatgpt"):
             raise ValueError(f"stage_models[{key!r}]: unsupported provider {provider!r}")
         if not isinstance(model, str) or not model.strip():
             raise ValueError(f"stage_models[{key!r}]: model is required")
+        mode = entry.get("thinking")
+        switchable = model.strip() in STAGE_THINKING_MODELS.get(provider, ())
+        if mode is not None and (mode not in ("enabled", "disabled") or not switchable):
+            raise ValueError(f"stage_models[{key!r}]: thinking setting is unsupported for {provider}/{model}")
         if effort is not None:
             if not isinstance(effort, str) or provider not in EFFORT_CONFIG_KEYS or effort not in EFFORT_CONFIG_KEYS[provider][1]:
                 raise ValueError(f"stage_models[{key!r}]: effort {effort!r} is unsupported for {provider}")
-            if provider == "deepseek" and thinking_disabled:
-                raise ValueError(f"stage_models[{key!r}]: effort conflicts with disabled DeepSeek thinking")
+            if provider == "bailian" and not switchable:
+                raise ValueError(f"stage_models[{key!r}]: effort is unsupported for {provider}/{model}")
+            if mode == "disabled" or (provider == "deepseek" and mode is None and thinking_disabled):
+                name = "DeepSeek" if provider == "deepseek" else "Bailian"
+                raise ValueError(f"stage_models[{key!r}]: effort conflicts with disabled {name} thinking")
     return {key: dict(entry) for key, entry in policy.items()}
 
 
@@ -66,6 +79,9 @@ def resolve_stage_model(config: Mapping[str, Any], stage: str) -> tuple[dict[str
     if entry["provider"] != config["llm_provider"]:
         # The top-level endpoint belongs to the top-level provider.
         call["backend_url"] = None
+    mode = entry.get("thinking")
+    if mode is not None:
+        call[f'{entry["provider"]}_thinking'] = mode
     if entry.get("effort") is not None:
         call[EFFORT_CONFIG_KEYS[entry["provider"]][0]] = entry["effort"]
     return call, entry["model"]

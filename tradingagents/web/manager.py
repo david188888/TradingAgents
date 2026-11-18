@@ -1052,12 +1052,15 @@ def _error_category(error: BaseException | None) -> str:
     from tradingagents.dataflows.native_qualification import NativeSourceUnavailable
     from tradingagents.dataflows.tushare_price_history import PriceHistoryQualificationError
     from tradingagents.execution.config_identity import SemanticConfigError
+    from tradingagents.execution.insight_model import DecisionVerificationFailed
     from tradingagents.execution.native_publication import NativePublicationError
 
     if error is None:
         return "unexpected_internal_failure"
     if isinstance(error, (ReportPublicationError, NativePublicationError)):
         return "report_publication"
+    if isinstance(error, DecisionVerificationFailed):
+        return "decision_verification"
     if isinstance(error, SemanticConfigError):
         return "missing_configuration"
     if isinstance(error, (NativeSourceUnavailable, PriceHistoryQualificationError, ValidationError)):

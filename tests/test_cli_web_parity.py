@@ -126,9 +126,11 @@ def test_future_cutoff_is_rejected_by_both_research_entries():
                          quick_think_llm="deepseek-flash", deep_think_llm="deepseek-flash")
 
 
-def test_equivalent_cli_and_web_inputs_freeze_the_same_research_config(monkeypatch):
+@pytest.mark.parametrize("stage_settings", [{"effort": "high"}, {"thinking": "disabled"}],
+                         ids=["high-effort", "thinking-disabled"])
+def test_equivalent_cli_and_web_inputs_freeze_the_same_research_config(monkeypatch, stage_settings):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    stages = {"challenge": {"provider": "deepseek", "model": "deepseek-v4-pro", "effort": "high"}}
+    stages = {"challenge": {"provider": "deepseek", "model": "deepseek-v4-pro", **stage_settings}}
     cli = build_request({"llm": {"provider": "deepseek", "quick_think_llm": "deepseek-flash",
                                   "deep_think_llm": "deepseek-v4-pro", "stage_models": stages},
                          "run": {"research_question": "现金流如何？", "output_language": "Chinese"}},

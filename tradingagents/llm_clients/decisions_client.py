@@ -1,8 +1,29 @@
-"""OpenRouter Decisions API client for Jev verification."""
+"""OpenRouter Decisions API client and defaults for Insight verification."""
+import math
 import os
 import time
 
 import requests
+
+DEFAULT_DECISION_MODEL = "perplexity/pplx-decider-flash-v1.3:free"
+JEV_DECISION_MODEL = "typesafe/jev-1.14"
+TARGETED_REVIEW_POLICY = "targeted-v1"
+
+
+def decision_run_config(enabled, model, *, configured):
+    """Freeze policy for a new study. Omitted enablement follows key availability."""
+    if enabled is not None and type(enabled) is not bool:
+        raise ValueError("jev_verification_enabled must be boolean")
+    enabled = configured if enabled is None else enabled
+    if enabled and not configured:
+        raise ValueError("决策核验需要配置 OPENROUTER_API_KEY。")
+    if not isinstance(model, str) or not model.strip():
+        raise ValueError("jev_model must be a nonempty model ID")
+    model = model.strip()
+    alternate = DEFAULT_DECISION_MODEL if model.removeprefix("~").startswith("typesafe/jev-") else JEV_DECISION_MODEL
+    return {"insight_review_policy": TARGETED_REVIEW_POLICY, "jev_verification_enabled": enabled,
+            "jev_model": model, "jev_fallback_model": alternate}
+
 
 DECISIONS_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
 
@@ -66,25 +87,35 @@ def verify_insight_risk(
                 timeout=timeout
             )
         except requests.RequestException as exc:
-            last_error = str(exc)
-            time.sleep(2 ** attempt)
+            last_error = type(exc).__name__
+            if attempt + 1 < retries:
+                time.sleep(2 ** attempt)
             continue
 
         # 429 / 5xx 重试
         if response.status_code == 429 or response.status_code >= 500:
-            wait = float(response.headers.get("Retry-After", 2 ** attempt))
-            last_error = f"{response.status_code}: {response.text[:200]}"
-            time.sleep(wait)
+            last_error = f"HTTP {response.status_code}"
+            if attempt + 1 < retries:
+                try:
+                    wait = float(response.headers.get("Retry-After", 2 ** attempt))
+                except ValueError:
+                    wait = 2 ** attempt
+                time.sleep(min(30, max(0, wait)))
             continue
 
         # 4xx 不可重试
         if response.status_code >= 400:
             raise JevVerificationError(
-                f"Jev API {response.status_code}: {response.text[:500]}"
+                f"Jev API HTTP {response.status_code}"
             )
 
-        data = response.json()
-        answers = data.get("answers", {})
+        try:
+            data = response.json()
+        except ValueError:
+            raise JevVerificationError("Invalid Decisions JSON") from None
+        answers = data.get("answers") if isinstance(data, dict) else None
+        if not isinstance(answers, dict):
+            raise JevVerificationError("Invalid Decisions answers")
 
         # 检查答案完整性
         missing = [k for k in questions if k not in answers]
@@ -92,26 +123,37 @@ def verify_insight_risk(
             raise JevVerificationError(f"Missing answers: {missing}")
 
         scores = {}
-        for name, ans in answers.items():
-            ans_type = ans.get("type")
+        for name in questions:
+            ans = answers[name]
+            ans_type = ans.get("type") if isinstance(ans, dict) else None
             if ans_type == "refusal":
                 raise JevVerificationError(f"Provider refused to answer: {name}")
             if ans_type == "noul":
                 prob = ans.get("noul")
-                if not isinstance(prob, (int, float)) or not (0.0 <= prob <= 1.0):
+                if type(prob) not in (int, float) or not (0.0 <= prob <= 1.0):
                     raise JevVerificationError(
-                        f"Invalid probability for {name}: {prob}"
+                        f"Invalid probability for {name}"
                     )
                 scores[name] = float(prob)
             else:
-                raise JevVerificationError(f"Unexpected answer type: {ans_type}")
+                raise JevVerificationError(f"Unexpected answer type for {name}")
 
-        meta = {
-            "id": data.get("id"),
-            "model": data.get("model"),
-            "provider": data.get("provider"),
-            "usage": data.get("usage")
-        }
+        usage = data.get("usage")
+        if usage is not None and not isinstance(usage, dict):
+            raise JevVerificationError("Invalid Decisions usage")
+        usage = usage or {}
+        for field in ("input_tokens", "output_tokens"):
+            value = usage.get(field)
+            if value is not None and (type(value) is not int or value < 0):
+                raise JevVerificationError("Invalid Decisions usage")
+        meta = {}
+        for field, default in (("id", ""), ("model", model), ("provider", "")):
+            value = data.get(field)
+            if value is not None and not isinstance(value, str):
+                raise JevVerificationError("Invalid Decisions metadata")
+            meta[field] = value or default
+        meta["usage"] = {key: value for key, value in usage.items()
+                         if type(value) is int or type(value) is float and math.isfinite(value)}
         return scores, meta
 
     raise JevVerificationUnavailable(

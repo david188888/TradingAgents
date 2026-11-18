@@ -20,7 +20,9 @@ from tradingagents.agents.schemas._insight import (
     SynthesisProposal,
 )
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
-from tradingagents.execution.insight_model import InsightUnavailable
+from tradingagents.execution.insight_model import DecisionVerificationFailed, InsightUnavailable
+from tradingagents.llm_clients.decisions_client import TARGETED_REVIEW_POLICY
+from tradingagents.research.evidence_retrieval import related_fact_refs, retrieve_evidence
 from tradingagents.research.insight_report import parse_insight_report, validate_saved_synthesis
 from tradingagents.research.insights import (
     compile_insights,
@@ -32,11 +34,11 @@ from tradingagents.research.numeric_catalog import render_numeric_anchor
 from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
 CAPABILITY_CALLS_PER_ROLE = 2
+MAX_DECISION_CONFLICT_QUESTIONS = 126  # Leave two of 128 slots for support and reasoning.
 
 
 def catalog_prompt(catalog, query='', *, compact=False):
     """All facts remain visible; quote bounded original passages without full payload duplication."""
-    from tradingagents.research.evidence_retrieval import retrieve_evidence
     sources = [s.model_dump(mode='json') for s in catalog.sources]
     context = {'sources': sources, 'facts': [{'evidence_ids': e.source_ids} for e in catalog.evidence]}
     passages = retrieve_evidence(context, query or ' '.join(e.text for e in catalog.evidence))
@@ -55,6 +57,18 @@ def catalog_prompt(catalog, query='', *, compact=False):
         'source_passages': passages, 'passage_scope': 'Selected exact excerpts; full saved sources remain available in the report.',
         'numbers': [{'ref': n.ref, 'description': render_numeric_anchor(n.anchor.model_dump(mode='json')),
                     'limitations': n.anchor.limitations} for n in catalog.numbers]}
+
+
+def _catalog_for_refs(catalog, refs):
+    evidence = tuple(card for card in catalog.evidence if card.ref in refs)
+    fact_ids = {card.fact_id for card in evidence}
+    source_ids = {sid for card in evidence for sid in card.source_ids}
+    return catalog.model_copy(update={
+        'evidence': evidence,
+        'sources': tuple(source for source in catalog.sources if source.evidence_id in source_ids),
+        'numbers': tuple(n for n in catalog.numbers if set(n.anchor.required_fact_ids) <= fact_ids
+                         and set(n.anchor.input_evidence_ids) <= source_ids),
+    })
 
 
 def merge_catalogs(catalogs):
@@ -90,6 +104,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
         return parse_insight_report(journal.state['insight.report'])
     ensure_active()
     compact = journal.state['identity'].get('insight_context_policy') == INSIGHT_CONTEXT_POLICY
+    review_config = journal.state['identity'].get('config', {})
+    targeted_review = review_config.get('insight_review_policy') == TARGETED_REVIEW_POLICY
     gaps, stages, insights = list(source_gaps), {}, []
     catalog_history = {canonical_sha256(c.model_dump(mode='json')): c for c in catalogs.values()}
     if foundation_catalog is not None:
@@ -306,7 +322,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
 
     merged = merge_catalogs(catalogs)
     journal.put('insight.review_catalog', merged.model_dump(mode='json'))
-    catalog_history[canonical_sha256(merged.model_dump(mode='json'))] = merged
+    merged_id = canonical_sha256(merged.model_dump(mode='json'))
+    catalog_history[merged_id] = merged
     journal.put('insight.catalog_history', {key: c.model_dump(mode='json') for key, c in catalog_history.items()})
     targets = {f'I{i}': item for i, item in enumerate((s for s in insights if s.status == 'accepted'), 1)}
     def project_targets(values):
@@ -317,17 +334,16 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 'evidence_refs': [e.ref for e in merged.evidence if e.fact_id in item.fact_ids]})
         return result
 
-    review_context = {**catalog_prompt(merged, compact=compact), 'insights': project_targets(targets)}
-
-    def note(text, refs, *, claim='研究审阅'):
+    def note(text, refs, *, claim='研究审阅', catalog=merged):
         compiled = compile_insights({'insights': [{'claim': claim, 'evidence_refs': list(refs),
-            'reasoning': text, 'limitations': '研究意见，不能视为事实证明。'}]}, catalog=merged, role='review', normalize_refs=True)
+            'reasoning': text, 'limitations': '研究意见，不能视为事实证明。'}]}, catalog=catalog, role='review', normalize_refs=True)
         if compiled.rejected:
             raise ValueError(compiled.rejected[0].code)
         compiled = compiled.items[0]
         if set(compiled.issues) - {'evidence_missing'}:
             raise ValueError(next(issue for issue in compiled.issues if issue != 'evidence_missing'))
-        return compiled
+        # The subset shares the merged aliases and identities. Persist the canonical catalog once.
+        return compiled.model_copy(update={'catalog_id': merged_id}) if catalog is not merged else compiled
 
     # ===== Jev Verification Stage =====
     from tradingagents.agents.schemas._insight import JevVerificationMeta
@@ -343,7 +359,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             verifications = {}
             jev_diagnostics = []
 
-            projected = {item['ref']: item for item in review_context['insights']}
+            projected = {item['ref']: item for item in project_targets(targets)}
             for ref, item in targets.items():
                 evidence_cards = [e for e in merged.evidence if e.fact_id in item.fact_ids]
 
@@ -366,8 +382,17 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                         }
                     }
                 }
-                # Per-evidence conflict detection
-                for e in merged.evidence:
+                conflict_candidates = merged.evidence
+                partial_coverage = targeted_review and len(conflict_candidates) > MAX_DECISION_CONFLICT_QUESTIONS
+                if partial_coverage:
+                    cited = projected[ref]['evidence_refs']
+                    related = related_fact_refs(merged.evidence,
+                        projected[ref]['claim'] + ' ' + projected[ref]['reasoning'],
+                        excluded=set(cited), limit=MAX_DECISION_CONFLICT_QUESTIONS)
+                    priority = dict.fromkeys((*cited, *related, *(e.ref for e in merged.evidence)))
+                    chosen = set(list(priority)[:MAX_DECISION_CONFLICT_QUESTIONS])
+                    conflict_candidates = tuple(e for e in merged.evidence if e.ref in chosen)
+                for e in conflict_candidates:
                     questions[f"conflict_{e.ref}"] = {
                         "type": "noul",
                         "instructions": f"证据 {e.ref}（{e.text[:80]}）是否与该观点冲突？",
@@ -386,7 +411,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     ],
                     "global_evidence": [
                         {"ref": e.ref, "text": e.text[:200]}
-                        for e in merged.evidence[:50]
+                        for e in conflict_candidates[:50]
                     ]
                 }
 
@@ -412,6 +437,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                         sufficient >= threshold_clear
                         and sound >= threshold_clear
                         and not conflicts
+                        and not partial_coverage
                     )
                     has_low_score = (
                         sufficient <= threshold_risk
@@ -429,10 +455,15 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                         'scores': {k: v for k, v in scores.items() if not k.startswith('conflict_')},
                         'conflicts': list(conflicts),
                         'risk_level': risk_level,
+                        **({'partial_conflict_coverage': True} if partial_coverage else {}),
                         'meta': meta
                     }
 
                 except InsightUnavailable as exc:
+                    if review_config.get('jev_fallback_model'):
+                        journal.put('insight.diagnostics.jev', [{'insight_id': item.insight_id, 'error': str(exc)}])
+                        finish('jev_verify', 'failed')
+                        raise DecisionVerificationFailed(str(exc)) from None
                     verifications[item.insight_id] = {
                         'scores': {},
                         'conflicts': [],
@@ -449,13 +480,12 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             journal.put('insight.jev_verifications', verifications)
             if jev_diagnostics:
                 journal.put('insight.diagnostics.jev', jev_diagnostics)
-            finish('jev_verify', 'completed' if verifications else 'failed')
         else:
             journal.put('insight.jev_verifications', {})
-            finish('jev_verify', 'skipped')
 
     # Route targets based on Jev results
-    jev_verifications = journal.state.get('insight.jev_verifications', {})
+    jev_verifications = journal.state['insight.jev_verifications']
+    finish('jev_verify', 'completed' if jev_verifications else 'skipped')
     if jev_verifications:
         challenge_targets = {}
         for ref, item in targets.items():
@@ -468,7 +498,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     target_id=item.insight_id,
                     status='verified',
                     concern=None,
-                    reasoning=f"Jev 验证通过（充分性 {v['scores'].get('evidence_sufficient', 0):.2f}，推理 {v['scores'].get('reasoning_sound', 0):.2f}，无冲突证据）",
+                    reasoning=f"决策核验通过（充分性 {v['scores'].get('evidence_sufficient', 0):.2f}，推理 {v['scores'].get('reasoning_sound', 0):.2f}，无冲突证据）",
                     source_ids=(),
                     note=None,
                     jev_scores=v['scores'],
@@ -489,24 +519,39 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 # jev_uncertain or jev_high_risk → Challenge LLM
                 challenge_targets[ref] = item
 
-        # Build challenge context with only conflicting evidence for flagged targets
-        if challenge_targets and jev_verifications:
-            # For targets with identified conflicts, scope the evidence
-            scoped_context = {**catalog_prompt(merged, compact=compact),
-                'insights': project_targets(challenge_targets)}
-            # Add conflict annotations
-            conflict_notes = []
-            for ref, item in challenge_targets.items():
-                v = jev_verifications.get(item.insight_id, {})
-                conflicts = v.get('conflicts', [])
-                if conflicts:
-                    conflict_notes.append(f"{ref}（{item.insight_id}）：Jev 检测到与 {', '.join(conflicts)} 冲突")
-            if conflict_notes:
-                scoped_context['jev_conflict_notes'] = conflict_notes
-            review_context = scoped_context
-        else:
-            review_context = {**catalog_prompt(merged, compact=compact),
-                'insights': project_targets(challenge_targets)}
+    review_scopes = {}
+    review_context = {'insights': []}
+    if not targeted_review:
+        review_context = {**catalog_prompt(merged, compact=compact), 'insights': project_targets(challenge_targets)}
+        conflict_notes = []
+        for ref, item in challenge_targets.items():
+            conflicts = jev_verifications.get(item.insight_id, {}).get('conflicts', [])
+            if conflicts:
+                conflict_notes.append(f"{ref}（{item.insight_id}）：Jev 检测到与 {', '.join(conflicts)} 冲突")
+        if conflict_notes:
+            review_context['jev_conflict_notes'] = conflict_notes
+    if targeted_review and challenge_targets:
+        projected = project_targets(challenge_targets)
+        for view in projected:
+            ref = view['ref']
+            verification = jev_verifications.get(view['insight_id'], {})
+            conflicts = verification.get('conflicts', [])
+            required = set(view['evidence_refs']) | set(conflicts)
+            related = related_fact_refs(merged.evidence, view['claim'] + ' ' + view['reasoning'], excluded=required)
+            scoped = _catalog_for_refs(merged, required | set(related))
+            review_scopes[ref] = scoped
+            view.update(allowed_evidence_refs=[e.ref for e in scoped.evidence],
+                        allowed_number_refs=[n.ref for n in scoped.numbers],
+                        flagged_conflicts=conflicts)
+            if verification.get('partial_conflict_coverage'):
+                view['partial_conflict_coverage'] = True
+        shared = _catalog_for_refs(merged, {e.ref for scope in review_scopes.values() for e in scope.evidence})
+        query = ' '.join(view['claim'] for view in projected)
+        context = catalog_prompt(shared, query, compact=compact)
+        # A numeric anchor assembled from multiple scopes belongs to none of those targets.
+        visible_numbers = {n.ref for scope in review_scopes.values() for n in scope.numbers}
+        context['numbers'] = [n for n in context['numbers'] if n['ref'] in visible_numbers]
+        review_context = {**context, 'insights': projected}
 
     reviews = []
     if 'insight.reviews' in journal.state:
@@ -521,13 +566,17 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     if review.target not in targets:
                         diagnostics.append({'index': index, 'target': None, 'code': 'target_unknown'})
                         continue
+                    if targeted_review and review.target not in challenge_targets:
+                        diagnostics.append({'index': index, 'target': review.target, 'code': 'target_not_assigned'})
+                        continue
                     if allowed is not None and review.target not in allowed:
                         diagnostics.append({'index': index, 'target': review.target, 'code': 'repair_target_unexpected'})
                         continue
                     if not review.reasoning.strip() or (review.concern is not None and not review.concern.strip()):
                         diagnostics.append({'index': index, 'target': review.target, 'code': 'blank_text'})
                         continue
-                    checked = note(review.reasoning, review.evidence_refs, claim=review.concern or '未发现有效反证')
+                    checked = note(review.reasoning, review.evidence_refs, claim=review.concern or '未发现有效反证',
+                                   catalog=review_scopes.get(review.target, merged))
                     if review.target in accepted:
                         duplicates.add(review.target)
                     accepted[review.target] = SavedReview(target_id=targets[review.target].insight_id,
@@ -576,7 +625,10 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
         journal.put('insight.reviews', [r.model_dump(mode='json') for r in reviews])
     if any(r.status in {'unreviewed', 'failed'} for r in reviews):
         gaps.append('unreviewed_insights')
-    finish('challenge', 'completed' if reviews and all(r.status not in {'unreviewed', 'failed'} for r in reviews) else 'failed' if targets else 'skipped')
+    if targeted_review and not challenge_targets:
+        finish('challenge', 'skipped')
+    else:
+        finish('challenge', 'completed' if reviews and all(r.status not in {'unreviewed', 'failed'} for r in reviews) else 'failed' if targets else 'skipped')
 
     responses = []
     for role in catalogs:
@@ -606,14 +658,15 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                             'code': 'duplicate_target' if reply.target in duplicates or reply.target in used else 'target_not_assigned'})
                         continue
                     current = assigned[reply.target]
-                    checked = note(reply.reasoning, reply.evidence_refs)
+                    reply_catalog = review_scopes.get(reply.target, merged)
+                    checked = note(reply.reasoning, reply.evidence_refs, catalog=reply_catalog)
                     replacement = None
                     if reply.action == 'revise':
                         if reply.replacement is None:
                             diagnostics.append({'index': index, 'target': reply.target, 'code': 'replacement_missing'})
                             continue
                         replacement = compile_insights({'insights': [reply.replacement.model_dump(mode='json')]},
-                            catalog=merged, role=role, revision=current.revision + 1, indices=[current.index], normalize_refs=True)
+                            catalog=reply_catalog, role=role, revision=current.revision + 1, indices=[current.index], normalize_refs=True)
                         if replacement.rejected:
                             diagnostics.append({'index': index, 'target': reply.target, 'code': replacement.rejected[0].code})
                             continue
@@ -628,7 +681,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                         reasoning=checked.rendered.reasoning, source_ids=checked.source_ids, note=checked,
                         replacement_id=replacement.insight_id if replacement else None))
                     if replacement:
-                        replacement_items.append(replacement)
+                        replacement_items.append(replacement.model_copy(update={'catalog_id': merged_id})
+                                                 if reply_catalog is not merged else replacement)
                     used.add(reply.target)
                 except (ValueError, ValidationError) as exc:
                     code = str(exc) if str(exc) in {'numeric_literal_unbound', 'numeric_scope', 'reference_unknown', 'source_unavailable'} else 'response_shape_invalid'
