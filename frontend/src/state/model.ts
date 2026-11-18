@@ -293,6 +293,7 @@ const ROLE_REGISTRY: readonly RoleDefinition[] = [
   ["operating_quality", "Operating quality"],
   ["event_context", "Event context"],
   ["market_context", "Market context"],
+  ["jev_verify", "Jev verification"],
   ["challenge", "Evidence challenge"],
   ["response_operating_quality", "Operating reply"],
   ["response_event_context", "Event reply"],

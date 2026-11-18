@@ -661,7 +661,7 @@ export interface NativeEvidencePolicyV1DTO {
 }
 
 // Canonical: web/reader_process_models.py and agents/schemas/_insight.py.
-export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "challenge" | "synthesis" | "code_checks" | "focus_response" | "response_operating_quality" | "response_event_context" | "response_market_context";
+export type AgentKey = "evidence" | "operating_quality" | "event_context" | "market_context" | "jev_verify" | "challenge" | "synthesis" | "code_checks" | "focus_response" | "response_operating_quality" | "response_event_context" | "response_market_context";
 export type OutputAvailability = "available" | "insight_stage_available" | "not_recorded" | "unavailable" | "unsupported" | "not_applicable";
 export interface ObservedCountDTO { value: number | null; completeness: "complete" | "known_lower_bound" | "not_recorded" | "unavailable"; basis: string }
 export interface NativeCountsDTO { main_budget: ObservedCountDTO; repair_budget: ObservedCountDTO; sdk_main: ObservedCountDTO; sdk_repair: ObservedCountDTO; sdk_total: ObservedCountDTO; data_capability: ObservedCountDTO; data_http: ObservedCountDTO; focus_budget?: ObservedCountDTO | null; sdk_focus?: ObservedCountDTO | null }

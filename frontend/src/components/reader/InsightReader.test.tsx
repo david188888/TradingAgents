@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { InsightReportDTO } from "../../api/contracts";
 import { InsightReader } from "./InsightReader";
@@ -50,6 +50,32 @@ describe("Insight Reader", () => {
     expect(screen.getByText(/第十页/)).toBeTruthy();
     expect(screen.getByText(/部分观点尚未完成审阅/)).toBeTruthy();
     expect(screen.queryByText("中性")).toBeNull();
+  });
+
+  it("renders structured Markdown and collapses only the long synthesis reasoning", () => {
+    const record = structuredClone(report);
+    record.synthesis = {judgement:"**谨慎看待经营改善**",stance:"neutral",reasoning:`## 核心论证\n\n${"长论证段落。".repeat(220)}`,
+      limitations:"**资料口径仍有限**",next_check:"1. 核对后续现金流",insight_ids:["insight-a"],reference_ids:{}};
+    const {container} = render(<InsightReader record={record}/>);
+    const longform = container.querySelector<HTMLDetailsElement>("[data-longform]")!;
+    expect(longform.open).toBe(false);
+    expect(screen.getByText("谨慎看待经营改善")).toBeVisible();
+    expect(screen.getByText("资料口径仍有限")).toBeVisible();
+    expect(screen.getByRole("heading",{name:"核心论证"})).toBeInTheDocument();
+    fireEvent.click(screen.getByText("展开完整综合论证"));
+    expect(longform.open).toBe(true);
+    expect(screen.getByText("核对后续现金流")).toBeVisible();
+  });
+
+  it("keeps superseded Insights out of the current reading flow", () => {
+    const record = structuredClone(report);
+    record.insights.push({...record.insights[0],insight_id:"insight-old",status:"excluded",
+      rendered:{claim:"已撤回的旧观点",reasoning:"旧推理",limitations:"旧局限"}});
+    const {container} = render(<InsightReader record={record}/>);
+    const archived = container.querySelector<HTMLDetailsElement>(".ir-archived")!;
+    expect(archived.open).toBe(false);
+    expect(archived).toHaveTextContent("已撤回的旧观点");
+    expect(container.querySelector(".ir-insight-list > .ir-insight")).toHaveTextContent("客户结构仍需核查");
   });
 
   it("routes the new public contract from the maintained research page", () => {
