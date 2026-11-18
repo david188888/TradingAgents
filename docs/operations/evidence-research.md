@@ -54,21 +54,26 @@ the two catalog defaults, run:
 tradingagents analyze --ticker 002130 --provider bailian
 ```
 
-### Optional Jev verification
+### Decision verification and Challenge
 
-Jev adds an automated review step between the specialists and challenge. Set `OPENROUTER_API_KEY` in the
-ignored `.env`, then either tick **启用 Jev 决策验证** in the advanced model panel, or set
-`jev_verification_enabled` (and optionally `jev_model`) in the `run` section of the CLI local JSON.
-Enabling it without the key is rejected at admission, so a run never starts with verification it cannot call.
+With `OPENROUTER_API_KEY` configured, new Web and CLI studies enable decision verification by default.
+The primary model is `perplexity/pplx-decider-flash-v1.3:free`. A failed or rate-limited call immediately
+tries `typesafe/jev-1.14`, which is billed by usage. Choosing Jev as the primary reverses the order.
+If neither attempt succeeds, the run fails before Challenge or synthesis. Model usage and failures stay
+in the run record. Without the key, omitted enablement leaves the run on the Challenge-only path.
+Explicit enablement without the key is rejected. In Web, the model setup for single and batch runs shows
+both the verification toggle and the possible usage charge before submission. See [CLI local settings](cli-research.md#decision-verification)
+for the equivalent controls. If verification fails, previously saved specialist Insights stay readable in their own stages.
 
-Each accepted Insight is scored for evidence sufficiency, reasoning soundness and conflict against the
-saved evidence. Insights that clear both thresholds are saved with the `verified` review status and skip
-challenge; uncertain or high-risk Insights proceed to challenge with the conflicting evidence named in the
-context. A failed Jev call marks that Insight `failed` and does not fall back to challenge, so an
-unverified Insight cannot silently pass as reviewed. `jev_model` defaults to `typesafe/jev-1.14`;
-`perplexity/pplx-decider-flash-v1.3:free` is the free alternative. The clear/risk thresholds are fixed
-run-identity defaults (0.85 / 0.15) and are not yet calibrated on real samples. Request and response
-shapes are in the [Decisions API guide](../openrouter-decisions-agent-guide.md).
+The verifier scores accepted Insights for evidence sufficiency, reasoning soundness, and conflicts.
+Both support scores must reach 0.85 with no flagged conflict for an Insight to bypass Challenge.
+Each Decisions request asks at most 128 questions. If the catalog exceeds the conflict-question budget,
+the verifier prioritizes cited and related cards and passes the Insight to Challenge even with clear scores.
+The 0.85 / 0.15 thresholds are run-identity defaults and have not been calibrated on real samples.
+Challenge uses the Insight's cited evidence, any flagged conflict, and up to four lexically related saved
+evidence cards. Challenge and replies can cite only the evidence and numeric anchors supplied for
+their target. Existing checkpoints retain their saved policy.
+See the [Decisions API guide](../openrouter-decisions-agent-guide.md) for the API contract.
 
 ### Model behavior
 
@@ -84,8 +89,11 @@ DeepSeek defaults to enabled thinking/high effort. Environment controls include
 ChatGPT effort support is model-dependent; its output-cap omission is intentional. Google maps the
 shared output cap to `max_output_tokens`, and Azure forwards `max_tokens`; provider-side acceptance
 and enforcement depend on the selected model. A stage `effort` replaces the former task-effort mapping and lands on the
-selected provider's own setting; providers without one reject it. A failed stage call fails under the normal rules and never
-falls back to another model. [stage_models.py](../../tradingagents/llm_clients/stage_models.py) owns stage keys, resolution and
+selected provider's own setting; providers without one reject it. A failed research-generation call follows its existing stage rules.
+For supported DeepSeek and Bailian model IDs, the advanced stage row also offers inherited, enabled,
+and disabled thinking. In CLI JSON, omit `llm.stage_models.<stage>.thinking` to inherit, or set it to
+`"enabled"` or `"disabled"`. A disabled row cannot specify a stage effort, and its author reply inherits
+that row's model and thinking setting. [stage_models.py](../../tradingagents/llm_clients/stage_models.py) owns stage keys, resolution and
 valid efforts; runs freeze the resolved policy for resume and the audit configuration view.
 
 Fresh V9 research sends strict structured output on SIWC/OpenAI and JSON mode on the existing

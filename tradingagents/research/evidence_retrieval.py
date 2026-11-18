@@ -9,6 +9,15 @@ def _terms(text):
     return words
 
 
+def related_fact_refs(cards, query, *, excluded, limit=4):
+    """Rank saved evidence cards by shared query terms, with stable ties."""
+    terms = _terms(query)
+    candidates = [(len(terms & _terms(card.text)), card.ref)
+                  for card in cards if card.ref not in excluded]
+    return [ref for score, ref in sorted(candidates, key=lambda item: (-item[0], item[1]))[:limit]
+            if score]
+
+
 def retrieve_evidence(context, query, *, limit=8):
     """Lexically rank exact saved passages inside this stage's fact sources."""
     record = context.get("record", {})

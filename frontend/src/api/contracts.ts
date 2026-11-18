@@ -160,6 +160,8 @@ export interface ConfigDefaultsDTO {
   quick_think_llm: string | null;
   deep_think_llm: string | null;
   output_language: string;
+  jev_verification_enabled?: boolean;
+  jev_model?: string;
 }
 
 export interface WindStatusDTO {
@@ -174,6 +176,7 @@ export interface ConfigResponseDTO {
   output_languages: string[];
   /** Providers listed here accept a per-stage effort; others reject one. */
   stage_model_efforts?: Record<string, string[]>;
+  stage_thinking_models?: Record<string, string[]>;
   checkpoint_available: boolean;
   wind: WindStatusDTO;
   defaults: ConfigDefaultsDTO;
@@ -191,6 +194,7 @@ export interface StageModelDTO {
   provider: string;
   model: string;
   effort?: string;
+  thinking?: "enabled" | "disabled";
 }
 
 export interface RunCreateRequestDTO {
@@ -208,7 +212,7 @@ export interface RunCreateRequestDTO {
   research_question?: string | null;
   /** Frozen server policy; clients may omit it to use the profile default. */
   evidence_policy?: NativeEvidencePolicyV1DTO;
-  /** Optional Jev decision verification before challenge; needs an OpenRouter key. */
+  /** Decision verification before Challenge; defaults to on when OpenRouter is configured. */
   jev_verification_enabled?: boolean;
   jev_model?: string;
 }

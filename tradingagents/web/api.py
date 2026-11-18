@@ -22,8 +22,9 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.execution.models import AnalysisRequest
 from tradingagents.execution.native_runner import NEW_STUDY_TIMEOUT_SECONDS
 from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV, missing_provider_env
+from tradingagents.llm_clients.decisions_client import DEFAULT_DECISION_MODEL, decision_run_config
 from tradingagents.llm_clients.model_catalog import MODEL_OPTIONS, model_allowed
-from tradingagents.llm_clients.stage_models import EFFORT_CONFIG_KEYS
+from tradingagents.llm_clients.stage_models import EFFORT_CONFIG_KEYS, STAGE_THINKING_MODELS
 from tradingagents.research.native_evidence_policy import is_native_stock_ticker
 from tradingagents.runtime.batch_models import BatchItem
 from tradingagents.runtime.run_models import generate_run_id
@@ -682,12 +683,12 @@ def _analysis_request(body, environment, *, checkpoint_available=True, chatgpt_a
         "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS}
     if stages:
         config["stage_models"] = stages
-    if body.jev_verification_enabled:
-        if not _provider_configured("openrouter", environment):
-            raise ApiBoundaryError(422, "missing_configuration", "Jev verification requires OPENROUTER_API_KEY.",
-                fields=("jev_verification_enabled",))
-        config["jev_verification_enabled"] = True
-        config["jev_model"] = body.jev_model
+    try:
+        config.update(decision_run_config(body.jev_verification_enabled, body.jev_model,
+                                          configured=_provider_configured("openrouter", environment)))
+    except ValueError as exc:
+        raise ApiBoundaryError(422, "missing_configuration", str(exc),
+                               fields=("jev_verification_enabled",)) from None
     if subscription:
         config["chatgpt_account_ref"] = body.chatgpt_account_ref
     if provider == "chatgpt":
@@ -816,6 +817,7 @@ def _configuration_payload(
         # Providers absent here reject a stage effort.
         "stage_model_efforts": {provider: [e for e in _EFFORT_ORDER if e in values]
                                 for provider, (_key, values) in EFFORT_CONFIG_KEYS.items()},
+        "stage_thinking_models": STAGE_THINKING_MODELS,
         "checkpoint_available": checkpoint_available,
         "research_profiles": {
             "evidence_v1": {"supported": evidence_profile_enabled(),
@@ -833,6 +835,8 @@ def _configuration_payload(
             "quick_think_llm": DEFAULT_CONFIG.get("quick_think_llm"),
             "deep_think_llm": DEFAULT_CONFIG.get("deep_think_llm"),
             "output_language": DEFAULT_CONFIG.get("output_language", "English"),
+            "jev_verification_enabled": configured.get("openrouter", False),
+            "jev_model": DEFAULT_DECISION_MODEL,
         },
     }
 

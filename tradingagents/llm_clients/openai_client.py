@@ -248,7 +248,7 @@ def _supports_reasoning_effort(model: str, provider: str | None = None) -> bool:
     normalized = model.lower().strip()
     if bool(_OPENAI_REASONING_MODEL.match(normalized)):
         return True
-    return provider == "deepseek"
+    return provider in {"deepseek", "bailian"}
 
 
 @dataclass(frozen=True)
@@ -426,6 +426,9 @@ class OpenAIClient(BaseLLMClient):
             llm_kwargs["extra_body"].setdefault(
                 "thinking", deepseek_thinking or {"type": "enabled"}
             )
+
+        if self.provider == "bailian" and "enable_thinking" in self.kwargs:
+            llm_kwargs["extra_body"] = {"enable_thinking": self.kwargs["enable_thinking"]}
 
         # The subclass (provider quirks) comes from the registry spec.
         return chat_cls(**llm_kwargs)

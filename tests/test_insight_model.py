@@ -166,3 +166,61 @@ def test_saved_deepseek_effort_reaches_model_request(tmp_path, monkeypatch):
     delegate("challenge", {})
     delegate("response_operating_quality", {})
     assert efforts == ["max", "low"]
+
+
+def test_decision_switches_model_after_rate_limit_and_reuses_saved_result(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+    sent = []
+
+    def post(_url, *, headers, json, timeout):
+        sent.append(json['model'])
+        if json['model'].startswith('perplexity/'):
+            return SimpleNamespace(status_code=429, headers={'Retry-After': '120'}, text='quota')
+        return SimpleNamespace(status_code=200, json=lambda: {
+            'id': 'fallback-id', 'model': 'typesafe/jev-1.14', 'provider': 'TypeSafe',
+            'usage': None, 'answers': {'check': {'type': 'noul', 'noul': 0.5}},
+        })
+
+    monkeypatch.setenv('OPENROUTER_API_KEY', 'offline-openrouter')
+    monkeypatch.setattr('tradingagents.llm_clients.decisions_client.requests.post', post)
+    monkeypatch.setattr('tradingagents.llm_clients.decisions_client.time.sleep', lambda _: None)
+    delegate = caller(journal)
+    delegate.config.update(jev_model='perplexity/pplx-decider-flash-v1.3:free',
+                           jev_fallback_model='typesafe/jev-1.14')
+    questions = {'check': {'type': 'noul'}}
+    result = delegate.call_jev_verification('sample', {}, questions)
+    assert result[0] == {'check': 0.5}
+    assert result[1]['model'] == 'typesafe/jev-1.14'
+    assert delegate.call_jev_verification('sample', {}, questions) == result
+    assert sent == ['perplexity/pplx-decider-flash-v1.3:free', 'typesafe/jev-1.14']
+    assert len(journal.ledger.records()) == 2
+
+
+@pytest.mark.parametrize(('provider', 'model', 'mode', 'field', 'expected'), [
+    ('deepseek', 'deepseek-v4-pro', 'disabled', 'thinking', {'type': 'disabled'}),
+    ('bailian', 'kimi-k3.1-pro', 'enabled', 'enable_thinking', True),
+    ('bailian', 'deepseek-v4.1-flash-1017', 'disabled', 'enable_thinking', False),
+])
+def test_stage_thinking_reaches_provider_payload(tmp_path, monkeypatch, provider, model, mode, field, expected):
+    _, journal, _ = setup(tmp_path)
+    monkeypatch.setenv('BAILIAN_API_KEY', 'offline-bailian')
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'offline-deepseek')
+    payloads = []
+
+    def reply(request):
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            'id': 'fixture', 'model': model,
+            'choices': [{'index': 0, 'finish_reason': 'stop',
+                         'message': {'role': 'assistant', 'content': '{"responses": []}'}}],
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(reply)) as http_client:
+        monkeypatch.setattr('tradingagents.execution.insight_model.create_llm_client',
+                            lambda **kwargs: create_llm_client(**kwargs, http_client=http_client))
+        delegate = caller(journal)
+        delegate.config['stage_models'] = {'operating_quality': {
+            'provider': provider, 'model': model, 'thinking': mode}}
+        assert delegate('response_operating_quality', {}) == {'responses': []}
+
+    assert payloads[0][field] == expected

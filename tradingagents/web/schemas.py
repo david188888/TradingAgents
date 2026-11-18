@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
+from tradingagents.llm_clients.decisions_client import DEFAULT_DECISION_MODEL
 from tradingagents.llm_clients.stage_models import stage_model_overrides
 from tradingagents.research.native_evidence_policy import (
     NativeEvidencePolicyV1,
@@ -28,6 +29,7 @@ class StageModelRequest(BaseModel):
     provider: str = Field(min_length=1, max_length=64)
     model: str = Field(min_length=1, max_length=256)
     effort: str | None = Field(default=None, max_length=16)
+    thinking: Literal["enabled", "disabled"] | None = None
 
 
 class BatchRunConfigRequest(BaseModel):
@@ -42,8 +44,8 @@ class BatchRunConfigRequest(BaseModel):
     research_profile: Literal["evidence_v1"] = "evidence_v1"
     research_question: str | None = Field(default=None, max_length=400)
     evidence_policy: NativeEvidencePolicyV1 | None = None
-    jev_verification_enabled: bool = False
-    jev_model: str = Field(default="typesafe/jev-1.14", min_length=1, max_length=128)
+    jev_verification_enabled: bool | None = None
+    jev_model: str = Field(default=DEFAULT_DECISION_MODEL, min_length=1, max_length=128)
 
     @model_validator(mode="after")
     def validate_models_and_account(self):

@@ -53,6 +53,7 @@ def test_api_error_codes_match_backend():
 
 
 def test_error_category_labels_match_manager_vocabulary():
+    from tradingagents.execution.insight_model import DecisionVerificationFailed
     from tradingagents.web.manager import _error_category
 
     ts = _read("domain/errorCategory.ts")
@@ -64,6 +65,7 @@ def test_error_category_labels_match_manager_vocabulary():
         "vendor_rate_limit",
         "evidence_rejection",
         "checkpoint_incompatibility",
+        "decision_verification",
         "missing_configuration",
         "report_publication",
         "unexpected_internal_failure",
@@ -73,6 +75,7 @@ def test_error_category_labels_match_manager_vocabulary():
     # category returned by _error_category that is not in the frontend map
     # falls back to a neutral label, so this pin keeps the two aligned.
     assert _error_category(None) in expected
+    assert _error_category(DecisionVerificationFailed("offline")) == "decision_verification"
 
 
 # ---------------------------------------------------------------------------

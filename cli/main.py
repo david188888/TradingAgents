@@ -82,6 +82,8 @@ def run_analysis(
             except ChatGPTError as exc:
                 console.print(str(exc), style="red", markup=False)
                 raise typer.Exit(1) from exc
+    from tradingagents.execution.insight_model import DecisionVerificationFailed
+
     try:
         from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -91,6 +93,9 @@ def run_analysis(
     except KeyboardInterrupt:
         console.print("研究已中断；已保存进度，可用 --resume 运行编号继续。", markup=False)
         raise typer.Exit(130) from None
+    except DecisionVerificationFailed as exc:
+        console.print(f"研究未完成：决策核验未通过执行。{exc}", style="red", markup=False)
+        raise typer.Exit(1) from exc
     except Exception as exc:
         console.print(f"研究未完成：{type(exc).__name__}。请检查保存记录中的执行状态。", style="red", markup=False)
         raise typer.Exit(1) from exc

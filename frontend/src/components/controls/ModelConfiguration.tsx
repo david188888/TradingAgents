@@ -47,7 +47,8 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
       {STAGE_ROWS.map(({ key, label }) => {
         const s = cfg.stageSelections[key];
         const options = s ? cfg.stageModelOptions(s.provider) : [];
-        const efforts = s ? cfg.stageEfforts(s.provider) : [];
+        const thinking = s && cfg.stageSupportsThinking(s.provider, s.model === "custom" ? s.custom.trim() : s.model);
+        const efforts = s && (s.provider !== "bailian" || thinking) ? cfg.stageEfforts(s.provider) : [];
         return <div className="input-group stage-model-row" key={key}>
           <label htmlFor={`${prefix}-stage-${key}`}>{label}</label>
           <select id={`${prefix}-stage-${key}`} value={s?.provider ?? ""} onChange={e => cfg.updateStage(key, { provider: e.target.value })} disabled={cfg.loading}>
@@ -57,7 +58,14 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
           {s && <select aria-label={`${label}模型`} value={s.model} onChange={e => cfg.updateStage(key, { model: e.target.value })} disabled={!options.length}>
             {options.length ? options.map(m => <option key={m.id} value={m.id}>{m.label}</option>) : <option value="">暂无可选模型</option>}
           </select>}
-          {s && efforts.length > 0 && <select aria-label={`${label}推理强度`} value={s.effort} onChange={e => cfg.updateStage(key, { effort: e.target.value })}>
+          {s && thinking && <select aria-label={`${label}思考模式`} value={s.thinking ?? ""}
+            onChange={e => cfg.updateStage(key, { thinking: e.target.value === "enabled" ? "enabled"
+              : e.target.value === "disabled" ? "disabled" : undefined })}>
+            <option value="">继承默认思考设置</option>
+            <option value="enabled">开启思考</option>
+            <option value="disabled">关闭思考</option>
+          </select>}
+          {s && s.thinking !== "disabled" && efforts.length > 0 && <select aria-label={`${label}推理强度`} value={s.effort} onChange={e => cfg.updateStage(key, { effort: e.target.value })}>
             <option value="">默认强度</option>
             {efforts.map(effort => <option key={effort} value={effort}>{effort}</option>)}
           </select>}
@@ -65,21 +73,23 @@ export function ModelConfiguration({ cfg, prefix }: { cfg: UseConfigResult; pref
             onChange={e => cfg.updateStage(key, { custom: e.target.value })} placeholder="填写 Provider 支持的实际模型 ID" />}
         </div>;
       })}
-      <div className="input-group">
-        <label htmlFor={`${prefix}-jev-enabled`}>
-          <input id={`${prefix}-jev-enabled`} type="checkbox" checked={cfg.jev_verification_enabled}
-            onChange={e => cfg.setJevVerificationEnabled(e.target.checked)} disabled={cfg.loading} />
-          {" "}启用 Jev 决策验证（需 OPENROUTER_API_KEY）
-        </label>
-        {cfg.jev_verification_enabled && <>
-          <label htmlFor={`${prefix}-jev-model`}>Jev 验证模型</label>
-          <select id={`${prefix}-jev-model`} value={cfg.jev_model} onChange={e => cfg.setJevModel(e.target.value)}>
-            <option value="typesafe/jev-1.14">TypeSafe Jev 1.14</option>
-            <option value="perplexity/pplx-decider-flash-v1.3:free">Perplexity Decider Flash V1.3（免费）</option>
-          </select>
-        </>}
-      </div>
     </details>
+    <div className="input-group">
+      <label htmlFor={`${prefix}-jev-enabled`}>
+        <input id={`${prefix}-jev-enabled`} type="checkbox" checked={cfg.jev_verification_enabled}
+          onChange={e => cfg.setJevVerificationEnabled(e.target.checked)} disabled={cfg.loading} />
+        {" "}启用决策核验（需 OPENROUTER_API_KEY）
+      </label>
+      {cfg.jev_verification_enabled && <>
+        <label htmlFor={`${prefix}-jev-model`}>首选决策模型</label>
+        <select id={`${prefix}-jev-model`} value={cfg.jev_model} onChange={e => cfg.setJevModel(e.target.value)}
+          aria-describedby={`${prefix}-jev-cost`}>
+          <option value="perplexity/pplx-decider-flash-v1.3:free">Perplexity Decider Flash V1.3（免费）</option>
+          <option value="typesafe/jev-1.14">TypeSafe Jev 1.14（按量计费）</option>
+        </select>
+        <p className="stage-models-hint" id={`${prefix}-jev-cost`}>首选失败时自动尝试另一模型。TypeSafe Jev 按量计费；两者都失败时，研究会终止。</p>
+      </>}
+    </div>
     <div className="input-group">
       <label htmlFor={`${prefix}-lang`}>输出语言</label>
       <select id={`${prefix}-lang`} value={cfg.output_language} onChange={e => cfg.setOutputLanguage(e.target.value)} disabled={cfg.loading}>

@@ -12,6 +12,7 @@ AgentKey = Literal[
     "operating_quality",
     "event_context",
     "market_context",
+    "jev_verify",
     "challenge",
     "synthesis",
     "response_operating_quality", "response_event_context", "response_market_context",

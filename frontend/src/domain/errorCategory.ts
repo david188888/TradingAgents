@@ -7,6 +7,7 @@
 export type ErrorCategory =
   | "provider_authentication"
   | "provider_timeout"
+  | "decision_verification"
   | "vendor_rate_limit"
   | "evidence_rejection"
   | "checkpoint_incompatibility"
@@ -17,6 +18,7 @@ export type ErrorCategory =
 const ERROR_LABELS: Record<ErrorCategory, string> = {
   provider_authentication: "凭证错误",
   provider_timeout: "供应商超时",
+  decision_verification: "决策核验失败",
   vendor_rate_limit: "接口限流",
   evidence_rejection: "证据门驳回",
   checkpoint_incompatibility: "检查点不兼容",

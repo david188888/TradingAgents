@@ -547,3 +547,77 @@ def test_failed_jev_verification_does_not_fall_back_to_challenge(tmp_path):
     assert review.status == 'failed' and review.jev_scores is None
     assert f'jev_failed:{review.target_id}' in report.gaps and 'unreviewed_insights' in report.gaps
     assert journal.state['insight.diagnostics.jev'] == [{'insight_id': review.target_id, 'error': 'jev_unavailable'}]
+
+
+def test_required_jev_failure_stops_before_challenge_and_synthesis(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    journal.state['identity']['jev_verification_enabled'] = True
+    journal.state['identity']['config']['jev_fallback_model'] = 'typesafe/jev-1.14'
+    caller = JevCaller(InsightUnavailable('no_decision_model_available'))
+    with pytest.raises(InsightUnavailable, match='no_decision_model_available'):
+        jev_report(journal, caller)
+    assert {stage for stage, _ in caller.stages} == {'operating_quality'}
+    assert 'insight.synthesis' not in journal.state
+
+
+def test_challenge_omits_unrelated_evidence_and_rejects_its_references(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    journal.state['identity']['config']['insight_review_policy'] = 'targeted-v1'
+    base = catalog()
+    extra = base.evidence[0].model_copy(update={
+        'ref': 'E3', 'fact_id': 'zzz-unrelated', 'text': '苹果橙子香蕉'})
+    expanded = base.model_copy(update={'evidence': (*base.evidence, extra)})
+    contexts = []
+
+    def respond(stage, context, *, phase='main'):
+        if stage == 'challenge':
+            contexts.append(context)
+            return {'reviews': [{'target': 'I1', 'concern': '存在反证。', 'reasoning': '见 E3。',
+                                 'evidence_refs': ['E3']}]}
+        return response(stage, context, phase=phase)
+
+    report = run_insight_research(run_id=journal.observer.run_id, ticker='002130.SZ',
+        analysis_date=date(2026, 10, 28), catalogs={'operating_quality': expanded},
+        caller=respond, journal=journal, ensure_active=lambda: None)
+    assert 'E3' not in {card['ref'] for card in contexts[0]['evidence']}
+    assert report.reviews[0].status == 'unreviewed'
+
+
+def test_resume_finalizes_saved_decision_stage_without_calling_again(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    journal.state['identity']['jev_verification_enabled'] = True
+    journal.state['identity']['config']['insight_review_policy'] = 'targeted-v1'
+    caller = JevCaller({'evidence_sufficient': 0.96, 'reasoning_sound': 0.96})
+
+    def interrupt_after_verification(stage, status):
+        if (stage, status) == ('jev_verify', 'completed'):
+            raise InterruptedError
+
+    with pytest.raises(InterruptedError):
+        run_insight_research(run_id=journal.observer.run_id, ticker='002130.SZ',
+            analysis_date=date(2026, 10, 28), catalogs={'operating_quality': catalog()},
+            caller=caller, journal=journal, ensure_active=lambda: None, on_stage=interrupt_after_verification)
+    resumed = JevCaller(AssertionError('already saved'))
+    report = jev_report(journal, resumed)
+    assert report.stages['jev_verify'] == 'completed'
+    assert report.stages['challenge'] == 'skipped'
+    assert resumed.jev_calls == []
+
+
+def test_large_catalog_uses_bounded_decision_request_and_does_not_skip_challenge(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    journal.state['identity']['jev_verification_enabled'] = True
+    journal.state['identity']['config']['insight_review_policy'] = 'targeted-v1'
+    base = catalog()
+    extra = tuple(base.evidence[0].model_copy(update={
+        'ref': f'E{idx + 10}', 'fact_id': f'zzz-{idx:03d}', 'text': '苹果橙子香蕉'})
+        for idx in range(128))
+    expanded = base.model_copy(update={'evidence': (*base.evidence, *extra)})
+    caller = JevCaller({'evidence_sufficient': 0.96, 'reasoning_sound': 0.96})
+    report = run_insight_research(run_id=journal.observer.run_id, ticker='002130.SZ',
+        analysis_date=date(2026, 10, 28), catalogs={'operating_quality': expanded},
+        caller=caller, journal=journal, ensure_active=lambda: None)
+    _, _, questions = caller.jev_calls[0]
+    assert len(questions) <= 128
+    assert 'conflict_E1' in questions
+    assert report.stages['challenge'] == 'completed'
