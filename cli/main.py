@@ -139,7 +139,7 @@ def analyze(
     output: Path | None = typer.Option(None, "--output", "-o", help="额外导出 Markdown 的文件路径。"),
     show: bool = typer.Option(False, "--show/--no-show", help="在终端展示完整报告。"),
 ):
-    """V9 Insight 公司研究：独立专项 → 一轮质疑回应 → 综合判断。"""
+    """V9 Insight 公司研究：独立专项 → 按需核验与质疑 → 综合判断。"""
     run_analysis(ticker=ticker, config=config or (ctx.obj or {}).get("config"), analysis_date=analysis_date, provider=provider,
                  quick_model=quick_model, deep_model=deep_model, language=language, focus=focus,
                  resume=resume, run_dir=run_dir, output=output, show=show)

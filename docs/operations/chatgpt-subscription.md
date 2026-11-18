@@ -24,11 +24,13 @@ account switch, proxy, API-key fallback or model substitution occurs.
 Fresh native studies freeze `siwc-reasoning-v1`. Explicit `openai_reasoning_effort` /
 `TRADINGAGENTS_OPENAI_REASONING_EFFORT` sends Responses `reasoning.effort`; omission leaves the model's
 default. Accepted syntax is `none/minimal/low/medium/high/xhigh/max`, but actual support is model-dependent.
-There is no Web effort selector, automatic downgrade or per-stage ChatGPT effort override.
+In Web's **分阶段模型（高级）** panel, choose **ChatGPT 订阅** for a stage to set its model and
+**推理强度**. CLI uses `llm.stage_models.<stage>.effort`. Both send the override through
+`reasoning.effort`. Use a value supported by the selected model.
 
 Same-run recovery preserves the saved policy/configuration; older unmarked requests keep omitting
-effort. Unknown/changed identity refuses recovery. A new-run retry uses the fresh request policy;
-explanations retain their originating study's frozen binding.
+effort. Resume requires a matching identity. Web retry creates a new run using the saved request settings.
+Explanations retain their originating study's frozen account binding.
 
 Requests use the fixed streamed `https://api.openai.com/v1/responses` route with `store:false`.
 Unsupported sampling, system-message and output-cap parameters are omitted. Only a completed response

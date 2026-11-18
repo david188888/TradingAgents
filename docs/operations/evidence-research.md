@@ -57,19 +57,21 @@ tradingagents analyze --ticker 002130 --provider bailian
 ### Decision verification and Challenge
 
 With `OPENROUTER_API_KEY` configured, new Web and CLI studies enable decision verification by default.
-The primary model is `perplexity/pplx-decider-flash-v1.3:free`. A failed or rate-limited call immediately
-tries `typesafe/jev-1.14`, which is billed by usage. Choosing Jev as the primary reverses the order.
-If neither attempt succeeds, the run fails before Challenge or synthesis. Model usage and failures stay
-in the run record. Without the key, omitted enablement leaves the run on the Challenge-only path.
+The primary model is `perplexity/pplx-decider-flash-v1.3:free`. For each Insight, a failed or rate-limited
+call tries `typesafe/jev-1.14` once if the run has budget left. Jev is billed by usage. Choosing Jev as
+the primary reverses the order. If verification cannot complete, the run fails before Challenge or
+synthesis. Recorded usage and failure diagnostics stay in the run record. Without the key, omitted
+enablement leaves the run on the Challenge-only path.
 Explicit enablement without the key is rejected. In Web, the model setup for single and batch runs shows
 both the verification toggle and the possible usage charge before submission. See [CLI local settings](cli-research.md#decision-verification)
 for the equivalent controls. If verification fails, previously saved specialist Insights stay readable in their own stages.
 
-The verifier scores accepted Insights for evidence sufficiency, reasoning soundness, and conflicts.
-Both support scores must reach 0.85 with no flagged conflict for an Insight to bypass Challenge.
-Each Decisions request asks at most 128 questions. If the catalog exceeds the conflict-question budget,
-the verifier prioritizes cited and related cards and passes the Insight to Challenge even with clear scores.
-The 0.85 / 0.15 thresholds are run-identity defaults and have not been calibrated on real samples.
+The verifier scores accepted Insights for evidence sufficiency, reasoning soundness and conflicts.
+An Insight bypasses Challenge when both support scores reach 0.85, no conflict score reaches 0.85,
+and every card received a conflict check. New runs cap each request at 128 questions, with up to 126 conflict
+checks. When the catalog exceeds that cap, the verifier prioritizes cited and related cards and sends
+the Insight to Challenge. A support score of 0.15 or below or a flagged conflict marks high risk.
+These thresholds control routing and remain uncalibrated.
 Challenge uses the Insight's cited evidence, any flagged conflict, and up to four lexically related saved
 evidence cards. Challenge and replies can cite only the evidence and numeric anchors supplied for
 their target. Existing checkpoints retain their saved policy.
@@ -133,9 +135,10 @@ produces no single-run completion notice. Queued work survives reload/startup re
 ## Evidence and workflow
 
 Dedicated APIs come first for identity and quantitative inputs; bounded dual search provides context
-and attempts missing fields. Qualified sources feed isolated specialists, bounded supplementary collection, one critique/reply
-round and synthesis. Source availability is distinct from
-fact qualification. Reposts do not create independent confirmation; titles/snippets do not prove delivery.
+and attempts missing fields. Qualified sources feed isolated specialists and bounded supplementary
+collection. [Verification and Challenge](#decision-verification-and-challenge) route accepted Insights
+before synthesis. Source availability is distinct from fact qualification. Reposts do not create
+independent confirmation. Titles and snippets do not prove delivery.
 
 Fresh studies present all qualified fact cards and selected exact saved-source passages. Models return
 four-field Insights plus optional outer `search_requests` and `capability_requests`. The host resolves
@@ -174,10 +177,10 @@ Missing bars are not automatically holidays. See [source rules](a-share-data-cap
 | Insight `pending` / `excluded` | Unsupported, withdrawn or superseded work remains visible but cannot support the overall judgement. |
 | No overall rating | Overall synthesis was unavailable or its references/quantities failed checks; valid independent Insights remain. |
 
-Start with stance and its limits, then supporting/opposing reasons and change conditions. Use the
-bound evidence panel to check source text, dates and units. Process/Agent views explain contributions;
-the full record retains detail omitted from the first screen. A passed arithmetic check answers its
-specific question, not the entire hypothesis or an economic cause.
+While a study runs, use **证据冻结** to check the shared inputs and **专项 Insight** to read qualified saved proposals.
+**核验与质疑** shows review progress. For terminal runs, **研究检查与审计** opens execution detail.
+Once the report is published, start with the overall stance, its limits and conditions that would
+change it. Use the bound evidence panel to check source text, dates and units.
 
 Native Reader, evidence expansion and Markdown use saved content, without new research calls.
 The optional focus is separate. Web automatically schedules an independent plain-language explanation

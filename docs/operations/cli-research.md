@@ -17,7 +17,7 @@ The default cutoff is today's Asia/Shanghai date. `--date YYYY-MM-DD` explicitly
 
 New CLI and Web studies use the same model admission rules. Providers with a restricted catalog accept the listed models for each tier; catalogs with a custom option accept an actual custom model ID rather than the placeholder `custom`. ChatGPT models must be available in the selected account. These checks do not replace the saved model configuration when resuming an existing run.
 
-`llm.stage_models` routes stages to different models so one model's perspective does not dominate. Keys are `specialist`, `challenge`, `synthesis`, `focus_response` and the roles `operating_quality`, `event_context`, `market_context`; a role overrides `specialist`, responses follow their specialist, and unset stages keep `quick_think_llm` (synthesis: `deep_think_llm`). Each entry takes `provider`, `model` and optional `effort`; a stage on another provider uses that provider's default endpoint, and every selected provider's key is checked before dispatch.
+`llm.stage_models` routes stages to different models so one model's perspective does not dominate. Keys are `specialist`, `challenge`, `synthesis`, `focus_response` and the roles `operating_quality`, `event_context`, `market_context`; a role overrides `specialist`, responses follow their specialist, and unset stages keep `quick_think_llm` (synthesis: `deep_think_llm`). Each entry takes `provider`, `model` and optional `effort`. Supported DeepSeek and Bailian models also accept [`thinking`](evidence-research.md#model-behavior). A stage on another provider uses that provider's default endpoint. The CLI checks the credentials or ChatGPT account for every selected provider before dispatch.
 Saved runs that used `run.deepseek_task_efforts` retain those settings on resume.
 
 ```json
@@ -30,7 +30,11 @@ Saved runs that used `run.deepseek_task_efforts` retain those settings on resume
 
 ### Decision verification
 
-New runs with `OPENROUTER_API_KEY` use Perplexity Decider Flash first. A failed call automatically tries TypeSafe Jev, which is billed by usage. Set `run.jev_model` to `typesafe/jev-1.14` in local JSON to try Jev first and Decider Flash second, or set `run.jev_verification_enabled` to `false` to disable this stage and its fallback. If both models fail, the research stops. See [Decision verification and Challenge](evidence-research.md#decision-verification-and-challenge) for the shared behavior.
+New runs with `OPENROUTER_API_KEY` use Perplexity Decider Flash first, with a paid Jev fallback.
+Set `run.jev_model` to `typesafe/jev-1.14` in local JSON to reverse the order, or set
+`run.jev_verification_enabled` to `false` to disable the stage. See
+[Decision verification and Challenge](evidence-research.md#decision-verification-and-challenge)
+for the shared fallback and failure rules.
 
 ### Saved runs and recovery
 
