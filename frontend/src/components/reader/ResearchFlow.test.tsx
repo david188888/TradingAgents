@@ -21,9 +21,9 @@ function process(version="evidence-production-v9"): ReaderProcessDTO {
       role("response_event_context","skipped","not_applicable"),role("response_market_context","skipped","not_applicable"),role("synthesis","not_reached","not_recorded")],
     source_failures:[]};
 }
-function Harness({value=process(),status="failed"}:{value?:ReaderProcessDTO;status?:string}) {
+function Harness({value=process(),status="failed",variant="running"}:{value?:ReaderProcessDTO;status?:string;variant?:"running"|"summary"}) {
   const [selected,setSelected] = useState<AgentKey|null>(null);
-  return <ResearchFlow process={value} runStatus={status} selectedRole={selected} onSelect={setSelected} onClose={()=>setSelected(null)}>
+  return <ResearchFlow process={value} runStatus={status} selectedRole={selected} onSelect={setSelected} onClose={()=>setSelected(null)} variant={variant}>
     <h3>{selected ? AGENT_LABELS[selected]:""}</h3>
   </ResearchFlow>;
 }
@@ -36,22 +36,23 @@ describe("truthful dependency flow",()=>{
       item.output_availability="insight_stage_available";item.reason_code=null;
     }
     value.roles[0].output_count=132;
-    render(<Harness value={value} status="running"/>);
+    const {container}=render(<Harness value={value} status="running"/>);
     expect(screen.getByText(/132 项/)).toBeVisible();
-    const publication=screen.getByRole("heading",{name:"基础研究发布"}).closest("article")!;
-    expect(publication).toHaveTextContent("最终研究尚未发布");
+    const publication=container.querySelector('[data-stage="publication"]')!;
+    expect(publication).toHaveTextContent("等待发布");
     expect(publication).not.toHaveTextContent("已发布，可回顾");
   });
   it("keeps execution completion separate from unpublished output and does not invent a failed node",()=>{
     const {container}=render(<Harness/>);
-    const operating=within(screen.getByRole("group",{name:"独立专项分工"})).getByRole("heading",{name:"经营研究"}).closest("article")!;
+    const operating=within(screen.getByRole("group",{name:"独立专项分工"})).getByRole("button",{name:"查看经营研究环节与保存产物"});
+    expect(operating).toHaveAttribute("data-status","completed");
     expect(operating).toHaveTextContent("已完成");
-    expect(operating).toHaveTextContent("阶段观点已保存，尚未发布总体判断");
-    expect(operating).not.toHaveTextContent("3 条假设");
-    expect(screen.getAllByText("后续未执行")).toHaveLength(2);
+    expect(screen.queryByText("3 条假设")).toBeNull();
+    expect(container.querySelector('[data-stage="challenge"]')).toHaveAttribute("data-status","pending");
+    expect(container.querySelector('[data-stage="synthesis"]')).toHaveAttribute("data-status","pending");
     expect(container.querySelector('[data-status="failed"]')).toBeNull();
     expect(container.querySelector('[data-active="true"]')).toBeNull();
-    expect(screen.queryByText(/等待发布/)).toBeNull();
+    expect(screen.queryByText(/等待发布总体判断/)).toBeNull();
   });
   it("locates again on repeat click and closes to the original trigger",()=>{
     render(<Harness/>);
@@ -62,11 +63,15 @@ describe("truthful dependency flow",()=>{
     expect(button).toHaveAttribute("aria-controls",detail.id);
     expect(button).toHaveAttribute("aria-expanded","true");
     button.focus();fireEvent.click(button);expect(detail).toHaveFocus();
-    fireEvent.click(within(detail).getByRole("button",{name:"收起角色回顾"}));
+    fireEvent.click(within(detail).getByRole("button",{name:"收起环节详情"}));
     expect(button).toHaveFocus();expect(button).toHaveAttribute("aria-expanded","false");
   });
-
-
+  it("collapses the same stage rail into a completed-run summary",()=>{
+    render(<Harness status="completed" variant="summary"/>);
+    expect(screen.getByText(/研究过程 .* 个阶段已完成/)).toBeVisible();
+    expect(screen.getByText("查看阶段与保存产物")).toBeVisible();
+    expect(screen.queryByRole("heading",{name:"研究进度"})).toBeNull();
+  });
   it("preserves explicitly requested focus while process data is loading",()=>{
     const state=createInitialState();state.meta.focus_requested=true;
     render(<ResearchFlow process={null} workflowVersion="evidence-production-v9" state={state} runStatus="running"
@@ -74,18 +79,18 @@ describe("truthful dependency flow",()=>{
     expect(screen.getByRole("group",{name:"基础研究保存后的补充"})).toHaveTextContent("关注点回应");
     expect(screen.queryByText(/条事实/)).toBeNull();
   });
-  it("uses a compatibility list for unknown versions rather than inventing V7 dependencies",()=>{
+  it("uses a compatibility list for unknown versions rather than inventing dependencies",()=>{
     render(<Harness value={process("future-workflow")}/>);
     expect(screen.getByRole("status")).toHaveTextContent("暂不绘制依赖图");
     expect(screen.getByRole("group",{name:"已记录环节"})).toBeVisible();
     expect(screen.queryByRole("group",{name:"独立专项分工"})).toBeNull();
   });
-  it("activates only running nodes and incoming connectors; cancellation stops motion",()=>{
-    const value=process();value.roles.find(r=>r.role_key==="market_context")!.status="running";
+  it("activates only the running specialist and stops motion on cancellation",()=>{
+    const value=process();value.roles.find(role=>role.role_key==="market_context")!.status="running";
     const {container,rerender}=render(<Harness value={value} status="running"/>);
-    expect(container.querySelectorAll('.rf-node[data-active="true"]')).toHaveLength(1);
-    expect(container.querySelector('.rf-node[data-active="true"]')).toHaveAttribute("data-role","market_context");
-    expect(container.querySelectorAll('.rf-connector[data-active="true"]')).toHaveLength(1);
+    expect(container.querySelectorAll('.rf-subroles [data-active="true"]')).toHaveLength(1);
+    expect(container.querySelector('.rf-subroles [data-active="true"]')).toHaveAttribute("data-role","market_context");
+    expect(container.querySelector('[data-stage="specialists"]')).toHaveAttribute("data-status","running");
     rerender(<Harness value={value} status="cancel_requested"/>);
     expect(container.querySelector('[data-active="true"]')).toBeNull();
   });
