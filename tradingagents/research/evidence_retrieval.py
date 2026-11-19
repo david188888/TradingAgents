@@ -18,8 +18,8 @@ def related_fact_refs(cards, query, *, excluded, limit=4):
             if score]
 
 
-def retrieve_evidence(context, query, *, limit=8):
-    """Lexically rank exact saved passages inside this stage's fact sources."""
+def retrieve_evidence(context, query, *, limit=8, coalesce=False):
+    """Rank exact saved passages; optionally send each selected source span only once."""
     record = context.get("record", {})
     facts = context.get("facts", record.get("claims", []))
     allowed = {eid for fact in facts if fact.get("kind", "fact") == "fact"
@@ -39,5 +39,23 @@ def retrieve_evidence(context, query, *, limit=8):
             if score:
                 result.append({"evidence_id": source["evidence_id"], "source_name": source.get("source_name"),
                     "start": start, "end": start + len(passage), "text": passage, "score": score})
-    return sorted(result, key=lambda item: (-item["score"], item["evidence_id"], item["start"]))[:limit]
+    selected = sorted(result, key=lambda item: (-item["score"], item["evidence_id"], item["start"]))[:limit]
+    if not coalesce:
+        return selected
+
+    # Do not change ranking or selection: merge only overlap in the selected set,
+    # so sources retain exactly the same covered characters (including boundaries).
+    groups = []
+    for rank, passage in sorted(enumerate(selected), key=lambda entry: (entry[1]["evidence_id"], entry[1]["start"])):
+        if groups:
+            best_rank, previous = groups[-1]
+            if previous["evidence_id"] == passage["evidence_id"] and passage["start"] < previous["end"]:
+                if passage["end"] > previous["end"]:
+                    previous["text"] += passage["text"][previous["end"] - passage["start"]:]
+                    previous["end"] = passage["end"]
+                previous["score"] = max(previous["score"], passage["score"])
+                groups[-1] = (min(best_rank, rank), previous)
+                continue
+        groups.append((rank, dict(passage)))
+    return [passage for _, passage in sorted(groups, key=lambda entry: entry[0])]
 

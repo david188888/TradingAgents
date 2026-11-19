@@ -51,6 +51,8 @@ def test_only_failed_items_are_repaired_and_accepted_item_is_immutable(tmp_path)
             tasks = context['repair_items']
             assert [t['proposal']['claim'] for t in tasks] == ['毛利率变化', '现金流变化']
             assert [t['issues'] for t in tasks] == [['reference_unknown'], ['reference_unknown']]
+            assert [card['ref'] for card in context['evidence']] == [card.ref for card in catalog().evidence]
+            assert 'source_passages' in context
             return {'repairs': [{'target': 2, 'proposal': proposal(claim='现金流变化')},
                 {'target': 1, 'proposal': proposal(claim='毛利率变化')}]}
         return response(stage, context, phase=phase)
@@ -59,6 +61,26 @@ def test_only_failed_items_are_repaired_and_accepted_item_is_immutable(tmp_path)
     assert [i.proposal.claim for i in report.insights] == [proposal()['claim'], '毛利率变化', '现金流变化']
     assert [i.index for i in report.insights] == [0, 1, 2]
     assert seen.count(('operating_quality', 'repair')) == 1
+
+
+def test_specialist_repair_only_scopes_a_schema_error_with_verified_references(tmp_path):
+    _, journal, _ = setup(tmp_path)
+    draft = proposal(evidence_refs=[], reasoning='已披露数据为 [N1]。')
+
+    def respond(stage, context, *, phase='main'):
+        if stage == 'operating_quality' and phase == 'main':
+            return {'insights': [{**draft, 'unexpected_field': '不要重复发送'}]}
+        if stage == 'operating_quality':
+            assert [e['ref'] for e in context['evidence']] == ['E1']
+            assert [n['ref'] for n in context['numbers']] == ['N1']
+            assert 'source_passages' not in context
+            assert context['repair_items'][0]['proposal'] == draft
+            return {'repairs': [{'target': 0, 'proposal': draft}]}
+        return response(stage, context, phase=phase)
+
+    report = execute(journal, respond)
+    assert report.insights[0].status == 'accepted'
+    assert report.insights[0].numeric_ids == ('num.a',)
 
 
 def test_repair_preserves_the_original_draft_even_if_it_lacks_a_required_field(tmp_path):
@@ -156,13 +178,18 @@ def test_cross_specialist_aliases_and_review_targets_are_explicit(tmp_path, jev_
     def respond(stage, context, *, phase='main'):
         if stage in {'operating_quality', 'event_context'}:
             return {'insights': [proposal(reasoning='依据 E1。')]}
+        if stage == 'challenge' and phase == 'repair':
+            assert [item['ref'] for item in context['insights']] == ['I1']
+            return {'reviews': []}
         if stage == 'challenge':
             assert context['insights'][1]['reasoning'] == '依据 [E2]。'
             assert context['insights'][1]['evidence_refs'] == ['E2']
             return {'reviews': [{'target': 'I2', 'concern': '存在替代解释。', 'reasoning': '需要核实。', 'evidence_refs': []}]}
         if stage == 'response_event_context':
-            target = context['insights'][1]
-            assert context['reviews'][1]['target_id'] == target['insight_id']
+            target, = context['insights']
+            assert target['ref'] == 'I2'
+            review, = context['reviews']
+            assert review['target_ref'] == target['ref']
             return {'responses': [{'target': 'I2', 'action': 'maintain', 'reasoning': '保留有边界的判断。', 'evidence_refs': [], 'replacement': None}]}
         assert context['insights'][1]['insight_id'] == context['responses'][0]['target_id']
         assert context['insights'][1]['reasoning'] == '依据 [E2]。'

@@ -24,12 +24,18 @@ from tradingagents.execution.insight_model import DecisionVerificationFailed, In
 from tradingagents.llm_clients.decisions_client import TARGETED_REVIEW_POLICY
 from tradingagents.research.evidence_retrieval import related_fact_refs, retrieve_evidence
 from tradingagents.research.insight_report import parse_insight_report, validate_saved_synthesis
+from tradingagents.research.insight_supplement import compile_delta, rebase_catalog, supported_prior
 from tradingagents.research.insights import (
-    compile_insights,
+    compile_insights as _compile_insights,
     normalize_insight_references,
     project_insight_text,
 )
-from tradingagents.research.native_versions import INSIGHT_CONTEXT_POLICY
+from tradingagents.research.jev_candidates import select_jev_candidates
+from tradingagents.research.native_versions import (
+    EXPERIMENTAL_INSIGHT_CONTEXT_POLICY,
+    LEGACY_INSIGHT_CONTEXT_POLICY,
+    SLIM_INSIGHT_CONTEXT_POLICIES,
+)
 from tradingagents.research.numeric_catalog import render_numeric_anchor
 from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict
 
@@ -37,26 +43,36 @@ CAPABILITY_CALLS_PER_ROLE = 2
 MAX_DECISION_CONFLICT_QUESTIONS = 126  # Leave two of 128 slots for support and reasoning.
 
 
-def catalog_prompt(catalog, query='', *, compact=False):
+def catalog_prompt(catalog, query='', *, compact=False, include_passages=True, omit_empty=False, coalesce=False, source_aliases=None):
     """All facts remain visible; quote bounded original passages without full payload duplication."""
     sources = [s.model_dump(mode='json') for s in catalog.sources]
-    context = {'sources': sources, 'facts': [{'evidence_ids': e.source_ids} for e in catalog.evidence]}
-    passages = retrieve_evidence(context, query or ' '.join(e.text for e in catalog.evidence))
+    passages = []
+    if include_passages:
+        context = {'sources': sources, 'facts': [{'evidence_ids': e.source_ids} for e in catalog.evidence]}
+        passages = retrieve_evidence(context, query or ' '.join(e.text for e in catalog.evidence), coalesce=coalesce)
     metadata = [{**{k: value[k] for k in ('evidence_id', 'source_name', 'source_kind', 'published_at',
         'usable_as_of', 'public_url', 'limitations')}, 'locator': (value.get('content') or {}).get('locator_label')}
         for value in sources]
     evidence = [e.model_dump(mode='json') for e in catalog.evidence]
     if compact:
-        aliases = {s.evidence_id: f'S{i}' for i, s in enumerate(catalog.sources, 1)}
+        aliases = source_aliases if source_aliases is not None else {s.evidence_id: f'S{i}' for i, s in enumerate(catalog.sources, 1)}
         for fact in evidence:
             fact.pop('fact_id')  # Host identity is not a model-written research field.
             fact['source_ids'] = [aliases[s] for s in fact['source_ids']]
         for source in (*metadata, *passages):
             source['evidence_id'] = aliases[source['evidence_id']]
+    numbers = [{'ref': n.ref, 'description': render_numeric_anchor(n.anchor.model_dump(mode='json')),
+                'limitations': n.anchor.limitations} for n in catalog.numbers]
+    if omit_empty:
+        for item in (*evidence, *metadata, *numbers):
+            for key in ('limitations', 'locator', 'published_at', 'public_url'):
+                if key in item and item[key] in (None, '', [], ()):
+                    del item[key]
     return {'evidence': evidence, 'sources': metadata,
-        'source_passages': passages, 'passage_scope': 'Selected exact excerpts; full saved sources remain available in the report.',
-        'numbers': [{'ref': n.ref, 'description': render_numeric_anchor(n.anchor.model_dump(mode='json')),
-                    'limitations': n.anchor.limitations} for n in catalog.numbers]}
+        **({'source_passages': passages,
+            'passage_scope': 'Selected exact excerpts; full saved sources remain available in the report.'}
+           if include_passages else {}),
+        'numbers': numbers}
 
 
 def _catalog_for_refs(catalog, refs):
@@ -103,7 +119,10 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     if journal.state.get('insight.report') is not None:
         return parse_insight_report(journal.state['insight.report'])
     ensure_active()
-    compact = journal.state['identity'].get('insight_context_policy') == INSIGHT_CONTEXT_POLICY
+    policy = journal.state['identity'].get('insight_context_policy')
+    experiment = policy == EXPERIMENTAL_INSIGHT_CONTEXT_POLICY
+    slim = policy in SLIM_INSIGHT_CONTEXT_POLICIES
+    compact = slim or policy == LEGACY_INSIGHT_CONTEXT_POLICY
     review_config = journal.state['identity'].get('config', {})
     targeted_review = review_config.get('insight_review_policy') == TARGETED_REVIEW_POLICY
     gaps, stages, insights = list(source_gaps), {}, []
@@ -111,7 +130,16 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     if foundation_catalog is not None:
         catalog_history[canonical_sha256(foundation_catalog.model_dump(mode='json'))] = foundation_catalog
     superseded_ids = []
+    if experiment:
+        aliases = {role: {prefix: {} for prefix in 'ESN'} for role in catalogs}
+        catalogs = {role: rebase_catalog(catalog, aliases[role]) for role, catalog in catalogs.items()}
+        catalog_history.update((canonical_sha256(c), c) for c in catalogs.values())
+        frozen_contexts = {}
     journal.put('insight.catalog_history', {key: c.model_dump(mode='json') for key, c in catalog_history.items()})
+
+    def compile_insights(payload, **kwargs):
+        kwargs.setdefault("analysis_date", analysis_date if experiment else None)
+        return _compile_insights(payload, **kwargs)
 
     def ask(stage, context, phase='main'):
         ensure_active()
@@ -161,8 +189,11 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             batch = InsightBatch()
             journal.put(key, batch.model_dump(mode='json'))
         else:
-            context = {**catalog_prompt(catalog, compact=compact), 'search_requests_allowed': supplement is not None,
+            context = {**catalog_prompt(catalog, compact=compact, omit_empty=slim, coalesce=slim), 'search_requests_allowed': supplement is not None,
                 **({'capability_catalog': capability_catalog.get(role, [])} if capability is not None else {})}
+            if experiment:
+                frozen_contexts[role] = {key: value for key, value in context.items()
+                                         if key in {'evidence', 'sources', 'numbers', 'source_passages', 'passage_scope'}}
             if key + '.main' in journal.state:
                 saved = journal.state[key + '.main']
                 main = InsightBatch.model_validate(saved['batch'])
@@ -192,7 +223,19 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             unknown = journal.state.get(f'insight.failure.{role}.main') == 'response_unknown'
             if not unknown and repair_items:
                 failed = {task['target'] for task in repair_items}
-                raw = ask(role, {**context, 'repair_items': repair_items}, 'repair')
+                repair_context = context
+                if slim and all(task['issues'] == ['insight_schema_invalid'] and task['fields'] == ['<undeclared>']
+                                for task in repair_items):
+                    # The saved drafts already dropped undeclared keys. Shrink only if the remaining
+                    # drafts independently validate; never guess missing or malformed E/N references.
+                    checked = compile_insights({'insights': [task['proposal'] for task in repair_items]},
+                        catalog=catalog, role=role, normalize_refs=True)
+                    if not checked.rejected and all(item.status == 'accepted' for item in checked.items):
+                        facts = {fact_id for item in checked.items for fact_id in item.fact_ids}
+                        scoped = _catalog_for_refs(catalog, {card.ref for card in catalog.evidence if card.fact_id in facts})
+                        repair_context = {**catalog_prompt(scoped, compact=True, include_passages=False, omit_empty=True),
+                                          'search_requests_allowed': False}
+                raw = ask(role, {**repair_context, 'repair_items': repair_items}, 'repair')
                 entries = raw.get('repairs') if isinstance(raw, dict) and set(raw) == {'repairs'} else None
                 replacements, seen, duplicates = {}, set(), set()
                 for entry in entries if isinstance(entries, list) else ():
@@ -249,11 +292,14 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     if capability is not None:
         for role in catalogs:
             queue_capabilities(role)
-    for round_id in range(1, 4):
+    last_round = 2 if experiment else 3
+    for round_id in range(1, last_round + 1):
         web = supplement is not None and bool(pending)
         if not cap_pending and not web:
             break
         affected = []
+        prior_catalogs = catalogs
+        round_gaps = []
         if cap_pending:
             selected, cap_pending = cap_pending, []
             scoped = {}
@@ -262,6 +308,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             ensure_active()
             result = capability({role: tuple(values) for role, values in scoped.items()}, round_id)
             gaps.extend(result['gaps'])
+            round_gaps.extend(result['gaps'])
             if not result['affected_roles']:
                 gaps.append('capability_no_qualified_delta')
             affected.extend(result['affected_roles'])
@@ -273,47 +320,118 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             ensure_active()
             result = supplement(scoped, round_id)
             gaps.extend(result['gaps'])
+            round_gaps.extend(result['gaps'])
             if not result['affected_roles']:
                 gaps.append('search_no_qualified_delta')
             affected.extend(result['affected_roles'])
             catalogs = result['catalogs']
+        if experiment:
+            catalogs = {role: rebase_catalog(catalog, aliases[role]) for role, catalog in catalogs.items()}
+            for role, catalog in catalogs.items():
+                old = prior_catalogs[role]
+                if ({e.ref for e in catalog.evidence} != {e.ref for e in old.evidence}
+                        or {n.ref for n in catalog.numbers} != {n.ref for n in old.numbers}):
+                    affected.append(role)
         affected = [role for role in catalogs if role in affected]
+        if experiment:
+            round_key = f'insight.supplement.round.{round_id}.input'
+            round_digest = canonical_sha256({'catalogs': {role: c.model_dump(mode='json') for role, c in catalogs.items()},
+                                              'affected': affected, 'gaps': round_gaps})
+            if journal.state.get(round_key, round_digest) != round_digest:
+                raise ResearchCheckpointConflict('insight supplement catalog changed')
+            if round_key not in journal.state:
+                journal.put(round_key, round_digest)
         if not affected:
             break
         catalog_history.update((canonical_sha256(c.model_dump(mode='json')), c) for c in catalogs.values())
         journal.put('insight.catalog_history', {key: c.model_dump(mode='json') for key, c in catalog_history.items()})
         for role in affected:
-            previous = [i for i in insights if i.role == role and i.status != 'excluded']
-            superseded_ids.extend(i.insight_id for i in previous)
-            insights = [i.model_copy(update={'status': 'excluded'}) if i in previous else i for i in insights]
             key = f'insight.batch.{role}.supplement_{round_id}'
-            if key in journal.state:
-                batch = InsightBatch.model_validate(journal.state[key])
+            supplement_ok = True
+            if experiment:
+                current = catalogs[role]
+                previous = {i.insight_id: i for i in insights if i.role == role and i.status == 'accepted'}
+                frozen = frozen_contexts.get(role, {})
+                full = catalog_prompt(current, compact=True, omit_empty=True, coalesce=True,
+                                      source_aliases=aliases[role]['S'])
+                delta, removed = {}, []
+                for field in ('evidence', 'sources', 'numbers', 'source_passages'):
+                    ref_key = 'ref' if field in {'evidence', 'numbers'} else 'evidence_id'
+                    base = frozen.get(field, [])
+                    if field == 'source_passages':
+                        # Direct excerpts belonging to newly seen sources only. Previously selected
+                        # excerpts remain in the exact frozen prefix; facts are always sent in full.
+                        original_sources = {row['evidence_id'] for row in frozen.get('sources', [])}
+                        delta[field] = [row for row in full[field] if row['evidence_id'] not in original_sources]
+                    else:
+                        original_rows = {row[ref_key]: row for row in base}
+                        delta[field] = [row for row in full[field] if row != original_rows.get(row[ref_key])]
+                        removed.extend(sorted(original_rows.keys() - {row[ref_key] for row in full[field]}))
+                old = prior_catalogs[role]
+                new_e = {e.ref for e in current.evidence} - {e.ref for e in old.evidence}
+                new_n = {n.ref for n in current.numbers} - {n.ref for n in old.numbers}
+                delta_refs = new_e | new_n
+                critical = new_n | {e.ref for e in current.evidence if e.ref in new_e and
+                    any('conflict' in flag.lower() for flag in e.limitations)}
+                if any('conflict' in gap.lower() for gap in round_gaps):
+                    critical |= new_e
+                if key in journal.state:
+                    saved = journal.state[key]
+                    batch = InsightBatch.model_validate(saved['batch'])
+                    excluded = saved['excluded']
+                    supplement_ok = saved['ok']
+                else:
+                    context = {**frozen, 'delta_catalog': delta, 'retired_refs': removed,
+                        'round_delta_refs': sorted(delta_refs), 'material_delta_refs': sorted(critical),
+                        'search_requests_allowed': supplement is not None and round_id < last_round,
+                        **({'capability_catalog': capability_catalog.get(role, [])}
+                           if capability is not None and round_id < last_round else {}),
+                        'previous_findings': [{'target': target, **project_insight_text(i, catalog_history[i.catalog_id], current)}
+                                              for target, i in previous.items()]}
+                    raw = ask(role, context, f'supplement_{round_id}')
+                    try:
+                        batch, excluded = compile_delta(raw, previous=previous, catalog=current,
+                            history=catalog_history, delta_refs=delta_refs, critical_refs=critical,
+                            role=role, revision=round_id + 1, analysis_date=analysis_date)
+                    except (ValueError, ValidationError):
+                        batch, supplement_ok = InsightBatch(), False
+                        usable = supported_prior(previous, current, catalog_history) if not critical else set()
+                        excluded = [target for target in previous if target not in usable]
+                    journal.put(key, {'batch': batch.model_dump(mode='json'), 'excluded': excluded, 'ok': supplement_ok})
+                superseded_ids.extend(excluded)
+                insights = [i.model_copy(update={'status': 'excluded'}) if i.insight_id in excluded else i for i in insights]
             else:
-                context = {**catalog_prompt(catalogs[role], compact=compact),
-                    'search_requests_allowed': supplement is not None and round_id < 3,
-                    **({'capability_catalog': capability_catalog.get(role, [])}
-                       if capability is not None and round_id < 3 else {}),
-                    'previous_findings': [project_insight_text(i, catalog_history[i.catalog_id], catalogs[role])
-                        for i in previous],
-                    'instruction': '资料已更新。重新核查本专项观点；旧观点不会自动用于综合。'}
-                raw = ask(role, context, f'supplement_{round_id}')
-                try:
-                    batch = compile_insights(raw, catalog=catalogs[role], role=role, revision=round_id + 1, normalize_refs=True)
-                except ValueError:
-                    batch = InsightBatch()
-                journal.put(key, batch.model_dump(mode='json'))
-            if supplement is not None:
+                previous = [i for i in insights if i.role == role and i.status != 'excluded']
+                superseded_ids.extend(i.insight_id for i in previous)
+                insights = [i.model_copy(update={'status': 'excluded'}) if i in previous else i for i in insights]
+                if key in journal.state:
+                    batch = InsightBatch.model_validate(journal.state[key])
+                else:
+                    context = {**catalog_prompt(catalogs[role], compact=compact, omit_empty=slim, coalesce=slim),
+                        'search_requests_allowed': supplement is not None and round_id < last_round,
+                        **({'capability_catalog': capability_catalog.get(role, [])}
+                           if capability is not None and round_id < last_round else {}),
+                        'previous_findings': [project_insight_text(i, catalog_history[i.catalog_id], catalogs[role])
+                            for i in previous],
+                        'instruction': '资料已更新。重新核查本专项观点；旧观点不会自动用于综合。'}
+                    raw = ask(role, context, f'supplement_{round_id}')
+                    try:
+                        batch = compile_insights(raw, catalog=catalogs[role], role=role, revision=round_id + 1, normalize_refs=True)
+                    except ValueError:
+                        batch = InsightBatch()
+                    journal.put(key, batch.model_dump(mode='json'))
+            if supplement_ok and supplement is not None:
                 for question in journal.state.get(f'insight.search_requests.{role}.supplement_{round_id}', ()):
                     if (role, question) not in seen_questions:
                         seen_questions.add((role, question))
                         pending.append((role, question))
                         requests[role] = (*requests.get(role, ()), question)
-            if capability is not None:
+            if supplement_ok and capability is not None:
                 queue_capabilities(role, f'.supplement_{round_id}')
             insights.extend(batch.items)
-            finish(role, 'completed' if any(i.status == 'accepted' for i in batch.items) else 'failed')
-            if not batch.items or batch.rejected or any(i.status != 'accepted' for i in batch.items):
+            usable = insights if experiment else batch.items
+            finish(role, 'completed' if any(i.status == 'accepted' and i.role == role for i in usable) else 'failed')
+            if not supplement_ok or not experiment and (not batch.items or batch.rejected or any(i.status != 'accepted' for i in batch.items)):
                 gaps.append(role + '_supplement_unresolved')
     if pending:
         gaps.append('search_requests_remaining')
@@ -326,6 +444,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     catalog_history[merged_id] = merged
     journal.put('insight.catalog_history', {key: c.model_dump(mode='json') for key, c in catalog_history.items()})
     targets = {f'I{i}': item for i, item in enumerate((s for s in insights if s.status == 'accepted'), 1)}
+    merged_refs = {card.fact_id: card.ref for card in merged.evidence}
     def project_targets(values):
         result = []
         for ref, item in values.items():
@@ -384,7 +503,11 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 }
                 conflict_candidates = merged.evidence
                 partial_coverage = targeted_review and len(conflict_candidates) > MAX_DECISION_CONFLICT_QUESTIONS
-                if partial_coverage:
+                if experiment:
+                    view = projected[ref]
+                    conflict_candidates, partial_coverage = select_jev_candidates(merged.evidence,
+                        cited=view['evidence_refs'], claim=view['claim'], reasoning=view['reasoning'])
+                elif partial_coverage:
                     cited = projected[ref]['evidence_refs']
                     related = related_fact_refs(merged.evidence,
                         projected[ref]['claim'] + ' ' + projected[ref]['reasoning'],
@@ -392,10 +515,15 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     priority = dict.fromkeys((*cited, *related, *(e.ref for e in merged.evidence)))
                     chosen = set(list(priority)[:MAX_DECISION_CONFLICT_QUESTIONS])
                     conflict_candidates = tuple(e for e in merged.evidence if e.ref in chosen)
+                if experiment and len(conflict_candidates) > MAX_DECISION_CONFLICT_QUESTIONS:
+                    verifications[item.insight_id] = {'scores': {}, 'conflicts': [], 'risk_level': 'jev_uncertain',
+                                                      'partial_conflict_coverage': True}
+                    continue
                 for e in conflict_candidates:
                     questions[f"conflict_{e.ref}"] = {
                         "type": "noul",
-                        "instructions": f"证据 {e.ref}（{e.text[:80]}）是否与该观点冲突？",
+                        "instructions": (f"完整证据 {e.ref} 是否与该观点冲突？" if experiment else
+                                         f"证据 {e.ref}（{e.text[:80]}）是否与该观点冲突？"),
                         "criteria": {
                             "true": "存在时间、数值、方向性矛盾",
                             "false": "与观点一致或互补或不相关"
@@ -410,8 +538,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                         for e in evidence_cards
                     ],
                     "global_evidence": [
-                        {"ref": e.ref, "text": e.text[:200]}
-                        for e in conflict_candidates[:50]
+                        {"ref": e.ref, "text": e.text if experiment else e.text[:200]}
+                        for e in (conflict_candidates if experiment else conflict_candidates[:50])
                     ]
                 }
 
@@ -421,6 +549,9 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                         item.insight_id, insight_state, questions
                     )
 
+                    if experiment and not questions.keys() <= scores.keys():
+                        partial_coverage = True
+
                     # Extract base scores
                     sufficient = scores.get('evidence_sufficient', 0)
                     sound = scores.get('reasoning_sound', 0)
@@ -429,7 +560,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     conflicts = tuple(
                         k.removeprefix('conflict_')
                         for k, v in scores.items()
-                        if k.startswith('conflict_') and v >= threshold_clear
+                        if k.startswith('conflict_') and (not experiment or k in questions) and v >= threshold_clear
                     )
 
                     # Classify
@@ -522,7 +653,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
     review_scopes = {}
     review_context = {'insights': []}
     if not targeted_review:
-        review_context = {**catalog_prompt(merged, compact=compact), 'insights': project_targets(challenge_targets)}
+        review_context = {**catalog_prompt(merged, compact=compact, omit_empty=slim, coalesce=slim), 'insights': project_targets(challenge_targets)}
         conflict_notes = []
         for ref, item in challenge_targets.items():
             conflicts = jev_verifications.get(item.insight_id, {}).get('conflicts', [])
@@ -537,8 +668,12 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             verification = jev_verifications.get(view['insight_id'], {})
             conflicts = verification.get('conflicts', [])
             required = set(view['evidence_refs']) | set(conflicts)
-            related = related_fact_refs(merged.evidence, view['claim'] + ' ' + view['reasoning'], excluded=required)
-            scoped = _catalog_for_refs(merged, required | set(related))
+            if experiment and verification.get('partial_conflict_coverage'):
+                # The primary reviewer must still be able to find conflicts excluded by Jev.
+                scoped = merged
+            else:
+                related = related_fact_refs(merged.evidence, view['claim'] + ' ' + view['reasoning'], excluded=required)
+                scoped = _catalog_for_refs(merged, required | set(related))
             review_scopes[ref] = scoped
             view.update(allowed_evidence_refs=[e.ref for e in scoped.evidence],
                         allowed_number_refs=[n.ref for n in scoped.numbers],
@@ -547,11 +682,25 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 view['partial_conflict_coverage'] = True
         shared = _catalog_for_refs(merged, {e.ref for scope in review_scopes.values() for e in scope.evidence})
         query = ' '.join(view['claim'] for view in projected)
-        context = catalog_prompt(shared, query, compact=compact)
+        context = catalog_prompt(shared, query, compact=compact, omit_empty=slim, coalesce=slim)
         # A numeric anchor assembled from multiple scopes belongs to none of those targets.
         visible_numbers = {n.ref for scope in review_scopes.values() for n in scope.numbers}
         context['numbers'] = [n for n in context['numbers'] if n['ref'] in visible_numbers]
         review_context = {**context, 'insights': projected}
+
+    def scoped_review_context(refs):
+        # Slice the shared prompt so surviving E/N/S aliases never change.
+        views = [item for item in review_context['insights'] if item['ref'] in refs]
+        context = {**review_context, 'insights': views}
+        if targeted_review:
+            evidence_refs = {ref for view in views for ref in view['allowed_evidence_refs']}
+            number_refs = {ref for view in views for ref in view['allowed_number_refs']}
+            evidence = [card for card in context['evidence'] if card['ref'] in evidence_refs]
+            source_ids = {sid for card in evidence for sid in card['source_ids']}
+            context.update(evidence=evidence, numbers=[n for n in context['numbers'] if n['ref'] in number_refs],
+                sources=[source for source in context['sources'] if source['evidence_id'] in source_ids],
+                source_passages=[p for p in context['source_passages'] if p['evidence_id'] in source_ids])
+        return context
 
     reviews = []
     if 'insight.reviews' in journal.state:
@@ -600,7 +749,8 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 and journal.state.get('insight.failure.challenge.main') != 'response_unknown'):
             repaired = True
             issues = [item for item in diagnostics if item.get('target') in set(missing)]
-            repair_context = {**review_context, 'repair_targets': missing, 'issues': issues}
+            repair_context = {**(scoped_review_context(missing) if slim else review_context),
+                              'repair_targets': missing, 'issues': issues}
             if any(item.get('code') in {'numeric_literal_unbound', 'numeric_scope'} for item in issues):
                 repair_context['instruction'] = (
                     'Rewrite only the listed targets and remove every Arabic digit from concern/reasoning '
@@ -644,7 +794,17 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
             role_responses = [SavedResponse.model_validate(v) for v in saved['responses']]
             replacement_items = InsightBatch.model_validate(saved['replacement_items']).items
         else:
-            raw = ask(stage, {**review_context, 'assigned': list(assigned), 'reviews': [r.model_dump(mode='json') for r in reviews]})
+            if slim:
+                refs_by_id = {item.insight_id: ref for ref, item in assigned.items()}
+                role_reviews = [{
+                    'target_ref': refs_by_id[r.target_id], 'status': r.status, 'concern': r.concern,
+                    'reasoning': r.reasoning, 'evidence_refs': [merged_refs[f] for f in r.note.fact_ids] if r.note else [],
+                } for r in reviews if r.target_id in refs_by_id and r.status == 'challenged']
+                reply_context = scoped_review_context(assigned)
+            else:
+                role_reviews = [r.model_dump(mode='json') for r in reviews]
+                reply_context = review_context
+            raw = ask(stage, {**reply_context, 'assigned': list(assigned), 'reviews': role_reviews})
             candidates = raw.get('responses', []) if isinstance(raw, dict) else []
             role_responses, replacement_items, diagnostics = [], [], []
             used = set()
@@ -729,10 +889,14 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                 'evidence': tuple(e for e in merged.evidence if e.fact_id in facts),
                 'sources': tuple(s for s in merged.sources if s.evidence_id in sources), 'numbers': ()})
         context = {'insights': project_targets(targets),
-            'reviews': [r.model_dump(mode='json') for r in reviews],
-            'responses': [r.model_dump(mode='json') for r in responses],
+            'reviews': [{'target_id': r.target_id, 'status': r.status, 'concern': r.concern, 'reasoning': r.reasoning,
+                         'evidence_refs': [merged_refs[f] for f in r.note.fact_ids] if r.note else []}
+                        if slim else r.model_dump(mode='json') for r in reviews],
+            'responses': [{'target_id': r.target_id, 'action': r.action, 'reasoning': r.reasoning, 'replacement_id': r.replacement_id,
+                           'evidence_refs': [merged_refs[f] for f in r.note.fact_ids]}
+                          if slim else r.model_dump(mode='json') for r in responses],
             'reviewed_targets': [{'ref': i['ref'], 'insight_id': i['insight_id']} for i in review_context['insights']], 'gaps': gaps,
-            'sources': catalog_prompt(synthesis_catalog, compact=compact)}
+            'sources': catalog_prompt(synthesis_catalog, compact=compact, include_passages=not slim, omit_empty=slim)}
         for phase in ('main', 'repair'):
             raw = ask('synthesis', context, phase)
             try:
@@ -742,7 +906,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
                     for field in ('judgement', 'reasoning', 'limitations', 'next_check')})
                 checked = compile_insights({'insights': [{'claim': value.judgement,
                     'evidence_refs': list(value.insight_refs), 'reasoning': value.reasoning,
-                    'limitations': value.limitations + '\n' + value.next_check}]}, catalog=final_catalog, role='synthesis').items[0]
+                    'limitations': value.limitations + '\n' + value.next_check}]}, catalog=final_catalog, role='synthesis', analysis_date=None).items[0]
                 if checked.status != 'accepted':
                     raise ValueError('synthesis_reference_invalid')
                 synthesis = SavedSynthesis(judgement=value.judgement, stance=value.stance,
@@ -761,7 +925,7 @@ def run_insight_research(*, run_id, ticker, analysis_date, catalogs, caller, jou
         if 'insight.focus' in journal.state:
             focus_batch = InsightBatch.model_validate(journal.state['insight.focus'])
         elif merged.evidence:
-            raw = ask('focus_response', {**catalog_prompt(merged, query=focus_question, compact=compact),
+            raw = ask('focus_response', {**catalog_prompt(merged, query=focus_question, compact=compact, omit_empty=slim, coalesce=slim),
                 'question': focus_question, 'insights': project_targets(targets), 'search_requests_allowed': False,
                 'synthesis': synthesis.model_dump(mode='json') if synthesis else None})
             with contextlib.suppress(ValueError):

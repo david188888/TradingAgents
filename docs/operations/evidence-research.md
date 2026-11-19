@@ -98,6 +98,17 @@ and disabled thinking. In CLI JSON, omit `llm.stage_models.<stage>.thinking` to 
 that row's model and thinking setting. [stage_models.py](../../tradingagents/llm_clients/stage_models.py) owns stage keys, resolution and
 valid efforts; runs freeze the resolved policy for resume and the audit configuration view.
 
+`insight-handoff-v3` uses provider-managed implicit caching for Bailian; it sends
+no explicit cache marker. For the Bailian Flash snapshot, low-complexity repair
+and report explanation default to non-thinking unless explicitly routed. Kimi
+Challenge retains its configured thinking. Default output caps range from 4,096
+(repair/explanation) to 12,288 (Challenge) for the supported Bailian routes;
+explicit stage `max_tokens` overrides that stage's default. Effort overrides
+remain provider-specific; undocumented effort levels are not assumed to work.
+A cap controls generation length, not latency or JSON completeness. The
+[opt-in v4 experiment](../contracts/research-record.md) does not change this
+default.
+
 Fresh V9 research sends strict structured output on SIWC/OpenAI and JSON mode on the existing
 DeepSeek Chat Completions route. Canonical evidence and numeric checks still apply; only V9 requests are supported. A successful small schema probe is separate from complete real-model
 research acceptance. See the [output contract](../contracts/research-record.md) for boundaries.

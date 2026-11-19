@@ -180,6 +180,10 @@ class AttemptRecord:
     usage_available: bool = True
     duration_ms: int | None = None
     detail: str = ""
+    cached_tokens: int | None = None
+    cache_creation_tokens: int | None = None
+    # Reasoning is already included in output_tokens when reported as a detail.
+    reasoning_tokens: int | None = None
 
     def attempt_key(self) -> tuple[str, str, str]:
         return (self.run_id, self.logical_call_id, self.attempt_id)
@@ -535,6 +539,9 @@ class BudgetLedger:
         settled_at: datetime | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        cached_tokens: int | None = None,
+        cache_creation_tokens: int | None = None,
+        reasoning_tokens: int | None = None,
         usage_available: bool | None = None,
         duration_ms: int | None = None,
         detail: str = "",
@@ -553,8 +560,8 @@ class BudgetLedger:
                 # A provider that did not report usage must not be recorded as
                 # a call that used nothing. Coercing here is precisely the
                 # accounting error the schema forbids.
-                input_tokens = None
-                output_tokens = None
+                input_tokens = output_tokens = None
+                cached_tokens = cache_creation_tokens = reasoning_tokens = None
             record = replace(
                 record,
                 phase=AttemptPhase.SETTLED,
@@ -562,6 +569,9 @@ class BudgetLedger:
                 settled_at=settled_at or self._clock(),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cached_tokens=cached_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                reasoning_tokens=reasoning_tokens,
                 usage_available=available,
                 duration_ms=duration_ms,
                 detail=detail,

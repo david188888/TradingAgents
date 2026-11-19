@@ -55,6 +55,7 @@ CONFIG_ALLOWLIST = frozenset(
         "output_language",
         "quick_think_llm",
         "stage_models",
+        "insight_experiment",
     }
 )
 
