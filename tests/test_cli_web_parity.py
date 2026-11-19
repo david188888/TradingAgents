@@ -176,3 +176,21 @@ def test_equivalent_runs_publish_the_same_research_content(tmp_path, monkeypatch
     assert terminal.record["focus_question"] == web["focus_question"] == "客户结构如何？"
     assert terminal.record["focus_insights"][0]["proposal"] == web["focus_insights"][0]["proposal"]
     assert terminal.record["focus_insights"][0]["rendered"]["claim"] in terminal.report.read_text()
+
+
+def test_experimental_policy_is_explicit_and_shared_by_cli_web(monkeypatch):
+    from tradingagents.execution.native_runner import native_identity
+
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    llm = {'provider': 'deepseek', 'quick_think_llm': 'deepseek-flash', 'deep_think_llm': 'deepseek-v4-pro'}
+    cli = build_request({'llm': llm, 'run': {'insight_experiment': 'columnar'}}, ticker='002130')
+    body = {'ticker': '002130', 'llm_provider': llm['provider'],
+            'quick_think_llm': llm['quick_think_llm'], 'deep_think_llm': llm['deep_think_llm']}
+    web, _ = _analysis_request(RunCreateRequest(**body, insight_experiment='columnar'), {'DEEPSEEK_API_KEY': 'offline'})
+    assert all(native_identity(r)['insight_context_policy'] == 'insight-handoff-v4' for r in (cli, web))
+    assert all(native_identity(r)['config']['insight_experiment'] == 'columnar' for r in (cli, web))
+    assert native_identity(build_request({'llm': llm}, ticker='002130'))['insight_context_policy'] == 'insight-handoff-v3'
+    with pytest.raises(ValueError, match='compact'):
+        build_request({'llm': llm, 'run': {'insight_experiment': 'other'}}, ticker='002130')
+    with pytest.raises(ValidationError):
+        RunCreateRequest(**body, insight_experiment='other')

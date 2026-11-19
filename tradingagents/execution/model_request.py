@@ -7,6 +7,34 @@ from tradingagents.llm_clients.chatgpt_policy import validate_request_policy
 from tradingagents.llm_clients.provider_kwargs import provider_llm_kwargs
 
 
+def _token_usage(response) -> dict[str, int]:
+    def mapping(value):
+        return value if isinstance(value, dict) else {}
+
+    usage = mapping(getattr(response, "usage_metadata", None))
+    raw = mapping(mapping(getattr(response, "response_metadata", None)).get("token_usage"))
+    input_details = mapping(usage.get("input_token_details"))
+    output_details = mapping(usage.get("output_token_details"))
+    prompt_details = mapping(raw.get("prompt_tokens_details"))
+    completion_details = mapping(raw.get("completion_tokens_details"))
+    counters = {
+        "input_tokens": (usage.get("input_tokens"), raw.get("prompt_tokens")),
+        "output_tokens": (usage.get("output_tokens"), raw.get("completion_tokens")),
+        "cached_tokens": (input_details.get("cache_read"), prompt_details.get("cached_tokens")),
+        "cache_creation_tokens": (input_details.get("cache_creation"), raw.get("cache_creation_input_tokens"),
+                                  prompt_details.get("cache_creation_input_tokens")),
+        "reasoning_tokens": (output_details.get("reasoning"), completion_details.get("reasoning_tokens")),
+    }
+    normalized = {}
+    for key, candidates in counters.items():
+        for value in candidates:
+            if type(value) is int and value >= 0:
+                normalized[key] = value
+                break
+    # Within one reported request, zero is an observation; a missing counter is not.
+    return normalized if {"input_tokens", "output_tokens"} <= normalized.keys() else {}
+
+
 def invoke_model_request(*, config, model, task, prompt, client_factory, slots,
                          ensure_active, cancelled, deadline, dispatch,
                          on_error: Callable, on_usage: Callable, chatgpt_auth=None,
@@ -42,9 +70,7 @@ def invoke_model_request(*, config, model, task, prompt, client_factory, slots,
         except Exception as exc:
             on_error("request_failed", exc)
             raise
-        usage = getattr(response, "usage_metadata", None)
-        if isinstance(usage, dict) and all(type(usage.get(k)) is int and usage[k] >= 0
-                                           for k in ("input_tokens", "output_tokens")):
+        if usage := _token_usage(response):
             on_usage(usage)
         ensure_active()
         return response

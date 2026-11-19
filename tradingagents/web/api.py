@@ -683,6 +683,8 @@ def _analysis_request(body, environment, *, checkpoint_available=True, chatgpt_a
         "evidence_timeout_seconds": NEW_STUDY_TIMEOUT_SECONDS}
     if stages:
         config["stage_models"] = stages
+    if body.insight_experiment is not None:
+        config["insight_experiment"] = body.insight_experiment
     try:
         config.update(decision_run_config(body.jev_verification_enabled, body.jev_model,
                                           configured=_provider_configured("openrouter", environment)))

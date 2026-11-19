@@ -17,6 +17,7 @@ from tradingagents.agents.schemas._insight import (
 )
 from tradingagents.agents.schemas._numeric_narrative import NumericCatalogV1
 from tradingagents.agents.schemas._verification_plan import canonical_sha256
+from tradingagents.research.insight_dates import normalize_supported_dates
 from tradingagents.research.numeric_catalog import build_numeric_catalog, render_numeric_anchor
 from tradingagents.research.quantity_tokens import _CN_QUANTITY, _EN_QUANTITY
 
@@ -83,7 +84,7 @@ def build_insight_catalog(record, *, facts=None):
         numbers=tuple(NumericReference(ref=f'N{i}', anchor=a) for i, a in enumerate(anchors, 1)))
 
 
-def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: int = 1, indices=None, normalize_refs=False):
+def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: int = 1, indices=None, normalize_refs=False, analysis_date=None):
     """Validate each external item once; retain valid siblings and safe diagnostics."""
     if not isinstance(payload, dict) or not {'insights'} <= set(payload) <= {'insights', 'search_requests', 'capability_requests'} or not isinstance(payload['insights'], list):
         raise ValueError('insight_batch_shape')
@@ -142,6 +143,11 @@ def compile_insights(payload, *, catalog: InsightCatalog, role: str, revision: i
         if any(sid not in sources or sources[sid].availability != 'available'
                or sources[sid].content is None or sources[sid].usable_as_of is None for sid in source_ids):
             issues.append('source_unavailable')
+        if analysis_date is not None:
+            cited_texts = [facts[key].text for key in dict.fromkeys(fact_ids)]
+            texts = {name: normalize_supported_dates(value, cited_texts, analysis_date=analysis_date)
+                     for name, value in texts.items()}
+            proposal = proposal.model_copy(update=texts)
         for text in texts.values():
             normalized = unicodedata.normalize('NFKC', _REFERENCE.sub('', text))
             if (_QUANTITY.search(normalized) or _CN_QUANTITY.search(normalized)

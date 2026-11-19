@@ -188,13 +188,14 @@ export type ResearchMode = "company_research";
 
 /** Code-owned stage routing keys; responses follow their specialist. */
 export type StageModelKey = "specialist" | "challenge" | "synthesis" | "focus_response"
-  | "operating_quality" | "event_context" | "market_context";
+  | "operating_quality" | "event_context" | "market_context" | "repair" | "report_explanation";
 
 export interface StageModelDTO {
   provider: string;
   model: string;
   effort?: string;
   thinking?: "enabled" | "disabled";
+  max_tokens?: number;
 }
 
 export interface RunCreateRequestDTO {
@@ -206,6 +207,7 @@ export interface RunCreateRequestDTO {
   deep_think_llm: string;
   /** Unset stages use quick_think_llm, synthesis uses deep_think_llm. */
   stage_models?: Partial<Record<StageModelKey, StageModelDTO>>;
+  insight_experiment?: "compact" | "columnar";
   output_language: string;
   /** Current evidence research profile. */
   research_profile?: ResearchProfile;

@@ -24,6 +24,8 @@ from tradingagents.llm_clients import create_llm_client
 from tradingagents.llm_clients.base_client import normalize_content
 from tradingagents.llm_clients.chatgpt_errors import ChatGPTError
 from tradingagents.llm_clients.chatgpt_policy import validate_request_policy
+from tradingagents.llm_clients.stage_models import resolve_stage_model
+from tradingagents.research.native_versions import ECONOMICAL_INSIGHT_CONTEXT_POLICIES
 from tradingagents.research.report_explanation import (
     explanation_targets,
     validate_explanation_entry,
@@ -76,15 +78,20 @@ class ExplanationService:
                     "targets_sha256": canonical_sha256(targets)}
         config = dict(snapshot.metadata["effective_config"])
         frozen_config_hash = canonical_sha256(config)
-        chatgpt_policy = None
-        if config.get("llm_provider") == "chatgpt":
-            checkpoint = load_checkpoint(self.store, run_id)
-            chatgpt_policy = validate_request_policy(
-                checkpoint["identity"].get("chatgpt_request_policy") if checkpoint else None)
         if isinstance(config.get("backend_url"), dict):
             config["backend_url"] = restore_endpoint_identity(config["backend_url"])
             if config["backend_url"] is None:
                 raise ValueError("explanation_configuration_unavailable")
+        model, chatgpt_policy = snapshot.quick_think_llm, None
+        routes = config.get("stage_models", {})
+        if config.get("llm_provider") in {"chatgpt", "bailian"} or "report_explanation" in routes:
+            checkpoint = load_checkpoint(self.store, run_id)
+            frozen_policy = checkpoint["identity"] if checkpoint else {}
+            if frozen_policy.get("insight_context_policy") in ECONOMICAL_INSIGHT_CONTEXT_POLICIES:
+                config.setdefault("quick_think_llm", model)
+                config, model = resolve_stage_model(config, "report_explanation", economical=True)
+            if config.get("llm_provider") == "chatgpt":
+                chatgpt_policy = validate_request_policy(frozen_policy.get("chatgpt_request_policy"))
         with self._guard, self.store.lock_for(run_id):
             prior = read_explanation_job(self.store, run_id)
             if prior:
@@ -101,7 +108,7 @@ class ExplanationService:
             else:
                 job = ExplanationJob(job_id=uuid.uuid4().hex, run_id=run_id, **identity,
                     config_sha256=frozen_config_hash, language=snapshot.output_language,
-                    model=snapshot.quick_think_llm, state="generating", unavailable_targets=excluded,
+                    model=model, state="generating", unavailable_targets=excluded,
                     target_hashes={k: t["text_sha256"] for k, t in targets.items()},
                     attempts=prior.attempts if prior else (),
                     batch_policy=BATCH_EXPLANATION_POLICY if batched else None,

@@ -1,5 +1,6 @@
 """Request boundary uses native formats, durable budgets and no lost-call resend."""
 
+import hashlib
 import json
 import time
 from types import SimpleNamespace
@@ -8,9 +9,11 @@ import httpx
 import pytest
 
 from tests.v9_fixtures import journal_setup as setup
+from tradingagents.execution.budget import AttemptOutcome
 from tradingagents.execution.insight_model import InsightModelCaller, InsightUnavailable
 from tradingagents.execution.models import AnalysisCancelled
 from tradingagents.llm_clients.factory import create_llm_client
+from tradingagents.runtime import research_checkpoint
 
 
 def caller(journal, **kwargs):
@@ -38,6 +41,8 @@ def test_fixed_schema_dispatch_and_usage_are_durable(tmp_path, monkeypatch):
     assert request['required'] == ['capability_id', 'query', 'gap_reason']
     assert request['additionalProperties'] is False
     assert 'field_path' not in str(shape)
+    assert '\nSchema:\n' not in seen[0]['prompt']
+    assert '{"evidence":[]}' in seen[0]['prompt']
     assert journal.state['insight.model_usage']['operating_quality.main']['input_tokens'] == 10
     assert len(journal.ledger.records()) == 1
     with pytest.raises(InsightUnavailable, match='response_unknown'):
@@ -45,18 +50,54 @@ def test_fixed_schema_dispatch_and_usage_are_durable(tmp_path, monkeypatch):
     assert len(seen) == 1
 
 
-def test_malformed_response_is_safe_and_no_automatic_retry(tmp_path, monkeypatch):
+def test_malformed_response_keeps_reported_usage_without_raw_text(tmp_path, monkeypatch):
     _, journal, _ = setup(tmp_path)
+    response = SimpleNamespace(content='private raw invalid text', response_metadata={'token_usage': {
+        'prompt_tokens': 88, 'completion_tokens': 11, 'prompt_tokens_details': {'cached_tokens': 0},
+        'completion_tokens_details': {'reasoning_tokens': 7},
+    }})
+    llm = SimpleNamespace(invoke=lambda _: response)
+    monkeypatch.setattr('tradingagents.execution.insight_model.create_llm_client',
+                        lambda **_: SimpleNamespace(get_llm=lambda: llm))
+    delegate = caller(journal)
+    with pytest.raises(InsightUnavailable, match='response_json_invalid'):
+        delegate('operating_quality', {})
+    assert 'private raw' not in str(journal.state)
+    record, = journal.ledger.records()
+    assert record.outcome is AttemptOutcome.FAILED
+    assert record.usage_available is True
+    assert (record.input_tokens, record.output_tokens, record.reasoning_tokens) == (88, 11, 7)
+    assert record.cached_tokens == 0
+    assert record.cache_creation_tokens is None
+    with pytest.raises(InsightUnavailable, match='response_unknown'):
+        delegate('operating_quality', {})
+
+
+def test_checkpoint_without_token_details_still_resumes(tmp_path, monkeypatch):
+    observer, journal, _ = setup(tmp_path)
+    optional = {'cached_tokens', 'cache_creation_tokens', 'reasoning_tokens'}
+    original = research_checkpoint._record_json
+
+    def legacy_record_json(record):
+        return {key: value for key, value in original(record).items() if key not in optional}
 
     def invoke(**kwargs):
         kwargs['dispatch']()
-        return SimpleNamespace(content='private raw invalid text')
+        kwargs['on_usage']({'input_tokens': 10, 'output_tokens': 20})
+        return SimpleNamespace(content='{}')
 
     monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
-    with pytest.raises(InsightUnavailable, match='response_json_invalid'):
+    with monkeypatch.context() as legacy:
+        legacy.setattr(research_checkpoint, '_record_json', legacy_record_json)
         caller(journal)('operating_quality', {})
-    assert 'private raw' not in str(journal.state)
-    assert len(journal.ledger.records()) == 1
+    saved = research_checkpoint.load_checkpoint(observer.store, observer.run_id)
+    assert not optional.intersection(saved['records'][0])
+    restored = research_checkpoint.ResearchJournal(observer, journal.state['identity'], require_existing=True)
+    record, = restored.ledger.records()
+    assert (record.input_tokens, record.output_tokens) == (10, 20)
+    assert all(getattr(record, key) is None for key in optional)
+    with pytest.raises(InsightUnavailable, match='response_unknown'):
+        caller(restored)('operating_quality', {})
 
 
 def test_cancel_before_dispatch_consumes_no_model_attempt(tmp_path):
@@ -89,7 +130,7 @@ def test_each_stage_dispatches_its_configured_provider_and_model(tmp_path, monke
 
 @pytest.mark.parametrize("model", ["deepseek-v4.1-flash-1017", "kimi-k3.1-pro"])
 def test_bailian_stage_sends_json_mode_to_beijing(tmp_path, monkeypatch, model):
-    _, journal, _ = setup(tmp_path)
+    observer, journal, _ = setup(tmp_path)
     monkeypatch.setenv("BAILIAN_API_KEY", "offline-bailian-key")
     requests = []
 
@@ -100,7 +141,9 @@ def test_bailian_stage_sends_json_mode_to_beijing(tmp_path, monkeypatch, model):
             "choices": [{"index": 0, "finish_reason": "stop", "message": {
                 "role": "assistant", "content": '{"insights": []}', "reasoning_content": "fixture reasoning",
             }}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+            "usage": {"prompt_tokens": 1100, "completion_tokens": 20, "total_tokens": 1120,
+                      "prompt_tokens_details": {"cached_tokens": 0}, "cache_creation_input_tokens": 1024,
+                      "completion_tokens_details": {"reasoning_tokens": 12}},
         })
 
     with httpx.Client(transport=httpx.MockTransport(reply)) as http_client:
@@ -121,8 +164,19 @@ def test_bailian_stage_sends_json_mode_to_beijing(tmp_path, monkeypatch, model):
     payload = json.loads(request.content)
     assert payload["model"] == model
     assert payload["response_format"] == {"type": "json_object"}
-    assert "JSON" in payload["messages"][0]["content"]
+    system, user = payload["messages"]
+    assert system["role"] == "system"
+    frozen, task = user["content"]
+    assert frozen["text"].endswith("{}")
+    assert "\nSchema:\n" in task["text"]
+    assert payload["max_completion_tokens"] == 10_240
+    assert "cache_control" not in json.dumps(payload["messages"])
     assert not {"thinking", "reasoning_effort"} & payload.keys()
+    saved = research_checkpoint.load_checkpoint(observer.store, observer.run_id)
+    counters = {"input_tokens": 1100, "output_tokens": 20, "cached_tokens": 0,
+                "cache_creation_tokens": 1024, "reasoning_tokens": 12}
+    assert saved["insight.model_usage"]["operating_quality.main"] == {**counters, "total_tokens": 1120}
+    assert {key: saved["records"][0][key] for key in counters} == counters
 
 
 def test_prompt_identity_cannot_change_after_dispatch(tmp_path, monkeypatch):
@@ -224,3 +278,118 @@ def test_stage_thinking_reaches_provider_payload(tmp_path, monkeypatch, provider
         assert delegate('response_operating_quality', {}) == {'responses': []}
 
     assert payloads[0][field] == expected
+
+
+def test_v2_response_distinguishes_target_from_narrative_citations(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+
+    def invoke(**kwargs):
+        kwargs['dispatch']()
+        prompt = kwargs['prompt'].split('\nSaved context:\n', 1)[0]
+        assert 'Copy the assigned I identifier into target only' in prompt
+        assert 'In narrative text, use only bracketed E and N references supplied for that target.' in prompt
+        assert 'like [E1], [N1] and [I1]' not in prompt
+        return SimpleNamespace(content='{"responses": []}')
+
+    monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
+    assert caller(journal)('response_event_context', {'assigned': ['I1']}) == {'responses': []}
+
+
+def test_saved_v1_prompt_digest_can_resume_without_resending(tmp_path, monkeypatch):
+    observer, journal, _ = setup(tmp_path)
+    identity = {**journal.state['identity'], 'insight_context_policy': 'insight-handoff-v1'}
+    journal.put('identity', identity)
+    key = 'insight.operating_quality.main.prompt'
+    # Prompt digest captured from the pre-L2 implementation for this exact request.
+    digest = '6f4f8e8f087cc4bdafd8ab0386a8abf5ffa9e5a56129f3fb92c99219cecba855'
+    journal.put(key, digest)
+    seen = []
+
+    def invoke(**kwargs):
+        seen.append(hashlib.sha256(kwargs['prompt'].encode()).hexdigest())
+        kwargs['dispatch']()
+        return SimpleNamespace(content='{}')
+
+    monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
+    preserved = research_checkpoint.ResearchJournal(observer, identity, require_existing=True)
+    delegate = caller(preserved)
+    context = {'evidence': [], 'search_requests_allowed': True}
+    assert delegate('operating_quality', context) == {}
+    preserved = research_checkpoint.ResearchJournal(observer, identity, require_existing=True)
+    with pytest.raises(InsightUnavailable, match='response_unknown'):
+        caller(preserved)('operating_quality', context)
+    assert seen == [digest]
+
+
+def test_bailian_main_and_repair_share_only_the_frozen_catalog(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+    sent = []
+
+    def invoke(**kwargs):
+        sent.append(kwargs)
+        return SimpleNamespace(content='{}')
+
+    monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
+    model = caller(journal)
+    model.config.update(llm_provider='bailian', quick_think_llm='deepseek-v4.1-flash-1017')
+    catalog = {'evidence': [{'ref': 'E1', 'text': 'saved evidence'}], 'sources': []}
+    model('event_context', {**catalog, 'search_requests_allowed': True})
+    model('event_context', {**catalog, 'repair_items': [{'target': 0}]}, phase='repair')
+    main, repair = [call['prompt'] for call in sent]
+    assert main[0] == repair[0]
+    assert main[1]['content'][0] == repair[1]['content'][0]
+    assert 'repair_items' not in main[1]['content'][0]['text']
+    assert 'repair_items' in repair[1]['content'][1]['text']
+    assert sent[1]['config']['bailian_thinking'] == 'disabled'
+    assert sent[1]['config']['llm_max_tokens'] == 4096
+
+
+def test_bailian_v2_keeps_single_string_and_old_route(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+    journal.put('identity', {**journal.state['identity'], 'insight_context_policy': 'insight-handoff-v2'})
+
+    def invoke(**kwargs):
+        assert isinstance(kwargs['prompt'], str)
+        assert 'llm_max_tokens' not in kwargs['config']
+        return SimpleNamespace(content='{}')
+
+    monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
+    model = caller(journal)
+    model.config.update(llm_provider='bailian', quick_think_llm='deepseek-v4.1-flash-1017')
+    model('event_context', {}, phase='repair')
+
+
+def test_bailian_output_limit_is_a_failed_attempt_even_if_json_is_closed(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+
+    def invoke(**kwargs):
+        kwargs['dispatch']()
+        kwargs['on_usage']({'input_tokens': 10, 'output_tokens': 100})
+        return SimpleNamespace(content='{}', response_metadata={'finish_reason': 'length'})
+
+    monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
+    with pytest.raises(InsightUnavailable, match='response_output_limit'):
+        caller(journal)('operating_quality', {})
+    record, = journal.ledger.records()
+    assert record.outcome is AttemptOutcome.FAILED and record.output_tokens == 100
+
+
+def test_columnar_experiment_uses_same_frozen_prefix_and_delta_schema(tmp_path, monkeypatch):
+    _, journal, _ = setup(tmp_path)
+    journal.put('identity', {**journal.state['identity'], 'insight_context_policy': 'insight-handoff-v4'})
+    sent = []
+
+    def invoke(**kwargs):
+        sent.append(kwargs)
+        return SimpleNamespace(content='{}')
+
+    monkeypatch.setattr('tradingagents.execution.insight_model.invoke_model_request', invoke)
+    model = caller(journal)
+    model.config.update(llm_provider='bailian', quick_think_llm='deepseek-v4.1-flash-1017', insight_experiment='columnar')
+    context = {'evidence': [{'ref': f'E{i}', 'text': 'result', 'source_ids': ['S1']} for i in range(1, 20)]}
+    model('event_context', context)
+    model('event_context', {**context, 'delta_catalog': {'evidence': []}}, phase='supplement_1')
+    main, delta = [call['prompt'][1]['content'] for call in sent]
+    assert main[0] == delta[0]
+    assert '"columns"' in main[0]['text']
+    assert '"keep_ids"' in delta[1]['text'] and 'delta_catalog' in delta[1]['text']

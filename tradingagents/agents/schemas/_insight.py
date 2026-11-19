@@ -48,6 +48,26 @@ class InsightSubmission(_InsightModel):
     capability_requests: tuple[CapabilityRequest, ...] = ()
 
 
+class InsightSupplementRevision(_InsightModel):
+    target: str
+    proposal: InsightProposal
+
+
+class InsightSupplementWithdrawal(_InsightModel):
+    target: str
+    evidence_refs: tuple[str, ...]
+
+
+class InsightSupplementSubmission(_InsightModel):
+    keep_ids: tuple[str, ...]
+    revise: tuple[InsightSupplementRevision, ...]
+    add: tuple[InsightProposal, ...]
+    withdraw: tuple[InsightSupplementWithdrawal, ...]
+    delta_reviewed_refs: tuple[str, ...]
+    search_requests: tuple[str, ...] = ()
+    capability_requests: tuple[CapabilityRequest, ...] = ()
+
+
 class InsightRepairItem(_InsightModel):
     target: StrictInt
     proposal: InsightProposal | None

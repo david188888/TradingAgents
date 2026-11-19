@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from tradingagents.dataflows.ticker_utils import normalize_ticker_symbol
 from tradingagents.llm_clients.chatgpt_errors import ModelFailureDiagnostic
 from tradingagents.llm_clients.decisions_client import DEFAULT_DECISION_MODEL
-from tradingagents.llm_clients.stage_models import stage_model_overrides
+from tradingagents.llm_clients.stage_models import STAGE_MODEL_KEYS, stage_model_overrides
 from tradingagents.research.native_evidence_policy import (
     NativeEvidencePolicyV1,
     is_native_stock_ticker,
@@ -30,6 +30,7 @@ class StageModelRequest(BaseModel):
     model: str = Field(min_length=1, max_length=256)
     effort: str | None = Field(default=None, max_length=16)
     thinking: Literal["enabled", "disabled"] | None = None
+    max_tokens: int | None = Field(default=None, strict=True, gt=0)
 
 
 class BatchRunConfigRequest(BaseModel):
@@ -39,11 +40,12 @@ class BatchRunConfigRequest(BaseModel):
     chatgpt_account_ref: str | None = Field(default=None, pattern=r"^cg_[0-9a-f]{32}$")
     quick_think_llm: str = Field(min_length=1, max_length=256)
     deep_think_llm: str = Field(min_length=1, max_length=256)
-    stage_models: dict[str, StageModelRequest] = Field(default_factory=dict, max_length=7)
+    stage_models: dict[str, StageModelRequest] = Field(default_factory=dict, max_length=len(STAGE_MODEL_KEYS))
     output_language: Literal["English", "Chinese"] = "English"
     research_profile: Literal["evidence_v1"] = "evidence_v1"
     research_question: str | None = Field(default=None, max_length=400)
     evidence_policy: NativeEvidencePolicyV1 | None = None
+    insight_experiment: Literal["compact", "columnar"] | None = None
     jev_verification_enabled: bool | None = None
     jev_model: str = Field(default=DEFAULT_DECISION_MODEL, min_length=1, max_length=128)
 

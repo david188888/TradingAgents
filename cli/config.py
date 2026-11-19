@@ -26,7 +26,7 @@ _RUN_KEYS = {
     "evidence_timeout_seconds", "evidence_source_vendors", "evidence_source_exclusions",
     "google_thinking_level", "openai_reasoning_effort", "anthropic_effort", "deepseek_thinking",
     "deepseek_reasoning_effort", "temperature", "llm_max_tokens",
-    "jev_verification_enabled", "jev_model",
+    "jev_verification_enabled", "jev_model", "insight_experiment",
     "display_report",
 }
 
@@ -73,6 +73,7 @@ def build_request(
         raise ValueError(f"V9 不支持配置项：{', '.join(sorted(unknown))}")
     symbol = normalize_ticker_symbol(str(ticker or run.get("ticker") or "").strip())
     from tradingagents.research.native_evidence_policy import is_native_stock_ticker
+    from tradingagents.research.native_versions import INSIGHT_EXPERIMENT_FORMATS
 
     if not is_native_stock_ticker(symbol):
         raise ValueError("V9 公司研究仅支持 A 股普通股票，请输入如 002130、600519.SS 的代码。")
@@ -83,6 +84,8 @@ def build_request(
     for key in _LLM_KEYS - {"provider"}:
         if key in llm:
             config[key] = llm[key]
+    if config.get("insight_experiment") not in (None, *INSIGHT_EXPERIMENT_FORMATS):
+        raise ValueError("insight_experiment 必须是 compact 或 columnar。")
     config["llm_provider"] = str(provider or llm.get("provider") or config["llm_provider"]).lower()
     if config["llm_provider"] not in {*PROVIDER_API_KEY_ENV, "chatgpt"}:
         raise ValueError(f"不支持的模型服务：{config['llm_provider']}")
