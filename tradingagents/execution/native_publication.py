@@ -18,7 +18,9 @@ from tradingagents.research.insight_report import parse_insight_report
 from tradingagents.runtime.research_checkpoint import (
     CHECKPOINT_KIND,
     DurableBudgetLedger,
+    ResearchCheckpointConflict,
     ResearchJournal,
+    read_checkpoint_artifact,
 )
 
 NATIVE_PUBLIC_TASK = "native.final"
@@ -57,10 +59,10 @@ def _existing_artifact(observer: Any, record: InsightReport) -> str | None:
         barrier = event_index.get(event.parent_event_id)
         if barrier is None or barrier.status != "committed" or barrier.payload.get("kind") != CHECKPOINT_KIND or barrier.sequence != event.payload.get("committed_sequence"):
             raise NativePublicationError("native publication barrier missing")
-        barrier_raw = observer.store.read_artifact(observer.run_id, barrier.payload["artifact_id"])
-        if hashlib.sha256(barrier_raw).hexdigest() != barrier.payload.get("content_sha256"):
-            raise NativePublicationError("native publication barrier integrity mismatch")
-        saved_barrier = json.loads(barrier_raw)
+        try:
+            saved_barrier, _ = read_checkpoint_artifact(observer.store, observer.run_id, barrier)
+        except ResearchCheckpointConflict:
+            raise NativePublicationError("native publication barrier integrity mismatch") from None
         candidate = record.model_dump(mode="json")
         if saved_barrier.get(_CANDIDATE) != candidate or saved_barrier.get(_AUTHORIZED) != _digest(candidate) or saved_barrier.get("publication_authorized") is not True:
             raise NativePublicationError("native publication barrier authorization mismatch")

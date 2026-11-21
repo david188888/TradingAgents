@@ -39,7 +39,7 @@ class SearchBudget:
             if getattr(ledger, '_search_budget_owner', None) is not None:
                 raise ValueError('one activity clock owner per run ledger')
             ledger._search_budget_owner = self
-            state = self.journal.state.setdefault('search_activity', {'spent': 0.0, 'pending': None})
+            state = self.journal.setdefault_inline('search_activity', {'spent': 0.0, 'pending': None})
             if state['pending'] is not None:
                 state['spent'] = min(90.0, state['spent'] + state['pending'])
                 state['pending'] = None
