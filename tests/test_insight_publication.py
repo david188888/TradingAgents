@@ -7,7 +7,9 @@ import pytest
 from tests.test_insight_research import execute, response
 from tests.v9_fixtures import journal_setup as setup
 from tradingagents.execution.native_publication import NativePublicationError, publish_native_record
+from tradingagents.runtime.insight_artifacts import read_insight_publication
 from tradingagents.runtime.reports import build_markdown_from_native_record
+from tradingagents.runtime.research_checkpoint import ResearchCheckpointConflict, load_checkpoint
 from tradingagents.web.research_record_projection import project_research_record
 
 
@@ -32,6 +34,20 @@ def test_insight_publication_projects_and_replays_without_legacy_assessment(tmp_
     assert report.synthesis.judgement in text
     assert report.insights[0].rendered.claim in text
     assert '第十页' in text
+
+    store = observer.store
+    publication, = [e for e in store.read_events(report.run_id) if e.payload.get('public_contract') == report.schema_version]
+    barrier = journal.last_event
+    assert publication.parent_event_id == barrier.event_id
+    journal.put('later', True)
+    assert read_insight_publication(store, report.run_id) == report
+    (store.root / report.run_id / barrier.payload['locator']).unlink()
+    assert load_checkpoint(store, report.run_id)['later'] is True
+    with pytest.raises(ResearchCheckpointConflict):
+        read_insight_publication(store, report.run_id)
+    with pytest.raises(NativePublicationError, match='barrier integrity'):
+        publish_native_record(observer, record=report, ledger=journal.ledger,
+            publication_authorizer=lambda _: pytest.fail('replay authorized'))
 
 
 def test_tampered_insight_numeric_render_cannot_publish(tmp_path):

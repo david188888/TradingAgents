@@ -525,10 +525,13 @@ class RunStore:
         destination = run_dir / locator
 
         with self.lock_for(run_id):
+            created_directory = not artifact_dir.is_dir()
             artifact_dir.mkdir(parents=True, exist_ok=True)
             if not destination.exists():
                 self._write_bytes_atomic(destination, content)
                 self._fsync_directory(artifact_dir)
+            if created_directory:
+                self._fsync_directory(run_dir)
         return ArtifactRef(
             artifact_id=f"{kind}:{digest}",
             kind=kind,

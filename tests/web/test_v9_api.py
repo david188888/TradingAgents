@@ -1,4 +1,5 @@
 """Current HTTP admission, durable publication, cancellation and historical rejection."""
+import hashlib
 import json
 import threading
 from contextlib import contextmanager
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 from scripts.e2e_server import InsightFixtureCaller, InsightFixtureSources
 from tradingagents.execution.native_runner import NativeRunner
 from tradingagents.llm_clients.chatgpt_auth import ChatGPTAuth
+from tradingagents.runtime.research_checkpoint import CHECKPOINT_BLOB_KIND, CHECKPOINT_KIND
 from tradingagents.runtime.run_models import RunSnapshot
 from tradingagents.runtime.store import RunStore
 from tradingagents.web.api import create_app
@@ -61,6 +63,12 @@ def test_current_http_flow_publishes_exact_insight_and_stage_views(tmp_path):
         assert client.get(f"/api/runs/{run_id}/reader/process").json()["availability"] == "ready"
         assert client.get(f"/api/runs/{run_id}/reader/agents/operating_quality").json()["insight_record"] == report["record"]
         assert client.get(f"/api/runs/{run_id}/audit").status_code == 200
+        blob = next((store.root / run_id / CHECKPOINT_BLOB_KIND).glob("*.json"))
+        assert client.get(f"/api/runs/{run_id}/artifacts/{CHECKPOINT_BLOB_KIND}:{blob.stem}").status_code == 404
+        checkpoint = next(e.payload for e in store.read_events(run_id) if e.payload.get("kind") == CHECKPOINT_KIND)
+        raw = client.get(f"/api/runs/{run_id}/artifacts/{checkpoint['artifact_id']}")
+        assert raw.status_code == 200 and raw.json()["version"] == 2
+        assert hashlib.sha256(raw.content).hexdigest() == checkpoint["content_sha256"]
         assert (store.root / run_id / "reports/complete_report.md").is_file()
         assert "offline-key" not in json.dumps(completed.as_dict())
         snapshot = client.get(f"/api/runs/{run_id}").json()

@@ -9,15 +9,21 @@ import pytest
 
 from tradingagents.execution.budget import BudgetBucket as B, BudgetExhausted
 from tradingagents.execution.search_budget import SEARCH_BUDGET_POLICY, SearchBudget
-from tradingagents.runtime.research_checkpoint import DurableBudgetLedger, _record_json
+from tradingagents.runtime.research_checkpoint import (
+    DurableBudgetLedger,
+    ResearchJournal,
+    _record_json,
+)
 
 
-class Journal:
+class Journal(ResearchJournal):
     def __init__(self, state=None, *, run_id="budget-test"):
         self.state = copy.deepcopy(state) if state else {'identity': {
             'workflow_version': 'evidence-production-v9',
             'insight_budget_policy': {'structured_repair': 8, 'basic_model_attempts': 20, 'model_attempts': 29},
             'search_budget_policy': SEARCH_BUDGET_POLICY}, 'records': [], 'results': {}}
+        self._state = self.state
+        self._blob_refs = None
         self.observer = SimpleNamespace(run_id=run_id)
         self.last_event = SimpleNamespace(sequence=0)
         self.lock = threading.RLock()
@@ -28,7 +34,7 @@ class Journal:
         self.state[key] = value
         self.persist()
 
-    def persist(self):
+    def persist(self, **_kwargs):
         self.state['records'] = [_record_json(r) for r in self.ledger.records()]
 
 

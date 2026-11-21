@@ -5,6 +5,7 @@ import json
 
 from tradingagents.observability.canonical import canonical_sha256
 from tradingagents.research.insight_report import parse_insight_report
+from tradingagents.runtime.research_checkpoint import CHECKPOINT_KIND, read_checkpoint_artifact
 
 
 def read_insight_publication(store, run_id, *, events=None, event=None):
@@ -27,11 +28,11 @@ def read_insight_publication(store, run_id, *, events=None, event=None):
             snapshot.run_id, snapshot.ticker, snapshot.analysis_date, snapshot.mode):
         raise ValueError('insight_publication_identity')
     barrier = next((e for e in events if e.event_id == event.parent_event_id), None)
-    if (barrier is None or barrier.status != 'committed' or barrier.payload.get('kind') != 'research-checkpoint'
+    if (barrier is None or barrier.status != 'committed' or barrier.payload.get('kind') != CHECKPOINT_KIND
             or barrier.sequence != event.payload.get('committed_sequence') or barrier.sequence >= event.sequence
             or event.payload.get('graph_task_id') != 'native.final'):
         raise ValueError('insight_publication_barrier')
-    saved = read(barrier)
+    saved, _ = read_checkpoint_artifact(store, run_id, barrier)
     value = record.model_dump(mode='json')
     if (saved.get('native_publication_candidate') != value or saved.get('insight.report') != value
             or saved.get('publication_authorized') is not True

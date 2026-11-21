@@ -43,7 +43,7 @@ Dependency direction is adapters → execution/runtime → graph/research/datafl
 
 Web stores run data under `~/.tradingagents/web/runs/`; CLI uses `~/.tradingagents/cli/runs/`. Each adapter holds its store's cross-process writer lock. User data is never cleared during development.
 
-Request identity and budgets freeze before dispatch. Resume checks current V9 identity and replays saved valid results, including the saved evidence record when available. Unknown provider outcomes remain spent. A frozen report candidate and durable lifecycle authorization must precede committed publication. Cancellation and publication are serialized by the owning lifecycle lock. A publication failure cannot become completion.
+Request identity and budgets freeze before dispatch. New runs store lightweight checkpoint indexes with run-scoped immutable data objects; existing inline checkpoints are read and resumed in their original format. Resume checks current V9 identity and replays saved valid results, including the saved evidence record when available. Unknown provider outcomes remain spent. A frozen report candidate and durable lifecycle authorization must precede committed publication. Cancellation and publication are serialized by the owning lifecycle lock. A publication failure cannot become completion.
 
 Reader, stage views and Markdown expose saved qualified content. Reading never fetches new research or dispatches a model. Web schedules independent bounded explanation jobs after report completion; explicit retry uses a separate command. Their artifacts preserve baseline evidence and judgement. Completed, readable, evidence-complete and research-quality remain separate states; passing structural checks does not establish economic correctness.
 
