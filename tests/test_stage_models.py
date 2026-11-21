@@ -84,3 +84,20 @@ def test_hunyuan_stage_uses_tokenhub_and_json_schema_without_effort(monkeypatch)
     with pytest.raises(ValueError, match="unsupported for hunyuan"):
         stage_model_overrides({**BASE, "stage_models": {"challenge": {
             "provider": "hunyuan", "model": model, "effort": "high"}}})
+
+
+def test_cost_policy_routes_auxiliary_stages_and_caps_bailian_output():
+    flash, kimi = 'deepseek-v4.1-flash-1017', 'kimi-k3.1-pro'
+    config = {**BASE, 'llm_provider': 'bailian', 'quick_think_llm': flash, 'deep_think_llm': flash,
+              'bailian_reasoning_effort': 'high', 'llm_max_tokens': 9000,
+              'stage_models': {'challenge': {'provider': 'bailian', 'model': kimi}}}
+    challenge, model = resolve_stage_model(config, 'challenge', economical=True)
+    assert model == kimi and challenge['llm_max_tokens'] == 9000
+    aux, model = resolve_stage_model(config, 'report_explanation', economical=True)
+    assert model == flash
+    assert provider_llm_kwargs(aux) == {'enable_thinking': False, 'max_tokens': 4096}
+    config['stage_models']['repair'] = {'provider': 'bailian', 'model': flash, 'max_tokens': 1500,
+                                       'thinking': 'disabled'}
+    repair, model = resolve_stage_model(config, 'challenge', phase='repair', economical=True)
+    assert model == flash
+    assert provider_llm_kwargs(repair) == {'enable_thinking': False, 'max_tokens': 1500}

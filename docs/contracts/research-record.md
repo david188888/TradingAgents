@@ -26,7 +26,21 @@ The model sees only qualified saved-source passages and deterministic number lab
 
 The current journal is [research_checkpoint.py](../../tradingagents/runtime/research_checkpoint.py). Resume requires a matching V9 identity and intact saved artifact references. Reading and replay never acquire new data or models.
 
-The updated handoff policy applies to new runs. A run interrupted under the previous policy cannot resume with the new prompts. Completed reports keep their original saved references and remain readable.
+New runs freeze `insight-handoff-v3`: targeted replies and Challenge repair receive only their assigned evidence scopes; synthesis receives saved claims, review summaries and supporting provenance, not source excerpts. Specialist repair narrows evidence only when the sole defect is undeclared fields and the remaining draft already passes reference and numeric checks; otherwise it retains its original scope. Compact JSON changes the prompt only; native JSON Schema transports supply the schema once. Overlapping selected passages from the same source are joined without changing which source offsets are covered. Reply prompts distinguish the assigned I identifier from evidence and numeric citations. The saved evidence and host-side reference and numeric validation are unchanged. Bailian receives the protocol and stable catalog before the task and changing context, without requesting explicit cache writes. Reuse requires the same prefix and model; distinct evidence scopes are never padded to force a hit. Compatible `insight-handoff-v1` and `insight-handoff-v2` checkpoints resume with their original prompt contract; other identity mismatches still block resume. Completed reports keep their original saved references and remain readable.
+
+The opt-in `insight-handoff-v4` experiment freezes `insight_experiment` as
+`compact` or `columnar` (same workflow, different catalog encoding). A specialist
+receives the original prefix plus a catalog delta; E/N/S aliases are not reused
+for different data. At most two supplement rounds are run. Each prior target
+must be kept, revised, or withdrawn explicitly, and new material receipts
+require a cited change. Invalid material updates leave an unresolved gap and
+exclude that role's unconfirmed conclusions from synthesis, not its evidence.
+Saved delta results bind to the exact round catalog. Full supported calendar
+dates may be rewritten before compilation; quantity and citation checks are unchanged.
+Jev candidate truncation or a missing check never yields auto-clear; Challenge
+receives the full evidence scope for those targets. This can increase Challenge
+input compared with targeted review; cost and claim quality must be measured
+before changing the default.
 
 ## Publication and projections
 

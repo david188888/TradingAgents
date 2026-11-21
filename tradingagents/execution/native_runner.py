@@ -48,11 +48,15 @@ from tradingagents.observability.roles import (
 from tradingagents.research.native_policy import ROLE_ORDER
 from tradingagents.research.native_versions import (
     COMPANY_RESEARCH_POLICY,
+    EXPERIMENTAL_INSIGHT_CONTEXT_POLICY,
     INSIGHT_CONTEXT_POLICY,
+    INSIGHT_EXPERIMENT_FORMATS,
     INSIGHT_POLICY,
     INSIGHT_WORKFLOW_VERSION,
+    LEGACY_INSIGHT_CONTEXT_POLICY,
     REPORT_DELIVERY_POLICY,
     SEARCH_RESEARCH_POLICY,
+    SLIM_INSIGHT_CONTEXT_POLICY,
     STRUCTURED_FINANCIAL_POLICY,
 )
 from tradingagents.runtime.research_checkpoint import (
@@ -74,6 +78,9 @@ def native_identity(request):
     subscription = "chatgpt" in stage_model_providers(request.effective_config)
     if subscription:
         validate_reasoning_effort(request.effective_config.get("openai_reasoning_effort"))
+    experiment = request.effective_config.get("insight_experiment")
+    if experiment is not None and experiment not in INSIGHT_EXPERIMENT_FORMATS:
+        raise SemanticConfigError("insight_experiment must be compact or columnar")
     return {
         **request.profile_identity(),
         "workflow_version": WORKFLOW_VERSION,
@@ -93,7 +100,7 @@ def native_identity(request):
         "report_delivery_policy": REPORT_DELIVERY_POLICY,
         "insight_policy": INSIGHT_POLICY,
         "insight_budget_policy": {"structured_repair": 8, "basic_model_attempts": 20, "model_attempts": 29},
-        "insight_context_policy": INSIGHT_CONTEXT_POLICY,
+        "insight_context_policy": EXPERIMENTAL_INSIGHT_CONTEXT_POLICY if experiment else INSIGHT_CONTEXT_POLICY,
         "jev_verification_enabled": request.effective_config.get("jev_verification_enabled", False),
         "jev_model": request.effective_config.get("jev_model", "typesafe/jev-1.14"),
         "jev_threshold_clear": request.effective_config.get("jev_threshold_clear", 0.85),
@@ -134,7 +141,12 @@ def validate_native_resume(store, run_id, request):
     state = load_checkpoint(store, run_id)
     if state is None or state["identity"].get("workflow_version") != WORKFLOW_VERSION:
         raise ResearchCheckpointConflict("unsupported or missing research checkpoint")
-    if state["identity"] != native_identity(request):
+    identity = native_identity(request)
+    saved_policy = state["identity"].get("insight_context_policy")
+    if (identity["insight_context_policy"] == INSIGHT_CONTEXT_POLICY
+            and saved_policy in {LEGACY_INSIGHT_CONTEXT_POLICY, SLIM_INSIGHT_CONTEXT_POLICY}):
+        identity["insight_context_policy"] = saved_policy
+    if state["identity"] != identity:
         raise ResearchCheckpointConflict("research checkpoint incompatible")
     if "native_seed" in state:
         seed = load_native_seed_from_state(state)
@@ -150,6 +162,7 @@ def validate_native_resume(store, run_id, request):
             raise ResearchCheckpointConflict("insight checkpoint identity mismatch")
     if state.get("publication_authorized") and "native_publication_candidate" not in state:
         raise ResearchCheckpointConflict("research authorization has no candidate")
+    return identity
 
 
 def load_native_seed_from_state(state):
@@ -250,9 +263,9 @@ class NativeRunner:
 
         run_id = self.observer.run_id
         resume = isinstance(checkpoint_guard, NativeResumeGuard)
-        if resume:
-            validate_native_resume(self.observer.store, run_id, request)
-        journal = ResearchJournal(self.observer, native_identity(request), require_existing=resume)
+        identity = (validate_native_resume(self.observer.store, run_id, request)
+                    if resume else native_identity(request))
+        journal = ResearchJournal(self.observer, identity, require_existing=resume)
         coordinator = None
         from tradingagents.execution.search_budget import SearchBudget
         from tradingagents.execution.search_coordinator import SearchCoordinator

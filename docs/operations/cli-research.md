@@ -17,7 +17,7 @@ The default cutoff is today's Asia/Shanghai date. `--date YYYY-MM-DD` explicitly
 
 New CLI and Web studies use the same model admission rules. Providers with a restricted catalog accept the listed models for each tier; catalogs with a custom option accept an actual custom model ID rather than the placeholder `custom`. ChatGPT models must be available in the selected account. These checks do not replace the saved model configuration when resuming an existing run.
 
-`llm.stage_models` routes stages to different models so one model's perspective does not dominate. Keys are `specialist`, `challenge`, `synthesis`, `focus_response` and the roles `operating_quality`, `event_context`, `market_context`; a role overrides `specialist`, responses follow their specialist, and unset stages keep `quick_think_llm` (synthesis: `deep_think_llm`). Each entry takes `provider`, `model` and optional `effort`. Supported DeepSeek and Bailian models also accept [`thinking`](evidence-research.md#model-behavior). A stage on another provider uses that provider's default endpoint. The CLI checks the credentials or ChatGPT account for every selected provider before dispatch.
+`llm.stage_models` routes stages to different models so one model's perspective does not dominate. Keys are `specialist`, `challenge`, `synthesis`, `focus_response`, `repair`, `report_explanation` and the roles `operating_quality`, `event_context`, `market_context`; a role overrides `specialist`, responses follow their specialist, and unset stages keep `quick_think_llm` (synthesis: `deep_think_llm`). Each entry takes `provider`, `model` and optional `effort` and positive `max_tokens`. `repair` takes precedence over the stage being repaired; `report_explanation` routes the independent Web explanation job. Supported DeepSeek and Bailian models also accept [`thinking`](evidence-research.md#model-behavior). A stage on another provider uses that provider's default endpoint. The CLI checks the credentials or ChatGPT account for every selected provider before dispatch.
 Saved runs that used `run.deepseek_task_efforts` retain those settings on resume.
 
 ```json
@@ -27,6 +27,11 @@ Saved runs that used `run.deepseek_task_efforts` retain those settings on resume
   "synthesis": {"provider": "openai", "model": "gpt-5.6"}
 }
 ```
+
+Use `"insight_experiment": "compact"` or `"columnar"` in the `run` object
+only for the [opt-in V9 cost experiment](../contracts/research-record.md).
+Omit it for the default policy. The Web API accepts the same optional field
+on the run request; the standard Web form keeps the default.
 
 ### Decision verification
 
