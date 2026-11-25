@@ -41,6 +41,19 @@ Set `run.jev_model` to `typesafe/jev-1.14` in local JSON to reverse the order, o
 [Decision verification and Challenge](evidence-research.md#decision-verification-and-challenge)
 for the shared fallback and failure rules.
 
+### Preflight and scripting
+
+```bash
+tradingagents analyze --ticker 002130 --plan
+tradingagents analyze --ticker 002130 --json --output report.md --citation-style numbered > events.jsonl
+tradingagents analyze --resume RUN_ID --json
+```
+
+- `--plan` previews a **new** request: resolved ticker, cutoff, model routing, language, search and decision verification switches, and configured execution timeout. It does not start a run, access an account, fetch data, or check provider credentials and quotas. Edit the flags or config before running the command without `--plan`. Combine it with `--json` for a single machine-readable plan record.
+- `--json` is non-interactive: provide `--ticker`, a configured `run.ticker`, or `--resume`. The CLI does not display Markdown on stdout in this mode; use `--output` for an additional file. Diagnostics go to stderr. Stdout is JSON Lines with `schema_version: 1`: `command.started` marks an accepted run command, durable event lines carry `type`, `run_id`, `sequence`, `timestamp`, `actor_id`, and `status` without internal payloads, and `command.result` is the command's terminal record. Completed resume skips execution and may produce no new durable events. CLI argument parser errors can occur before the stream starts.
+- Exit codes: **0** for a plan or verified publication with successful requested export, **1** for command failure (including export or stream output failure), **2** for invalid arguments or request configuration, and **130** for interruption. Check the terminal `command.result`, not just `run.completed`: an export can fail after research is published (`status: "failed"`, `reason: "report_output"`, `published: true`). A pipe already closed at the initial JSONL write stops the command without dispatch; losing the stream after dispatch does not rewrite the durable outcome. There is no separate exit code for a stage hitting its local budget.
+- `--citation-style numbered` applies only to a requested `--output` or interactive `--show`. It numbers sources, not saved opinions, and keeps unresolved references visible. `--output` in numbered or JSON mode must be outside the run store. The canonical saved Markdown, Insight JSON and Web Reader are not renumbered.
+
 ### Saved runs and recovery
 
 Every run saves attempts, evidence, stage results, canonical Insight report and Markdown under `~/.tradingagents/cli/runs/`. `--run-dir` selects another CLI store. CLI holds an exclusive writer lock separately from the Web store, so both adapters may operate concurrently without sharing a writer. `--output` makes an additional Markdown export; `--show` displays it in the terminal. Saved reports are always persisted as part of completion.

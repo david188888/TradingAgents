@@ -75,7 +75,7 @@ tradingagents analyze --ticker 002130 --show
 tradingagents analyze --resume RUN_ID
 ```
 
-The terminal uses the same V9 runner as Web, with a separately owned store at `~/.tradingagents/cli/runs/`. Use `--config` for local JSON, `--focus` for a follow-up question, and `--output report.md` for Markdown export. V9 always saves durable progress; debate-round and transaction-stage choices are removed. See [CLI operations](docs/operations/cli-research.md).
+The terminal uses the same V9 runner as Web, with a separately owned store at `~/.tradingagents/cli/runs/`. Use `--config` for local JSON, `--focus` for a follow-up question, and `--output report.md` for Markdown export. Use `--plan` for preflight, `--json` for non-interactive events, and `--citation-style numbered` for an optional numbered export. V9 always saves durable progress; debate-round and transaction-stage choices are removed. See [CLI operations](docs/operations/cli-research.md).
 
 ## Current limitations
 

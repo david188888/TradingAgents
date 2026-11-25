@@ -181,6 +181,22 @@ def test_terminal_publishes_real_insight_report_and_completed_resume_is_read_onl
     assert resumed.record == result.record
     assert len(calls) == count
 
+    before = {p: p.read_bytes() for p in (root / result.run_id).rglob("*") if p.is_file()}
+    output = tmp_path / "numbered.md"
+    config = tmp_path / "cli.json"
+    config.write_text("{}")
+    command = CliRunner().invoke(app, ["analyze", "--config", str(config), "--resume", result.run_id,
+                                     "--run-dir", str(root), "--output", str(output),
+                                     "--json", "--citation-style", "numbered"])
+    assert command.exit_code == 0, command.output
+    start, done = [json.loads(line) for line in command.stdout.splitlines()]
+    assert start["type"] == "command.started" and done["type"] == "command.result"
+    assert done["status"] == "completed" and done["published"] and done["run_id"] == result.run_id
+    assert done["export_path"] == str(output.resolve())
+    assert "[1]" in output.read_text() and output.read_bytes() != result.report.read_bytes()
+    assert {p: p.read_bytes() for p in (root / result.run_id).rglob("*") if p.is_file()} == before
+    assert len(calls) == count
+
 
 def test_new_cli_research_defaults_to_perplexity_with_credentials_and_respects_opt_out(monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
