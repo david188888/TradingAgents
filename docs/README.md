@@ -17,7 +17,7 @@ Read only what your task needs:
 - [Data capabilities](operations/a-share-data-capabilities.md): native source routing, qualification and supplemental-source limits.
 - [ChatGPT accounts](operations/chatgpt-subscription.md): sign-in, catalog, failure handling and credential ownership.
 - [Observability and replay](operations/observability-replay.md): safe diagnostics, event recovery and saved-run replay.
-- [CLI research](operations/cli-research.md): terminal configuration, saved progress, report export and V9 resume.
+- [CLI research](operations/cli-research.md): terminal configuration, preflight, non-interactive JSONL, Markdown export and V9 resume.
 - [Decisions API guide](openrouter-decisions-agent-guide.md): OpenRouter Decisions API request and response shapes for Decider Flash and Jev.
 
 Coding Agents use [AGENTS.md](../AGENTS.md) and its scoped guides. Machine contracts live in code;

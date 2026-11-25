@@ -6,7 +6,7 @@ TradingAgents is an A-share company-research application with CLI and loopback W
 
 ## Entry and execution
 
-`tradingagents web --port 8765 --open` starts FastAPI and the bundled React SPA. `tradingagents analyze --ticker 002130` runs synchronously in the terminal. Adapters construct the same `AnalysisRequest` and invoke `NativeRunner`; execution stays independent of HTTP and terminal presentation.
+`tradingagents web --port 8765 --open` starts FastAPI and the bundled React SPA. `tradingagents analyze --ticker 002130` runs synchronously in the terminal. CLI preflight and JSONL are adapter features; numbered Markdown is an optional read-side projection. Adapters construct the same `AnalysisRequest` and invoke `NativeRunner`; execution stays independent of HTTP and terminal presentation.
 
 ```mermaid
 flowchart LR

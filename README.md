@@ -75,7 +75,7 @@ tradingagents analyze --ticker 002130 --show
 tradingagents analyze --resume RUN_ID
 ```
 
-终端与 Web 使用同一个 V9 执行器。终端进度、证据及报告保存在 `~/.tradingagents/cli/runs/`，与 Web 的运行目录分别持有写锁。使用 `--config` 读取本地 JSON、`--focus` 添加关注问题，或用 `--output report.md` 导出 Markdown。V9 自动保存进度，不再选择多空轮次或交易阶段。详见 [终端操作](docs/operations/cli-research.md)。
+终端与 Web 使用同一个 V9 执行器。终端进度、证据及报告保存在 `~/.tradingagents/cli/runs/`，与 Web 的运行目录分别持有写锁。使用 `--config` 读取本地 JSON、`--focus` 添加关注问题，或用 `--output report.md` 导出 Markdown。用 `--plan` 先预检，或用 `--json` 无交互输出事件；额外导出可选 `--citation-style numbered`。V9 自动保存进度，不再选择多空轮次或交易阶段。详见 [终端操作](docs/operations/cli-research.md)。
 
 ## 当前限制
 
